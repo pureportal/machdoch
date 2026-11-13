@@ -255,12 +255,13 @@ export class CloudGitSync {
           : (previous?.signals_synced_at ?? null);
       await sql.query(
         `INSERT INTO cloud_git_pull_requests (organization_id,id,repository_id,number,title,url,state,draft,author,head_ref,head_sha,base_ref,
-          mergeable_state,additions,deletions,changed_files,checks,review,stage,merged_at,updated_at,signals_synced_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14::integer,0),COALESCE($15::integer,0),COALESCE($16::integer,0),$17,$18,$19,$20,$21,$22)
+          mergeable_state,additions,deletions,changed_files,checks,review,stage,merged_at,updated_at,signals_synced_at,requested_reviewers)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14::integer,0),COALESCE($15::integer,0),COALESCE($16::integer,0),$17,$18,$19,$20,$21,$22,COALESCE($23::text[],'{}'))
         ON CONFLICT (organization_id,repository_id,number) DO UPDATE SET title=$5,url=$6,state=$7,draft=$8,author=COALESCE($9,cloud_git_pull_requests.author),
         head_ref=$10,head_sha=$11,base_ref=$12,mergeable_state=$13,additions=COALESCE($14::integer,cloud_git_pull_requests.additions),
         deletions=COALESCE($15::integer,cloud_git_pull_requests.deletions),changed_files=COALESCE($16::integer,cloud_git_pull_requests.changed_files),
-        checks=$17,review=$18,stage=$19,merged_at=$20,updated_at=$21,signals_synced_at=$22,synced_at=clock_timestamp()`,
+        checks=$17,review=$18,stage=$19,merged_at=$20,updated_at=$21,signals_synced_at=$22,
+        requested_reviewers=COALESCE($23::text[],cloud_git_pull_requests.requested_reviewers),synced_at=clock_timestamp()`,
         [
           organizationId,
           id,
@@ -284,6 +285,9 @@ export class CloudGitSync {
           pullRequest.mergedAt,
           pullRequest.updatedAt,
           signalsSyncedAt,
+          pullRequest.requestedReviewers
+            ?.slice(0, 50)
+            .map((login) => login.slice(0, 100)) ?? null,
         ],
       );
       const keys = (

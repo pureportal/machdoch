@@ -3,33 +3,17 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import {
-  CircleCheck,
-  CircleDashed,
-  CircleX,
-  GitPullRequest,
-  UserRoundCheck,
-  UserRoundX,
-} from "lucide-react";
-import type {
-  CloudPullRequest,
-  CloudPullRequestList,
-  CloudPullRequestListing,
-} from "@/lib/cloud-git-contract";
-import {
-  attentionReasons,
-  pullRequestStages,
-  type AttentionReason,
-  type PullRequestStage,
-} from "@/lib/git-automation";
+import { GitPullRequest, Search } from "lucide-react";
+import type { CloudPullRequestList } from "@/lib/cloud-git-contract";
+import { pullRequestStages, type PullRequestStage } from "@/lib/git-automation";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { cloudRequest } from "./api-client";
-import { PullRequestDialog } from "./pull-request-dialog";
+import { PullRequestRow } from "./pull-request-row";
 import {
   PullRequestStageIcon,
   pullRequestStageLabels,
 } from "./pull-request-state";
-import { RelativeTime } from "./relative-time";
 
 const pollMs = 30_000;
 const openStages: PullRequestStage[] = [
@@ -38,11 +22,6 @@ const openStages: PullRequestStage[] = [
   "review",
   "draft",
 ];
-const reasonLabels: Record<AttentionReason, string> = {
-  conflicts: "Conflicts",
-  checks: "Checks failing",
-  changes: "Changes requested",
-};
 const allRepositories = "";
 
 type Scope = "open" | PullRequestStage;
@@ -51,122 +30,19 @@ function scopeFrom(value: string | null): Scope {
   return pullRequestStages.find((stage) => stage === value) ?? "open";
 }
 
-function Signals({ pullRequest }: { pullRequest: CloudPullRequest }) {
-  const reasons = attentionReasons(pullRequest);
-  return (
-    <span className="cloud-pull-request-signals">
-      {reasons.map((reason) => (
-        <span key={reason} className="cloud-pull-request-reason">
-          {reasonLabels[reason]}
-        </span>
-      ))}
-      {pullRequest.state === "open" && pullRequest.checks === "success" && (
-        <CircleCheck
-          size={14}
-          role="img"
-          aria-label="Checks passed"
-          data-tone="success"
-        />
-      )}
-      {pullRequest.state === "open" && pullRequest.checks === "pending" && (
-        <CircleDashed size={14} role="img" aria-label="Checks running" />
-      )}
-      {pullRequest.state === "open" &&
-        pullRequest.checks === "failure" &&
-        !reasons.length && (
-          <CircleX
-            size={14}
-            role="img"
-            aria-label="Checks failed"
-            data-tone="danger"
-          />
-        )}
-      {pullRequest.state === "open" && pullRequest.review === "approved" && (
-        <UserRoundCheck
-          size={14}
-          role="img"
-          aria-label="Approved"
-          data-tone="success"
-        />
-      )}
-      {pullRequest.state === "open" &&
-        pullRequest.review === "changes_requested" &&
-        !reasons.length && (
-          <UserRoundX
-            size={14}
-            role="img"
-            aria-label="Changes requested"
-            data-tone="danger"
-          />
-        )}
-    </span>
-  );
-}
-
-function Row({
-  entry,
-  onOpen,
-}: {
-  entry: CloudPullRequestListing;
-  onOpen: () => void;
-}) {
-  const { pullRequest, issues } = entry;
-  return (
-    <li className="cloud-pull-request-row">
-      <PullRequestStageIcon stage={pullRequest.stage} />
-      <div className="cloud-pull-request-row-main">
-        <button type="button" onClick={onOpen}>
-          {pullRequest.title}
-        </button>
-        <span className="cloud-pull-request-row-meta">
-          <span>
-            {pullRequest.repository}#{pullRequest.number}
-          </span>
-          <code title={`${pullRequest.headRef} → ${pullRequest.baseRef}`}>
-            {pullRequest.headRef}
-          </code>
-          {pullRequest.stack?.parent && (
-            <span className="cloud-pull-request-stacked">
-              Stacked on #{pullRequest.stack.parent.number}
-            </span>
-          )}
-          {pullRequest.author && <span>{pullRequest.author}</span>}
-          <RelativeTime value={pullRequest.updatedAt} />
-        </span>
-      </div>
-      <div className="cloud-pull-request-row-side">
-        <span className="cloud-pull-request-row-issues">
-          {issues.map((issue) => (
-            <Link
-              key={issue.id}
-              href={`/cloud/issues/${issue.id}`}
-              prefetch={false}
-              title={`${issue.identifier} ${issue.title} · ${issue.statusName}`}
-            >
-              {issue.identifier}
-            </Link>
-          ))}
-        </span>
-        <Signals pullRequest={pullRequest} />
-      </div>
-    </li>
-  );
-}
-
 export function PullRequestList({
   initial,
   manageGit,
-  launch,
 }: {
   initial: CloudPullRequestList;
   manageGit: boolean;
-  launch: boolean;
 }) {
   const search = useSearchParams();
   const scope = scopeFrom(search.get("stage"));
   const [data, setData] = useState(initial);
   const [repository, setRepository] = useState(allRepositories);
-  const [selected, setSelected] = useState<CloudPullRequest | null>(null);
+  const [author, setAuthor] = useState(allRepositories);
+  const [query, setQuery] = useState("");
   const load = useCallback(
     (signal?: AbortSignal) =>
       cloudRequest<CloudPullRequestList>("pull-requests", { signal })
@@ -189,10 +65,26 @@ export function PullRequestList({
   const repositories = [
     ...new Set(data.pullRequests.map((entry) => entry.pullRequest.repository)),
   ].sort();
+  const authors = [
+    ...new Set(
+      data.pullRequests.flatMap((entry) =>
+        entry.pullRequest.author ? [entry.pullRequest.author] : [],
+      ),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+  const needle = query.trim().toLowerCase();
   const inRepository = data.pullRequests.filter(
-    (entry) =>
-      repository === allRepositories ||
-      entry.pullRequest.repository === repository,
+    ({ pullRequest, issues }) =>
+      (repository === allRepositories ||
+        pullRequest.repository === repository) &&
+      (author === allRepositories || pullRequest.author === author) &&
+      (!needle ||
+        pullRequest.title.toLowerCase().includes(needle) ||
+        pullRequest.headRef.toLowerCase().includes(needle) ||
+        String(pullRequest.number) === needle.replace(/^#/u, "") ||
+        issues.some((issue) =>
+          issue.identifier.toLowerCase().includes(needle),
+        )),
   );
   const counts = Object.fromEntries(
     pullRequestStages.map((stage) => [
@@ -224,21 +116,6 @@ export function PullRequestList({
     <section aria-labelledby="pull-requests-heading">
       <header className="cloud-page-header">
         <h1 id="pull-requests-heading">Pull requests</h1>
-        {repositories.length > 1 && (
-          <Select
-            aria-label="Repository"
-            className="cloud-pull-request-repository"
-            value={repository}
-            onChange={(event) => setRepository(event.target.value)}
-          >
-            <option value={allRepositories}>All repositories</option>
-            {repositories.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </Select>
-        )}
       </header>
       {!data.connected ? (
         <div className="cloud-empty">
@@ -274,6 +151,46 @@ export function PullRequestList({
               </Link>
             ))}
           </nav>
+          <div className="cloud-pull-request-filters">
+            <label className="cloud-issue-search">
+              <Search size={14} aria-hidden="true" />
+              <Input
+                aria-label="Search pull requests"
+                placeholder="Search…"
+                value={query}
+                maxLength={200}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            {authors.length > 1 && (
+              <Select
+                aria-label="Author"
+                value={author}
+                onChange={(event) => setAuthor(event.target.value)}
+              >
+                <option value={allRepositories}>All authors</option>
+                {authors.map((entry) => (
+                  <option key={entry} value={entry}>
+                    {entry}
+                  </option>
+                ))}
+              </Select>
+            )}
+            {repositories.length > 1 && (
+              <Select
+                aria-label="Repository"
+                value={repository}
+                onChange={(event) => setRepository(event.target.value)}
+              >
+                <option value={allRepositories}>All repositories</option>
+                {repositories.map((entry) => (
+                  <option key={entry} value={entry}>
+                    {entry}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </div>
           {!groups.length ? (
             <div className="cloud-empty">
               <GitPullRequest aria-hidden="true" />
@@ -297,11 +214,7 @@ export function PullRequestList({
                 )}
                 <ul>
                   {group.entries.map((entry) => (
-                    <Row
-                      key={entry.pullRequest.id}
-                      entry={entry}
-                      onOpen={() => setSelected(entry.pullRequest)}
-                    />
+                    <PullRequestRow key={entry.pullRequest.id} entry={entry} />
                   ))}
                 </ul>
               </section>
@@ -309,14 +222,6 @@ export function PullRequestList({
           )}
         </>
       )}
-      <PullRequestDialog
-        pullRequest={selected}
-        launch={launch}
-        onOpenChange={(open) => {
-          if (!open) setSelected(null);
-        }}
-        onChanged={() => void load()}
-      />
     </section>
   );
 }

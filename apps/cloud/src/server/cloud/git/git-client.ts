@@ -1,6 +1,8 @@
 import type {
   GitAvailableRepository,
   GitCheckRun,
+  GitCommit,
+  GitConversationEntry,
   GitMergeInput,
   GitMergeMethod,
   GitPullRequestFile,
@@ -48,6 +50,7 @@ export interface GitPullRequestRecord {
   changedFiles: number | null;
   updatedAt: string;
   mergedAt: string | null;
+  requestedReviewers: string[] | null;
 }
 
 export interface GitChecks {
@@ -71,6 +74,11 @@ export interface GitClient {
   reviews(fullName: string, number: number): Promise<GitReview[]>;
   files(fullName: string, number: number): Promise<GitPullRequestFile[]>;
   reviewComments(fullName: string, number: number): Promise<GitReviewComment[]>;
+  conversation(
+    fullName: string,
+    number: number,
+  ): Promise<GitConversationEntry[]>;
+  commits(fullName: string, number: number): Promise<GitCommit[]>;
   merge(fullName: string, number: number, input: GitMergeInput): Promise<void>;
   updateBranch(
     fullName: string,

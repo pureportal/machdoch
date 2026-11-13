@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type {
   GitAvailableRepository,
+  GitCommit,
+  GitConversationEntry,
   GitMergeInput,
   GitPullRequestFile,
   GitReview,
@@ -55,6 +57,10 @@ export const githubPullRequestSchema = z.object({
   deletions: z.number().optional(),
   changed_files: z.number().optional(),
   updated_at: z.string(),
+  requested_reviewers: z
+    .array(z.object({ login: z.string() }))
+    .nullable()
+    .optional(),
 });
 
 export function githubPullRequest(
@@ -81,6 +87,9 @@ export function githubPullRequest(
     changedFiles: pullRequest.changed_files ?? null,
     updatedAt: pullRequest.updated_at,
     mergedAt: pullRequest.merged_at ?? null,
+    requestedReviewers:
+      pullRequest.requested_reviewers?.map((reviewer) => reviewer.login) ??
+      null,
   };
 }
 
@@ -106,9 +115,33 @@ const fileSchema = z.object({
 });
 
 const reviewSchema = z.object({
+  id: z.number().optional(),
   user: z.object({ login: z.string() }).nullable(),
   state: z.string(),
+  body: z.string().nullable().optional(),
+  html_url: z.string().nullable().optional(),
   submitted_at: z.string().nullable().optional(),
+});
+
+const issueCommentSchema = z.object({
+  id: z.number(),
+  user: z.object({ login: z.string() }).nullable(),
+  body: z.string().nullable().optional(),
+  html_url: z.string(),
+  created_at: z.string(),
+});
+
+const commitSchema = z.object({
+  sha: z.string(),
+  html_url: z.string().nullable().optional(),
+  author: z.object({ login: z.string() }).nullable().optional(),
+  commit: z.object({
+    message: z.string(),
+    author: z
+      .object({ name: z.string(), date: z.string().optional() })
+      .nullable()
+      .optional(),
+  }),
 });
 
 const reviewCommentSchema = z.object({
@@ -307,6 +340,63 @@ export class GitHubClient implements GitClient {
       diffHunk: comment.diff_hunk,
       url: comment.html_url,
       createdAt: comment.created_at,
+    }));
+  }
+
+  async conversation(
+    fullName: string,
+    number: number,
+  ): Promise<GitConversationEntry[]> {
+    const [comments, reviews] = await Promise.all([
+      this.request(
+        `/repos/${fullName}/issues/${number}/comments?per_page=100`,
+        z.array(issueCommentSchema),
+      ),
+      this.request(
+        `/repos/${fullName}/pulls/${number}/reviews?per_page=100`,
+        z.array(reviewSchema),
+      ),
+    ]);
+    return [
+      ...comments.map((comment) => ({
+        id: `comment-${comment.id}`,
+        kind: "comment" as const,
+        author: comment.user?.login ?? "ghost",
+        body: comment.body ?? "",
+        state: null,
+        url: comment.html_url,
+        createdAt: comment.created_at,
+      })),
+      ...reviews
+        .filter(
+          (review) =>
+            review.submitted_at &&
+            (review.state !== "COMMENTED" || review.body?.trim()),
+        )
+        .map((review, index) => ({
+          id: `review-${review.id ?? index}`,
+          kind: "review" as const,
+          author: review.user?.login ?? "ghost",
+          body: review.body ?? "",
+          state: review.state,
+          url: review.html_url ?? null,
+          createdAt: review.submitted_at!,
+        })),
+    ].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
+  async commits(fullName: string, number: number): Promise<GitCommit[]> {
+    return (
+      await this.request(
+        `/repos/${fullName}/pulls/${number}/commits?per_page=100`,
+        z.array(commitSchema),
+      )
+    ).map((commit) => ({
+      sha: commit.sha,
+      message: commit.commit.message,
+      author: commit.author?.login ?? commit.commit.author?.name ?? "unknown",
+      url: commit.html_url ?? null,
+      committedAt: commit.commit.author?.date ?? null,
     }));
   }
 

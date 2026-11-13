@@ -4,6 +4,7 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
 } from "lucide-react";
+import type { CloudPullRequest } from "@/lib/cloud-git-contract";
 import type { PullRequestStage } from "@/lib/git-automation";
 
 export const pullRequestStageLabels: Record<PullRequestStage, string> = {
@@ -14,6 +15,14 @@ export const pullRequestStageLabels: Record<PullRequestStage, string> = {
   merged: "Merged",
   closed: "Closed",
 };
+
+export function pullRequestStateLabel(
+  pullRequest: Pick<CloudPullRequest, "state" | "draft">,
+): string {
+  if (pullRequest.state === "merged") return "Merged";
+  if (pullRequest.state === "closed") return "Closed";
+  return pullRequest.draft ? "Draft" : "Open";
+}
 
 const stageIcons = {
   attention: GitPullRequest,

@@ -609,10 +609,7 @@ export function IssueEditor({
             writable={writable}
             state={relations}
           />
-          <IssuePullRequests
-            issueId={issue.id}
-            launch={holderCan(workspace.actor, "clients.manage")}
-          />
+          <IssuePullRequests issueId={issue.id} />
           <IssueRunList issueId={issue.id} />
         </aside>
       </div>

@@ -46,7 +46,7 @@
   display: grid;
   gap: 2px;
 }
-.cloud-aside-pull-requests button {
+.cloud-aside-pull-request > a {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -58,11 +58,12 @@
   text-align: left;
   cursor: pointer;
 }
-.cloud-aside-pull-requests button:hover {
+.cloud-aside-pull-request > a:hover {
   background: var(--cloud-hover);
 }
-.cloud-aside-pull-requests button:focus-visible,
-.cloud-pull-request-row-main button:focus-visible,
+.cloud-aside-pull-request > a:focus-visible,
+.cloud-aside-diffstat:focus-visible,
+.cloud-pull-request-row-main a:focus-visible,
 .cloud-pull-request-copy:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
@@ -93,16 +94,12 @@
   color: var(--cloud-success);
 }
 
-.cloud-pull-request-dialog {
-  gap: 16px;
-}
 .cloud-pull-request-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 12px;
   min-width: 0;
-  margin-top: -8px;
   color: var(--muted-foreground);
   font-size: 12.5px;
 }
@@ -165,13 +162,6 @@
 .cloud-pull-request-loading {
   color: var(--muted-foreground);
   font-size: 13px;
-}
-.cloud-pull-request-tabs [role="tabpanel"] {
-  padding-top: 16px;
-}
-.cloud-pull-request-tabs [role="tab"] {
-  display: inline-flex;
-  align-items: center;
 }
 .cloud-pull-request-overview {
   display: grid;
@@ -259,40 +249,9 @@
   color: var(--muted-foreground);
   font-size: 12px;
 }
-.cloud-review-comments,
 .cloud-pull-request-files {
   display: grid;
   gap: 12px;
-}
-.cloud-review-comments li {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 13px;
-}
-.cloud-review-comments header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  min-width: 0;
-  color: var(--muted-foreground);
-  font-size: 12px;
-}
-.cloud-review-comments header a {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--foreground);
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cloud-review-comments header a:hover {
-  text-decoration: underline;
 }
 .cloud-diff-hunk {
   max-width: 100%;
@@ -382,10 +341,6 @@
   height: 32px;
 }
 
-.cloud-pull-request-repository {
-  width: auto;
-  max-width: 100%;
-}
 .cloud-pull-request-group + .cloud-pull-request-group {
   margin-top: 20px;
 }
@@ -427,7 +382,7 @@
   gap: 2px;
   min-width: 0;
 }
-.cloud-pull-request-row-main button {
+.cloud-pull-request-row-main a {
   min-width: 0;
   overflow: hidden;
   border-radius: 4px;
@@ -438,7 +393,7 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.cloud-pull-request-row-main button:hover {
+.cloud-pull-request-row-main a:hover {
   text-decoration: underline;
 }
 .cloud-pull-request-row-meta {

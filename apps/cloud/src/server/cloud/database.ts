@@ -55,6 +55,7 @@ export const cloudMigrations = [
   "052-roles.sql",
   "053-sidebar-sections.sql",
   "054-organization-theme-logos.sql",
+  "056-pull-request-reviewers.sql",
 ];
 
 export interface CloudSql {

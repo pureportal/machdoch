@@ -141,6 +141,19 @@ const transport = (async (input: RequestInfo | URL, init?: RequestInit) => {
       })),
     });
   }
+  const issueComments = /^\/repos\/acme\/app\/issues\/(\d+)\/comments$/u.exec(
+    url.pathname,
+  );
+  if (issueComments && method === "GET")
+    return json([
+      {
+        id: 9,
+        user: { login: "octocat" },
+        body: "Ready for another look.",
+        html_url: `https://github.test/acme/app/pull/${issueComments[1]}#issuecomment-9`,
+        created_at: "2026-11-01T11:00:00Z",
+      },
+    ]);
   const match = /^\/repos\/acme\/app\/pulls\/(\d+)(?:\/([\w-]+))?$/u.exec(
     url.pathname,
   );
@@ -193,6 +206,18 @@ const transport = (async (input: RequestInfo | URL, init?: RequestInit) => {
         diff_hunk: "@@ -1,3 +1,3 @@",
         html_url: "https://github.test/acme/app/pull/1#discussion_r5",
         created_at: "2026-11-01T10:00:00Z",
+      },
+    ]);
+  if (match[2] === "commits")
+    return json([
+      {
+        sha: pull.head.sha,
+        html_url: `https://github.test/acme/app/commit/${pull.head.sha}`,
+        author: { login: "octocat" },
+        commit: {
+          message: "Fix sign-in\n\nDetails",
+          author: { name: "Octo Cat", date: "2026-11-01T09:00:00Z" },
+        },
       },
     ]);
   return json({ message: "Not Found" }, 404);
@@ -715,6 +740,19 @@ it("lists, details and changes pull requests only for people who can see a linke
     },
     reviews: [{ author: "reviewer-0", state: "APPROVED" }],
     comments: [{ author: "reviewer", path: "src/sign-in.ts", line: 3 }],
+    conversation: [
+      {
+        kind: "review",
+        author: "reviewer-0",
+        state: "APPROVED",
+      },
+      {
+        kind: "comment",
+        author: "octocat",
+        body: "Ready for another look.",
+      },
+    ],
+    commits: [{ sha: sha(1), author: "octocat" }],
     issues: [{ identifier: "PLAT-1", statusName: "Backlog" }],
     canMerge: false,
   });

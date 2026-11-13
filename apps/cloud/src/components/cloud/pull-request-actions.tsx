@@ -23,7 +23,6 @@ import {
 } from "@/lib/pull-request-prompts";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Button } from "@/components/ui/button";
-import { DialogFooter } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
 import { cloudRequest } from "./api-client";
 import { ClientLaunch } from "./client-launch";
@@ -109,7 +108,7 @@ export function PullRequestActions({
   const retargetTo = details.canMerge ? pullRequest.stack?.retargetTo : null;
   if (!tasks.length && !details.canMerge) return null;
   return (
-    <DialogFooter className="cloud-pull-request-actions">
+    <div className="cloud-pull-request-actions">
       {tasks.map((entry) => (
         <ClientLaunch
           key={entry.task}
@@ -216,6 +215,6 @@ export function PullRequestActions({
           />
         </div>
       )}
-    </DialogFooter>
+    </div>
   );
 }

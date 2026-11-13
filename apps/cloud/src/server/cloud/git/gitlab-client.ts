@@ -2,6 +2,8 @@ import { z } from "zod";
 import type {
   GitAvailableRepository,
   GitCheckRun,
+  GitCommit,
+  GitConversationEntry,
   GitMergeInput,
   GitPullRequestFile,
   GitReview,
@@ -46,6 +48,10 @@ export const gitlabMergeRequestSchema = z.object({
   changes_count: z.string().nullable().optional(),
   updated_at: z.string(),
   merged_at: z.string().nullable().optional(),
+  reviewers: z
+    .array(z.object({ username: z.string() }))
+    .nullable()
+    .optional(),
 });
 
 const mergeStates: Record<string, string> = {
@@ -95,8 +101,19 @@ export function gitlabMergeRequest(
     changedFiles: Number.isFinite(changed) ? changed : null,
     updatedAt: request.updated_at,
     mergedAt: request.merged_at ?? null,
+    requestedReviewers:
+      request.reviewers?.map((reviewer) => reviewer.username) ?? null,
   };
 }
+
+const commitSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  message: z.string().optional(),
+  author_name: z.string(),
+  created_at: z.string().nullable().optional(),
+  web_url: z.string().nullable().optional(),
+});
 
 const statusSchema = z.object({
   id: z.number(),
@@ -362,6 +379,45 @@ export class GitLabClient implements GitClient {
           createdAt: note.created_at,
         })),
     );
+  }
+
+  async conversation(
+    fullName: string,
+    number: number,
+  ): Promise<GitConversationEntry[]> {
+    const [request, notes] = await Promise.all([
+      this.rawMergeRequest(fullName, number),
+      this.request(
+        `${this.mergeRequestPath(fullName, number)}/notes?sort=asc&order_by=created_at&per_page=100`,
+        z.array(noteSchema),
+      ),
+    ]);
+    return notes
+      .filter((note) => !note.system && !note.position)
+      .map((note) => ({
+        id: `note-${note.id}`,
+        kind: "comment" as const,
+        author: note.author?.username ?? "ghost",
+        body: note.body,
+        state: null,
+        url: `${request.web_url}#note_${note.id}`,
+        createdAt: note.created_at,
+      }));
+  }
+
+  async commits(fullName: string, number: number): Promise<GitCommit[]> {
+    return (
+      await this.request(
+        `${this.mergeRequestPath(fullName, number)}/commits?per_page=100`,
+        z.array(commitSchema),
+      )
+    ).map((commit) => ({
+      sha: commit.id,
+      message: commit.message ?? commit.title,
+      author: commit.author_name,
+      url: commit.web_url ?? null,
+      committedAt: commit.created_at ?? null,
+    }));
   }
 
   async merge(

@@ -14,7 +14,6 @@ export default async function PullRequestsPage() {
     <PullRequestList
       initial={await runtime.git.pullRequests.list(actor, undefined)}
       manageGit={holderCan(member, "git.manage")}
-      launch={holderCan(member, "clients.manage")}
     />
   );
 }

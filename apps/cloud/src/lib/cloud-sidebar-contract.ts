@@ -98,8 +98,20 @@ export const sidebarItems = [
     group: "workspace",
     placement: "show",
     integration: "git",
-    description:
-      "Pull requests from connected GitHub and GitLab repositories, grouped by what they need next.",
+    tabs: [
+      {
+        href: "/cloud/pull-requests",
+        label: "Pull requests",
+        description:
+          "Pull requests from connected GitHub and GitLab repositories, grouped by what they need next.",
+      },
+      {
+        href: "/cloud/reviews",
+        label: "Reviews",
+        description:
+          "Pull requests waiting for your review and the ones you opened, grouped by what they need from you.",
+      },
+    ],
   },
   {
     id: "initiatives",

@@ -193,6 +193,7 @@ export interface CloudPullRequest {
   closes: boolean;
   mergedAt: string | null;
   updatedAt: string;
+  requestedReviewers: string[];
   stack: PullRequestStack | null;
 }
 
@@ -213,6 +214,11 @@ export interface CloudPullRequestList {
   connected: boolean;
   pullRequests: CloudPullRequestListing[];
   counts: Record<PullRequestStage, number>;
+}
+
+export interface CloudReviewInbox {
+  accounts: { provider: GitProvider; login: string }[];
+  pullRequests: CloudPullRequestListing[];
 }
 
 export const pullRequestListQuerySchema = z.strictObject({
@@ -255,8 +261,27 @@ export interface GitReview {
   submittedAt: string | null;
 }
 
+export interface GitConversationEntry {
+  id: string;
+  kind: "comment" | "review";
+  author: string;
+  body: string;
+  state: string | null;
+  url: string | null;
+  createdAt: string;
+}
+
+export interface GitCommit {
+  sha: string;
+  message: string;
+  author: string;
+  url: string | null;
+  committedAt: string | null;
+}
+
 export interface CloudPullRequestDetails {
   pullRequest: CloudPullRequest;
+  body: string;
   mergeable: boolean | null;
   checks: {
     conclusion: GitChecksState;
@@ -264,6 +289,8 @@ export interface CloudPullRequestDetails {
   };
   reviews: GitReview[];
   comments: GitReviewComment[];
+  conversation: GitConversationEntry[];
+  commits: GitCommit[];
   issues: CloudLinkedIssue[];
   canMerge: boolean;
   actingAs: string;

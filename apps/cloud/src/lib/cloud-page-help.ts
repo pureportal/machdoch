@@ -1,6 +1,9 @@
 import type { SidebarPageHref } from "./cloud-sidebar-contract";
 
 const help: Partial<Record<SidebarPageHref, string>> = {
+  "/cloud/reviews": `
+Reviews match pull requests to the GitHub and GitLab accounts linked on your account page. Pull requests you opened appear by what they need next; requests for your review appear until you submit one.
+`,
   "/cloud/activity": `
 - **Agent**: answers, questions and proposals.
 - **Tasks**: state changes, runner steps and model calls with model, tokens and duration.

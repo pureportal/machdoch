@@ -168,6 +168,7 @@ export class FakeGitServer {
         ],
       });
     const comment = /^\/repos\/acme\/app\/issues\/(\d+)\/comments$/u.exec(path);
+    if (comment && method === "GET") return json([]);
     if (comment && method === "POST")
       return json(
         {
@@ -191,7 +192,7 @@ export class FakeGitServer {
       return json({ merged: true });
     }
     if (match[2] === "reviews" && method === "POST") return json({ id: 3 });
-    if (match[2] === "reviews" || match[2] === "comments") return json([]);
+    if (["reviews", "comments", "commits"].includes(match[2])) return json([]);
     return json({ message: "Not Found" }, 404);
   }
 
@@ -231,6 +232,7 @@ export class FakeGitServer {
       return json({ iid: change.number });
     }
     if (match[2] === "notes" && method === "POST") return json({ id: 5 }, 201);
+    if (match[2] === "notes" || match[2] === "commits") return json([]);
     return json({ message: "404 Not Found" }, 404);
   }
 

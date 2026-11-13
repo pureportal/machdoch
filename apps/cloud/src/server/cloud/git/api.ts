@@ -206,6 +206,8 @@ async function handlePullRequests(
         ).stage,
       ),
     );
+  if (path.length === 2 && path[1] === "reviews" && method === "GET")
+    return Response.json(await pullRequests.reviews(actor));
   const id = cloudId.parse(path[1]);
   const route = `${method} ${path.slice(2).join("/")}`;
   if (route === "GET ")

@@ -4,6 +4,7 @@ import type {
   CloudPullRequest,
   CloudPullRequestDetails,
   CloudPullRequestList,
+  CloudReviewInbox,
   GitMergeInput,
   GitPullRequestFile,
   GitReviewInput,
@@ -28,6 +29,7 @@ import { gitConnection, type GitConnectionRecord } from "./connections";
 import type { StoredRepository } from "./events";
 import type { ActingAccess, ActingMode, GitIdentities } from "./identity";
 import type { CloudGitSync } from "./sync";
+import type { GitProvider } from "../../../lib/git-providers";
 
 const timestamp = `'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'`;
 const recentDays = 14;
@@ -37,7 +39,7 @@ const pullRequestColumns = `p.id,r.provider,r.full_name AS repository,p.number,p
   p.base_ref AS "baseRef",r.default_branch AS "defaultBranch",p.mergeable_state AS "mergeableState",p.additions,p.deletions,p.changed_files AS "changedFiles",
   p.checks,p.review,p.stage,to_char(p.merged_at AT TIME ZONE 'UTC',${timestamp}) AS "mergedAt",
   to_char(p.updated_at AT TIME ZONE 'UTC',${timestamp}) AS "updatedAt",p.repository_id AS "repositoryId",
-  r.web_url AS "repositoryUrl",COALESCE(v.closes,false) AS closes,COALESCE(v.issues,'[]'::jsonb) AS issues`;
+  r.web_url AS "repositoryUrl",p.requested_reviewers AS "requestedReviewers",COALESCE(v.closes,false) AS closes,COALESCE(v.issues,'[]'::jsonb) AS issues`;
 const stageOrder = `CASE p.stage ${pullRequestStages.map((stage, index) => `WHEN '${stage}' THEN ${index}`).join(" ")} END`;
 const visibleCte = `WITH visible AS (
     SELECT l.pull_request_id,bool_or(l.closes) AS closes,
@@ -217,6 +219,43 @@ export class CloudGitPullRequests {
     });
   }
 
+  reviews(actor: CloudActor): Promise<CloudReviewInbox> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "git.view");
+      const accounts = (
+        await sql.query<{ provider: GitProvider; login: string }>(
+          "SELECT provider,login FROM cloud_git_accounts WHERE organization_id=$1 AND user_id=$2 ORDER BY provider",
+          [actor.organizationId, actor.userId],
+        )
+      ).rows;
+      const identities = accounts.map(
+        (account) => `${account.provider}:${account.login.toLowerCase()}`,
+      );
+      const rows = identities.length
+        ? await withStacks(
+            sql,
+            actor,
+            await visibleRows(
+              sql,
+              actor,
+              `(p.state='open' OR p.updated_at > clock_timestamp() - interval '${recentDays} days')
+              AND (r.provider||':'||lower(p.author) = ANY($3::text[])
+                OR EXISTS (SELECT 1 FROM unnest(p.requested_reviewers) reviewer WHERE r.provider||':'||lower(reviewer) = ANY($3::text[])))`,
+              [identities],
+              "p.updated_at DESC",
+            ),
+          )
+        : [];
+      return {
+        accounts,
+        pullRequests: rows.map((row) => ({
+          pullRequest: publicPullRequest(row),
+          issues: row.issues,
+        })),
+      };
+    });
+  }
+
   private async visible(
     sql: CloudSql,
     actor: CloudActor,
@@ -287,11 +326,15 @@ export class CloudGitPullRequests {
     );
     const client = gitClient(visible.connection, this.transport);
     const { repository, number } = visible.pullRequest;
-    const [fresh, reviews, comments] = await Promise.all([
-      client.pullRequest(repository, number),
-      client.reviews(repository, number),
-      client.reviewComments(repository, number),
-    ]);
+    const [fresh, reviews, comments, conversation, commits] = await Promise.all(
+      [
+        client.pullRequest(repository, number),
+        client.reviews(repository, number),
+        client.reviewComments(repository, number),
+        client.conversation(repository, number),
+        client.commits(repository, number),
+      ],
+    );
     const checks = await client.checks(repository, number, fresh.headSha);
     await this.sync.store(visible.connection, visible.repository, fresh, {
       signals: {
@@ -314,10 +357,15 @@ export class CloudGitPullRequests {
     );
     return {
       pullRequest: updated.pullRequest,
+      body: fresh.body,
       mergeable: fresh.mergeable,
       checks,
       reviews,
       comments,
+      conversation,
+      commits: commits.sort((left, right) =>
+        (left.committedAt ?? "").localeCompare(right.committedAt ?? ""),
+      ),
       issues: updated.issues,
       canMerge: updated.canAct && updated.pullRequest.state === "open",
       actingAs,
