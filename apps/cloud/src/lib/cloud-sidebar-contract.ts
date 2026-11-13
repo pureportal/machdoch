@@ -194,7 +194,7 @@ export const sidebarItems = [
         href: "/cloud/schedules",
         label: "Schedules",
         description:
-          "AI tasks that run on a timetable, such as a nightly dependency check, within a token budget.",
+          "Create issues or run AI tasks on a timetable, such as a nightly dependency check.",
       },
     ],
   },
@@ -251,8 +251,7 @@ export const sidebarItems = [
     href: "/cloud/connections",
     group: "workspace",
     placement: "more",
-    description:
-      "Apps and MCP clients you allowed to work with your account. Connect one with the MCP URL below.",
+    description: "Apps and MCP clients you allowed to work with your account.",
   },
   {
     id: "providers",
@@ -301,6 +300,14 @@ export const sidebarItems = [
 ))[];
 export type SidebarItemId = (typeof sidebarItems)[number]["id"];
 export type SidebarItem = (typeof sidebarItems)[number];
+type PageHrefs<Item> = Item extends { tabs: readonly (infer Tab)[] }
+  ? Tab extends { href: infer Href }
+    ? Href
+    : never
+  : Item extends { href: infer Href }
+    ? Href
+    : never;
+export type SidebarPageHref = PageHrefs<SidebarItem>;
 export const sidebarItemIds = sidebarItems.map((item) => item.id) as [
   SidebarItemId,
   ...SidebarItemId[],

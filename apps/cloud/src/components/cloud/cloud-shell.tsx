@@ -6,7 +6,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronDown,
   ChevronRight,
-  Info,
   LogOut,
   Menu,
   Settings2,
@@ -22,6 +21,7 @@ import {
   settingsPermissions,
   type SidebarPreferences,
 } from "@/lib/cloud-sidebar-contract";
+import { pageHelp } from "@/lib/cloud-page-help";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -38,7 +38,8 @@ import {
   sidebarAccess,
   pageNavigation,
 } from "./navigation";
-import { SectionIntro, useHiddenIntros } from "./section-intro";
+import { SectionNavigation } from "./section-navigation";
+import { PageHelp } from "./page-help";
 import { BrandMark } from "./brand-mark";
 import { BrandFavicon, BrandStyle } from "./brand-theme";
 import { PersonAvatar } from "./person-avatar";
@@ -144,7 +145,7 @@ export function CloudShell({
     pathname,
     new URLSearchParams(search),
   );
-  const intros = useHiddenIntros();
+  const help = section && pageHelp.get(section.page.href);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [signingOut, setSigningOut] = useState(false);
@@ -321,18 +322,14 @@ export function CloudShell({
                   <span>{workspace.organization.name}</span>
                   <ChevronRight size={13} />
                   <span>{current?.label ?? "Account"}</span>
-                  {section && !section.fullBleed && (
-                    <button
-                      type="button"
-                      className="cloud-breadcrumb-info"
-                      aria-label="About this page"
-                      aria-pressed={!intros.hidden(section.page.href)}
-                      onClick={() => intros.toggle(section.page.href)}
-                    >
-                      <Info size={13} />
-                    </button>
-                  )}
                 </div>
+                {section && help && (
+                  <PageHelp
+                    key={section.page.href}
+                    page={section.page}
+                    content={help}
+                  />
+                )}
                 <QuickNavigation
                   access={sidebarAccess(workspace)}
                   views={views}
@@ -349,12 +346,8 @@ export function CloudShell({
                 )}
               </header>
               <main id="cloud-content" tabIndex={-1} className="cloud-content">
-                {section && !section.fullBleed && (
-                  <SectionIntro
-                    section={section}
-                    hidden={intros.hidden(section.page.href)}
-                    onHide={() => intros.toggle(section.page.href)}
-                  />
+                {section && !section.fullBleed && section.pages.length > 1 && (
+                  <SectionNavigation section={section} />
                 )}
                 {children}
               </main>

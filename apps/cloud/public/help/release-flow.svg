@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 88" width="640" height="88" role="img" aria-label="Product, release, posts, channels">
+<style>text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;text-anchor:middle}.t{font-size:13.5px;font-weight:600;fill:#eeedf2}.s{font-size:11.5px;fill:#a3a3b1}</style>
+<defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 8 4 0 8z" fill="#a79bff"/></marker></defs>
+<rect x="0.75" y="8.75" width="140.5" height="70.5" rx="10" fill="#1d1e24" stroke="#3a3b47" stroke-width="1.5"/>
+<text class="t" x="71.0" y="41">Product</text>
+<text class="s" x="71.0" y="61">voice · teams</text>
+<line x1="145" y1="44" x2="162" y2="44" stroke="#a79bff" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="166.75" y="8.75" width="140.5" height="70.5" rx="10" fill="#1d1e24" stroke="#a79bff" stroke-width="1.5"/>
+<text class="t" x="237.0" y="41">Release</text>
+<text class="s" x="237.0" y="61">shipped issues</text>
+<line x1="311" y1="44" x2="328" y2="44" stroke="#a79bff" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="332.75" y="8.75" width="140.5" height="70.5" rx="10" fill="#1d1e24" stroke="#3a3b47" stroke-width="1.5"/>
+<text class="t" x="403.0" y="41">Posts</text>
+<text class="s" x="403.0" y="61">approve · publish</text>
+<line x1="477" y1="44" x2="494" y2="44" stroke="#a79bff" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="498.75" y="8.75" width="140.5" height="70.5" rx="10" fill="#1d1e24" stroke="#3a3b47" stroke-width="1.5"/>
+<text class="t" x="569.0" y="41">Channels</text>
+<text class="s" x="569.0" y="61">LinkedIn · Reddit</text>
+</svg>

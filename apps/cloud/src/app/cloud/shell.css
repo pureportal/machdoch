@@ -300,45 +300,34 @@ body:has(.cloud-shell[data-cloud-tint]) .cloud-sidebar {
   color: var(--foreground);
   border-color: var(--primary);
 }
-.cloud-section-intro {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  width: fit-content;
-  max-width: min(100%, 820px);
-  margin: -6px 0 22px;
-  padding: 8px 6px 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--muted) 45%, transparent);
-  color: var(--muted-foreground);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-.cloud-section-intro > svg {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--primary);
-}
-.cloud-section-intro p {
-  flex: 1;
-  min-width: 0;
-}
-.cloud-section-intro button,
-.cloud-breadcrumb-info {
+.cloud-page-help-trigger {
   display: grid;
   flex-shrink: 0;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
   border-radius: 6px;
   color: var(--muted-foreground);
 }
-.cloud-section-intro button:hover,
-.cloud-breadcrumb-info:hover,
-.cloud-breadcrumb-info[aria-pressed="true"] {
+.cloud-page-help-trigger:hover,
+.cloud-page-help-trigger[data-state="open"] {
   background: var(--cloud-hover);
   color: var(--foreground);
+}
+.cloud-page-help .app-markdown {
+  font-size: 13.5px;
+}
+.cloud-page-help .app-markdown p:has(> .app-markdown-image) {
+  overflow-x: auto;
+}
+.cloud-page-help .app-markdown-image {
+  width: 100%;
+  min-width: 520px;
+  margin-block: 4px;
+}
+html[data-theme="light"] .cloud-page-help .app-markdown-image {
+  filter: invert(1) hue-rotate(180deg);
 }
 .cloud-menu-trigger,
 .cloud-mobile-create {
@@ -397,6 +386,10 @@ body:has(.cloud-shell[data-cloud-tint]) .cloud-sidebar {
   .cloud-quick-navigation {
     min-width: 0;
     padding: 10px;
+  }
+  .cloud-page-help-trigger {
+    width: 36px;
+    height: 36px;
   }
   .cloud-quick-navigation span,
   .cloud-quick-navigation kbd {
