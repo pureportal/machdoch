@@ -13,7 +13,8 @@ export async function seedCloudDesign(fixture) {
     revision: workspace.organization.revision,
     name: "Northstar Studio",
     brand: { ...workspace.organization.brand, color: "#a79bff" },
-    logo: null,
+    logoDark: null,
+    logoLight: null,
   });
   const team = await api("teams", "POST", {
     name: "Engineering",

@@ -36,13 +36,15 @@ import { useToast } from "./toast";
 interface BrandDraft {
   name: string;
   brand: OrganizationBrand;
-  logo: string | null;
+  logoDark: string | null;
+  logoLight: string | null;
 }
 
 const draftKeys = [
   "name",
   "brand",
-  "logo",
+  "logoDark",
+  "logoLight",
   ...Object.keys(defaultOrganizationBrand),
 ];
 
@@ -54,7 +56,8 @@ function draftOf(organization: CloudOrganization): BrandDraft {
   return {
     name: organization.name,
     brand: organization.brand,
-    logo: organization.logo,
+    logoDark: organization.logoDark,
+    logoLight: organization.logoLight,
   };
 }
 
@@ -79,7 +82,8 @@ export function OrganizationBranding({
   }
   const saved = draftOf(organization);
   const dirty = !sameDraft(draft, saved);
-  const missingImage = draft.brand.mark === "image" && !draft.logo;
+  const missingImage =
+    draft.brand.mark === "image" && !draft.logoDark && !draft.logoLight;
   const brandChanged = !sameDraft(draft.brand, {
     ...defaultOrganizationBrand,
     signIn: draft.brand.signIn,
@@ -99,7 +103,8 @@ export function OrganizationBranding({
           revision: organization.revision,
           name: draft.name.trim(),
           brand: draft.brand,
-          logo: draft.logo,
+          logoDark: draft.logoDark,
+          logoLight: draft.logoLight,
         },
         "PATCH",
       )
@@ -223,12 +228,24 @@ export function OrganizationBranding({
               </Field>
             )}
             {draft.brand.mark === "image" && (
-              <BrandLogoField
-                logo={draft.logo}
-                onChange={(logo) =>
-                  setDraft((current) => ({ ...current, logo }))
-                }
-              />
+              <div className="cloud-brand-logos">
+                <BrandLogoField
+                  label="Dark mode"
+                  theme="dark"
+                  logo={draft.logoDark}
+                  onChange={(logoDark) =>
+                    setDraft((current) => ({ ...current, logoDark }))
+                  }
+                />
+                <BrandLogoField
+                  label="Light mode"
+                  theme="light"
+                  logo={draft.logoLight}
+                  onChange={(logoLight) =>
+                    setDraft((current) => ({ ...current, logoLight }))
+                  }
+                />
+              </div>
             )}
           </div>
           <div className="grid gap-3">

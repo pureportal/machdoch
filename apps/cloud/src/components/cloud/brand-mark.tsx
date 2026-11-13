@@ -36,7 +36,12 @@ import {
 import type { CSSProperties } from "react";
 import { brandShapeRadius, type BrandThemeColors } from "@/lib/brand-palette";
 import type { CloudOrganization } from "@/lib/cloud-administration-contract";
-import { organizationInitials, type BrandIcon } from "@/lib/organization-brand";
+import {
+  brandLogo,
+  organizationInitials,
+  type BrandIcon,
+  type BrandTheme,
+} from "@/lib/organization-brand";
 import { cn } from "@/lib/utils";
 
 export const brandIconComponents: Record<BrandIcon, LucideIcon> = {
@@ -74,18 +79,23 @@ export const brandIconComponents: Record<BrandIcon, LucideIcon> = {
   telescope: Telescope,
 };
 
-export type BrandIdentity = Pick<CloudOrganization, "name" | "brand" | "logo">;
+export type BrandIdentity = Pick<
+  CloudOrganization,
+  "name" | "brand" | "logoDark" | "logoLight"
+>;
 
 export function BrandMark({
   identity,
   colors,
+  theme,
   className,
 }: {
   identity: BrandIdentity;
   colors?: BrandThemeColors;
+  theme?: BrandTheme;
   className?: string;
 }) {
-  const { brand, logo, name } = identity;
+  const { brand, name } = identity;
   const Icon = brandIconComponents[brand.icon];
   const style = colors
     ? ({
@@ -96,7 +106,9 @@ export function BrandMark({
         "--cloud-brand-radius": brandShapeRadius[brand.shape],
       } as CSSProperties)
     : undefined;
-  const image = brand.mark === "image" && logo;
+  const darkLogo = brandLogo(identity, theme ?? "dark");
+  const lightLogo = brandLogo(identity, theme ?? "light");
+  const image = brand.mark === "image" && darkLogo;
   return (
     <span
       aria-hidden="true"
@@ -105,7 +117,14 @@ export function BrandMark({
       style={style}
     >
       {image ? (
-        <img src={logo} alt="" />
+        darkLogo === lightLogo ? (
+          <img src={darkLogo} alt="" />
+        ) : (
+          <>
+            <img src={darkLogo} alt="" data-logo-theme="dark" />
+            <img src={lightLogo!} alt="" data-logo-theme="light" />
+          </>
+        )
       ) : brand.mark === "initials" ? (
         <span className="cloud-brand-initials">
           {organizationInitials(name, brand.initials)}

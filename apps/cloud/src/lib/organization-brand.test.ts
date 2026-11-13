@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { organizationUpdateSchema } from "./cloud-administration-contract";
 import {
+  brandLogo,
   brandLogoSchema,
   defaultOrganizationBrand,
   isBrandLogo,
@@ -56,17 +57,32 @@ describe("organization brand", () => {
     ).toBe(false);
   });
 
-  it("requires an uploaded logo when the image mark is selected", () => {
+  it("requires at least one uploaded logo when the image mark is selected", () => {
     const input = {
       revision: 1,
       name: "Acme",
       brand: { ...defaultOrganizationBrand, mark: "image" },
+      logoDark: null,
+      logoLight: null,
     };
+    expect(organizationUpdateSchema.safeParse(input).success).toBe(false);
     expect(
-      organizationUpdateSchema.safeParse({ ...input, logo: null }).success,
-    ).toBe(false);
-    expect(
-      organizationUpdateSchema.safeParse({ ...input, logo: png }).success,
+      organizationUpdateSchema.safeParse({ ...input, logoDark: png }).success,
     ).toBe(true);
+    expect(
+      organizationUpdateSchema.safeParse({ ...input, logoLight: webp }).success,
+    ).toBe(true);
+    expect(
+      organizationUpdateSchema.safeParse({ ...input, logoLight: "image" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("uses each theme's logo and reuses the other one when a theme has none", () => {
+    expect(brandLogo({ logoDark: png, logoLight: webp }, "dark")).toBe(png);
+    expect(brandLogo({ logoDark: png, logoLight: webp }, "light")).toBe(webp);
+    expect(brandLogo({ logoDark: png, logoLight: null }, "light")).toBe(png);
+    expect(brandLogo({ logoDark: null, logoLight: webp }, "dark")).toBe(webp);
+    expect(brandLogo({ logoDark: null, logoLight: null }, "dark")).toBeNull();
   });
 });

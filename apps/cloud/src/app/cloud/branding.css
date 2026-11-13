@@ -118,14 +118,26 @@
   flex-shrink: 0;
   overflow: hidden;
   border-radius: 12px;
-  background: repeating-conic-gradient(var(--muted) 0 25%, var(--card) 0 50%) 0
-    0 / 12px 12px;
+  border: 1px solid var(--border);
   color: var(--muted-foreground);
 }
 .cloud-brand-dropzone-preview > img {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.cloud-brand-dropzone-preview[data-logo-theme="dark"] {
+  background: #141519;
+  color: #a1a1aa;
+}
+.cloud-brand-dropzone-preview[data-logo-theme="light"] {
+  background: #ffffff;
+  color: #71717a;
+}
+.cloud-brand-logos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
 }
 
 .cloud-brand-color {
@@ -526,7 +538,7 @@
   }
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1180px) {
   .cloud-brand-editor {
     grid-template-columns: minmax(0, 1fr);
   }

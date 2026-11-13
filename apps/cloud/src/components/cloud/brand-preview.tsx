@@ -11,10 +11,10 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 import { brandPalette, brandShapeRadius } from "@/lib/brand-palette";
+import type { BrandTheme } from "@/lib/organization-brand";
 import { BrandSegmented } from "./brand-controls";
 import { BrandMark, type BrandIdentity } from "./brand-mark";
 
-type PreviewTheme = "dark" | "light";
 type PreviewView = "workspace" | "sign-in";
 
 const navigation = [
@@ -25,7 +25,7 @@ const navigation = [
 ];
 
 export function BrandPreview({ identity }: { identity: BrandIdentity }) {
-  const [theme, setTheme] = useState<PreviewTheme>("dark");
+  const [theme, setTheme] = useState<BrandTheme>("dark");
   const [requestedView, setView] = useState<PreviewView>("workspace");
   useEffect(() => {
     if (document.documentElement.dataset.theme === "light") setTheme("light");
@@ -42,7 +42,9 @@ export function BrandPreview({ identity }: { identity: BrandIdentity }) {
     "--cloud-brand-radius": brandShapeRadius[identity.brand.shape],
   } as CSSProperties;
   const name = identity.name.trim() || "Organization";
-  const mark = <BrandMark identity={{ ...identity, name }} colors={colors} />;
+  const mark = (
+    <BrandMark identity={{ ...identity, name }} colors={colors} theme={theme} />
+  );
   return (
     <aside className="cloud-brand-preview" aria-labelledby="brand-preview">
       <header>

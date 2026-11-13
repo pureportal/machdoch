@@ -47,6 +47,13 @@
   height: 100%;
   object-fit: contain;
 }
+.cloud-brand-mark > img[data-logo-theme="light"],
+html[data-theme="light"] .cloud-brand-mark > img[data-logo-theme="dark"] {
+  display: none;
+}
+html[data-theme="light"] .cloud-brand-mark > img[data-logo-theme="light"] {
+  display: block;
+}
 .cloud-brand-initials {
   font-size: 44cqi;
   font-weight: 700;

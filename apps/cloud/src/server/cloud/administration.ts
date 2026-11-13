@@ -116,12 +116,13 @@ export class CloudAdministrationService {
           ).rows[0]!;
           checkRevision(current.revision, input.revision);
           await sql.query(
-            "UPDATE cloud_organizations SET name=$2,brand=$3,logo=$4,revision=revision+1 WHERE id=$1",
+            "UPDATE cloud_organizations SET name=$2,brand=$3,logo_dark=$4,logo_light=$5,revision=revision+1 WHERE id=$1",
             [
               actor.organizationId,
               input.name,
               JSON.stringify(input.brand),
-              input.logo,
+              input.logoDark,
+              input.logoLight,
             ],
           );
           await recordEvent(

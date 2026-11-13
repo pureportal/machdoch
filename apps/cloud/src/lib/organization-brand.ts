@@ -119,6 +119,19 @@ export const brandLogoSchema = z
   .max(maximumBrandLogoLength, "Choose a smaller image.")
   .refine(isBrandLogo, "Upload a PNG, JPEG, WebP or SVG image.");
 
+export type BrandTheme = "dark" | "light";
+
+export interface BrandLogos {
+  logoDark: string | null;
+  logoLight: string | null;
+}
+
+export function brandLogo(logos: BrandLogos, theme: BrandTheme): string | null {
+  return theme === "light"
+    ? (logos.logoLight ?? logos.logoDark)
+    : (logos.logoDark ?? logos.logoLight);
+}
+
 export function organizationInitials(name: string, custom = ""): string {
   if (custom) return custom.toUpperCase();
   const words = name

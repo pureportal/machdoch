@@ -6,7 +6,7 @@ import {
   brandIdentityColors,
   brandStylesheet,
 } from "@/lib/brand-palette";
-import { organizationInitials } from "@/lib/organization-brand";
+import { brandLogo, organizationInitials } from "@/lib/organization-brand";
 import { brandIconComponents, type BrandIdentity } from "./brand-mark";
 
 export function BrandStyle({
@@ -21,32 +21,41 @@ export function BrandStyle({
 
 export function BrandFavicon({ identity }: { identity: BrandIdentity }) {
   const glyph = useRef<HTMLSpanElement>(null);
-  const { brand, logo, name } = identity;
+  const { brand, logoDark, logoLight, name } = identity;
   const Icon = brandIconComponents[brand.icon];
   useEffect(() => {
-    const href =
-      brand.mark === "image" && logo
-        ? logo
-        : `data:image/svg+xml,${encodeURIComponent(
-            brandFaviconSvg({
-              colors: brandIdentityColors(brand),
-              shape: brand.shape,
-              glyph:
-                brand.mark === "initials"
-                  ? {
-                      kind: "text",
-                      text: organizationInitials(name, brand.initials),
-                    }
-                  : {
-                      kind: "icon",
-                      markup:
-                        glyph.current?.querySelector("svg")?.innerHTML ?? "",
-                    },
-            }),
-          )}`;
+    const generatedHref = () =>
+      `data:image/svg+xml,${encodeURIComponent(
+        brandFaviconSvg({
+          colors: brandIdentityColors(brand),
+          shape: brand.shape,
+          glyph:
+            brand.mark === "initials"
+              ? {
+                  kind: "text",
+                  text: organizationInitials(name, brand.initials),
+                }
+              : {
+                  kind: "icon",
+                  markup: glyph.current?.querySelector("svg")?.innerHTML ?? "",
+                },
+        }),
+      )}`;
     const link = document.createElement("link");
     link.rel = "icon";
-    link.href = href;
+    const lightScheme = window.matchMedia("(prefers-color-scheme: light)");
+    const showScheme = () => {
+      const logo =
+        brand.mark === "image"
+          ? brandLogo(
+              { logoDark, logoLight },
+              lightScheme.matches ? "light" : "dark",
+            )
+          : null;
+      link.href = logo ?? generatedHref();
+    };
+    showScheme();
+    lightScheme.addEventListener("change", showScheme);
     const keepLast = () => {
       const icons = document.head.querySelectorAll('link[rel~="icon"]');
       if (icons[icons.length - 1] !== link) document.head.append(link);
@@ -55,10 +64,11 @@ export function BrandFavicon({ identity }: { identity: BrandIdentity }) {
     const observer = new MutationObserver(keepLast);
     observer.observe(document.head, { childList: true });
     return () => {
+      lightScheme.removeEventListener("change", showScheme);
       observer.disconnect();
       link.remove();
     };
-  }, [brand, logo, name]);
+  }, [brand, logoDark, logoLight, name]);
   return (
     <span ref={glyph} hidden>
       <Icon />

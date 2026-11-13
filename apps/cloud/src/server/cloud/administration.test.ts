@@ -118,20 +118,42 @@ describe("cloud administration", () => {
       revision: 1,
       name: "Northstar",
       brand,
-      logo: null,
+      logoDark: null,
+      logoLight: null,
     });
     expect(await readSignInBrand(runtime.database)).toEqual({
       name: "Northstar",
       brand,
-      logo: null,
+      logoDark: null,
+      logoLight: null,
     });
     await runtime.administration.updateOrganization(outsider, randomUUID(), {
       revision: 1,
       name: "Other",
       brand,
-      logo: null,
+      logoDark: null,
+      logoLight: null,
     });
     expect((await readSignInBrand(runtime.database))?.name).toBe("Northstar");
+  });
+
+  it("stores separate dark and light mode logos", async () => {
+    const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]).toString("base64")}`;
+    const lightPng = `${png.slice(0, -4)}AAAO`;
+    const brand = { ...defaultOrganizationBrand, mark: "image" as const };
+    await runtime.administration.updateOrganization(owner, randomUUID(), {
+      revision: 1,
+      name: "Northstar",
+      brand,
+      logoDark: png,
+      logoLight: lightPng,
+    });
+    expect(
+      (await runtime.planning.workspace(owner)).organization,
+    ).toMatchObject({ brand, logoDark: png, logoLight: lightPng, revision: 2 });
+    expect(
+      (await runtime.administration.get(owner)).organization,
+    ).toMatchObject({ logoDark: png, logoLight: lightPng });
   });
 
   it("authorizes organization settings and rejects stale edits and cross-tenant member changes", async () => {
@@ -141,7 +163,13 @@ describe("cloud administration", () => {
       mark: "initials" as const,
       initials: "UP",
     };
-    const input = { revision: 1, name: "Updated", brand, logo: null };
+    const input = {
+      revision: 1,
+      name: "Updated",
+      brand,
+      logoDark: null,
+      logoLight: null,
+    };
     const key = randomUUID();
     await runtime.administration.updateOrganization(owner, key, input);
     await runtime.administration.updateOrganization(owner, key, input);
@@ -156,7 +184,13 @@ describe("cloud administration", () => {
     });
     expect(
       (await runtime.planning.workspace(owner)).organization,
-    ).toMatchObject({ name: "Updated", brand, logo: null, revision: 2 });
+    ).toMatchObject({
+      name: "Updated",
+      brand,
+      logoDark: null,
+      logoLight: null,
+      revision: 2,
+    });
 
     expect((await runtime.planning.workspace(outsider)).organization.name).toBe(
       "Other",
@@ -408,7 +442,8 @@ describe("cloud administration", () => {
       revision: 1,
       name: "HTTP update",
       brand: defaultOrganizationBrand,
-      logo: null,
+      logoDark: null,
+      logoLight: null,
     });
     const send = (
       headers: Record<string, string>,

@@ -17,12 +17,19 @@ export const organizationUpdateSchema = z
     revision,
     name: z.string().trim().min(1).max(120),
     brand: organizationBrandSchema,
-    logo: brandLogoSchema.nullable(),
+    logoDark: brandLogoSchema.nullable(),
+    logoLight: brandLogoSchema.nullable(),
   })
-  .refine((input) => input.brand.mark !== "image" || input.logo !== null, {
-    path: ["logo"],
-    message: "Upload an image or choose another mark.",
-  });
+  .refine(
+    (input) =>
+      input.brand.mark !== "image" ||
+      input.logoDark !== null ||
+      input.logoLight !== null,
+    {
+      path: ["logoDark"],
+      message: "Upload an image or choose another mark.",
+    },
+  );
 export const roleKeySchema = z
   .string()
   .regex(/^[a-z][a-z0-9-]{1,63}$/u, "Choose an existing role.");
@@ -77,7 +84,8 @@ export interface CloudOrganization {
   id: string;
   name: string;
   brand: OrganizationBrand;
-  logo: string | null;
+  logoDark: string | null;
+  logoLight: string | null;
   revision: number;
 }
 export interface ManagedMember extends CloudMember {
