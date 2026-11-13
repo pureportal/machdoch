@@ -4,11 +4,12 @@ import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { ArrowLeft, CalendarRange, Users } from "lucide-react";
 import { CycleOverview } from "./cycle-overview";
-import { CycleIssues } from "./cycle-issues";
+import { CycleIssueView } from "./cycle-issue-view";
+import { IssueBreakdownCard } from "./issue-breakdown-card";
 import { CycleDates } from "./cycle-dates";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { CloudWorkspace } from "@/lib/cloud-contract";
+import type { CloudIssueSummary, CloudWorkspace } from "@/lib/cloud-contract";
 import type { CycleBurnupPoint, CycleDetail } from "@/lib/cloud-cycle-contract";
 import { CycleBurnupChart } from "./cycle-burnup-chart";
 import { Field } from "@/components/field";
@@ -21,10 +22,12 @@ import { useAgentPageEntity } from "./agent/agent-shell";
 export function CyclePlanning({
   detail,
   burnup,
+  issues,
   workspace,
 }: {
   detail: CycleDetail;
   burnup: CycleBurnupPoint[];
+  issues: CloudIssueSummary[];
   workspace: CloudWorkspace;
 }) {
   const { cycle, commitment } = detail;
@@ -81,24 +84,31 @@ export function CyclePlanning({
           {workspace.teams.find((team) => team.id === cycle.teamId)?.name}
         </Link>
       </div>
-      <CycleOverview detail={detail} />
-      <CycleBurnupChart cycle={cycle} points={burnup} />
-      <CycleIssues detail={detail} />
-      {cycle.status !== "planned" && (
-        <details className="cloud-cycle-commitment">
-          <summary>Original commitment · {commitment.length} issues</summary>
-          <ul>
-            {commitment.map((issue) => (
-              <li key={issue.id}>
-                <Link href={`/cloud/issues/${issue.id}`}>
-                  {issue.identifier} · {issue.title}
-                </Link>
-                <span>{issue.estimatePoints ?? "—"} points</span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <div className="cloud-cycle-page">
+        <CycleIssueView cycle={cycle} issues={issues} workspace={workspace} />
+        <aside className="cloud-cycle-sidebar" aria-label="Cycle details">
+          <CycleOverview detail={detail} />
+          <CycleBurnupChart cycle={cycle} points={burnup} />
+          <IssueBreakdownCard issues={issues} workspace={workspace} />
+          {cycle.status !== "planned" && (
+            <details className="cloud-cycle-commitment">
+              <summary>
+                Original commitment · {commitment.length} issues
+              </summary>
+              <ul>
+                {commitment.map((issue) => (
+                  <li key={issue.id}>
+                    <Link href={`/cloud/issues/${issue.id}`}>
+                      {issue.identifier} · {issue.title}
+                    </Link>
+                    <span>{issue.estimatePoints ?? "—"} points</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </aside>
+      </div>
       <FormDialog
         open={action !== null}
         onOpenChange={(value) => {

@@ -5,7 +5,8 @@
   overflow-x: auto;
   scrollbar-width: none;
 }
-.cloud-scope-tabs a {
+.cloud-scope-tabs a,
+.cloud-scope-tabs button {
   flex-shrink: 0;
   padding: 5px 12px;
   border: 1px solid transparent;
@@ -18,11 +19,13 @@
     color 120ms ease,
     border-color 120ms ease;
 }
-.cloud-scope-tabs a:hover {
+.cloud-scope-tabs a:hover,
+.cloud-scope-tabs button:hover {
   background: var(--cloud-hover);
   color: var(--foreground);
 }
-.cloud-scope-tabs a[aria-current="page"] {
+.cloud-scope-tabs a[aria-current="page"],
+.cloud-scope-tabs button[aria-current="page"] {
   border-color: var(--border);
   background: var(--secondary);
   color: var(--foreground);

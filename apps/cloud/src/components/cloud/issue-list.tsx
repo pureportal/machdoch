@@ -30,8 +30,6 @@ import {
 import { IssueDisplayMenu } from "./issue-display-menu";
 import { filterFieldDefinitions } from "./issue-filter-fields";
 import { CreateIssue } from "./issue-form";
-import { parseIssueSort } from "@/lib/issue-scopes";
-import { groupIssues, parseGrouping } from "./issue-grouping";
 import { IssueRows } from "./issue-rows";
 import { issueNavigationKey } from "./issue-header";
 import { useAgentPageEntity } from "./agent/agent-shell";
@@ -39,6 +37,16 @@ import { SaveViewDialog } from "./save-view-dialog";
 import { useToast } from "./toast";
 import { useIssueList } from "./use-issue-list";
 import { useIssueSelection } from "./use-issue-selection";
+import { useIssueGroups } from "./use-issue-groups";
+import { useIssueDisplay } from "./use-issue-display";
+import { IssueViewBar } from "./issue-view-bar";
+import { hiddenPropertyList } from "@/lib/issue-display";
+import {
+  savedViewHref,
+  savedViewParameter,
+  viewFilters,
+  type SavedView,
+} from "@/lib/cloud-view-contract";
 
 const pageSize = 200;
 const filterParameters = [...issueFilterKeys, "teamId", "query", "archived"];
@@ -47,10 +55,12 @@ export function IssueList({
   workspace,
   issues: initial,
   labels,
+  views,
 }: {
   workspace: CloudWorkspace;
   issues: CloudIssueSummary[];
   labels: CloudLabel[];
+  views: SavedView[];
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -61,7 +71,6 @@ export function IssueList({
     search.toString(),
   );
   const writable = holderCan(workspace.actor, "issues.edit");
-  const board = search.get("view") === "board";
   const query = search.get("query") ?? "";
   const scope = parseIssueScope(search.get("scope"));
   const teamId = search.get("teamId");
@@ -88,22 +97,15 @@ export function IssueList({
       ? value
       : undefined;
   };
-  const grouping = parseGrouping(search.get("group"));
-  const sort = parseIssueSort(search.get("sort"));
-  const reversed = search.get("order") === "reverse";
-  const groups = useMemo(
-    () =>
-      groupIssues(
-        issues,
-        board && grouping === "none" ? "status" : grouping,
-        workspace,
-        teamId,
-        sort,
-        reversed,
-        board,
-      ),
-    [issues, board, grouping, workspace, teamId, sort, reversed],
+  const { options, groups } = useIssueGroups(issues, workspace, teamId, search);
+  const display = useIssueDisplay();
+  const activeView = views.find(
+    (view) => view.id === search.get(savedViewParameter),
   );
+  const currentViewFilters = {
+    ...viewFilters(search),
+    hide: hiddenPropertyList(display.hidden),
+  };
   const [searchText, setSearchText] = useState(query);
   const { selected, selectedIssues, toggle, clear } = useIssueSelection(
     issues,
@@ -163,6 +165,13 @@ export function IssueList({
   const clearable = filterParameters.some((name) => search.has(name));
   return (
     <>
+      {activeView && (
+        <IssueViewBar
+          view={activeView}
+          filters={currentViewFilters}
+          writable={writable}
+        />
+      )}
       <div className="cloud-issue-toolbar">
         <nav className="cloud-scope-tabs" aria-label="Issue views">
           {(Object.keys(issueScopes) as IssueScope[]).map((entry) => (
@@ -202,6 +211,18 @@ export function IssueList({
             layout
             archived
           />
+          {!activeView && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="cloud-filter-button"
+              aria-label="Save view"
+              title="Save view"
+              onClick={() => setSavingView(true)}
+            >
+              <Bookmark />
+            </Button>
+          )}
           <CreateIssue
             workspace={workspace}
             teamId={teamId ?? undefined}
@@ -225,17 +246,7 @@ export function IssueList({
             for (const name of filterParameters) kept.delete(name);
             navigate(kept);
           }}
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="cloud-filter-button"
-            onClick={() => setSavingView(true)}
-          >
-            <Bookmark />
-            Save view
-          </Button>
-        </IssueFilterChips>
+        />
       )}
       {!issues.length ? (
         <div className="cloud-empty">
@@ -253,13 +264,14 @@ export function IssueList({
             </Link>
           )}
         </div>
-      ) : board ? (
+      ) : options.board ? (
         <IssueBoard
           groups={groups}
           issues={issues}
           workspace={workspace}
           writable={writable}
           apply={apply}
+          density={options.density}
         />
       ) : (
         <IssueRows
@@ -269,6 +281,8 @@ export function IssueList({
           apply={apply}
           selected={selected}
           onToggle={toggle}
+          density={options.density}
+          showEmpty={options.emptyGroups}
         />
       )}
       {issues.length >= pageSize && !exhausted && (
@@ -293,8 +307,11 @@ export function IssueList({
       <SaveViewDialog
         open={savingView}
         onOpenChange={setSavingView}
-        filters={Object.fromEntries(search)}
+        filters={currentViewFilters}
         writable={writable}
+        onSaved={(id) =>
+          router.push(savedViewHref({ id, filters: currentViewFilters }))
+        }
       />
     </>
   );

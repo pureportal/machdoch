@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, FolderKanban } from "lucide-react";
 import { CreateIssue } from "./issue-form";
 import type { CloudIssueSummary, CloudWorkspace } from "@/lib/cloud-contract";
+import type { IssueDensity } from "@/lib/issue-view-options";
+import type { IssueDisplayProperty } from "@/lib/issue-display";
 import {
   AssigneeCell,
   EstimateCell,
@@ -33,16 +35,22 @@ export function IssueBoard({
   workspace,
   writable,
   apply,
+  density = "comfortable",
+  omit = [],
 }: {
   groups: IssueGroup[];
   issues: CloudIssueSummary[];
   workspace: CloudWorkspace;
   writable: boolean;
   apply: ApplyChange;
+  density?: IssueDensity;
+  omit?: IssueDisplayProperty[];
 }) {
   const [target, setTarget] = useState<string | null>(null);
   const router = useRouter();
-  const { shows } = useIssueDisplay();
+  const display = useIssueDisplay();
+  const shows = (property: IssueDisplayProperty) =>
+    display.shows(property) && !omit.includes(property);
   const teamForGroup = (group: IssueGroup) =>
     group.change?.status
       ? workspace.workflows.find((workflow) =>
@@ -63,7 +71,7 @@ export function IssueBoard({
       ? (workspace.projects.find((project) => project.id === id)?.name ?? null)
       : null;
   return (
-    <div className="cloud-board">
+    <div className="cloud-board" data-density={density}>
       {groups.map((group) => (
         <section
           key={group.id}
@@ -171,17 +179,21 @@ export function IssueBoard({
                   {issue.title}
                 </Link>
                 <div className="cloud-board-card-footer">
-                  <StatusCell
-                    issue={issue}
-                    workspace={workspace}
-                    writable={writable}
-                    apply={apply}
-                  />
-                  <PriorityCell
-                    issue={issue}
-                    writable={writable}
-                    apply={apply}
-                  />
+                  {shows("status") && (
+                    <StatusCell
+                      issue={issue}
+                      workspace={workspace}
+                      writable={writable}
+                      apply={apply}
+                    />
+                  )}
+                  {shows("priority") && (
+                    <PriorityCell
+                      issue={issue}
+                      writable={writable}
+                      apply={apply}
+                    />
+                  )}
                   {shows("estimate") && (
                     <EstimateCell
                       issue={issue}

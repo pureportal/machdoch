@@ -45,9 +45,9 @@ import {
   useIssueFilterState,
 } from "./issue-filters";
 import { CreateIssue } from "./issue-form";
-import { parseIssueSort } from "@/lib/issue-scopes";
-import { groupIssues, parseGrouping } from "./issue-grouping";
+import { IssueBoard } from "./issue-board";
 import { IssueRows } from "./issue-rows";
+import { useIssueGroups } from "./use-issue-groups";
 import { PersonAvatar } from "./person-avatar";
 import { ProjectEditor } from "./project-editor";
 import { CloudMarkdown } from "./cloud-markdown";
@@ -304,21 +304,11 @@ export function ProjectDetail({
     [],
     navigate,
   );
-  const grouping = parseGrouping(search.get("group"));
-  const sort = parseIssueSort(search.get("sort"));
-  const reversed = search.get("order") === "reverse";
-  const groups = useMemo(
-    () =>
-      groupIssues(
-        issues,
-        grouping,
-        workspace,
-        project.teamId,
-        sort,
-        reversed,
-        false,
-      ),
-    [issues, grouping, workspace, project.teamId, sort, reversed],
+  const { options, groups } = useIssueGroups(
+    issues,
+    workspace,
+    project.teamId,
+    search,
   );
   const { selected, selectedIssues, toggle, clear } = useIssueSelection(
     issues,
@@ -397,6 +387,7 @@ export function ProjectDetail({
             <IssueDisplayMenu
               search={new URLSearchParams(search)}
               setFilter={setDisplay}
+              layout
             />
           </div>
           {filters.conditions.length > 0 && (
@@ -411,7 +402,17 @@ export function ProjectDetail({
               }}
             />
           )}
-          {issues.length ? (
+          {issues.length && options.board ? (
+            <IssueBoard
+              groups={groups}
+              issues={issues}
+              workspace={workspace}
+              writable={writable}
+              apply={apply}
+              density={options.density}
+              omit={["project"]}
+            />
+          ) : issues.length ? (
             <IssueRows
               groups={groups}
               workspace={workspace}
@@ -419,7 +420,9 @@ export function ProjectDetail({
               apply={apply}
               selected={selected}
               onToggle={toggle}
-              showProject={false}
+              omit={["project"]}
+              density={options.density}
+              showEmpty={options.emptyGroups}
             />
           ) : (
             <div className="cloud-empty">

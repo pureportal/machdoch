@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  hiddenPropertyList,
   parseHiddenIssueProperties,
+  parseHiddenPropertyList,
   toggleIssueProperty,
 } from "./issue-display";
 
@@ -28,5 +30,12 @@ describe("issue display properties", () => {
       "updated",
     ]);
     expect(toggleIssueProperty(hidden, "labels")).toEqual(["updated"]);
+  });
+
+  it("round-trips the list stored in a view", () => {
+    const hidden = parseHiddenPropertyList("updated,owner,,status");
+    expect([...hidden]).toEqual(["updated", "status"]);
+    expect(hiddenPropertyList(hidden)).toBe("status,updated");
+    expect([...parseHiddenPropertyList("")]).toEqual([]);
   });
 });

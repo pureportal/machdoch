@@ -1,5 +1,7 @@
 export const issueDisplayProperties = [
   { id: "id", label: "ID" },
+  { id: "priority", label: "Priority" },
+  { id: "status", label: "Status" },
   { id: "labels", label: "Labels" },
   { id: "pullRequest", label: "Pull request" },
   { id: "project", label: "Project" },
@@ -37,6 +39,27 @@ export function parseHiddenIssueProperties(
   } catch {
     return new Set(defaultHiddenIssueProperties);
   }
+}
+
+export function parseHiddenPropertyList(
+  value: string,
+): ReadonlySet<IssueDisplayProperty> {
+  return new Set(
+    value
+      .split(",")
+      .filter((entry): entry is IssueDisplayProperty =>
+        knownProperties.has(entry),
+      ),
+  );
+}
+
+export function hiddenPropertyList(
+  hidden: ReadonlySet<IssueDisplayProperty>,
+): string {
+  return issueDisplayProperties
+    .map((entry) => entry.id)
+    .filter((id) => hidden.has(id))
+    .join(",");
 }
 
 export function toggleIssueProperty(

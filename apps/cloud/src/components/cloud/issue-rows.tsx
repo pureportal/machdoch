@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { KeyboardEvent, MouseEvent } from "react";
 import type { CloudIssueSummary, CloudWorkspace } from "@/lib/cloud-contract";
 import type { IssueDisplayProperty } from "@/lib/issue-display";
+import type { IssueDensity } from "@/lib/issue-view-options";
 import {
   AssigneeCell,
   EstimateCell,
@@ -54,7 +55,9 @@ export function IssueRows({
   apply,
   selected,
   onToggle,
-  showProject = true,
+  omit = [],
+  density = "comfortable",
+  showEmpty = false,
 }: {
   groups: IssueGroup[];
   workspace: CloudWorkspace;
@@ -62,7 +65,9 @@ export function IssueRows({
   apply: ApplyChange;
   selected: ReadonlySet<string>;
   onToggle: (id: string, range: boolean) => void;
-  showProject?: boolean;
+  omit?: IssueDisplayProperty[];
+  density?: IssueDensity;
+  showEmpty?: boolean;
 }) {
   const router = useRouter();
   const { shows } = useIssueDisplay();
@@ -112,12 +117,13 @@ export function IssueRows({
   return (
     <div
       className="cloud-issue-rows"
+      data-density={density}
       role="region"
       aria-label="Issues"
       onKeyDown={onKeyDown}
     >
       {groups
-        .filter((group) => group.issues.length)
+        .filter((group) => showEmpty || group.issues.length)
         .map((group) => (
           <section key={group.id} aria-label={group.name}>
             {group.kind !== "none" && <GroupHeading group={group} />}
@@ -133,7 +139,7 @@ export function IssueRows({
                   onToggle={onToggle}
                   onOpen={open}
                   shows={(property) =>
-                    shows(property) && (property !== "project" || showProject)
+                    shows(property) && !omit.includes(property)
                   }
                 />
               ))}
@@ -193,20 +199,24 @@ function IssueRow({
           />
         </label>
       )}
-      <span className="cloud-issue-cell-priority">
-        <PriorityCell issue={issue} writable={writable} apply={apply} />
-      </span>
+      {shows("priority") && (
+        <span className="cloud-issue-cell-priority">
+          <PriorityCell issue={issue} writable={writable} apply={apply} />
+        </span>
+      )}
       {shows("id") && (
         <span className="cloud-issue-cell-key">{issue.identifier}</span>
       )}
-      <span className="cloud-issue-cell-status">
-        <StatusCell
-          issue={issue}
-          workspace={workspace}
-          writable={writable}
-          apply={apply}
-        />
-      </span>
+      {shows("status") && (
+        <span className="cloud-issue-cell-status">
+          <StatusCell
+            issue={issue}
+            workspace={workspace}
+            writable={writable}
+            apply={apply}
+          />
+        </span>
+      )}
       <Link
         className="cloud-issue-cell-title"
         data-issue-link={issue.id}

@@ -1038,6 +1038,15 @@ async function route(
         ),
         { status: 201 },
       );
+    if (method === "PATCH" && path[0] === "views" && path.length === 2)
+      return Response.json(
+        await runtime.views.update(
+          actor,
+          key.data,
+          cloudId.parse(path[1]),
+          await readBody(request, savedViewInputSchema),
+        ),
+      );
     if (
       method === "POST" &&
       path[0] === "projects" &&

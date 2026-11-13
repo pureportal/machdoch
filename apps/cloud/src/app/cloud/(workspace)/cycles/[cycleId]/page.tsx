@@ -16,13 +16,21 @@ export default async function CyclePage({
   if (!id.success) notFound();
   const { runtime, actor } = await requireCloudPageSession();
   try {
-    const [detail, burnup, { workspace }] = await Promise.all([
+    const [detail, burnup, issues, { workspace }] = await Promise.all([
       runtime.cycles.get(actor, id.data),
       runtime.cycles.burnup(actor, id.data),
+      runtime.planning.listIssueSummaries(actor, {
+        conditions: [{ field: "cycle", negated: false, values: [id.data] }],
+      }),
       requireCloudWorkspace(),
     ]);
     return (
-      <CyclePlanning detail={detail} burnup={burnup} workspace={workspace} />
+      <CyclePlanning
+        detail={detail}
+        burnup={burnup}
+        issues={issues}
+        workspace={workspace}
+      />
     );
   } catch (error) {
     if (isCloudError(error) && error.status === 404) notFound();

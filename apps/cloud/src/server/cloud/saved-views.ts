@@ -67,6 +67,47 @@ export class CloudSavedViews {
     });
   }
 
+  update(
+    actor: CloudActor,
+    key: string,
+    id: string,
+    input: SavedViewInput,
+  ): Promise<{ id: string }> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(
+        sql,
+        actor,
+        input.shared ? "issues.edit" : undefined,
+      );
+      return command(
+        sql,
+        actor,
+        key,
+        { kind: "view.update", id, input },
+        async () => {
+          const updated = await sql.query(
+            "UPDATE cloud_saved_views SET name=$4,filters=$5,shared=$6 WHERE organization_id=$1 AND id=$2 AND user_id=$3 RETURNING id",
+            [
+              actor.organizationId,
+              id,
+              actor.userId,
+              input.name,
+              JSON.stringify(input.filters),
+              input.shared,
+            ],
+          );
+          if (!updated.rows.length)
+            throw new CloudError(
+              404,
+              "not_found",
+              "Only its owner can change this view.",
+            );
+          return { id };
+        },
+      );
+    });
+  }
+
   remove(actor: CloudActor, id: string): Promise<void> {
     return this.database.transaction(async (sql) => {
       const access = await requireMembership(sql, actor);

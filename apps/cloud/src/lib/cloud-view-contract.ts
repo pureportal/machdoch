@@ -7,12 +7,20 @@ export const viewFilterKeys = [
   "group",
   "sort",
   "order",
+  "density",
+  "completed",
+  "subIssues",
+  "empty",
+  "hide",
   "teamId",
   ...issueFilterKeys,
   "planning",
   "query",
   "archived",
 ] as const;
+export type ViewFilterKey = (typeof viewFilterKeys)[number];
+
+export const savedViewParameter = "savedView";
 
 export const savedViewInputSchema = z.strictObject({
   name: z.string().trim().min(1).max(80),
@@ -29,9 +37,29 @@ export interface SavedView {
   owned: boolean;
 }
 
-export function savedViewHref(view: Pick<SavedView, "filters">): string {
-  const query = new URLSearchParams(
-    view.filters as Record<string, string>,
-  ).toString();
-  return `/cloud/issues${query ? `?${query}` : ""}`;
+export function viewFilters(
+  search: Pick<URLSearchParams, "get">,
+): SavedViewInput["filters"] {
+  return Object.fromEntries(
+    viewFilterKeys.flatMap((key) => {
+      const value = search.get(key);
+      return value === null ? [] : [[key, value]];
+    }),
+  );
+}
+
+export function viewChanged(
+  view: Pick<SavedView, "filters">,
+  search: Pick<URLSearchParams, "get">,
+): boolean {
+  const current = viewFilters(search);
+  return viewFilterKeys.some(
+    (key) => (view.filters[key] ?? null) !== (current[key] ?? null),
+  );
+}
+
+export function savedViewHref(view: Pick<SavedView, "id" | "filters">): string {
+  const query = new URLSearchParams(view.filters as Record<string, string>);
+  query.set(savedViewParameter, view.id);
+  return `/cloud/issues?${query}`;
 }
