@@ -176,10 +176,32 @@ jobs:
           }
 
           if (existingTagCommit && existingTagCommit !== currentSha) {
-            console.error(
-              `Tag ${tagName} already exists at ${existingTagCommit}, but this workflow is building ${currentSha}. Bump the app version or remove the conflicting tag.`,
+            const workflowOnlyRetry =
+              eventName === 'workflow_dispatch' &&
+              execFileSync(
+                'git',
+                [
+                  'diff',
+                  '--name-only',
+                  existingTagCommit,
+                  currentSha,
+                  '--',
+                  '.',
+                  ':(exclude).github/workflows',
+                ],
+                { encoding: 'utf8' },
+              ).trim().length === 0;
+
+            if (!workflowOnlyRetry) {
+              console.error(
+                `Tag ${tagName} already exists at ${existingTagCommit}, but this workflow is building ${currentSha}. Bump the app version or remove the conflicting tag.`,
+              );
+              process.exit(1);
+            }
+
+            console.log(
+              `Reusing ${tagName} at ${existingTagCommit} for workflow-only changes.`,
             );
-            process.exit(1);
           }
 
           if (!existingTagCommit) {
@@ -336,9 +358,11 @@ jobs:
           cache: true
           install: false
 
-      - name: Install Rust stable
+      - name: Install Rust 1.99.1
         if: matrix.release_target == 'windows-x64'
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2

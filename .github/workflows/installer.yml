@@ -102,9 +102,11 @@ jobs:
           cache: true
           install: false
 
-      - name: Install Rust stable
+      - name: Install Rust 1.99.1
         if: matrix.release_target == 'windows-x64'
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
