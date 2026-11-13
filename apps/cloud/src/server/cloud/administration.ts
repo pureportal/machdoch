@@ -8,22 +8,33 @@ import type {
   OrganizationUpdate,
   TeamUpdate,
 } from "../../lib/cloud-administration-contract";
+import type { CloudPermission } from "../../lib/cloud-permissions";
 import {
+  accessCan,
   checkRevision,
   CloudError,
   command,
   recordEvent,
   requireMembership,
+  requireRole,
+  requireRoleGrant,
   requireTeam,
 } from "./access";
+import { readRoles } from "./roles";
+import { settingsPermissions } from "../../lib/cloud-sidebar-contract";
+import { organizationColumns } from "./branding";
 import type { CloudDatabase, CloudSql } from "./database";
 import { lockUserSessions } from "./session-issuance";
 
-export async function lockAdministration(sql: CloudSql, actor: CloudActor) {
+export async function lockAdministration(
+  sql: CloudSql,
+  actor: CloudActor,
+  permission: CloudPermission,
+) {
   await sql.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [
     `administration:${actor.organizationId}`,
   ]);
-  return requireMembership(sql, actor, "admin");
+  return requireMembership(sql, actor, permission);
 }
 
 export class CloudAdministrationService {
@@ -31,28 +42,56 @@ export class CloudAdministrationService {
 
   get(actor: CloudActor): Promise<CloudAdministration> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      const access = await requireMembership(sql, actor);
+      const manageMembers = accessCan(access, "members.manage");
+      await requireMembership(
+        sql,
+        actor,
+        settingsPermissions.find((permission) =>
+          accessCan(access, permission),
+        ) ?? "members.manage",
+      );
       const organization = (
         await sql.query<CloudOrganization & Record<string, unknown>>(
-          "SELECT id,name,accent,revision FROM cloud_organizations WHERE id=$1",
+          `SELECT ${organizationColumns} FROM cloud_organizations WHERE id=$1`,
           [actor.organizationId],
         )
       ).rows[0]!;
-      const members = (
-        await sql.query<ManagedMember & Record<string, unknown>>(
-          `SELECT u.id,u.name,u.email,m.role,m.active,m.revision,EXISTS(SELECT 1 FROM cloud_authenticators a WHERE a.user_id=u.id) AS "twoFactor" FROM cloud_memberships m JOIN cloud_users u ON u.id=m.user_id
-        WHERE m.organization_id=$1 ORDER BY m.active DESC,u.name,u.id`,
-          [actor.organizationId],
-        )
-      ).rows;
-      const invitations = (
-        await sql.query<CloudInvitation & Record<string, unknown>>(
-          `SELECT id,email,role,to_char(expires_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "expiresAt"
-        FROM cloud_invitations WHERE organization_id=$1 AND cloud_invitation_pending(cloud_invitations) ORDER BY email,id`,
-          [actor.organizationId],
-        )
-      ).rows;
-      return { organization, members, invitations };
+      const members = manageMembers
+        ? (
+            await sql.query<ManagedMember & Record<string, unknown>>(
+              `SELECT u.id,u.name,u.email,m.role,r.name AS "roleName",m.active,m.revision,EXISTS(SELECT 1 FROM cloud_authenticators a WHERE a.user_id=u.id) AS "twoFactor",
+              COALESCE((SELECT array_agg(tm.team_id ORDER BY tm.team_id) FROM cloud_team_memberships tm WHERE tm.organization_id=m.organization_id AND tm.user_id=m.user_id),'{}') AS "teamIds"
+              FROM cloud_memberships m JOIN cloud_users u ON u.id=m.user_id JOIN cloud_roles r ON r.organization_id=m.organization_id AND r.key=m.role
+              WHERE m.organization_id=$1 ORDER BY m.active DESC,u.name,u.id`,
+              [actor.organizationId],
+            )
+          ).rows
+        : [];
+      const invitations = manageMembers
+        ? (
+            await sql.query<CloudInvitation & Record<string, unknown>>(
+              `SELECT i.id,i.email,i.role,r.name AS "roleName",i.team_ids AS "teamIds",
+              to_char(i.expires_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "expiresAt"
+              FROM cloud_invitations i JOIN cloud_roles r ON r.organization_id=i.organization_id AND r.key=i.role
+              WHERE i.organization_id=$1 AND cloud_invitation_pending(i) ORDER BY i.email,i.id`,
+              [actor.organizationId],
+            )
+          ).rows
+        : [];
+      const roles =
+        manageMembers || accessCan(access, "roles.manage")
+          ? await readRoles(sql, actor.organizationId)
+          : [];
+      const teams = manageMembers
+        ? (
+            await sql.query<{ id: string; key: string; name: string }>(
+              "SELECT id,key,name FROM cloud_teams WHERE organization_id=$1 ORDER BY name,id",
+              [actor.organizationId],
+            )
+          ).rows
+        : [];
+      return { organization, members, invitations, roles, teams };
     });
   }
 
@@ -62,7 +101,7 @@ export class CloudAdministrationService {
     input: OrganizationUpdate,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await lockAdministration(sql, actor);
+      await lockAdministration(sql, actor, "settings.manage");
       return command(
         sql,
         actor,
@@ -77,8 +116,13 @@ export class CloudAdministrationService {
           ).rows[0]!;
           checkRevision(current.revision, input.revision);
           await sql.query(
-            "UPDATE cloud_organizations SET name=$2,accent=$3,revision=revision+1 WHERE id=$1",
-            [actor.organizationId, input.name, input.accent],
+            "UPDATE cloud_organizations SET name=$2,brand=$3,logo=$4,revision=revision+1 WHERE id=$1",
+            [
+              actor.organizationId,
+              input.name,
+              JSON.stringify(input.brand),
+              input.logo,
+            ],
           );
           await recordEvent(
             sql,
@@ -101,7 +145,7 @@ export class CloudAdministrationService {
     input: MemberUpdate,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      const role = await lockAdministration(sql, actor);
+      const access = await lockAdministration(sql, actor, "members.manage");
       return command(
         sql,
         actor,
@@ -121,16 +165,39 @@ export class CloudAdministrationService {
           if (!target)
             throw new CloudError(404, "not_found", "Member is unavailable.");
           checkRevision(target.revision, input.revision);
-          if (
-            role !== "owner" &&
-            (["owner", "admin"].includes(target.role) ||
-              ["owner", "admin"].includes(input.role))
-          )
-            throw new CloudError(
-              403,
-              "owner_required",
-              "Only an owner can change administrator or owner access.",
+          await requireRole(sql, actor.organizationId, input.role);
+          await requireRoleGrant(
+            sql,
+            actor.organizationId,
+            access.role,
+            target.role,
+          );
+          await requireRoleGrant(
+            sql,
+            actor.organizationId,
+            access.role,
+            input.role,
+          );
+          if (input.teamIds) {
+            const teams = await sql.query(
+              "SELECT id FROM cloud_teams WHERE organization_id=$1 AND id=ANY($2::uuid[])",
+              [actor.organizationId, input.teamIds],
             );
+            if (teams.rows.length !== input.teamIds.length)
+              throw new CloudError(
+                422,
+                "team_unavailable",
+                "Choose existing teams.",
+              );
+            await sql.query(
+              "DELETE FROM cloud_team_memberships WHERE organization_id=$1 AND user_id=$2 AND NOT team_id=ANY($3::uuid[])",
+              [actor.organizationId, userId, input.teamIds],
+            );
+            await sql.query(
+              "INSERT INTO cloud_team_memberships (organization_id,team_id,user_id) SELECT $1,unnest($3::uuid[]),$2 ON CONFLICT DO NOTHING",
+              [actor.organizationId, userId, input.teamIds],
+            );
+          }
           if (
             target.role === "owner" &&
             target.active &&
@@ -193,7 +260,11 @@ export class CloudAdministrationService {
             "member.changed",
             userId,
             input.revision + 1,
-            { role: input.role, active: input.active },
+            {
+              role: input.role,
+              active: input.active,
+              ...(input.teamIds ? { teamIds: input.teamIds } : {}),
+            },
           );
           return { id: userId };
         },
@@ -207,7 +278,7 @@ export class CloudAdministrationService {
     id: string,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      const role = await lockAdministration(sql, actor);
+      const access = await lockAdministration(sql, actor, "members.manage");
       return command(
         sql,
         actor,
@@ -230,12 +301,12 @@ export class CloudAdministrationService {
               "not_found",
               "Invitation is unavailable.",
             );
-          if (invitation.role === "admin" && role !== "owner")
-            throw new CloudError(
-              403,
-              "owner_required",
-              "Only an owner can revoke administrator invitations.",
-            );
+          await requireRoleGrant(
+            sql,
+            actor.organizationId,
+            access.role,
+            invitation.role,
+          );
           if (invitation.accepted_at)
             throw new CloudError(
               409,
@@ -256,8 +327,7 @@ export class CloudAdministrationService {
 
   teamMembers(actor: CloudActor, teamId: string): Promise<string[]> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
-      await requireTeam(sql, actor, teamId);
+      await requireTeam(sql, actor, teamId, "teams.manage");
       return (
         await sql.query<{ user_id: string }>(
           `SELECT tm.user_id FROM cloud_team_memberships tm JOIN cloud_memberships m ON m.organization_id=tm.organization_id AND m.user_id=tm.user_id
@@ -275,8 +345,8 @@ export class CloudAdministrationService {
     input: TeamUpdate,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await lockAdministration(sql, actor);
-      const team = await requireTeam(sql, actor, id, true);
+      await lockAdministration(sql, actor, "teams.manage");
+      const team = await requireTeam(sql, actor, id, "teams.manage");
       return command(
         sql,
         actor,

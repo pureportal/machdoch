@@ -1,224 +1,196 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { FolderTree, Plus, RefreshCw, Search, X } from "lucide-react";
 import { cancelFleetTasks } from "@/lib/cancel-fleet-tasks";
+import {
+  canOpenSessions,
+  type FleetSessionTarget,
+} from "@/lib/fleet-session-routing";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { versionWarning } from "@/lib/product-version";
+import { cn } from "@/lib/utils";
+import { DeviceWorkspaces } from "./device-workspaces";
+import { NewSessionDialog } from "./new-session-dialog";
 import { useFleetStatus } from "./use-fleet-status";
-import { DeviceResources } from "./device-resources";
+import { useOpenFleetSession } from "./use-open-fleet-session";
+import { overviewDevices } from "./workspace-overview";
 
 export function WorkspacesView(): React.ReactElement {
   const { status, loading, error, refresh } = useFleetStatus();
+  const openSession = useOpenFleetSession();
   const [query, setQuery] = useState("");
-  const [stopping, setStopping] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [starting, setStarting] = useState<FleetSessionTarget | null>(null);
+  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set());
   const [commandError, setCommandError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const devices = (status?.devices ?? []).filter((device) =>
-    [
-      device.displayName,
-      ...device.workspaces.map((workspace) => workspace.root),
-      ...device.sessions.map((session) => session.title),
-    ]
-      .join(" ")
-      .toLocaleLowerCase()
-      .includes(query.trim().toLocaleLowerCase()),
-  );
-  const stopTasks = async (): Promise<void> => {
-    setStopping(true);
+  const allDevices = status?.devices ?? [];
+  const launchable = allDevices.filter(canOpenSessions);
+  const devices = overviewDevices(allDevices, query);
+
+  const startSession = async (target: FleetSessionTarget): Promise<void> => {
+    setStarting(target);
     setCommandError(null);
-    const targets = (status?.devices ?? []).flatMap((device) =>
-      device.tasks
-        .filter(
-          (task) =>
-            task.cancellable &&
-            selected.has(`${device.instanceId}/${task.taskId}`),
-        )
-        .map((task) => ({ device, task })),
-    );
-    const results = await cancelFleetTasks(
-      targets.map(({ device, task }) => ({
-        instanceId: device.instanceId,
-        displayName: device.displayName,
-        taskId: task.taskId,
-      })),
-    );
-    const failed: string[] = [];
-    const remaining = new Set(selected);
-    results.forEach((result) => {
-      if (result.error === null) remaining.delete(result.key);
-      else failed.push(result.error);
+    try {
+      await openSession([target]);
+    } catch (reason) {
+      setCommandError((reason as Error).message);
+    } finally {
+      setStarting(null);
+    }
+  };
+
+  const stopTask = async (instanceId: string, taskId: string) => {
+    const device = allDevices.find((entry) => entry.instanceId === instanceId);
+    if (!device) return;
+    setStopping((current) => new Set(current).add(taskId));
+    setCommandError(null);
+    const [result] = await cancelFleetTasks([
+      { instanceId, displayName: device.displayName, taskId },
+    ]);
+    if (result?.error) setCommandError(result.error);
+    setStopping((current) => {
+      const next = new Set(current);
+      next.delete(taskId);
+      return next;
     });
-    setSelected(remaining);
-    if (failed.length) setCommandError(failed.join("\n"));
-    setStopping(false);
     await refresh();
   };
-  const selectedCount = (status?.devices ?? []).flatMap((device) =>
-    device.tasks.filter(
-      (task) =>
-        task.cancellable && selected.has(`${device.instanceId}/${task.taskId}`),
-    ),
-  ).length;
 
   return (
-    <section className="grid gap-6">
+    <section className="grid gap-5">
       <PageHeader title="Workspaces">
-        {selectedCount > 0 ? (
-          <Button
-            variant="outline"
-            disabled={stopping || loading || Boolean(error)}
-            onClick={() => void stopTasks()}
-          >
-            Stop selected ({selectedCount})
-          </Button>
-        ) : null}
         <Button
           variant="outline"
+          size="icon"
           disabled={loading}
           onClick={() => void refresh()}
+          aria-label="Refresh"
+          title="Refresh"
         >
-          <RefreshCw />
-          Refresh
+          <RefreshCw className={cn(loading && "motion-safe:animate-spin")} />
         </Button>
+        {launchable.length ? (
+          <Button onClick={() => setCreating(true)}>
+            <Plus />
+            New session
+          </Button>
+        ) : null}
       </PageHeader>
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-          {status ? " Showing the last known status." : ""}
-        </p>
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm"
+        >
+          <p className="min-w-0 flex-1 text-destructive">
+            {error}
+            {status ? " Showing the last known status." : ""}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            onClick={() => void refresh()}
+          >
+            Retry
+          </Button>
+        </div>
       ) : null}
       {commandError ? (
         <p
           role="alert"
-          className="whitespace-pre-wrap text-sm text-destructive"
+          className="whitespace-pre-wrap rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive"
         >
           {commandError}
         </p>
       ) : null}
-      <Input
-        aria-label="Search devices, workspaces, and sessions"
-        placeholder="Search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      {!status ? (
-        <p role="status">
-          {loading ? "Loading workspaces…" : "Workspaces could not be loaded."}
+      {allDevices.length ? (
+        <div className="relative max-w-md">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            type="search"
+            aria-label="Search workspaces and sessions"
+            placeholder="Search workspaces and sessions"
+            className="pl-9 pr-9"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {query ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-0 top-1/2 -translate-y-1/2"
+              aria-label="Clear search"
+              onClick={() => setQuery("")}
+            >
+              <X />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {!status && loading ? (
+        <LoadingState label="Loading workspaces…" />
+      ) : !status ? (
+        <p
+          role="status"
+          className="grid min-h-60 place-items-center rounded-xl border text-sm text-muted-foreground"
+        >
+          Workspaces could not be loaded.
         </p>
-      ) : null}
-      {status && !devices.length ? (
-        <p role="status">No matching workspaces.</p>
-      ) : null}
-      {devices.map((device) => {
-        const warning = versionWarning(
-          device.versionStatus,
-          status?.managerVersion,
-        );
-        return (
-          <Card key={device.instanceId} className="grid gap-4 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-semibold">{device.displayName}</h2>
-              {device.online ? (
-                <Button asChild size="sm" variant="outline">
-                  <a
-                    href={`/instances/${encodeURIComponent(device.instanceId)}`}
-                  >
-                    Open device
-                  </a>
-                </Button>
-              ) : (
-                <span className="text-sm text-muted-foreground">Offline</span>
-              )}
-            </div>
-            {warning ? (
-              <p className="text-sm text-destructive">{warning}</p>
-            ) : null}
-            {device.error ? (
-              <p role="status" className="text-sm text-destructive">
-                {device.error}
-              </p>
-            ) : null}
-            {device.telemetry ? (
-              <DeviceResources telemetry={device.telemetry} />
-            ) : null}
-            <ul
-              className="grid gap-2"
-              aria-label={`${device.displayName} workspaces`}
-            >
-              {device.workspaces.map((workspace) => (
-                <li
-                  key={workspace.root}
-                  className="min-w-0 text-sm [overflow-wrap:anywhere]"
-                >
-                  {workspace.root}
-                </li>
-              ))}
-            </ul>
-            <ul
-              className="divide-y"
-              aria-label={`${device.displayName} sessions`}
-            >
-              {device.sessions.map((session) => {
-                const task = device.tasks.find(
-                  (entry) => entry.taskId === session.runningTaskId,
-                );
-                const key = `${device.instanceId}/${task?.taskId}`;
-                return (
-                  <li key={session.id} className="flex items-center gap-3 py-3">
-                    {task?.cancellable ? (
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${session.title}`}
-                        checked={selected.has(key)}
-                        disabled={stopping || Boolean(error)}
-                        onChange={(event) =>
-                          setSelected((current) => {
-                            const next = new Set(current);
-                            if (event.target.checked) next.add(key);
-                            else next.delete(key);
-                            return next;
-                          })
-                        }
-                      />
-                    ) : null}
-                    <div className="min-w-0 flex-1">
-                      <a
-                        className="font-medium hover:underline"
-                        href={`/instances/${encodeURIComponent(device.instanceId)}?session=${encodeURIComponent(session.id)}`}
-                      >
-                        {session.title}
-                      </a>
-                      <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                        {session.provider} · {session.model}
-                      </p>
-                    </div>
-                    <span className="text-xs">{session.status}</span>
-                  </li>
-                );
-              })}
-            </ul>
-            {device.failures.length ? (
-              <ul
-                className="grid gap-2"
-                aria-label={`${device.displayName} errors`}
-              >
-                {device.failures.map((failure) => (
-                  <li
-                    key={failure.id}
-                    className="text-sm text-destructive [overflow-wrap:anywhere]"
-                  >
-                    {failure.message}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </Card>
-        );
-      })}
+      ) : !allDevices.length ? (
+        <div className="grid min-h-60 content-center justify-items-center gap-3 rounded-xl border text-center">
+          <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary">
+            <FolderTree className="size-5" aria-hidden="true" />
+          </span>
+          <p className="text-sm font-medium">No devices connected</p>
+          <Button asChild variant="outline" size="sm">
+            <a href="/instances">Add a device</a>
+          </Button>
+        </div>
+      ) : !devices.length ? (
+        <p
+          role="status"
+          className="rounded-xl border px-4 py-10 text-center text-sm text-muted-foreground"
+        >
+          No matching workspaces or sessions.
+        </p>
+      ) : (
+        devices.map((overview) => (
+          <DeviceWorkspaces
+            key={overview.device.instanceId}
+            overview={overview}
+            managerVersion={status.managerVersion}
+            filtered={Boolean(query.trim())}
+            startingWorkspace={
+              starting?.instanceId === overview.device.instanceId
+                ? starting.workspace
+                : null
+            }
+            startDisabled={starting !== null}
+            stoppingTasks={stopping}
+            onStartSession={(workspace) =>
+              void startSession({
+                instanceId: overview.device.instanceId,
+                workspace,
+              })
+            }
+            onStopTask={(taskId) =>
+              void stopTask(overview.device.instanceId, taskId)
+            }
+          />
+        ))
+      )}
+      <NewSessionDialog
+        open={creating}
+        onOpenChange={setCreating}
+        devices={launchable}
+        onStart={openSession}
+      />
     </section>
   );
 }

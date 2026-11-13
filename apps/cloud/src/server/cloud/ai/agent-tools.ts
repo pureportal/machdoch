@@ -30,6 +30,7 @@ import { releaseTools } from "./agent-release-tools";
 import { automationTools } from "./agent-automation-tools";
 import { attachmentTools } from "./agent-attachment-tools";
 import { clientTools } from "./agent-client-tools";
+import { gitTools } from "./agent-git-tools";
 import { agentTool, type AgentServices, type AgentTool } from "./agent-tool";
 
 export interface AgentToolResult {
@@ -169,7 +170,7 @@ const readTools: AgentTool[] = [
   agentTool({
     name: "get_issue",
     description:
-      "Read an issue with its description, acceptance criteria, labels, parent, sub-issues, dependencies, linked GitHub pull requests, attachments, its 12 newest comments, change history and AI tasks. When olderComments is true, read the rest with list_comments. Open an attachment with view_attachment.",
+      "Read an issue with its description, acceptance criteria, labels, parent, sub-issues, dependencies, linked pull requests, attachments, its 12 newest comments, change history and AI tasks. When olderComments is true, read the rest with list_comments. Open an attachment with view_attachment.",
     schema: z.strictObject({ issue: issueReference }),
     async run(session, input) {
       const { actor, services, workspace } = session;
@@ -596,6 +597,7 @@ const tools = [
   ...automationTools,
   ...attachmentTools,
   ...clientTools,
+  ...gitTools,
 ];
 
 function schemaDocument(schema: z.ZodType): Record<string, unknown> {

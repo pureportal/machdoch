@@ -4,6 +4,7 @@ import {
   childIssueInputSchema,
 } from "../../../lib/cloud-relation-contract";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { CloudPermission } from "../../../lib/cloud-permissions";
 import {
   cloudId,
   revision,
@@ -50,10 +51,14 @@ import {
 } from "../../../lib/cloud-release-contract";
 import { visualInputSchema } from "../../../lib/cloud-release-media-contract";
 import {
-  githubMergeInputSchema,
-  githubUpdateBranchInputSchema,
+  gitCommentInputSchema,
+  gitMergeInputSchema,
+  gitRetargetInputSchema,
+  gitReviewInputSchema,
+  gitUpdateBranchInputSchema,
   pullRequestListQuerySchema,
-} from "../../../lib/cloud-github-contract";
+} from "../../../lib/cloud-git-contract";
+import { automationMarker } from "../../../lib/git-events";
 import { issueFilterConditionSchema } from "../../../lib/issue-filter-model";
 import { issueIdentifierFormat } from "../../../lib/issue-links";
 import { CloudError } from "../access";
@@ -66,8 +71,59 @@ import {
 export interface CloudMcpTool {
   definition: Tool;
   scope: CloudOAuthScope;
+  permission: CloudPermission | null;
   call: (actor: CloudActor, input: unknown) => Promise<unknown>;
 }
+
+const toolPermissions: Partial<Record<string, CloudPermission>> = {
+  get_issue_pull_requests: "git.view",
+  list_pull_requests: "git.view",
+  get_pull_request: "git.view",
+  get_pull_request_files: "git.view",
+  update_pull_request_branch: "git.act",
+  merge_pull_request: "git.act",
+  comment_on_pull_request: "git.act",
+  review_pull_request: "git.act",
+  retarget_pull_request: "git.act",
+  add_issue_relation: "issues.edit",
+  remove_issue_relation: "issues.edit",
+  create_sub_issue: "issues.edit",
+  change_issues: "issues.edit",
+  create_label: "issues.edit",
+  update_label: "issues.edit",
+  set_issue_labels: "issues.edit",
+  create_issue: "issues.edit",
+  update_issue: "issues.edit",
+  decide_triage: "issues.edit",
+  create_poker: "issues.edit",
+  vote_poker: "issues.edit",
+  change_poker: "issues.edit",
+  create_project: "planning.edit",
+  update_project: "planning.edit",
+  create_initiative: "planning.edit",
+  update_initiative: "planning.edit",
+  create_project_update: "planning.edit",
+  create_cycle: "planning.edit",
+  change_cycle: "planning.edit",
+  create_comment: "comments.write",
+  update_comment: "comments.write",
+  start_run: "ai.tasks",
+  cancel_run: "ai.tasks",
+  run_automation: "automations.edit",
+  ask_agent: "ai.chat",
+  apply_agent_proposal: "ai.chat",
+  list_agent_models: "ai.chat",
+  list_products: "releases.view",
+  list_releases: "releases.view",
+  get_release: "releases.view",
+  create_release: "releases.edit",
+  update_release_post: "releases.edit",
+  change_release_post: "releases.edit",
+  launch_release: "releases.edit",
+  create_release_visual: "releases.edit",
+  write_release_content: "releases.edit",
+  list_roles: "members.manage",
+};
 export function cloudMcpTools(runtime: CloudRuntime): CloudMcpTool[] {
   const tools: CloudMcpTool[] = [];
   function add<T>(
@@ -80,6 +136,7 @@ export function cloudMcpTools(runtime: CloudRuntime): CloudMcpTool[] {
   ) {
     tools.push({
       scope,
+      permission: toolPermissions[name] ?? null,
       definition: {
         name,
         description,
@@ -139,6 +196,20 @@ export function cloudMcpTools(runtime: CloudRuntime): CloudMcpTool[] {
     }),
     (a, i) =>
       runtime.relations.createChild(a, i.commandId, i.parentId, i.child),
+  );
+  add(
+    "get_my_access",
+    "Read your role, whether you see the whole organization or only assigned teams, your permissions and the teams you can see. Tools you lack permission for are not listed.",
+    "cloud:read",
+    empty,
+    (a) => runtime.roles.mine(a),
+  );
+  add(
+    "list_roles",
+    "List the organization's roles with their permissions, scope and member counts.",
+    "cloud:read",
+    empty,
+    (a) => runtime.roles.list(a),
   );
   add(
     "get_workspace",
@@ -205,49 +276,85 @@ export function cloudMcpTools(runtime: CloudRuntime): CloudMcpTool[] {
   );
   add(
     "get_issue_pull_requests",
-    "List the GitHub pull requests linked to an issue by branch name, title or closing words.",
+    "List the GitHub pull requests and GitLab merge requests linked to an issue by branch name, title or closing words.",
     "cloud:read",
     id,
-    (a, i) => runtime.github.pullRequests.forIssue(a, i.id),
+    (a, i) => runtime.git.pullRequests.forIssue(a, i.id),
   );
   add(
     "list_pull_requests",
-    "List open and recently closed pull requests linked to accessible issues, optionally for one stage: attention (conflicts, failing checks or requested changes), ready, review, draft, merged or closed.",
+    "List open and recently closed pull requests and merge requests of connected repositories, with their stack (the pull request each one is based on and the ones based on it), optionally for one stage: attention (conflicts, failing checks or requested changes), ready, review, draft, merged or closed.",
     "cloud:read",
     pullRequestListQuerySchema,
-    (a, i) => runtime.github.pullRequests.list(a, i.stage),
+    (a, i) => runtime.git.pullRequests.list(a, i.stage),
   );
   add(
     "get_pull_request",
-    "Read a linked pull request from GitHub with its mergeability, check runs, reviews, code review comments and linked issues.",
+    "Read a pull request or merge request with its mergeability, check runs, reviews, code review comments, stack and linked issues.",
     "cloud:read",
     id,
-    (a, i) => runtime.github.pullRequests.details(a, i.id),
+    (a, i) => runtime.git.pullRequests.details(a, i.id),
   );
   add(
     "get_pull_request_files",
-    "Read the changed files of a linked pull request with their patches.",
+    "Read the changed files of a pull request with their patches.",
     "cloud:read",
     id,
-    (a, i) => runtime.github.pullRequests.files(a, i.id),
+    (a, i) => runtime.git.pullRequests.files(a, i.id),
   );
   add(
     "update_pull_request_branch",
-    "Merge the base branch into an open linked pull request on GitHub. Pass headSha from get_pull_request.",
+    "Bring an open pull request up to date with its base branch (GitLab rebases it). Pass headSha from get_pull_request. Acts with your connected account when you have one.",
     "cloud:write",
-    githubUpdateBranchInputSchema.safeExtend({ id: cloudId }),
+    gitUpdateBranchInputSchema.safeExtend({ id: cloudId }),
     async (a, i) => {
-      await runtime.github.pullRequests.updateBranch(a, i.id, i.headSha);
+      await runtime.git.pullRequests.updateBranch(a, i.id, i.headSha);
       return { ok: true };
     },
   );
   add(
     "merge_pull_request",
-    "Merge an open linked pull request on GitHub. Pass headSha from get_pull_request so newer commits are never merged unseen.",
+    "Merge an open pull request. Pass headSha from get_pull_request so newer commits are never merged unseen. Acts with your connected account when you have one.",
     "cloud:write",
-    githubMergeInputSchema.safeExtend({ id: cloudId }),
+    gitMergeInputSchema.safeExtend({ id: cloudId }),
     (a, { id: pullRequestId, ...input }) =>
-      runtime.github.pullRequests.merge(a, pullRequestId, input),
+      runtime.git.pullRequests.merge(a, pullRequestId, input),
+  );
+  add(
+    "comment_on_pull_request",
+    "Post a comment on an open pull request. Acts with your connected account when you have one.",
+    "cloud:write",
+    gitCommentInputSchema.safeExtend({ id: cloudId }),
+    (a, i) =>
+      runtime.git.pullRequests.comment(
+        a,
+        i.id,
+        `${i.body}
+
+${automationMarker}`,
+      ),
+  );
+  add(
+    "review_pull_request",
+    "Submit a review on an open pull request: approve, request_changes or comment. A message is required unless approving.",
+    "cloud:write",
+    gitReviewInputSchema.safeExtend({ id: cloudId }),
+    (a, { id: pullRequestId, ...input }) =>
+      runtime.git.pullRequests.review(a, pullRequestId, {
+        decision: input.decision,
+        body: input.body
+          ? `${input.body}
+
+${automationMarker}`
+          : "",
+      }),
+  );
+  add(
+    "retarget_pull_request",
+    "Change the base branch of an open pull request, for example onto the base of a merged pull request it was stacked on (see stack.retargetTo).",
+    "cloud:write",
+    gitRetargetInputSchema.safeExtend({ id: cloudId }),
+    (a, i) => runtime.git.pullRequests.retarget(a, i.id, i.baseRef),
   );
   add(
     "find_issue",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { CloudPullRequest } from "@/lib/cloud-github-contract";
+import type { CloudPullRequest } from "@/lib/cloud-git-contract";
 import { cloudRequest } from "./api-client";
 import { PullRequestDialog } from "./pull-request-dialog";
 import {

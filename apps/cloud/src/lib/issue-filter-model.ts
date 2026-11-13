@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { cloudId, issuePriorities } from "./cloud-contract";
-import { pullRequestStages } from "./github-automation";
+import { pullRequestStages } from "./git-automation";
 
 export const issueFilterFields = [
   "status",

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { cloudId, revision } from "./cloud-contract";
+import { cloudId, hexColor, revision } from "./cloud-contract";
 
 export const socialNetworks = ["linkedin", "reddit"] as const;
 export type SocialNetwork = (typeof socialNetworks)[number];
@@ -23,9 +23,6 @@ export type ChannelMediaFormat = (typeof channelMediaFormats)[number];
 export const emojiPolicies = ["none", "light", "rich"] as const;
 export const redditPostTypes = ["text", "link", "image"] as const;
 
-const hexColor = z
-  .string()
-  .regex(/^#[0-9a-fA-F]{6}$/, "Use a hex color such as #6356cf.");
 const httpsUrl = z.url({ protocol: /^https$/ }).max(2_000);
 const hashtag = z
   .string()

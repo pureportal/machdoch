@@ -143,7 +143,12 @@ export class CloudSchedules {
     const { nextAt, definitionKey } = await this.validate(actor, input);
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      const team = await requireTeam(sql, actor, input.teamId, true);
+      const team = await requireTeam(
+        sql,
+        actor,
+        input.teamId,
+        "automations.edit",
+      );
       return command(
         sql,
         actor,
@@ -242,7 +247,12 @@ export class CloudSchedules {
               "schedule_budget",
               `The limits must cover the ${schedule.admittedRuns} tasks and ${schedule.usedTokens + schedule.reservedTokens} tokens already allocated.`,
             );
-          const team = await requireTeam(sql, actor, schedule.teamId, true);
+          const team = await requireTeam(
+            sql,
+            actor,
+            schedule.teamId,
+            "automations.edit",
+          );
           const { providerRevision, action } = await validateScheduleAction(
             sql,
             actor,
@@ -285,7 +295,7 @@ export class CloudSchedules {
       const schedule = await readSchedule(sql, actor, id, true);
       if (input.enabled || schedule.ownerId === actor.userId)
         requireOwner(schedule, actor);
-      else await requireMembership(sql, actor, "admin");
+      else await requireMembership(sql, actor, "teams.manage");
       return command(
         sql,
         actor,
@@ -316,7 +326,12 @@ export class CloudSchedules {
                 "The schedule worker is unavailable. Try again shortly.",
               );
             checkRevision(schedule.revision, snapshot.revision);
-            const team = await requireTeam(sql, actor, schedule.teamId, true);
+            const team = await requireTeam(
+              sql,
+              actor,
+              schedule.teamId,
+              "automations.edit",
+            );
             const grant = await validateScheduleAction(
               sql,
               actor,
@@ -383,7 +398,7 @@ export class CloudSchedules {
       await lockExecution(sql, actor.organizationId);
       const schedule = await readSchedule(sql, actor, id, true);
       if (schedule.ownerId === actor.userId) requireOwner(schedule, actor);
-      else await requireMembership(sql, actor, "admin");
+      else await requireMembership(sql, actor, "teams.manage");
       return command(
         sql,
         actor,

@@ -38,7 +38,7 @@ export class CloudWorkflows {
   ): Promise<WorkflowImpact> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "teams.manage");
       const team = await requireTeam(sql, actor, teamId);
       const current = (
         await readTeamWorkflows(sql, actor.organizationId, [team.id])
@@ -61,8 +61,8 @@ export class CloudWorkflows {
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "admin");
-      const team = await requireTeam(sql, actor, teamId, true);
+      await requireMembership(sql, actor, "teams.manage");
+      const team = await requireTeam(sql, actor, teamId, "teams.manage");
       const current = (
         await readTeamWorkflows(sql, actor.organizationId, [team.id])
       )[0]!;

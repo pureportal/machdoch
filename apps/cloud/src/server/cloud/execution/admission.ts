@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import type {
+  PullRequestRunSubject,
   RunInput,
   RunManifest,
 } from "@machdoch/fleet-protocol/cloud-execution";
+import { readVisiblePullRequest } from "../git/pull-requests";
+import { sameRepository } from "../git/repository-access";
 import { checkRevision, CloudError, command } from "../access";
 import type { CloudSql } from "../database";
 import { readIssue } from "../planning";
@@ -16,7 +19,7 @@ export async function admitRun(
   sql: CloudSql,
   actor: CloudActor,
   key: string,
-  input: RunInput,
+  input: RunInput | { profileId: string; subject: PullRequestRunSubject },
   automated?: {
     grant: NonNullable<RunManifest["automation"]>;
     tokenLimit: number;
@@ -39,12 +42,13 @@ export async function admitRun(
       "schedule_budget",
       "The task token allowance is exhausted.",
     );
-  const profile = automated
+  const limitedProfile = automated
     ? {
         ...configuredProfile,
         maxTokens: Math.min(configuredProfile.maxTokens, automated.tokenLimit),
       }
     : configuredProfile;
+  let profile = limitedProfile;
   const automation = automated?.grant;
   let title: string;
   let objective: string;
@@ -61,6 +65,41 @@ export async function admitRun(
     objective = `${issue.title}\n\n${issue.description}`.trim();
     acceptanceCriteria =
       issue.acceptanceCriteria.trim() || "The issue is resolved as described.";
+  } else if (input.subject.kind === "pull_request") {
+    const pullRequest = await readVisiblePullRequest(
+      sql,
+      actor,
+      input.subject.id,
+    );
+    if (
+      !pullRequest.repositoryUrl ||
+      !sameRepository(pullRequest.repositoryUrl, profile.repository)
+    )
+      throw new CloudError(
+        422,
+        "repository_mismatch",
+        "Choose an execution profile for this pull request's repository.",
+      );
+    if (pullRequest.state !== "open")
+      throw new CloudError(409, "git_closed", "This pull request is closed.");
+    if (pullRequest.headSha !== input.subject.headSha)
+      throw new CloudError(
+        409,
+        "git_head_changed",
+        "The pull request has new commits. Start the task again.",
+      );
+    title =
+      `${pullRequest.repository}#${pullRequest.number} ${pullRequest.title}`.slice(
+        0,
+        300,
+      );
+    objective = [
+      input.subject.objective,
+      `Pull request: ${pullRequest.url}`,
+      `Branch: ${pullRequest.headRef} into ${pullRequest.baseRef}, checked out at ${pullRequest.headSha}.`,
+    ].join("\n\n");
+    acceptanceCriteria = input.subject.acceptanceCriteria;
+    profile = { ...limitedProfile, baseCommit: pullRequest.headSha };
   } else {
     if (input.subject.id !== profile.projectId)
       throw new CloudError(
@@ -116,7 +155,7 @@ export async function admitRun(
             "run_active",
             "This issue already has an active task. Open it to continue or cancel it.",
           );
-      } else {
+      } else if (input.subject.kind === "project") {
         const project = (
           await sql.query<{ revision: number }>(
             "SELECT revision FROM cloud_projects WHERE organization_id=$1 AND id=$2",

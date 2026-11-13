@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -59,7 +60,7 @@ export function IssueList({
     workspace,
     search.toString(),
   );
-  const writable = workspace.actor.role !== "viewer";
+  const writable = holderCan(workspace.actor, "issues.edit");
   const board = search.get("view") === "board";
   const query = search.get("query") ?? "";
   const scope = parseIssueScope(search.get("scope"));

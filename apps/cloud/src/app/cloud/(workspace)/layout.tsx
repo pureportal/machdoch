@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import { CloudShell } from "@/components/cloud/cloud-shell";
 import { requireCloudWorkspace } from "@/server/cloud/page-auth";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await requireCloudWorkspace()).workspace.organization.name };
+}
+
 export default async function WorkspaceLayout({
   children,
 }: {

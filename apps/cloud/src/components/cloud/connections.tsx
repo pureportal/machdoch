@@ -11,6 +11,7 @@ import {
   type CloudConnectedApp,
 } from "@/lib/cloud-oauth-contract";
 import { cloudRequest } from "./api-client";
+import { Timestamp } from "./timestamp";
 
 export function CloudConnections({
   connections,
@@ -62,10 +63,7 @@ export function CloudConnections({
                 ))}
               </ul>
               <p>
-                Connected{" "}
-                <time dateTime={connection.createdAt}>
-                  {new Date(connection.createdAt).toLocaleString()}
-                </time>
+                Connected <Timestamp value={connection.createdAt} />
               </p>
             </div>
             <Button

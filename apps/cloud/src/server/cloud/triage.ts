@@ -130,7 +130,7 @@ export class CloudTriage {
   ): Promise<TriageResult> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      const issue = await readIssue(sql, actor, issueId, true);
+      const issue = await readIssue(sql, actor, issueId, "issues.edit");
       const original =
         input.decision === "duplicate"
           ? await readIssue(sql, actor, input.duplicateOfId)

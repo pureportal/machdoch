@@ -17,6 +17,7 @@ import {
 import type { CloudDatabase } from "../database";
 import { fenceRun, lockExecution, readProfile, readRun } from "./records";
 import { readInferenceProvider } from "../ai/budgets";
+import { requireFetchableRepository } from "../git/repository-access";
 
 export class CloudExecutionProfiles {
   constructor(private readonly database: CloudDatabase) {}
@@ -57,7 +58,7 @@ export class CloudExecutionProfiles {
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "ai.manage");
       const project = (
         await sql.query<{ team_id: string }>(
           "SELECT team_id FROM cloud_projects WHERE organization_id=$1 AND id=$2",
@@ -73,6 +74,11 @@ export class CloudExecutionProfiles {
         key,
         { kind: "execution_profile.create", input },
         async () => {
+          await requireFetchableRepository(
+            sql,
+            actor.organizationId,
+            input.repository,
+          );
           if (input.target !== "client") {
             const provider = await readInferenceProvider(
               sql,
@@ -113,7 +119,7 @@ export class CloudExecutionProfiles {
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "ai.manage");
       const profile = await readProfile(sql, actor, id);
       return command(
         sql,
@@ -122,6 +128,11 @@ export class CloudExecutionProfiles {
         { kind: "execution_profile.update", id, input },
         async () => {
           checkRevision(profile.revision, input.revision);
+          await requireFetchableRepository(
+            sql,
+            actor.organizationId,
+            input.repository,
+          );
           if (input.target !== "client") {
             const provider = await readInferenceProvider(
               sql,

@@ -38,7 +38,7 @@ export async function readChat(
   id: string,
   write = false,
 ): Promise<CloudChat> {
-  await requireMembership(sql, actor, write ? "write" : "read");
+  await requireMembership(sql, actor, write ? "ai.chat" : undefined);
   const chat = (
     await sql.query<CloudChat & Record<string, unknown>>(
       `SELECT ${chatColumns}

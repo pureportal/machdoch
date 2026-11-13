@@ -83,7 +83,9 @@ export function SidebarLink({
       href={item.href}
       onClick={onNavigate}
       aria-current={
-        isNavigationActive(item.href, pathname, new URLSearchParams(search))
+        (item.paths ?? [item.href]).some((href) =>
+          isNavigationActive(href, pathname, new URLSearchParams(search)),
+        )
           ? "page"
           : undefined
       }

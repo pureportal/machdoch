@@ -312,7 +312,7 @@ export class CloudChatStore {
   ): Promise<ChatSubmission> {
     return this.database.transaction(async (sql) => {
       await lockInference(sql, actor.organizationId);
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "ai.chat");
       const chat = input.chatId
         ? await readChat(sql, actor, input.chatId, true)
         : null;
@@ -356,7 +356,7 @@ export class CloudChatStore {
   ): Promise<ChatSubmission> {
     return this.database.transaction(async (sql) => {
       await lockInference(sql, actor.organizationId);
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "ai.chat");
       return command(
         sql,
         actor,
@@ -562,7 +562,7 @@ export class CloudChatStore {
     actionId: string,
   ): Promise<AgentAction> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "ai.chat");
       const turn = await readTurn(sql, actor, turnId);
       const action = turn.actions.find((entry) => entry.id === actionId);
       if (!action)
@@ -578,7 +578,7 @@ export class CloudChatStore {
     change: Pick<AgentAction, "state" | "error" | "result">,
   ): Promise<AgentAction> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "ai.chat");
       const turn = await readTurn(sql, actor, turnId, true);
       const action = turn.actions.find((entry) => entry.id === actionId);
       if (!action)
@@ -620,7 +620,7 @@ export class CloudChatStore {
   budget(actor: CloudActor, providerId: string): Promise<ProviderBudget> {
     return this.database.transaction(async (sql) => {
       await lockInference(sql, actor.organizationId);
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "ai.manage");
       await reapInference(sql, actor.organizationId);
       return readProviderBudget(
         sql,

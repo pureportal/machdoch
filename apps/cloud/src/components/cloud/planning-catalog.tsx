@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -45,10 +46,10 @@ export function PlanningCatalog({
     projects: { title: "Projects", single: "project", icon: FolderKanban },
     cycles: { title: "Cycles", single: "cycle", icon: CalendarRange },
   }[kind];
-  const writable = workspace.actor.role !== "viewer";
+  const writable = holderCan(workspace.actor, "planning.edit");
   const canCreate =
     writable &&
-    (kind !== "teams" || ["owner", "admin"].includes(workspace.actor.role));
+    (kind !== "teams" || holderCan(workspace.actor, "teams.manage"));
   const term = query.trim().toLowerCase();
   const statuses = kind === "projects" ? projectTabs[tab].statuses : null;
   const items = workspace[kind].filter(

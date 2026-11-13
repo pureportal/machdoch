@@ -17,6 +17,17 @@ export async function runPlanningChanged(
     ).rows[0];
     return project?.revision !== subject.revision;
   }
+  if (subject.kind === "pull_request") {
+    const pullRequest = (
+      await sql.query<{ state: string; head_sha: string }>(
+        "SELECT state,head_sha FROM cloud_git_pull_requests WHERE organization_id=$1 AND id=$2",
+        [organizationId, subject.id],
+      )
+    ).rows[0];
+    return (
+      pullRequest?.state !== "open" || pullRequest.head_sha !== subject.headSha
+    );
+  }
   const issue = (
     await sql.query<{ revision: number; archived: boolean; state: string }>(
       "SELECT revision,archived,state FROM cloud_issues WHERE organization_id=$1 AND id=$2",

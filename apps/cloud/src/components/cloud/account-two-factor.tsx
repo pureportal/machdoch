@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -126,7 +127,7 @@ export function AccountTwoFactor({ status }: { status: TwoFactorStatus }) {
             {setupError}
           </p>
         ) : (
-          <p role="status">Loading…</p>
+          <LoadingState label="Loading…" compact />
         )}
         <TwoFactorCodeField id="newCode" label="Code from new app" />
         <TwoFactorCodeField

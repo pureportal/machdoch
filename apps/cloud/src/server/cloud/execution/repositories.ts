@@ -1,10 +1,12 @@
 import {
-  githubRepositorySchema,
+  gitRepositoryUrlSchema,
   maximumRepositoryTransferBytes,
 } from "@machdoch/fleet-protocol/cloud-repository";
 import type { WorkerRepositoryRequest } from "../../../lib/cloud-repository-contract";
 import { CloudError } from "../access";
 import type { CloudDatabase } from "../database";
+import type { SettingsCipher } from "../../settings-crypto";
+import { repositoryAuthorization } from "../git/repository-access";
 import { mayExecute, readAttempt } from "./attempts";
 import { requireWorker } from "./workers";
 
@@ -14,13 +16,18 @@ export class CloudRepositories {
   private activeTransfers = 0;
   constructor(
     private readonly database: CloudDatabase,
+    private readonly cipher: SettingsCipher | null,
     private readonly transport: typeof fetch = fetch,
   ) {}
 
   private reserve(
     token: string,
     input: WorkerRepositoryRequest,
-  ): Promise<{ organizationId: string; repository: string }> {
+  ): Promise<{
+    organizationId: string;
+    repository: string;
+    authorization: string | null;
+  }> {
     return this.database.transaction(async (sql) => {
       const worker = await requireWorker(sql, token);
       const { run, attempt } = await readAttempt(sql, worker, input);
@@ -85,9 +92,18 @@ export class CloudRepositories {
           maximumRepositoryTransferBytes,
         ],
       );
+      const repository = run.manifest.profile.repository;
       return {
         organizationId: worker.organizationId,
-        repository: run.manifest.profile.repository,
+        repository,
+        authorization: gitRepositoryUrlSchema.safeParse(repository).success
+          ? await repositoryAuthorization(
+              sql,
+              this.cipher,
+              worker.organizationId,
+              repository,
+            )
+          : null,
       };
     });
   }
@@ -104,18 +120,24 @@ export class CloudRepositories {
         "Repository transfers are at capacity. Try again shortly.",
       );
     this.activeTransfers++;
-    let reservation: { organizationId: string; repository: string } | undefined;
+    let reservation:
+      | {
+          organizationId: string;
+          repository: string;
+          authorization: string | null;
+        }
+      | undefined;
     let received = 0;
     let complete = false;
     const abort = AbortSignal.any([signal, AbortSignal.timeout(45000)]);
     try {
       reservation = await this.reserve(token, input);
-      const parsed = githubRepositorySchema.safeParse(reservation.repository);
+      const parsed = gitRepositoryUrlSchema.safeParse(reservation.repository);
       if (!parsed.success)
         throw new CloudError(
           422,
           "repository_invalid",
-          "Choose a valid GitHub repository URL.",
+          "Choose a valid repository URL.",
         );
       const repository = parsed.data.replace(/\.git$/, "") + ".git";
       const organizationId = reservation.organizationId;
@@ -134,6 +156,9 @@ export class CloudRepositories {
           signal: abort,
           headers: {
             "Git-Protocol": "version=2",
+            ...(reservation.authorization
+              ? { Authorization: reservation.authorization }
+              : {}),
             Accept: contentType,
             ...(input.encoding ? { "Content-Encoding": input.encoding } : {}),
             ...(advertise

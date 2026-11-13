@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { AgentPage } from "@/components/cloud/agent/agent-page";
 import { cloudId } from "@/lib/cloud-contract";
+import { holderCan } from "@/lib/cloud-permissions";
 import { isCloudError } from "@/server/cloud/access";
 import { requireCloudWorkspace } from "@/server/cloud/page-auth";
 
@@ -12,6 +13,7 @@ export default async function AgentConversationPage({
   const id = cloudId.safeParse((await params).chatId);
   if (!id.success) notFound();
   const { runtime, actor, workspace } = await requireCloudWorkspace();
+  if (!holderCan(workspace.actor, "ai.chat")) notFound();
   let initial;
   try {
     initial = await runtime.chat.store.get(actor, id.data);

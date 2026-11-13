@@ -1,20 +1,26 @@
 "use client";
 
 import { EmailSettings } from "./email-settings";
-import { GitHubSettings } from "./github-settings";
+import { GitSettings } from "./git-settings";
 import { MimoriiSettings } from "./mimorii-settings";
 import { SsoSettings } from "./sso-settings";
 import { InvitationEditor } from "./invitation-editor";
+import { OrganizationBranding } from "./organization-branding";
+import { RoleSettings } from "./role-settings";
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  brandAccents,
   type CloudAdministration,
   type ManagedMember,
   type SettingsTab,
 } from "@/lib/cloud-administration-contract";
-import { cloudRoles, type CloudMember } from "@/lib/cloud-contract";
+import type { CloudActorMember } from "@/lib/cloud-contract";
+import {
+  canGrantRole,
+  holderCan,
+  type CloudPermission,
+} from "@/lib/cloud-permissions";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
@@ -31,20 +37,33 @@ export function CloudSettings({
   tab,
 }: {
   data: CloudAdministration;
-  actor: CloudMember;
+  actor: CloudActorMember;
   tab: SettingsTab;
 }) {
+  const can = (...permissions: CloudPermission[]) =>
+    permissions.some((permission) => holderCan(actor, permission));
+  const tabs = (
+    [
+      ["organization", "Organization", can("settings.manage")],
+      ["members", "Members", can("members.manage")],
+      ["roles", "Roles", can("roles.manage", "members.manage")],
+      ["authentication", "Authentication", can("settings.manage")],
+      ["email", "Email", can("settings.manage")],
+      ["git", "Git", can("git.manage")],
+      ["mimorii", "Mimorii", can("settings.manage")],
+    ] satisfies [SettingsTab, string, boolean][]
+  ).filter(([, , visible]) => visible);
+  const grantableRoles = data.roles.filter((role) => canGrantRole(actor, role));
   const router = useRouter();
   const toast = useToast();
   const sender = useRef(createCommandSender());
-  const [editingBrand, setEditingBrand] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [member, setMember] = useState<ManagedMember | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [resetting, setResetting] = useState<ManagedMember | null>(null);
   const [invitationUrl, setInvitationUrl] = useState("");
   const editable = (person: ManagedMember) =>
-    actor.role === "owner" || !["owner", "admin"].includes(person.role);
+    grantableRoles.some((role) => role.key === person.role);
   function resetSender() {
     sender.current = createCommandSender();
   }
@@ -53,43 +72,20 @@ export function CloudSettings({
       <header className="cloud-page-header">
         <h1>Settings</h1>
       </header>
-      <Tabs defaultValue={tab}>
+      <Tabs
+        defaultValue={
+          tabs.some(([value]) => value === tab) ? tab : tabs[0]?.[0]
+        }
+      >
         <TabsList aria-label="Organization settings">
-          <TabsTrigger value="organization">Organization</TabsTrigger>
-          <TabsTrigger value="members">Members</TabsTrigger>
-          <TabsTrigger value="authentication">Authentication</TabsTrigger>
-          <TabsTrigger value="email">Email</TabsTrigger>
-          <TabsTrigger value="github">GitHub</TabsTrigger>
-          <TabsTrigger value="mimorii">Mimorii</TabsTrigger>
+          {tabs.map(([value, label]) => (
+            <TabsTrigger key={value} value={value}>
+              {label}
+            </TabsTrigger>
+          ))}
         </TabsList>
         <TabsContent value="organization" className="cloud-settings">
-          <section
-            className="cloud-settings-section"
-            aria-labelledby="organization-heading"
-          >
-            <header>
-              <h2 id="organization-heading">Organization</h2>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  resetSender();
-                  setEditingBrand(true);
-                }}
-              >
-                Edit organization
-              </Button>
-            </header>
-            <dl className="cloud-properties">
-              <div>
-                <dt>Name</dt>
-                <dd>{data.organization.name}</dd>
-              </div>
-              <div>
-                <dt>Accent</dt>
-                <dd className="capitalize">{data.organization.accent}</dd>
-              </div>
-            </dl>
-          </section>
+          <OrganizationBranding organization={data.organization} />
         </TabsContent>
         <TabsContent value="members" className="cloud-settings">
           <section
@@ -115,9 +111,7 @@ export function CloudSettings({
                     <strong>{person.name}</strong>
                     <span>{person.email}</span>
                   </div>
-                  <span className="capitalize">
-                    {person.active ? person.role : "Suspended"}
-                  </span>
+                  <span>{person.active ? person.roleName : "Suspended"}</span>
                   {editable(person) &&
                     person.twoFactor &&
                     person.id !== actor.id && (
@@ -180,9 +174,10 @@ export function CloudSettings({
                           .slice(0, 10)}
                       </span>
                     </div>
-                    <span className="capitalize">{invitation.role}</span>
-                    {(actor.role === "owner" ||
-                      invitation.role !== "admin") && (
+                    <span>{invitation.roleName}</span>
+                    {grantableRoles.some(
+                      (role) => role.key === invitation.role,
+                    ) && (
                       <Button
                         variant="outline"
                         aria-label={`Revoke invitation for ${invitation.email}`}
@@ -200,64 +195,31 @@ export function CloudSettings({
             </section>
           )}
         </TabsContent>
+        <TabsContent value="roles" className="cloud-settings">
+          <RoleSettings roles={data.roles} actor={actor} />
+        </TabsContent>
         <TabsContent value="authentication" className="cloud-settings">
-          <SsoSettings members={data.members} owner={actor.role === "owner"} />
+          <SsoSettings
+            members={data.members}
+            owner={actor.owner}
+            grantableRoles={grantableRoles}
+          />
         </TabsContent>
         <TabsContent value="email" className="cloud-settings">
-          <EmailSettings owner={actor.role === "owner"} />
+          <EmailSettings owner={actor.owner} />
         </TabsContent>
-        <TabsContent value="github" className="cloud-settings">
-          <GitHubSettings />
+        <TabsContent value="git" className="cloud-settings">
+          <GitSettings />
         </TabsContent>
         <TabsContent value="mimorii" className="cloud-settings">
           <MimoriiSettings />
         </TabsContent>
       </Tabs>
-      <FormDialog
-        open={editingBrand}
-        onOpenChange={setEditingBrand}
-        title="Organization"
-        submitLabel="Save organization"
-        onSubmit={async (form) => {
-          await sender.current(
-            "organization",
-            {
-              revision: data.organization.revision,
-              name: formText(form, "name"),
-              accent: formText(form, "accent"),
-            },
-            "PATCH",
-          );
-          router.refresh();
-        }}
-      >
-        <Field label="Name" htmlFor="organization-name">
-          <Input
-            id="organization-name"
-            name="name"
-            required
-            maxLength={120}
-            defaultValue={data.organization.name}
-          />
-        </Field>
-        <Field label="Accent" htmlFor="organization-accent">
-          <Select
-            id="organization-accent"
-            name="accent"
-            defaultValue={data.organization.accent}
-          >
-            {brandAccents.map((accent) => (
-              <option key={accent} value={accent}>
-                {accent[0]!.toUpperCase() + accent.slice(1)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      </FormDialog>
       {inviting && (
         <InvitationEditor
           organizationId={data.organization.id}
-          owner={actor.role === "owner"}
+          roles={grantableRoles}
+          teams={data.teams}
           onClose={() => setInviting(false)}
           onCreated={(url) => {
             setInvitationUrl(url);
@@ -280,6 +242,7 @@ export function CloudSettings({
               revision: member.revision,
               role: formText(form, "role"),
               active: formText(form, "access") === "active",
+              teamIds: form.getAll("teamIds").map(String),
             },
             "PATCH",
           );
@@ -289,18 +252,29 @@ export function CloudSettings({
       >
         <Field label="Role" htmlFor="member-role">
           <Select id="member-role" name="role" defaultValue={member?.role}>
-            {cloudRoles
-              .filter(
-                (role) =>
-                  actor.role === "owner" || !["owner", "admin"].includes(role),
-              )
-              .map((role) => (
-                <option key={role} value={role}>
-                  {role[0]!.toUpperCase() + role.slice(1)}
-                </option>
-              ))}
+            {grantableRoles.map((role) => (
+              <option key={role.key} value={role.key}>
+                {role.name}
+              </option>
+            ))}
           </Select>
         </Field>
+        {data.teams.length > 0 && (
+          <fieldset className="cloud-check-grid">
+            <legend>Teams</legend>
+            {data.teams.map((team) => (
+              <label key={team.id}>
+                <input
+                  type="checkbox"
+                  name="teamIds"
+                  value={team.id}
+                  defaultChecked={member?.teamIds.includes(team.id)}
+                />
+                {team.name}
+              </label>
+            ))}
+          </fieldset>
+        )}
         <Field label="Access" htmlFor="member-access">
           <Select
             id="member-access"

@@ -4,6 +4,7 @@ import type {
   AutomationInput,
   AutomationTrigger,
 } from "./cloud-automation-contract";
+import type { GitEventKind } from "./git-events";
 import type { IssueFilterCondition } from "./issue-filter-model";
 
 export interface AutomationTemplateContext {
@@ -62,6 +63,20 @@ function askAgent(
     providerId: context.agent?.providerId ?? "",
     model: context.agent?.model ?? "",
     ...options,
+  };
+}
+
+function gitTrigger(
+  events: GitEventKind[],
+): Extract<AutomationTrigger, { kind: "git_event" }> {
+  return {
+    kind: "git_event",
+    events,
+    repositoryIds: [],
+    branches: [],
+    headBranches: [],
+    actors: [],
+    contains: "",
   };
 }
 
@@ -170,6 +185,60 @@ export const automationTemplates: AutomationTemplate[] = [
           { postAnswer: false, applyProposals: true },
         ),
       ]),
+  },
+  {
+    id: "agent-review-pull-requests",
+    name: "Review new pull requests",
+    category: "agent",
+    trigger: "git_event",
+    requires: ["agent"],
+    build: (context) =>
+      automation(
+        context,
+        "Review new pull requests",
+        gitTrigger(["pull_request_opened", "pull_request_ready"]),
+        [
+          askAgent(
+            context,
+            "Review {{repository.name}}#{{pullRequest.number}} “{{pullRequest.title}}” ({{pullRequest.headRef}} → {{pullRequest.baseRef}}). Read it with read_pull_request, then submit one review with propose_pull_request_review: approve only when you find no problems, otherwise request changes with concrete feedback per file.",
+            { postAnswer: false, applyProposals: true },
+          ),
+        ],
+      ),
+  },
+  {
+    id: "agent-pull-request-mention",
+    name: "Answer @agent on pull requests",
+    category: "agent",
+    trigger: "git_event",
+    requires: ["agent"],
+    build: (context) =>
+      automation(
+        context,
+        "Answer @agent on pull requests",
+        { ...gitTrigger(["comment_created"]), contains: "@agent" },
+        [
+          askAgent(
+            context,
+            "{{comment.author}} asked on {{repository.name}}#{{pullRequest.number}}:\n\n{{comment.body}}\n\nRead the pull request with read_pull_request and answer with propose_pull_request_comment.",
+            { postAnswer: false, applyProposals: true },
+          ),
+        ],
+      ),
+  },
+  {
+    id: "retarget-stacks",
+    name: "Retarget stacked pull requests",
+    category: "integration",
+    trigger: "git_event",
+    requires: [],
+    build: (context) =>
+      automation(
+        context,
+        "Retarget stacked pull requests",
+        gitTrigger(["stack_base_merged"]),
+        [{ kind: "git_retarget", identity: "organization" }],
+      ),
   },
   {
     id: "agent-pull-request",
@@ -319,7 +388,37 @@ export const automationTemplates: AutomationTemplate[] = [
         context,
         "Delegate labeled issues to an AI task",
         { kind: "label_added", labelIds: labelIds(context, "agent", "ai") },
-        [{ kind: "delegate", profileId: context.profileId ?? "" }],
+        [
+          {
+            kind: "delegate",
+            profileId: context.profileId ?? "",
+            instructions: "",
+            acceptanceCriteria: "",
+          },
+        ],
+      ),
+  },
+  {
+    id: "delegate-failed-checks",
+    name: "Fix failing pull request checks with an AI task",
+    category: "agent",
+    trigger: "git_event",
+    requires: ["profile"],
+    build: (context) =>
+      automation(
+        context,
+        "Fix failing pull request checks with an AI task",
+        gitTrigger(["checks_failed"]),
+        [
+          {
+            kind: "delegate",
+            profileId: context.profileId ?? "",
+            instructions:
+              "The checks failed on {{repository.name}}#{{pullRequest.number}} “{{pullRequest.title}}” ({{pullRequest.headRef}}). Find the cause and fix it without changing unrelated code.",
+            acceptanceCriteria:
+              "The failing checks pass and no other check starts failing.",
+          },
+        ],
       ),
   },
   {

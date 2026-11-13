@@ -1,5 +1,5 @@
 import type { CloudActor, IssueFilters } from "../../lib/cloud-contract";
-import { pullRequestStages } from "../../lib/github-automation";
+import { pullRequestStages } from "../../lib/git-automation";
 import {
   meFilterValue,
   noneFilterValue,
@@ -29,15 +29,15 @@ export const issueSummaryColumns = `i.id, i.team_id AS "teamId", i.identifier, i
   (SELECT jsonb_build_object('id',r.id,'state',r.state) FROM cloud_runs r
     WHERE r.organization_id=i.organization_id AND r.issue_id=i.id AND r.state NOT IN ('succeeded','failed','canceled','timed_out')) AS "activeRun",
   (SELECT jsonb_build_object('stage',p.stage,'reference',gr.full_name || '#' || p.number,'count',count(*) OVER ())
-    FROM cloud_github_pull_request_issues gl JOIN cloud_github_pull_requests p ON p.organization_id=gl.organization_id AND p.id=gl.pull_request_id
-    JOIN cloud_github_repositories gr ON gr.organization_id=p.organization_id AND gr.id=p.repository_id
+    FROM cloud_git_pull_request_issues gl JOIN cloud_git_pull_requests p ON p.organization_id=gl.organization_id AND p.id=gl.pull_request_id
+    JOIN cloud_git_repositories gr ON gr.organization_id=p.organization_id AND gr.id=p.repository_id
     WHERE gl.organization_id=i.organization_id AND gl.issue_id=i.id
     ORDER BY ${pullRequestStageOrder},p.updated_at DESC LIMIT 1) AS "pullRequest",
   (SELECT jsonb_build_object('id',pi.id,'identifier',pi.identifier,'title',pi.title)
     FROM cloud_issue_relations pr JOIN cloud_issues pi ON pi.organization_id=pr.organization_id AND pi.id=pr.source_id
     JOIN cloud_teams pt ON pt.organization_id=pi.organization_id AND pt.id=pi.team_id
     WHERE pr.organization_id=i.organization_id AND pr.kind='parent' AND pr.target_id=i.id AND pr.removed_at IS NULL
-    AND (pt.visibility='organization' OR m.role IN ('owner','admin') OR EXISTS (SELECT 1 FROM cloud_team_memberships ptm WHERE ptm.organization_id=pt.organization_id AND ptm.team_id=pt.id AND ptm.user_id=$2))) AS parent`;
+    AND cloud_team_visible(pt.organization_id,pt.id,pt.visibility,m.user_id)) AS parent`;
 
 const duePredicates: Record<string, string> = {
   overdue: "i.due_on<CURRENT_DATE",
@@ -114,10 +114,10 @@ function conditionPredicate(
       );
       return anyOf(
         stages.length > 0 &&
-          `EXISTS (SELECT 1 FROM cloud_github_pull_request_issues gl JOIN cloud_github_pull_requests p ON p.organization_id=gl.organization_id AND p.id=gl.pull_request_id
+          `EXISTS (SELECT 1 FROM cloud_git_pull_request_issues gl JOIN cloud_git_pull_requests p ON p.organization_id=gl.organization_id AND p.id=gl.pull_request_id
           WHERE gl.organization_id=i.organization_id AND gl.issue_id=i.id AND p.stage=ANY(${bind(stages)}::text[]))`,
         none &&
-          "NOT EXISTS (SELECT 1 FROM cloud_github_pull_request_issues gl WHERE gl.organization_id=i.organization_id AND gl.issue_id=i.id)",
+          "NOT EXISTS (SELECT 1 FROM cloud_git_pull_request_issues gl WHERE gl.organization_id=i.organization_id AND gl.issue_id=i.id)",
       );
     }
   }

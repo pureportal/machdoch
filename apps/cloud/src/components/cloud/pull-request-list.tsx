@@ -15,13 +15,13 @@ import type {
   CloudPullRequest,
   CloudPullRequestList,
   CloudPullRequestListing,
-} from "@/lib/cloud-github-contract";
+} from "@/lib/cloud-git-contract";
 import {
   attentionReasons,
   pullRequestStages,
   type AttentionReason,
   type PullRequestStage,
-} from "@/lib/github-automation";
+} from "@/lib/git-automation";
 import { Select } from "@/components/ui/select";
 import { cloudRequest } from "./api-client";
 import { PullRequestDialog } from "./pull-request-dialog";
@@ -122,7 +122,14 @@ function Row({
           <span>
             {pullRequest.repository}#{pullRequest.number}
           </span>
-          <code title={pullRequest.headRef}>{pullRequest.headRef}</code>
+          <code title={`${pullRequest.headRef} → ${pullRequest.baseRef}`}>
+            {pullRequest.headRef}
+          </code>
+          {pullRequest.stack?.parent && (
+            <span className="cloud-pull-request-stacked">
+              Stacked on #{pullRequest.stack.parent.number}
+            </span>
+          )}
           {pullRequest.author && <span>{pullRequest.author}</span>}
           <RelativeTime value={pullRequest.updatedAt} />
         </span>
@@ -148,10 +155,12 @@ function Row({
 
 export function PullRequestList({
   initial,
-  admin,
+  manageGit,
+  launch,
 }: {
   initial: CloudPullRequestList;
-  admin: boolean;
+  manageGit: boolean;
+  launch: boolean;
 }) {
   const search = useSearchParams();
   const scope = scopeFrom(search.get("stage"));
@@ -234,13 +243,15 @@ export function PullRequestList({
       {!data.connected ? (
         <div className="cloud-empty">
           <GitPullRequest aria-hidden="true" />
-          {admin ? (
+          {manageGit ? (
             <p>
-              <Link href="/cloud/settings?tab=github">Connect GitHub</Link> to
-              link pull requests to issues.
+              <Link href="/cloud/settings?tab=git">
+                Connect GitHub or GitLab
+              </Link>{" "}
+              to follow pull requests.
             </p>
           ) : (
-            <p>GitHub is not connected.</p>
+            <p>No Git provider is connected.</p>
           )}
         </div>
       ) : (
@@ -300,7 +311,7 @@ export function PullRequestList({
       )}
       <PullRequestDialog
         pullRequest={selected}
-        launch={admin}
+        launch={launch}
         onOpenChange={(open) => {
           if (!open) setSelected(null);
         }}

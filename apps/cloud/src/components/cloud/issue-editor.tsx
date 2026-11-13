@@ -1,8 +1,17 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Diamond, FolderKanban, Plus, Users } from "lucide-react";
+import {
+  CalendarRange,
+  Diamond,
+  FolderKanban,
+  Plus,
+  Triangle,
+  UserRound,
+  Users,
+} from "lucide-react";
 import type { CloudMilestone } from "@/lib/cloud-milestone-contract";
 import { IssueRunList } from "./issue-run-list";
 import { IssuePullRequests } from "./issue-pull-requests";
@@ -136,7 +145,7 @@ export function IssueEditor({
   const queue = useRef(Promise.resolve());
   const editingTitle = useRef(false);
   latest.current = issue;
-  const writable = workspace.actor.role !== "viewer";
+  const writable = holderCan(workspace.actor, "issues.edit");
   const team = workspace.teams.find((entry) => entry.id === issue.teamId)!;
   const relations = useIssueRelations(issue.id);
   const milestones = useProjectMilestones(issue.projectId);
@@ -469,7 +478,10 @@ export function IssueEditor({
                     {assignee.name}
                   </>
                 ) : (
-                  <span className="cloud-property-empty">Assign</span>
+                  <span className="cloud-property-empty">
+                    <UserRound size={14} aria-hidden="true" />
+                    Assign
+                  </span>
                 )
               }
               onSelect={(value) =>
@@ -483,9 +495,15 @@ export function IssueEditor({
               value={issue.estimate ?? noValue}
               display={
                 issue.estimate ? (
-                  `${issue.estimate} points`
+                  <>
+                    <Triangle size={14} aria-hidden="true" />
+                    {issue.estimate} points
+                  </>
                 ) : (
-                  <span className="cloud-property-empty">Estimate</span>
+                  <span className="cloud-property-empty">
+                    <Triangle size={14} aria-hidden="true" />
+                    Estimate
+                  </span>
                 )
               }
               onSelect={(value) =>
@@ -498,8 +516,16 @@ export function IssueEditor({
               options={cycleOptions(workspace, issue.teamId, issue.cycleId)}
               value={issue.cycleId ?? noValue}
               display={
-                cycle?.name ?? (
-                  <span className="cloud-property-empty">Add to cycle</span>
+                cycle ? (
+                  <>
+                    <CalendarRange size={14} aria-hidden="true" />
+                    {cycle.name}
+                  </>
+                ) : (
+                  <span className="cloud-property-empty">
+                    <CalendarRange size={14} aria-hidden="true" />
+                    Add to cycle
+                  </span>
                 )
               }
               onSelect={(value) =>
@@ -537,7 +563,10 @@ export function IssueEditor({
                     {project.name}
                   </>
                 ) : (
-                  <span className="cloud-property-empty">Add to project</span>
+                  <span className="cloud-property-empty">
+                    <FolderKanban size={14} aria-hidden="true" />
+                    Add to project
+                  </span>
                 )
               }
               onSelect={(value) =>
@@ -564,6 +593,7 @@ export function IssueEditor({
                     </span>
                   ) : (
                     <span className="cloud-property-empty cloud-property-milestone">
+                      <Diamond size={12} aria-hidden="true" />
                       Add milestone
                     </span>
                   )
@@ -581,7 +611,7 @@ export function IssueEditor({
           />
           <IssuePullRequests
             issueId={issue.id}
-            launch={["owner", "admin"].includes(workspace.actor.role)}
+            launch={holderCan(workspace.actor, "clients.manage")}
           />
           <IssueRunList issueId={issue.id} />
         </aside>

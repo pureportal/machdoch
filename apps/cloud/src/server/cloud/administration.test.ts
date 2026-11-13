@@ -6,6 +6,7 @@ import {
   type CloudActor,
   type CloudRole,
 } from "../../lib/cloud-contract";
+import { defaultOrganizationBrand } from "../../lib/organization-brand";
 import { hashOwnerPasswordAsync } from "../crypto";
 import { SettingsCipher } from "../settings-crypto";
 import { handleCloudApi } from "./api";
@@ -14,6 +15,7 @@ import {
   cloudCsrfHeader,
   cloudSessionCookie,
 } from "./identity";
+import { readSignInBrand } from "./branding";
 import { createCloudRuntime, type CloudRuntime } from "./runtime";
 import { createTestCloudDatabase, verifyTestSession } from "./test-database";
 
@@ -53,6 +55,7 @@ async function invite(
     organizationId: actor.organizationId,
     email,
     role,
+    teamIds: [],
     authentication: { kind: "password" },
   });
 }
@@ -104,8 +107,41 @@ beforeEach(async () => {
 });
 
 describe("cloud administration", () => {
+  it("shows sign-in branding only for the installation organization after it is enabled", async () => {
+    await database.engine.query(
+      "INSERT INTO cloud_installation (id,organization_id,credentials_key) VALUES (1,$1,'test')",
+      [owner.organizationId],
+    );
+    expect(await readSignInBrand(runtime.database)).toBeNull();
+    const brand = { ...defaultOrganizationBrand, signIn: true };
+    await runtime.administration.updateOrganization(owner, randomUUID(), {
+      revision: 1,
+      name: "Northstar",
+      brand,
+      logo: null,
+    });
+    expect(await readSignInBrand(runtime.database)).toEqual({
+      name: "Northstar",
+      brand,
+      logo: null,
+    });
+    await runtime.administration.updateOrganization(outsider, randomUUID(), {
+      revision: 1,
+      name: "Other",
+      brand,
+      logo: null,
+    });
+    expect((await readSignInBrand(runtime.database))?.name).toBe("Northstar");
+  });
+
   it("authorizes organization settings and rejects stale edits and cross-tenant member changes", async () => {
-    const input = { revision: 1, name: "Updated", accent: "violet" as const };
+    const brand = {
+      ...defaultOrganizationBrand,
+      color: "#a79bff",
+      mark: "initials" as const,
+      initials: "UP",
+    };
+    const input = { revision: 1, name: "Updated", brand, logo: null };
     const key = randomUUID();
     await runtime.administration.updateOrganization(owner, key, input);
     await runtime.administration.updateOrganization(owner, key, input);
@@ -120,7 +156,8 @@ describe("cloud administration", () => {
     });
     expect(
       (await runtime.planning.workspace(owner)).organization,
-    ).toMatchObject({ name: "Updated", accent: "violet", revision: 2 });
+    ).toMatchObject({ name: "Updated", brand, logo: null, revision: 2 });
+
     expect((await runtime.planning.workspace(outsider)).organization.name).toBe(
       "Other",
     );
@@ -370,7 +407,8 @@ describe("cloud administration", () => {
     const body = JSON.stringify({
       revision: 1,
       name: "HTTP update",
-      accent: "emerald",
+      brand: defaultOrganizationBrand,
+      logo: null,
     });
     const send = (
       headers: Record<string, string>,

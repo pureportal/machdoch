@@ -26,6 +26,9 @@ import type { CloudAttachments } from "../attachments/attachments";
 import { uploadInstructions } from "../attachments/upload-instructions";
 import { clientSessionHref, type CloudClients } from "../clients/clients";
 import { releaseTitle } from "../../../lib/release-posts";
+import { gitEventKinds } from "../../../lib/git-events";
+import type { CloudGitPullRequests } from "../git/pull-requests";
+import { executeGitAction } from "./automation-git-actions";
 import { automationScope } from "./automation-events";
 import { changesSinceLastPost } from "./release-automations";
 import {
@@ -48,6 +51,7 @@ export interface AutomationServices {
   studio: CloudReleaseStudio;
   attachments: CloudAttachments;
   clients: CloudClients;
+  pullRequests: CloudGitPullRequests;
   fetch: typeof fetch;
 }
 
@@ -70,7 +74,8 @@ export interface ActiveRun {
 export const activeRunColumns = `organization_id AS "organizationId",id,automation_id AS "automationId",trigger,issue_id AS "issueId",actor_id AS "actorId",depth,variables,step,steps,
   chat_id AS "chatId",turn_id AS "turnId",agent_actor_id AS "agentActorId"`;
 
-const humanTriggers = new Set([
+const humanTriggers = new Set<string>([
+  ...gitEventKinds,
   "manual",
   "issue_created",
   "status_changed",
@@ -85,6 +90,14 @@ const accessErrors = new Set([
   "delegation_denied",
 ]);
 const webhookTimeoutMs = 10_000;
+const pullRequestTriggers = new Set<string>([
+  ...gitEventKinds,
+  "pull_request_changed",
+]);
+const defaultPullRequestInstructions =
+  "Fix the failing checks and address the review comments on this pull request.";
+const defaultPullRequestCriteria =
+  "The checks pass and every review comment is addressed.";
 
 type StepOutcome = (Omit<AutomationStep, "kind"> & { halt?: true }) | "waiting";
 
@@ -315,6 +328,50 @@ export class CloudAutomationExecutor {
       case "ask_agent":
         return this.askAgent(run, automation, owner, action, variables, key);
       case "delegate": {
+        const pullRequest = variables.pullRequest as
+          | { id?: unknown; headSha?: unknown }
+          | null
+          | undefined;
+        if (
+          typeof pullRequest?.id === "string" &&
+          (pullRequestTriggers.has(run.trigger) || !run.issueId)
+        ) {
+          const current = await this.services.pullRequests.get(
+            owner,
+            pullRequest.id,
+          );
+          const created = await this.services.runs.createForPullRequest(
+            owner,
+            key("task"),
+            {
+              profileId: action.profileId,
+              subject: {
+                kind: "pull_request",
+                id: current.id,
+                headSha:
+                  typeof pullRequest.headSha === "string"
+                    ? pullRequest.headSha
+                    : current.headSha,
+                objective:
+                  renderAutomationText(
+                    action.instructions,
+                    variables,
+                    20_000,
+                  ).trim() || defaultPullRequestInstructions,
+                acceptanceCriteria:
+                  renderAutomationText(
+                    action.acceptanceCriteria,
+                    variables,
+                    20_000,
+                  ).trim() || defaultPullRequestCriteria,
+              },
+            },
+          );
+          return succeeded(
+            `AI task started on #${current.number}`,
+            `/cloud/tasks/${created.id}`,
+          );
+        }
         const issue = await planning.getIssue(owner, this.requireIssue(run));
         const created = await this.services.runs.create(owner, key("task"), {
           profileId: action.profileId,
@@ -322,6 +379,17 @@ export class CloudAutomationExecutor {
         });
         return succeeded("AI task started", `/cloud/tasks/${created.id}`);
       }
+      case "git_comment":
+      case "git_review":
+      case "git_merge":
+      case "git_update_branch":
+      case "git_retarget":
+        return executeGitAction(
+          this.services.pullRequests,
+          owner,
+          action,
+          variables,
+        );
       case "send_webhook":
         return this.sendWebhook(owner, automation, action, variables);
       case "start_client_session":
@@ -686,7 +754,7 @@ export class CloudAutomationExecutor {
     variables: AutomationVariables,
   ): Promise<StepOutcome> {
     await this.services.database.transaction((sql) =>
-      requireMembership(sql, owner, "admin"),
+      requireMembership(sql, owner, "settings.manage"),
     );
     const body = action.body.trim()
       ? renderAutomationText(action.body, variables, 64 * 1024)
@@ -696,6 +764,12 @@ export class CloudAutomationExecutor {
           actor: variables.actor,
           comment: variables.comment,
           pullRequest: variables.pullRequest,
+          event: variables.event,
+          repository: variables.repository,
+          branch: variables.branch,
+          sender: variables.sender,
+          push: variables.push,
+          review: variables.review,
           release: variables.release,
           agent: variables.agent,
         });

@@ -1,5 +1,7 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
+import { LoadingState } from "@machdoch/product-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Layers, RotateCcw, Eye } from "lucide-react";
 import type {
@@ -98,7 +100,7 @@ export function PokerPanel({
       setPending(false);
     }
   }
-  const writable = workspace.actor.role !== "viewer";
+  const writable = holderCan(workspace.actor, "issues.edit");
   const facilitator = round?.facilitatorId === workspace.actor.id;
   const active = round?.status === "voting" || round?.status === "revealed";
   const unavailable = pending || dirty || Boolean(connectionError);
@@ -138,11 +140,7 @@ export function PokerPanel({
           </Button>
         )}
       </header>
-      {loading && (
-        <p role="status" className="mt-4 text-muted-foreground">
-          Loading poker…
-        </p>
-      )}
+      {loading && <LoadingState label="Loading poker…" compact />}
       {round && (
         <>
           {round.stale && active && (
@@ -203,7 +201,7 @@ export function PokerPanel({
               )}
               {!facilitator &&
                 active &&
-                ["owner", "admin"].includes(workspace.actor.role) && (
+                holderCan(workspace.actor, "teams.manage") && (
                   <Button
                     variant="outline"
                     disabled={unavailable}

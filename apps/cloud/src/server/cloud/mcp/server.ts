@@ -49,8 +49,12 @@ export async function handleCloudMcp(
       "rate_limited",
       "Too many requests from this app. Try again in a minute.",
     );
-  const tools = cloudMcpTools(runtime).filter((tool) =>
-    credentials.scopes.includes(tool.scope),
+  const access = await runtime.roles.mine(credentials.actor);
+  const permitted = new Set(access.permissions.map((entry) => entry.key));
+  const tools = cloudMcpTools(runtime).filter(
+    (tool) =>
+      credentials.scopes.includes(tool.scope) &&
+      (!tool.permission || access.owner || permitted.has(tool.permission)),
   );
   const server = new Server(
     { name: "machdoch.cloud", version: "1.0.0" },

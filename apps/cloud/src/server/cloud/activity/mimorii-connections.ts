@@ -97,7 +97,7 @@ export class CloudMimoriiConnections {
 
   get(actor: CloudActor): Promise<MimoriiAdministration> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "settings.manage");
       return {
         settings: await readMimoriiSettings(sql, actor.organizationId),
         credentialStorageAvailable: this.cipher !== null,
@@ -111,7 +111,7 @@ export class CloudMimoriiConnections {
     input: MimoriiSettingsInput,
   ): Promise<{ revision: number }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "settings.manage");
       const cipher = await requireCredentialStorage(sql, this.cipher);
       return command(
         sql,
@@ -207,7 +207,7 @@ export class CloudMimoriiConnections {
 
   remove(actor: CloudActor, revision: number): Promise<{ ok: true }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "settings.manage");
       const current = (
         await sql.query<{ revision: number }>(
           "SELECT revision FROM cloud_mimorii_connections WHERE organization_id=$1 FOR UPDATE",
@@ -235,7 +235,7 @@ export class CloudMimoriiConnections {
 
   async test(actor: CloudActor): Promise<{ accepted: number }> {
     const connection = await this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "settings.manage");
       return mimoriiConnection(sql, this.cipher, actor.organizationId);
     });
     const identity = await this.database.transaction(

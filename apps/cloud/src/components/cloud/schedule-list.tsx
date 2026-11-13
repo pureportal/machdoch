@@ -1,4 +1,5 @@
 "use client";
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import {
   Bot,
@@ -6,6 +7,7 @@ import {
   CircleDot,
   Plus,
   RefreshCw,
+  Repeat,
   Users,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -16,6 +18,7 @@ import { cloudRequest } from "./api-client";
 import { ScheduleEditor } from "./schedule-editor";
 import { ScheduleHistory } from "./schedule-history";
 import { Timestamp } from "./timestamp";
+import { describeRecurrence } from "@/lib/schedule-summary";
 import {
   ScheduleStateDialog,
   type ScheduleTransition,
@@ -118,12 +121,13 @@ export function ScheduleList({
             <RefreshCw />
             Refresh
           </Button>
-          {workspace.actor.role !== "viewer" && workspace.teams.length > 0 && (
-            <Button onClick={() => setEditor("new")}>
-              <Plus />
-              New schedule
-            </Button>
-          )}
+          {holderCan(workspace.actor, "automations.edit") &&
+            workspace.teams.length > 0 && (
+              <Button onClick={() => setEditor("new")}>
+                <Plus />
+                New schedule
+              </Button>
+            )}
         </div>
       </header>
       {error && <p role="alert">{error}</p>}
@@ -145,9 +149,9 @@ export function ScheduleList({
           {schedules.map((schedule) => {
             const owned =
               schedule.ownerId === workspace.actor.id &&
-              workspace.actor.role !== "viewer";
+              holderCan(workspace.actor, "automations.edit");
             const canManage =
-              owned || ["owner", "admin"].includes(workspace.actor.role);
+              owned || holderCan(workspace.actor, "teams.manage");
             const subject =
               schedule.action.kind === "create-issue"
                 ? schedule.action.issue.title
@@ -215,10 +219,15 @@ export function ScheduleList({
                     }{" "}
                     · {schedule.ownerName}
                   </span>
+                  <span>
+                    <Repeat size={14} aria-hidden="true" />
+                    {describeRecurrence(schedule.recurrence)}
+                  </span>
                   {schedule.enabled && schedule.nextAt !== null && (
-                    <p className="text-sm">
-                      Next: <Timestamp value={schedule.nextAt} />
-                    </p>
+                    <span>
+                      <CalendarClock size={14} aria-hidden="true" />
+                      Next <Timestamp value={schedule.nextAt} />
+                    </span>
                   )}
                 </div>
                 {schedule.waitingRunId && (
@@ -231,9 +240,31 @@ export function ScheduleList({
                 )}
                 {schedule.error && <p role="alert">{schedule.error}</p>}
                 <div className="cloud-card-actions">
+                  {!schedule.archived &&
+                    (schedule.enabled ? canManage : owned) && (
+                      <Button
+                        variant="outline"
+                        aria-label={
+                          schedule.enabled
+                            ? "Pause schedule"
+                            : "Enable schedule"
+                        }
+                        disabled={pending}
+                        onClick={() =>
+                          setTransition({
+                            schedule,
+                            field: "enabled",
+                            target: !schedule.enabled,
+                          })
+                        }
+                      >
+                        {schedule.enabled ? "Pause" : "Enable"}
+                      </Button>
+                    )}
                   {owned && !schedule.enabled && !schedule.archived && (
                     <Button
-                      variant="outline"
+                      variant="ghost"
+                      aria-label="Edit schedule"
                       disabled={pending}
                       onClick={() =>
                         void load(async () => {
@@ -252,30 +283,17 @@ export function ScheduleList({
                         })
                       }
                     >
-                      Edit schedule
+                      Edit
                     </Button>
                   )}
-                  {!schedule.archived &&
-                    (schedule.enabled ? canManage : owned) && (
-                      <Button
-                        variant="outline"
-                        disabled={pending}
-                        onClick={() =>
-                          setTransition({
-                            schedule,
-                            field: "enabled",
-                            target: !schedule.enabled,
-                          })
-                        }
-                      >
-                        {schedule.enabled
-                          ? "Pause schedule"
-                          : "Enable schedule"}
-                      </Button>
-                    )}
                   {canManage && (
                     <Button
                       variant="ghost"
+                      aria-label={
+                        schedule.archived
+                          ? "Restore schedule"
+                          : "Archive schedule"
+                      }
                       disabled={pending}
                       onClick={() =>
                         setTransition({
@@ -285,9 +303,7 @@ export function ScheduleList({
                         })
                       }
                     >
-                      {schedule.archived
-                        ? "Restore schedule"
-                        : "Archive schedule"}
+                      {schedule.archived ? "Restore" : "Archive"}
                     </Button>
                   )}
                   <ScheduleHistory id={schedule.id} />

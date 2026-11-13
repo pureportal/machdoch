@@ -540,12 +540,14 @@
   color: var(--muted-foreground);
   font-size: 12px;
 }
-.cloud-github-webhook {
+.cloud-github-webhook,
+.cloud-git-oauth[open] {
   display: grid;
   gap: 12px;
   font-size: 13px;
 }
-.cloud-github-webhook summary {
+.cloud-github-webhook summary,
+.cloud-git-oauth summary {
   cursor: pointer;
   font-weight: 500;
 }
@@ -564,4 +566,48 @@
   .cloud-pull-request-signals {
     flex-wrap: wrap;
   }
+}
+.cloud-pull-request-stack {
+  display: grid;
+  gap: 2px;
+}
+.cloud-pull-request-stack li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.cloud-pull-request-stack li > svg {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.cloud-pull-request-stack li[data-state="merged"] > svg {
+  color: var(--cloud-success);
+}
+.cloud-pull-request-stack li[aria-current="true"] {
+  background: var(--cloud-hover);
+  font-weight: 500;
+}
+.cloud-pull-request-stack li > span:nth-of-type(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-pull-request-stack code {
+  margin-left: auto;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-pull-request-stacked {
+  flex-shrink: 0;
 }

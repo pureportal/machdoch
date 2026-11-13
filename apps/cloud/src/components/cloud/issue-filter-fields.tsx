@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { CloudLabel } from "@/lib/cloud-label-contract";
-import { pullRequestStages } from "@/lib/github-automation";
+import { pullRequestStages } from "@/lib/git-automation";
 import {
   meFilterValue,
   noneFilterValue,

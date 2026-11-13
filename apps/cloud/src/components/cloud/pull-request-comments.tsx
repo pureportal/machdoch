@@ -1,4 +1,4 @@
-import type { GitHubReviewComment } from "@/lib/cloud-github-contract";
+import type { GitReviewComment } from "@/lib/cloud-git-contract";
 import { CloudMarkdown } from "./cloud-markdown";
 import { RelativeTime } from "./relative-time";
 
@@ -32,7 +32,7 @@ function DiffHunk({ hunk }: { hunk: string }) {
 export function PullRequestComments({
   comments,
 }: {
-  comments: GitHubReviewComment[];
+  comments: GitReviewComment[];
 }) {
   if (!comments.length)
     return <p className="cloud-pull-request-loading">No code comments.</p>;

@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useState } from "react";
 import { ArrowLeft, CalendarRange } from "lucide-react";
@@ -40,7 +41,7 @@ export function InitiativeDetail({
   initiatives: CloudInitiative[];
 }) {
   const [editing, setEditing] = useState(false);
-  const writable = workspace.actor.role !== "viewer";
+  const writable = holderCan(workspace.actor, "planning.edit");
   const owner = workspace.members.find(
     (member) => member.id === initiative.ownerId,
   );

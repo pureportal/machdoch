@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import {
   Archive,
@@ -86,7 +87,8 @@ export function ReleaseStudio({
   const [writing, setWriting] = useState<{ channel?: CloudChannel } | null>(
     null,
   );
-  const canWrite = workspace.actor.role !== "viewer" && !release.archived;
+  const canWrite =
+    holderCan(workspace.actor, "releases.edit") && !release.archived;
   const refresh = useCallback(async () => {
     const [nextRelease, nextMedia] = await Promise.all([
       cloudRequest<CloudRelease>(`releases/${initial.id}`),
@@ -202,7 +204,7 @@ export function ReleaseStudio({
               Write with Agent
             </Button>
           )}
-          {workspace.actor.role !== "viewer" && (
+          {holderCan(workspace.actor, "releases.edit") && (
             <ConfirmButton
               trigger={
                 <Button

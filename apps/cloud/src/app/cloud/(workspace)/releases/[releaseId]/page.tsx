@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { holderCan } from "@/lib/cloud-permissions";
 import { ReleaseStudio } from "@/components/cloud/release-studio";
 import { cloudId } from "@/lib/cloud-contract";
 import { isCloudError } from "@/server/cloud/access";
@@ -15,9 +16,10 @@ export default async function ReleasePage({
   const id = cloudId.safeParse((await params).releaseId);
   if (!id.success) notFound();
   const { runtime, actor } = await requireCloudPageSession();
+  const { workspace } = await requireCloudWorkspace();
+  if (!holderCan(workspace.actor, "releases.view")) notFound();
   try {
-    const [{ workspace }, release, capabilities] = await Promise.all([
-      requireCloudWorkspace(),
+    const [release, capabilities] = await Promise.all([
       runtime.releases.releases.get(actor, id.data),
       runtime.releases.studio.capabilities(),
     ]);

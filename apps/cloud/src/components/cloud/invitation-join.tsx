@@ -73,7 +73,7 @@ export function InvitationJoin() {
               </div>
               <div>
                 <dt>Role</dt>
-                <dd className="capitalize">{preview.role}</dd>
+                <dd>{preview.roleName}</dd>
               </div>
             </dl>
             {preview.currentEmail && preview.currentEmail !== preview.email && (

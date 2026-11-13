@@ -1,9 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
   CloudActor,
+  CloudActorMember,
   CloudRole,
   CloudTeam,
 } from "../../lib/cloud-contract";
+import {
+  cloudPermissions,
+  delegationAllows,
+  isCloudPermission,
+  type CloudPermission,
+  type RoleScope,
+} from "../../lib/cloud-permissions";
 import type { CloudSql } from "./database";
 
 export class CloudError extends Error {
@@ -25,27 +33,74 @@ export function isCloudError(error: unknown): error is CloudError {
   );
 }
 
-export const teamVisibility = `(t.visibility = 'organization' OR m.role IN ('owner', 'admin') OR EXISTS (
-  SELECT 1 FROM cloud_team_memberships tm WHERE tm.organization_id = t.organization_id AND tm.team_id = t.id AND tm.user_id = $2
-))`;
+export const teamVisibility =
+  "cloud_team_visible(t.organization_id, t.id, t.visibility, m.user_id)";
+
+export function teamVisibilityFor(team: string, membership: string): string {
+  return `cloud_team_visible(${team}.organization_id, ${team}.id, ${team}.visibility, ${membership}.user_id)`;
+}
+
+export interface CloudAccess {
+  role: CloudRole;
+  roleName: string;
+  owner: boolean;
+  scope: RoleScope;
+  permissions: ReadonlySet<CloudPermission>;
+}
+
+export function accessCan(
+  access: CloudAccess,
+  permission: CloudPermission,
+): boolean {
+  return access.owner || access.permissions.has(permission);
+}
+
+export function actorMember(
+  member: { id: string; name: string },
+  access: CloudAccess,
+): CloudActorMember {
+  return {
+    ...member,
+    role: access.role,
+    roleName: access.roleName,
+    owner: access.owner,
+    scope: access.scope,
+    permissions: cloudPermissions.filter((permission) =>
+      accessCan(access, permission),
+    ),
+  };
+}
 
 export async function requireMembership(
   sql: CloudSql,
   actor: CloudActor,
-  permission: "read" | "write" | "admin" = "read",
-): Promise<CloudRole> {
-  const result = await sql.query<{ role: CloudRole }>(
-    `SELECT m.role FROM cloud_memberships m JOIN cloud_users u ON u.id = m.user_id
+  permission?: CloudPermission,
+): Promise<CloudAccess> {
+  const result = await sql.query<{
+    role: CloudRole;
+    name: string;
+    scope: RoleScope;
+    permissions: string[];
+  }>(
+    `SELECT m.role, r.name, r.scope, r.permissions FROM cloud_memberships m JOIN cloud_users u ON u.id = m.user_id
+     JOIN cloud_roles r ON r.organization_id = m.organization_id AND r.key = m.role
      WHERE m.organization_id = $1 AND m.user_id = $2 AND m.active AND NOT u.disabled FOR SHARE OF m, u`,
     [actor.organizationId, actor.userId],
   );
-  const role = result.rows[0]?.role;
-  if (!role)
+  const row = result.rows[0];
+  if (!row)
     throw new CloudError(
       403,
       "membership_required",
       "Your organization access has ended. Sign in again.",
     );
+  const access: CloudAccess = {
+    role: row.role,
+    roleName: row.name,
+    owner: row.role === "owner",
+    scope: row.scope,
+    permissions: new Set(row.permissions.filter(isCloudPermission)),
+  };
   if (actor.delegation) {
     const grant = await sql.query(
       `SELECT g.id FROM cloud_oauth_tokens t JOIN cloud_oauth_grants g ON g.id=t.grant_id
@@ -63,8 +118,8 @@ export async function requireMembership(
     );
     if (
       !grant.rows.length ||
-      permission === "admin" ||
-      (permission === "write" && actor.delegation.scope === "cloud:read")
+      !accessCan(access, "apps.connect") ||
+      !delegationAllows(permission ?? null, actor.delegation.scope)
     )
       throw new CloudError(
         403,
@@ -72,29 +127,67 @@ export async function requireMembership(
         "App access has ended or does not allow this action. Reconnect from the app.",
       );
   }
-  if (
-    (permission === "write" && role === "viewer") ||
-    (permission === "admin" && role !== "owner" && role !== "admin")
-  )
+  if (permission && !accessCan(access, permission))
     throw new CloudError(
       403,
       "permission_denied",
-      "Your role does not allow this change.",
+      "Your role does not allow this.",
     );
-  return role;
+  return access;
+}
+
+export async function roleGrantable(
+  sql: CloudSql,
+  organizationId: string,
+  granter: CloudRole,
+  granted: CloudRole,
+): Promise<boolean> {
+  return (
+    await sql.query<{ allowed: boolean }>(
+      "SELECT cloud_role_grants($1,$2,$3) AS allowed",
+      [organizationId, granter, granted],
+    )
+  ).rows[0]!.allowed;
+}
+
+export async function requireRoleGrant(
+  sql: CloudSql,
+  organizationId: string,
+  granter: CloudRole,
+  granted: CloudRole,
+): Promise<void> {
+  if (!(await roleGrantable(sql, organizationId, granter, granted)))
+    throw new CloudError(
+      403,
+      "owner_required",
+      "Your role cannot grant or change this role. Roles that manage people or roles need an owner.",
+    );
+}
+
+export async function requireRole(
+  sql: CloudSql,
+  organizationId: string,
+  role: CloudRole,
+): Promise<void> {
+  const found = await sql.query(
+    "SELECT 1 FROM cloud_roles WHERE organization_id=$1 AND key=$2",
+    [organizationId, role],
+  );
+  if (!found.rows.length)
+    throw new CloudError(422, "role_unavailable", "Choose an existing role.");
 }
 
 export async function requireTeam(
   sql: CloudSql,
   actor: CloudActor,
   teamId: string,
-  write = false,
+  permission?: CloudPermission,
 ): Promise<CloudTeam> {
-  await requireMembership(sql, actor, write ? "write" : "read");
+  await requireMembership(sql, actor, permission);
   const result = await sql.query<CloudTeam & Record<string, unknown>>(
     `SELECT t.id, t.name, t.key, t.visibility, t.estimate_scale AS "estimateScale", t.scale_revision AS "scaleRevision", t.revision
      FROM cloud_teams t JOIN cloud_memberships m ON m.organization_id = t.organization_id AND m.user_id = $2
-     WHERE t.organization_id = $1 AND t.id = $3 AND ${teamVisibility} FOR ${write ? "UPDATE" : "SHARE"} OF t`,
+     WHERE t.organization_id = $1 AND t.id = $3 AND ${teamVisibility} FOR ${permission ? "UPDATE" : "SHARE"} OF t`,
     [actor.organizationId, actor.userId, teamId],
   );
   const team = result.rows[0];

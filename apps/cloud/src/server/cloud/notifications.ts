@@ -16,7 +16,7 @@ const issueAudience = `SELECT u.id,u.name,${issueSubscribedClause} AS subscribed
   JOIN cloud_memberships m ON m.organization_id=i.organization_id AND m.active
   JOIN cloud_users u ON u.id=m.user_id AND NOT u.disabled
   WHERE i.organization_id=$1 AND i.id=$2 AND u.id<>$3
-  AND (t.visibility='organization' OR m.role IN ('owner','admin') OR EXISTS (SELECT 1 FROM cloud_team_memberships tm WHERE tm.organization_id=m.organization_id AND tm.team_id=t.id AND tm.user_id=m.user_id))`;
+  AND cloud_team_visible(t.organization_id,t.id,t.visibility,m.user_id)`;
 const pageSize = 100;
 
 function excerpt(text: string): string {

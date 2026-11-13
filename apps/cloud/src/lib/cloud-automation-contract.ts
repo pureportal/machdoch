@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { cloudId, issuePriorities, revision } from "./cloud-contract";
 import { channelKinds } from "./cloud-release-contract";
-import { pullRequestStages } from "./github-automation";
+import { pullRequestStages } from "./git-automation";
+import {
+  branchPatternSchema,
+  gitEventKinds,
+  isPullRequestEvent,
+} from "./git-events";
+import { gitMergeMethods, gitReviewDecisionInputs } from "./cloud-git-contract";
 import { issueFilterConditionSchema } from "./issue-filter-model";
 
 export const scheduleFrequencies = [
@@ -54,6 +60,18 @@ export const automationTriggerSchema = z.discriminatedUnion("kind", [
     timeZone,
     forEachIssue: z.boolean().default(false),
   }),
+  z.strictObject({
+    kind: z.literal("git_event"),
+    events: z
+      .array(z.enum(gitEventKinds))
+      .min(1, "Choose at least one event.")
+      .max(gitEventKinds.length),
+    repositoryIds: idList,
+    branches: z.array(branchPatternSchema).max(20).default([]),
+    headBranches: z.array(branchPatternSchema).max(20).default([]),
+    actors: z.array(z.string().trim().min(1).max(100)).max(20).default([]),
+    contains: z.string().trim().max(200).default(""),
+  }),
   z.strictObject({ kind: z.literal("release_created"), productIds: idList }),
   z.strictObject({ kind: z.literal("webhook") }),
   z.strictObject({ kind: z.literal("manual") }),
@@ -71,6 +89,10 @@ export const issueEventTriggerKinds = [
   "pull_request_changed",
 ] as const satisfies readonly AutomationTriggerKind[];
 export type IssueEventTriggerKind = (typeof issueEventTriggerKinds)[number];
+
+export const gitIdentities = ["owner", "organization"] as const;
+export type GitIdentity = (typeof gitIdentities)[number];
+const gitIdentity = z.enum(gitIdentities).default("owner");
 
 export const changeMeasures = ["issues", "points"] as const;
 export type ChangeMeasure = (typeof changeMeasures)[number];
@@ -115,7 +137,12 @@ export const automationActionSchema = z.discriminatedUnion("kind", [
     postAnswer: z.boolean().default(true),
     applyProposals: z.boolean().default(false),
   }),
-  z.strictObject({ kind: z.literal("delegate"), profileId: cloudId }),
+  z.strictObject({
+    kind: z.literal("delegate"),
+    profileId: cloudId,
+    instructions: template(20_000).default(""),
+    acceptanceCriteria: template(20_000).default(""),
+  }),
   z.strictObject({
     kind: z.literal("prepare_release"),
     productId: cloudId,
@@ -146,6 +173,27 @@ export const automationActionSchema = z.discriminatedUnion("kind", [
     goal: z.boolean().default(false),
   }),
   z.strictObject({
+    kind: z.literal("git_comment"),
+    body: template(20_000).trim().min(1),
+    identity: gitIdentity,
+  }),
+  z.strictObject({
+    kind: z.literal("git_review"),
+    decision: z.enum(gitReviewDecisionInputs),
+    body: template(20_000).default(""),
+    identity: gitIdentity,
+  }),
+  z.strictObject({
+    kind: z.literal("git_merge"),
+    method: z.enum(gitMergeMethods).default("squash"),
+    identity: gitIdentity,
+  }),
+  z.strictObject({
+    kind: z.literal("git_update_branch"),
+    identity: gitIdentity,
+  }),
+  z.strictObject({ kind: z.literal("git_retarget"), identity: gitIdentity }),
+  z.strictObject({
     kind: z.literal("send_webhook"),
     url: z.url({ protocol: /^https$/, hostname: z.regexes.domain }).max(2_000),
     body: template(20_000).default(""),
@@ -161,8 +209,34 @@ export const issueActionKinds = [
   "add_labels",
   "remove_labels",
   "comment",
-  "delegate",
 ] as const satisfies readonly AutomationActionKind[];
+
+export function delegateHasTarget(trigger: AutomationTrigger): boolean {
+  return trigger.kind === "git_event"
+    ? triggerHasPullRequest(trigger)
+    : triggerHasIssue(trigger) || triggerHasPullRequest(trigger);
+}
+
+export const pullRequestActionKinds = [
+  "git_comment",
+  "git_review",
+  "git_merge",
+  "git_update_branch",
+  "git_retarget",
+] as const satisfies readonly AutomationActionKind[];
+
+export function actionNeedsPullRequest(action: AutomationAction): boolean {
+  return (pullRequestActionKinds as readonly string[]).includes(action.kind);
+}
+
+export function triggerHasPullRequest(trigger: AutomationTrigger): boolean {
+  if (trigger.kind === "pull_request_changed") return true;
+  return (
+    trigger.kind === "git_event" &&
+    trigger.events.length > 0 &&
+    trigger.events.every(isPullRequestEvent)
+  );
+}
 
 export function triggerHasIssue(trigger: AutomationTrigger): boolean {
   if (trigger.kind === "schedule") return trigger.forEachIssue;
@@ -174,6 +248,10 @@ export function actionNeedsIssue(action: AutomationAction): boolean {
     (issueActionKinds as readonly string[]).includes(action.kind) ||
     (action.kind === "create_issue" && action.subIssue)
   );
+}
+
+export function actionNeedsManualIssue(action: AutomationAction): boolean {
+  return actionNeedsIssue(action) || action.kind === "delegate";
 }
 
 export function actionHasRelease(
@@ -207,7 +285,22 @@ export const automationInputSchema = z
           message: "Release automations have no issue to filter.",
         }),
       );
+    const hasPullRequest = triggerHasPullRequest(input.trigger);
     input.actions.forEach((action, index) => {
+      if (!hasPullRequest && actionNeedsPullRequest(action))
+        context.addIssue({
+          code: "custom",
+          path: ["actions", index],
+          message:
+            "This action needs a pull request. Trigger on pull request events only.",
+        });
+      if (action.kind === "delegate" && !delegateHasTarget(input.trigger))
+        context.addIssue({
+          code: "custom",
+          path: ["actions", index],
+          message:
+            "This action needs an issue, or a trigger with only pull request events.",
+        });
       if (!hasIssue && actionNeedsIssue(action))
         context.addIssue({
           code: "custom",

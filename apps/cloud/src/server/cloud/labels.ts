@@ -79,7 +79,7 @@ export class CloudLabels {
     input: LabelInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireTeam(sql, actor, teamId, true);
+      await requireTeam(sql, actor, teamId, "issues.edit");
       return command(
         sql,
         actor,
@@ -126,7 +126,7 @@ export class CloudLabels {
       ).rows[0];
       if (!identity)
         throw new CloudError(404, "not_found", "Label is unavailable.");
-      await requireTeam(sql, actor, identity.team_id, true);
+      await requireTeam(sql, actor, identity.team_id, "issues.edit");
       const label = (
         await sql.query<CloudLabel & Record<string, unknown>>(
           `SELECT ${columns} FROM cloud_labels l WHERE organization_id=$1 AND id=$2 FOR UPDATE`,
@@ -191,7 +191,7 @@ export class CloudLabels {
     input: IssueLabelsUpdate,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      const issue = await readIssue(sql, actor, issueId, true);
+      const issue = await readIssue(sql, actor, issueId, "issues.edit");
       return command(
         sql,
         actor,

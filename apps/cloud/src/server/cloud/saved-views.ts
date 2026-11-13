@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { CloudActor } from "../../lib/cloud-contract";
 import type { SavedView, SavedViewInput } from "../../lib/cloud-view-contract";
-import { CloudError, command, requireMembership } from "./access";
+import { accessCan, CloudError, command, requireMembership } from "./access";
 import type { CloudDatabase } from "./database";
 
 const maximumViewsPerUser = 50;
@@ -28,7 +28,11 @@ export class CloudSavedViews {
     input: SavedViewInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, input.shared ? "write" : "read");
+      await requireMembership(
+        sql,
+        actor,
+        input.shared ? "issues.edit" : undefined,
+      );
       return command(
         sql,
         actor,
@@ -65,7 +69,7 @@ export class CloudSavedViews {
 
   remove(actor: CloudActor, id: string): Promise<void> {
     return this.database.transaction(async (sql) => {
-      const role = await requireMembership(sql, actor);
+      const access = await requireMembership(sql, actor);
       const view = (
         await sql.query<{ user_id: string; shared: boolean }>(
           "SELECT user_id,shared FROM cloud_saved_views WHERE organization_id=$1 AND id=$2 FOR UPDATE",
@@ -74,7 +78,7 @@ export class CloudSavedViews {
       ).rows[0];
       if (!view || (view.user_id !== actor.userId && !view.shared))
         throw new CloudError(404, "not_found", "View is unavailable.");
-      if (view.user_id !== actor.userId && !["owner", "admin"].includes(role))
+      if (view.user_id !== actor.userId && !accessCan(access, "teams.manage"))
         throw new CloudError(
           403,
           "permission_denied",

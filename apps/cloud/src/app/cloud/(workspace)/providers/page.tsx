@@ -1,3 +1,4 @@
+import { holderCan } from "@/lib/cloud-permissions";
 import { redirect } from "next/navigation";
 import { AiProviderSettings } from "@/components/cloud/provider-settings";
 import {
@@ -8,8 +9,7 @@ import {
 export default async function ProvidersPage() {
   const { runtime, actor } = await requireCloudPageSession();
   const workspace = (await requireCloudWorkspace()).workspace;
-  if (!["owner", "admin"].includes(workspace.actor.role))
-    redirect("/cloud/issues");
+  if (!holderCan(workspace.actor, "ai.manage")) redirect("/cloud/issues");
   return (
     <AiProviderSettings
       settings={await runtime.aiProviders.list(actor, true)}

@@ -10,7 +10,9 @@ import {
 import type { CloudLabel } from "@/lib/cloud-label-contract";
 import type { CloudProduct } from "@/lib/cloud-release-contract";
 import type { CloudWorkflowStatus } from "@/lib/cloud-workflow-contract";
-import { pullRequestStages } from "@/lib/github-automation";
+import type { GitRepositoryOption } from "@/lib/cloud-git-contract";
+import { pullRequestStages } from "@/lib/git-automation";
+import { GitTriggerFields } from "./automation-git-trigger-fields";
 import { ChipToggle } from "./automation-chips";
 import { priorityOptions } from "./issue-properties";
 import { triggerKinds, weekdays } from "./automation-display";
@@ -37,6 +39,16 @@ export function defaultTrigger(
       return { kind, contains: "" };
     case "pull_request_changed":
       return { kind, stages: [] };
+    case "git_event":
+      return {
+        kind,
+        events: ["pull_request_opened"],
+        repositoryIds: [],
+        branches: [],
+        headBranches: [],
+        actors: [],
+        contains: "",
+      };
     case "release_created":
       return { kind, productIds: [] };
     case "schedule":
@@ -58,14 +70,14 @@ export function TriggerFields({
   statuses,
   labels,
   products,
-  github,
+  repositories,
   onChange,
 }: {
   trigger: AutomationTrigger;
   statuses: CloudWorkflowStatus[];
   labels: CloudLabel[];
   products: CloudProduct[];
-  github: boolean;
+  repositories: GitRepositoryOption[];
   onChange: (trigger: AutomationTrigger) => void;
 }) {
   const groups = [...new Set(triggerKinds.map((entry) => entry.group))];
@@ -87,8 +99,9 @@ export function TriggerFields({
                 (entry) =>
                   entry.group === group &&
                   (trigger.kind === entry.kind ||
-                    (entry.kind === "pull_request_changed"
-                      ? github
+                    (entry.kind === "pull_request_changed" ||
+                    entry.kind === "git_event"
+                      ? repositories.length > 0
                       : entry.kind !== "release_created" ||
                         products.length > 0)),
               )
@@ -157,6 +170,13 @@ export function TriggerFields({
           onChange={(stages) =>
             onChange({ ...trigger, stages: stages as typeof trigger.stages })
           }
+        />
+      )}
+      {trigger.kind === "git_event" && (
+        <GitTriggerFields
+          trigger={trigger}
+          repositories={repositories}
+          onChange={onChange}
         />
       )}
       {trigger.kind === "release_created" && products.length > 1 && (

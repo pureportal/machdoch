@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { Pencil, Play, Plus, RefreshCw, Trash2, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -7,7 +8,7 @@ import { CopyField } from "@/components/copy-field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
-  actionNeedsIssue,
+  actionNeedsManualIssue,
   type AutomationInput,
   type AutomationSecret,
   type CloudAutomation,
@@ -27,6 +28,7 @@ import { AutomationRuns } from "./automation-runs";
 import { RelativeTime } from "./relative-time";
 import { useToast } from "./toast";
 import { useAutomationOptions } from "./use-automation-options";
+import { Timestamp } from "./timestamp";
 
 const pollMs = 10_000;
 
@@ -74,8 +76,8 @@ export function AutomationList({
     labels: options.labels,
     products: options.products,
   };
-  const canWrite = workspace.actor.role !== "viewer";
-  const admin = ["owner", "admin"].includes(workspace.actor.role);
+  const canWrite = holderCan(workspace.actor, "automations.edit");
+  const admin = holderCan(workspace.actor, "teams.manage");
 
   const refresh = useCallback(async () => {
     const next = await cloudRequest<CloudAutomation[]>("automations");
@@ -127,7 +129,7 @@ export function AutomationList({
     automation.trigger.kind === "schedule" ||
     (automation.trigger.kind === "manual" &&
       !/\{\{\s*issue\./.test(JSON.stringify(automation.actions)) &&
-      !automation.actions.some(actionNeedsIssue));
+      !automation.actions.some(actionNeedsManualIssue));
 
   return (
     <>
@@ -329,7 +331,9 @@ export function AutomationList({
                 {selected.nextRunAt && selected.enabled && (
                   <>
                     <dt>Next run</dt>
-                    <dd>{new Date(selected.nextRunAt).toLocaleString()}</dd>
+                    <dd>
+                      <Timestamp value={selected.nextRunAt} />
+                    </dd>
                   </>
                 )}
                 {selected.lastRunAt && (

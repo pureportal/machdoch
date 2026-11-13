@@ -1,17 +1,21 @@
 import { z } from "zod";
 import type { CloudOrganization } from "./cloud-administration-contract";
 import type { CloudTeamWorkflow } from "./cloud-workflow-contract";
-import type { PullRequestStage } from "./github-automation";
+import type { PullRequestStage } from "./git-automation";
+import type { GitProvider } from "./git-providers";
 import type { IssueFilterCondition } from "./issue-filter-model";
+import type { CloudPermission, RoleScope } from "./cloud-permissions";
 
 export const cloudId = z.uuid();
 export const revision = z.number().int().min(1).max(2_147_483_646);
+export const hexColor = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, "Use a hex color such as #6356cf.");
 export const issueStatusReferenceSchema = z.strictObject({
   id: cloudId,
   revision,
 });
-export const cloudRoles = ["owner", "admin", "member", "viewer"] as const;
-export type CloudRole = (typeof cloudRoles)[number];
+export type CloudRole = string;
 export const issueStates = [
   "triage",
   "backlog",
@@ -275,16 +279,22 @@ export interface CloudMember {
   id: string;
   name: string;
   role: CloudRole;
+  roleName: string;
+}
+export interface CloudActorMember extends CloudMember {
+  owner: boolean;
+  scope: RoleScope;
+  permissions: CloudPermission[];
 }
 export interface CloudWorkspace {
   organization: CloudOrganization;
-  actor: CloudMember;
+  actor: CloudActorMember;
   members: CloudMember[];
   teams: CloudTeam[];
   projects: CloudProject[];
   cycles: CloudCycle[];
   workflows: CloudTeamWorkflow[];
-  github: boolean;
+  gitProviders: GitProvider[];
 }
 export interface PokerRound {
   id: string;

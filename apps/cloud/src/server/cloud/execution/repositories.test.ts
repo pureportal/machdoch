@@ -11,7 +11,7 @@ import {
   type WorkerRepositoryRequest,
 } from "../../../lib/cloud-repository-contract";
 import {
-  githubRepositorySchema,
+  gitRepositoryUrlSchema,
   maximumRepositoryTransferBytes,
 } from "@machdoch/fleet-protocol/cloud-repository";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
@@ -125,7 +125,7 @@ it("binds a preparing attempt to read-only GitHub operations with no ambient cre
     async () =>
       new Response("0000", { headers: { "Content-Type": advertisement } }),
   );
-  const service = new CloudRepositories(database, transport);
+  const service = new CloudRepositories(database, null, transport);
   expect(workerRepositorySchema.safeParse(request).success).toBe(true);
   expect(
     await (await service.transfer(worker.token, request, signal())).text(),
@@ -193,14 +193,17 @@ it("rejects caller-supplied URLs, push operations, invalid base64 and traversal 
     "https://github.com/../repository",
     "https://github.com/owner/..",
     "https://github.com/owner/repo?next=1",
-    "https://github.com.evil.test/owner/repo",
+    "https://user:secret@github.com/owner/repo",
+    "http://github.com/owner/repo",
+    "https://github.com/repo",
   ])
-    expect(githubRepositorySchema.safeParse(url).success).toBe(false);
+    expect(gitRepositoryUrlSchema.safeParse(url).success).toBe(false);
 });
 
 it("retains local capacity until a downloaded response is consumed or canceled", async () => {
   const service = new CloudRepositories(
     database,
+    null,
     async () =>
       new Response("0000", { headers: { "Content-Type": advertisement } }),
   );
@@ -238,7 +241,7 @@ it("retains local capacity until a downloaded response is consumed or canceled",
 
 it("denies other runners and expired claims before opening a connection", async () => {
   const transport = vi.fn<typeof fetch>();
-  const service = new CloudRepositories(database, transport);
+  const service = new CloudRepositories(database, null, transport);
   const foreign = await runtime.execution.workers.register(
     actor,
     profileId,
@@ -264,7 +267,7 @@ it("withholds fetched bytes if cancellation arrives during the network request",
         release = resolve;
       }),
   );
-  const service = new CloudRepositories(database, transport);
+  const service = new CloudRepositories(database, null, transport);
   const transfer = service.transfer(worker.token, request, signal());
   const rejected = expect(transfer).rejects.toMatchObject({
     code: "attempt_stopped",
@@ -324,7 +327,7 @@ it.each(["redirect", "html", "declared-size", "stream-size"])(
         },
       );
     });
-    const service = new CloudRepositories(database, transport);
+    const service = new CloudRepositories(database, null, transport);
     await expect(
       service.transfer(worker.token, request, signal()),
     ).rejects.toMatchObject({
@@ -350,7 +353,7 @@ it("bounds repeated failures and reaps expired transfers without refunding unkno
   const transport = vi.fn<typeof fetch>(async () => {
     throw new Error("Unavailable");
   });
-  const service = new CloudRepositories(database, transport);
+  const service = new CloudRepositories(database, null, transport);
   await database.engine.query(
     "INSERT INTO cloud_repository_transfers VALUES ($1,$2,$3,$4,$5,'pending',$6,clock_timestamp()-interval '1 second')",
     [

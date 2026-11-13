@@ -100,7 +100,7 @@ export async function requireIssueAccess(
   issueId: string,
   write: boolean,
 ): Promise<void> {
-  if (write) await requireMembership(sql, actor, "write");
+  if (write) await requireMembership(sql, actor, "issues.edit");
   const issue = (
     await sql.query<{ team_id: string }>(
       "SELECT team_id FROM cloud_issues WHERE organization_id=$1 AND id=$2",
@@ -140,7 +140,7 @@ export class CloudAttachments {
     id: string,
     write = false,
   ): Promise<AttachmentRow> {
-    await requireMembership(sql, actor, write ? "write" : "read");
+    await requireMembership(sql, actor, write ? "issues.edit" : undefined);
     const row = await this.row(sql, actor.organizationId, id);
     if (row.issueId) {
       await requireIssueAccess(sql, actor, row.issueId, write);
@@ -249,7 +249,7 @@ export class CloudAttachments {
     await this.database.transaction(async (sql) => {
       if (issueId) await requireIssueAccess(sql, actor, issueId, true);
       else {
-        await requireMembership(sql, actor, "write");
+        await requireMembership(sql, actor, "issues.edit");
         await sql.query(
           `DELETE FROM cloud_attachments WHERE organization_id=$1 AND created_by=$2 AND issue_id IS NULL AND chat_id IS NULL
           AND created_at<clock_timestamp()-$3*interval '1 hour'`,

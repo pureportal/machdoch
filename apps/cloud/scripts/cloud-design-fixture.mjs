@@ -12,7 +12,8 @@ export async function seedCloudDesign(fixture) {
   await api("organization", "PATCH", {
     revision: workspace.organization.revision,
     name: "Northstar Studio",
-    accent: "violet",
+    brand: { ...workspace.organization.brand, color: "#a79bff" },
+    logo: null,
   });
   const team = await api("teams", "POST", {
     name: "Engineering",

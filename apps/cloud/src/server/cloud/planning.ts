@@ -29,8 +29,13 @@ import type {
   TeamInput,
   EstimateCard,
 } from "../../lib/cloud-contract";
+import { organizationColumns } from "./branding";
 import type { CloudDatabase, CloudSql } from "./database";
+import type { GitProvider } from "../../lib/git-providers";
+import type { CloudPermission } from "../../lib/cloud-permissions";
 import {
+  accessCan,
+  actorMember,
   checkRevision,
   CloudError,
   command,
@@ -87,7 +92,7 @@ export async function readIssue(
   sql: CloudSql,
   actor: CloudActor,
   id: string,
-  write = false,
+  permission?: CloudPermission,
 ): Promise<CloudIssue> {
   const identity = await sql.query<{ team_id: string }>(
     "SELECT team_id FROM cloud_issues WHERE organization_id=$1 AND id=$2",
@@ -95,9 +100,9 @@ export async function readIssue(
   );
   if (!identity.rows[0])
     throw new CloudError(404, "not_found", "Issue is unavailable.");
-  await requireTeam(sql, actor, identity.rows[0].team_id, write);
+  await requireTeam(sql, actor, identity.rows[0].team_id, permission);
   const result = await sql.query<CloudIssue & Record<string, unknown>>(
-    `SELECT ${issueColumns} FROM cloud_issues i WHERE i.organization_id=$1 AND i.id=$2 FOR ${write ? "UPDATE" : "SHARE"} OF i`,
+    `SELECT ${issueColumns} FROM cloud_issues i WHERE i.organization_id=$1 AND i.id=$2 FOR ${permission ? "UPDATE" : "SHARE"} OF i`,
     [actor.organizationId, id],
   );
   return result.rows[0]!;
@@ -176,17 +181,26 @@ export class CloudPlanning {
 
   workspace(actor: CloudActor): Promise<CloudWorkspace> {
     return this.database.transaction(async (sql) => {
-      const role = await requireMembership(sql, actor);
+      const access = await requireMembership(sql, actor);
       const organization = (
         await sql.query<CloudOrganization & Record<string, unknown>>(
-          "SELECT id, name, accent, revision FROM cloud_organizations WHERE id=$1",
+          `SELECT ${organizationColumns} FROM cloud_organizations WHERE id=$1`,
           [actor.organizationId],
         )
       ).rows[0]!;
       const members = (
         await sql.query<CloudMember & Record<string, unknown>>(
-          `SELECT u.id, u.name, m.role FROM cloud_memberships m JOIN cloud_users u ON u.id=m.user_id WHERE m.organization_id=$1 AND m.active AND NOT u.disabled ORDER BY u.name, u.id`,
-          [actor.organizationId],
+          `SELECT u.id, u.name, m.role, r.name AS "roleName" FROM cloud_memberships m JOIN cloud_users u ON u.id=m.user_id
+          JOIN cloud_roles r ON r.organization_id=m.organization_id AND r.key=m.role
+          WHERE m.organization_id=$1 AND m.active AND NOT u.disabled AND ($3 OR m.user_id=$2 OR EXISTS (
+            SELECT 1 FROM cloud_team_memberships mine JOIN cloud_team_memberships theirs ON theirs.organization_id=mine.organization_id AND theirs.team_id=mine.team_id
+            WHERE mine.organization_id=m.organization_id AND mine.user_id=$2 AND theirs.user_id=m.user_id))
+          ORDER BY u.name, u.id`,
+          [
+            actor.organizationId,
+            actor.userId,
+            accessCan(access, "members.view"),
+          ],
         )
       ).rows;
       const teams = (
@@ -211,23 +225,23 @@ export class CloudPlanning {
       ).rows;
       return {
         organization,
-        actor: {
-          ...members.find((member) => member.id === actor.userId)!,
-          role,
-        },
+        actor: actorMember(
+          members.find((member) => member.id === actor.userId)!,
+          access,
+        ),
         members,
         teams,
         projects,
         cycles,
         workflows: await readTeamWorkflows(sql, actor.organizationId, teamIds),
-        github: Boolean(
-          (
-            await sql.query(
-              "SELECT 1 FROM cloud_github_connections WHERE organization_id=$1",
-              [actor.organizationId],
-            )
-          ).rows.length,
-        ),
+        gitProviders: accessCan(access, "git.view")
+          ? (
+              await sql.query<{ provider: GitProvider }>(
+                "SELECT provider FROM cloud_git_connections WHERE organization_id=$1 ORDER BY provider",
+                [actor.organizationId],
+              )
+            ).rows.map((row) => row.provider)
+          : [],
       };
     });
   }
@@ -238,7 +252,7 @@ export class CloudPlanning {
     input: TeamInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "teams.manage");
       return command(
         sql,
         actor,
@@ -276,8 +290,7 @@ export class CloudPlanning {
     scale: EstimateCard[],
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
-      const team = await requireTeam(sql, actor, teamId, true);
+      const team = await requireTeam(sql, actor, teamId, "teams.manage");
       return command(
         sql,
         actor,
@@ -309,7 +322,7 @@ export class CloudPlanning {
     input: CycleInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireTeam(sql, actor, input.teamId, true);
+      await requireTeam(sql, actor, input.teamId, "planning.edit");
       return command(
         sql,
         actor,
@@ -414,7 +427,7 @@ export class CloudPlanning {
     input: IssueInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      const team = await requireTeam(sql, actor, input.teamId, true);
+      const team = await requireTeam(sql, actor, input.teamId, "issues.edit");
       return command(
         sql,
         actor,
@@ -433,7 +446,7 @@ export class CloudPlanning {
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      const issue = await readIssue(sql, actor, id, true);
+      const issue = await readIssue(sql, actor, id, "issues.edit");
       return command(
         sql,
         actor,
@@ -448,7 +461,12 @@ export class CloudPlanning {
             input.status,
             issue.status.id,
           );
-          const team = await requireTeam(sql, actor, issue.teamId, true);
+          const team = await requireTeam(
+            sql,
+            actor,
+            issue.teamId,
+            "issues.edit",
+          );
           const points = await validateIssueLinks(
             sql,
             actor,
@@ -569,7 +587,7 @@ export async function validateIssueLinks(
   if (input.assigneeId) {
     const member = await sql.query(
       `SELECT m.user_id FROM cloud_memberships m JOIN cloud_users u ON u.id=m.user_id WHERE m.organization_id=$1 AND m.user_id=$2 AND m.active AND NOT u.disabled
-      AND ($3='organization' OR m.role IN ('owner','admin') OR EXISTS (SELECT 1 FROM cloud_team_memberships tm WHERE tm.organization_id=m.organization_id AND tm.user_id=m.user_id AND tm.team_id=$4))`,
+      AND cloud_team_visible(m.organization_id,$4,$3,m.user_id)`,
       [actor.organizationId, input.assigneeId, team.visibility, team.id],
     );
     if (!member.rows.length)

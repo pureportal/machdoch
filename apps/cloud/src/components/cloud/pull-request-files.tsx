@@ -1,8 +1,10 @@
 "use client";
 
+import { gitProviderLabels, type GitProvider } from "@/lib/git-providers";
+import { LoadingState } from "@machdoch/product-ui";
 import { useEffect, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
-import type { GitHubPullRequestFile } from "@/lib/cloud-github-contract";
+import type { GitPullRequestFile } from "@/lib/cloud-git-contract";
 import { cloudRequest } from "./api-client";
 
 const expandedFileLimit = 3;
@@ -36,15 +38,17 @@ function Patch({ patch }: { patch: string }) {
 export function PullRequestFiles({
   pullRequestId,
   url,
+  provider,
 }: {
   pullRequestId: string;
   url: string;
+  provider: GitProvider;
 }) {
-  const [files, setFiles] = useState<GitHubPullRequestFile[] | null>(null);
+  const [files, setFiles] = useState<GitPullRequestFile[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     const abort = new AbortController();
-    cloudRequest<{ files: GitHubPullRequestFile[] }>(
+    cloudRequest<{ files: GitPullRequestFile[] }>(
       `pull-requests/${pullRequestId}/files`,
       { signal: abort.signal },
     )
@@ -62,12 +66,7 @@ export function PullRequestFiles({
         {error}
       </p>
     );
-  if (!files)
-    return (
-      <p className="cloud-pull-request-loading" aria-busy="true">
-        Loading…
-      </p>
-    );
+  if (!files) return <LoadingState label="Loading changed files…" compact />;
   if (!files.length)
     return <p className="cloud-pull-request-loading">No changed files.</p>;
   return (
@@ -92,11 +91,11 @@ export function PullRequestFiles({
             ) : (
               <a
                 className="cloud-file-external"
-                href={`${url}/files`}
+                href={`${url}/${provider === "gitlab" ? "diffs" : "files"}`}
                 target="_blank"
                 rel="noreferrer"
               >
-                View on GitHub
+                View on {gitProviderLabels[provider]}
                 <ArrowUpRight size={13} aria-hidden="true" />
               </a>
             )}

@@ -1,8 +1,8 @@
 import type {
   CloudPullRequest,
-  GitHubCheckRun,
-  GitHubReviewComment,
-} from "./cloud-github-contract";
+  GitCheckRun,
+  GitReviewComment,
+} from "./cloud-git-contract";
 import { issueSessionTitle } from "./issue-text";
 
 export interface PromptIssue {
@@ -67,7 +67,7 @@ export function pullRequestConflictPrompt(
 
 export function pullRequestChecksPrompt(
   pullRequest: PromptPullRequest,
-  failed: readonly GitHubCheckRun[],
+  failed: readonly GitCheckRun[],
   issues: readonly PromptIssue[],
 ): string {
   return [
@@ -82,7 +82,7 @@ export function pullRequestChecksPrompt(
 
 export function pullRequestReviewPrompt(
   pullRequest: PromptPullRequest,
-  comments: readonly GitHubReviewComment[],
+  comments: readonly GitReviewComment[],
   issues: readonly PromptIssue[],
 ): string {
   return [

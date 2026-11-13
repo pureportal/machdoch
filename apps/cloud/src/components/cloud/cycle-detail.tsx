@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { ArrowLeft, CalendarRange, Users } from "lucide-react";
 import { CycleOverview } from "./cycle-overview";
@@ -36,7 +37,7 @@ export function CyclePlanning({
   const router = useRouter();
   const sender = useRef(createCommandSender());
   const [action, setAction] = useState<"start" | "close" | null>(null);
-  const writable = workspace.actor.role !== "viewer";
+  const writable = holderCan(workspace.actor, "planning.edit");
   const targets = workspace.cycles.filter(
     (candidate) =>
       candidate.teamId === cycle.teamId &&

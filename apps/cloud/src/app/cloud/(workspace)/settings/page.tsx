@@ -1,6 +1,8 @@
+import { holderCan } from "@/lib/cloud-permissions";
 import { redirect } from "next/navigation";
 import { CloudSettings } from "@/components/cloud/settings";
 import { settingsTabs } from "@/lib/cloud-administration-contract";
+import { settingsPermissions } from "@/lib/cloud-sidebar-contract";
 import {
   requireCloudPageSession,
   requireCloudWorkspace,
@@ -13,7 +15,11 @@ export default async function SettingsPage({
 }) {
   const { runtime, actor } = await requireCloudPageSession();
   const workspace = (await requireCloudWorkspace()).workspace;
-  if (!["owner", "admin"].includes(workspace.actor.role))
+  if (
+    !settingsPermissions.some((permission) =>
+      holderCan(workspace.actor, permission),
+    )
+  )
     redirect("/cloud/issues");
   const requested = (await searchParams).tab;
   return (

@@ -38,17 +38,18 @@ function passed(name) {
 try {
   await signIn(owner, "owner@example.test");
   await owner.getByRole("link", { name: "Settings", exact: true }).click();
-  await owner.getByRole("button", { name: "Edit organization" }).click();
-  await dialog(owner)
-    .getByLabel("Name", { exact: true })
-    .fill("Verification studio");
-  await dialog(owner).getByLabel("Accent").selectOption("violet");
-  await saveDialog(owner, "Save organization");
-  await owner.locator('.cloud-shell[data-cloud-accent="violet"]').waitFor();
-  assert.equal(
-    (await api("workspace")).organization.name,
-    "Verification studio",
-  );
+  await owner.getByLabel("Name", { exact: true }).fill("Verification studio");
+  await owner.getByRole("radio", { name: "Violet", exact: true }).first().click();
+  await owner.getByRole("radio", { name: "Initials", exact: true }).click();
+  await owner.getByRole("button", { name: "Save organization" }).click();
+  await owner
+    .locator(".cloud-sidebar .cloud-brand-initials", { hasText: "VS" })
+    .first()
+    .waitFor();
+  const { organization } = await api("workspace");
+  assert.equal(organization.name, "Verification studio");
+  assert.equal(organization.brand.color, "#a79bff");
+  assert.equal(organization.brand.mark, "initials");
   passed("Organization branding persists and updates navigation");
 
   await owner.getByRole("tab", { name: "Members", exact: true }).click();

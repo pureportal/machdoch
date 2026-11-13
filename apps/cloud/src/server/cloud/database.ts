@@ -49,6 +49,11 @@ export const cloudMigrations = [
   "046-automations.sql",
   "047-releases.sql",
   "048-attachments.sql",
+  "049-remove-copilot-sidebar-item.sql",
+  "050-organization-branding.sql",
+  "051-git-providers.sql",
+  "052-roles.sql",
+  "053-sidebar-sections.sql",
 ];
 
 export interface CloudSql {

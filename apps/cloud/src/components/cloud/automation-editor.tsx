@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { Plus } from "lucide-react";
 import { useRef, useState } from "react";
 import { Field } from "@/components/field";
@@ -16,8 +17,13 @@ import type {
 import {
   actionHasRelease,
   actionNeedsIssue,
+  actionNeedsPullRequest,
+  delegateHasTarget,
+  pullRequestActionKinds,
   triggerHasIssue,
+  triggerHasPullRequest,
 } from "@/lib/cloud-automation-contract";
+import { isPullRequestEvent } from "@/lib/git-events";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import { automationVariableNames } from "@/lib/automation-text";
 import type {
@@ -46,10 +52,38 @@ function availableVariables(
   const agentBefore = input.actions
     .slice(0, index)
     .some((action) => action.kind === "ask_agent");
+  const git = input.trigger.kind === "git_event" ? input.trigger.events : [];
+  const gitHas = (...kinds: string[]) =>
+    git.some((event) => kinds.includes(event));
   return automationVariableNames.filter((name) => {
     if (name.startsWith("issue.")) return hasIssue;
-    if (name === "comment.body") return kind === "comment_created";
-    if (name.startsWith("pullRequest.")) return kind === "pull_request_changed";
+    if (name === "comment.body")
+      return kind === "comment_created" || gitHas("comment_created");
+    if (name.startsWith("comment.")) return gitHas("comment_created");
+    if (name === "pullRequest.stage") return kind === "pull_request_changed";
+    if (name === "pullRequest.title" || name === "pullRequest.url")
+      return kind === "pull_request_changed" || git.some(isPullRequestEvent);
+    if (name.startsWith("pullRequest.")) return git.some(isPullRequestEvent);
+    if (
+      [
+        "event.kind",
+        "repository.name",
+        "repository.url",
+        "branch",
+        "sender",
+      ].includes(name)
+    )
+      return git.length > 0;
+    if (name === "tag") return gitHas("tag_created");
+    if (name.startsWith("push.")) return gitHas("push");
+    if (name.startsWith("review."))
+      return gitHas(
+        "review_approved",
+        "review_changes_requested",
+        "review_commented",
+        "review_dismissed",
+      );
+    if (name.startsWith("parent.")) return gitHas("stack_base_merged");
     if (name === "payload") return kind === "webhook";
     if (name.startsWith("release.")) return actionHasRelease(input, index);
     if (name === "agent.answer") return agentBefore;
@@ -143,16 +177,22 @@ export function AutomationEditor({
     definitions,
   );
   const hasIssue = triggerHasIssue(input.trigger);
-  const admin = ["owner", "admin"].includes(workspace.actor.role);
+  const hasPullRequest = triggerHasPullRequest(input.trigger);
   const addable = actionKinds.filter(
     (entry) =>
       (hasIssue || !entry.issue) &&
-      (admin ||
-        (entry.kind !== "send_webhook" &&
-          entry.kind !== "start_client_session")) &&
+      (hasPullRequest ||
+        !(pullRequestActionKinds as readonly string[]).includes(entry.kind)) &&
+      (entry.kind !== "send_webhook" ||
+        holderCan(workspace.actor, "settings.manage")) &&
+      (entry.kind !== "start_client_session" ||
+        holderCan(workspace.actor, "clients.manage")) &&
       (entry.kind !== "ask_agent" || options.models.length > 0) &&
       (entry.kind !== "delegate" ||
-        options.profiles.some((profile) => profile.teamId === input.teamId)) &&
+        (delegateHasTarget(input.trigger) &&
+          options.profiles.some(
+            (profile) => profile.teamId === input.teamId,
+          ))) &&
       (entry.kind !== "prepare_release" || options.products.length > 0) &&
       (entry.kind !== "write_release_posts" ||
         (options.models.length > 0 &&
@@ -162,7 +202,10 @@ export function AutomationEditor({
     !input.name.trim() ||
     !input.actions.length ||
     input.actions.some(actionIncomplete) ||
-    (!hasIssue && input.actions.some(actionNeedsIssue));
+    (!hasIssue && input.actions.some(actionNeedsIssue)) ||
+    (!hasPullRequest && input.actions.some(actionNeedsPullRequest)) ||
+    (!delegateHasTarget(input.trigger) &&
+      input.actions.some((action) => action.kind === "delegate"));
   const setAction = (index: number, action: AutomationAction) =>
     update({
       actions: input.actions.map((entry, position) =>
@@ -235,7 +278,7 @@ export function AutomationEditor({
             statuses={statuses}
             labels={labels}
             products={options.products}
-            github={workspace.github}
+            repositories={options.repositories}
             onChange={(trigger) =>
               update({
                 trigger,
@@ -286,6 +329,7 @@ export function AutomationEditor({
               teamId={input.teamId}
               variables={availableVariables(input, index, hasIssue)}
               hasIssue={hasIssue}
+              hasPullRequest={hasPullRequest}
               onChange={(next) => setAction(index, next)}
               onMove={(offset) => {
                 const actions = [...input.actions];

@@ -14,7 +14,7 @@ import type { CloudProjectUpdates } from "../project-updates";
 import type { CloudInitiatives } from "../initiatives";
 import type { CloudTriage } from "../triage";
 import type { CloudRuns } from "../execution/runs";
-import type { CloudGitHubPullRequests } from "../github/pull-requests";
+import type { CloudGitPullRequests } from "../git/pull-requests";
 import type { CloudReleases } from "../releases/releases";
 import type { CloudProducts } from "../releases/products";
 import type { CloudReleaseMedia } from "../releases/release-media";
@@ -37,7 +37,7 @@ export interface AgentServices {
   initiatives: CloudInitiatives;
   triage: CloudTriage;
   runs: CloudRuns;
-  pullRequests: CloudGitHubPullRequests;
+  pullRequests: CloudGitPullRequests;
   releases: CloudReleases;
   products: CloudProducts;
   releaseMedia: CloudReleaseMedia;

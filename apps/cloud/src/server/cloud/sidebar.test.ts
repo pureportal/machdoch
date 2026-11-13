@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import type { CloudActor } from "../../lib/cloud-contract";
 import {
@@ -70,4 +71,35 @@ it("keeps sidebar preferences per member, including read-only members", async ()
     [viewer.userId],
   );
   await expect(sidebar.get(viewer)).rejects.toMatchObject({ status: 403 });
+});
+
+it("drops sidebar entries that became tabs of another entry", async () => {
+  await database.engine.query(
+    "INSERT INTO cloud_sidebar_preferences (organization_id,user_id,preferences) VALUES ($1,$2,$3)",
+    [
+      owner.organizationId,
+      owner.userId,
+      JSON.stringify({
+        items: [
+          { id: "schedules", placement: "show" },
+          { id: "automations", placement: "more" },
+          { id: "privacy", placement: "hide" },
+          { id: "execution", placement: "show" },
+        ],
+        hiddenSections: [],
+        hiddenTeamIds: [],
+      }),
+    ],
+  );
+  await database.engine.exec(
+    await readFile(
+      new URL("./migrations/053-sidebar-sections.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  expect(await sidebar.get(owner)).toEqual({
+    items: [{ id: "automations", placement: "more" }],
+    hiddenSections: [],
+    hiddenTeamIds: [],
+  });
 });

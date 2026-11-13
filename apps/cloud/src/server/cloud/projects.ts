@@ -33,7 +33,12 @@ export async function readProject(
   ).rows[0];
   if (!identity)
     throw new CloudError(404, "not_found", "Project is unavailable.");
-  await requireTeam(sql, actor, identity.team_id, write);
+  await requireTeam(
+    sql,
+    actor,
+    identity.team_id,
+    write ? "planning.edit" : undefined,
+  );
   return (
     await sql.query<CloudProject & Record<string, unknown>>(
       `SELECT ${projectColumns} FROM cloud_projects WHERE organization_id=$1 AND id=$2 FOR ${write ? "UPDATE" : "SHARE"}`,
@@ -95,7 +100,7 @@ export class CloudProjects {
     input: ProjectInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireTeam(sql, actor, input.teamId, true);
+      await requireTeam(sql, actor, input.teamId, "planning.edit");
       return command(
         sql,
         actor,

@@ -103,7 +103,7 @@ export class CloudEmailSettingsService {
 
   get(actor: CloudActor): Promise<CloudEmailAdministration> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "settings.manage");
       const settings =
         (
           await sql.query<CloudEmailSettings & Record<string, unknown>>(
@@ -138,7 +138,7 @@ export class CloudEmailSettingsService {
     input: EmailSettingsInput,
   ): Promise<{ revision: number }> {
     return this.database.transaction(async (sql) => {
-      if ((await requireMembership(sql, actor, "admin")) !== "owner")
+      if (!(await requireMembership(sql, actor, "settings.manage")).owner)
         throw new CloudError(
           403,
           "owner_required",
@@ -245,7 +245,7 @@ export class CloudEmailSettingsService {
 
   connection(actor: CloudActor, revision: number): Promise<SmtpConnection> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "settings.manage");
       return smtpConnection(sql, this.cipher, actor.organizationId, revision);
     });
   }

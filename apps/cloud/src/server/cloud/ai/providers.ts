@@ -43,7 +43,11 @@ export class CloudAiProviders {
     administration = false,
   ): Promise<CloudProviderSettings> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, administration ? "admin" : "read");
+      await requireMembership(
+        sql,
+        actor,
+        administration ? "ai.manage" : undefined,
+      );
       const providers = (
         await sql.query<CloudAiProvider & Record<string, unknown>>(
           `SELECT ${providerColumns} FROM cloud_ai_providers WHERE organization_id=$1 AND ($2 OR enabled) ORDER BY name,id`,
@@ -60,7 +64,7 @@ export class CloudAiProviders {
     input: ProviderInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "ai.manage");
       const cipher = await requireCredentialStorage(sql, this.cipher);
       return command(
         sql,
@@ -115,7 +119,7 @@ export class CloudAiProviders {
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "ai.manage");
       const cipher = await requireCredentialStorage(sql, this.cipher);
       const current = (
         await sql.query<CloudAiProvider & Record<string, unknown>>(
@@ -223,7 +227,7 @@ export class CloudAiProviders {
     id: string,
   ): Promise<{ provider: CloudCliProvider; home: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "ai.manage");
       const row = (
         await sql.query<{ provider: CloudProviderKind }>(
           "SELECT provider FROM cloud_ai_providers WHERE organization_id=$1 AND id=$2",
@@ -245,7 +249,7 @@ export class CloudAiProviders {
     model: string,
   ): Promise<ResolvedProvider> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "ai.chat");
       const cipher = await requireCredentialStorage(sql, this.cipher);
       const row = (
         await sql.query<

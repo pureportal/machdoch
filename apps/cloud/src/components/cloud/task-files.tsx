@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { useEffect, useRef, useState } from "react";
 import type {
   ArtifactPreview,
@@ -175,7 +176,7 @@ export function TaskFiles({
               )}
             </>
           ) : (
-            <p role="status">Loading file…</p>
+            <LoadingState label="Loading file…" />
           )}
         </DialogContent>
       </Dialog>

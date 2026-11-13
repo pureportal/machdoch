@@ -1,9 +1,28 @@
 import { z } from "zod";
-import { cloudId, type CloudRole } from "./cloud-contract";
+import { cloudId } from "./cloud-contract";
+import {
+  holderCan,
+  type CloudPermission,
+  type PermissionHolder,
+} from "./cloud-permissions";
+
+export const settingsPermissions = [
+  "settings.manage",
+  "members.manage",
+  "roles.manage",
+  "git.manage",
+] as const satisfies readonly CloudPermission[];
 
 export const sidebarPlacements = ["show", "more", "hide"] as const;
 export type SidebarPlacement = (typeof sidebarPlacements)[number];
 export type SidebarGroup = "top" | "workspace";
+
+export interface SidebarTab {
+  href: string;
+  label: string;
+  description: string;
+  permission?: CloudPermission;
+}
 
 export const sidebarItems = [
   {
@@ -12,6 +31,8 @@ export const sidebarItems = [
     href: "/cloud/inbox",
     group: "top",
     placement: "show",
+    description:
+      "Notifications about issues you are assigned to, mentioned in or subscribed to.",
   },
   {
     id: "my-issues",
@@ -19,6 +40,7 @@ export const sidebarItems = [
     href: "/cloud/issues?scope=mine",
     group: "top",
     placement: "show",
+    description: "Issues assigned to you across all of your teams.",
   },
   {
     id: "pulse",
@@ -26,6 +48,8 @@ export const sidebarItems = [
     href: "/cloud/pulse",
     group: "top",
     placement: "show",
+    description:
+      "Status updates posted on projects, newest first, so you can follow progress without opening each project.",
   },
   {
     id: "agent",
@@ -33,6 +57,10 @@ export const sidebarItems = [
     href: "/cloud/chat",
     group: "top",
     placement: "show",
+    permission: "ai.chat",
+    fullBleed: true,
+    description:
+      "Ask the AI assistant about your workspace. It drafts issues and changes that only apply after you confirm them.",
   },
   {
     id: "activity",
@@ -40,6 +68,20 @@ export const sidebarItems = [
     href: "/cloud/activity",
     group: "top",
     placement: "show",
+    tabs: [
+      {
+        href: "/cloud/activity",
+        label: "Activity",
+        description:
+          "A log of everything the AI did: Agent answers and proposals, task progress and model calls. Entries are kept for 90 days.",
+      },
+      {
+        href: "/cloud/tasks",
+        label: "AI tasks",
+        description:
+          "AI tasks do coding work on an issue in a sandbox or on a linked client and report back. Start one from an issue.",
+      },
+    ],
   },
   {
     id: "issues",
@@ -47,6 +89,7 @@ export const sidebarItems = [
     href: "/cloud/issues",
     group: "workspace",
     placement: "show",
+    description: "All issues in the teams you can access.",
   },
   {
     id: "pull-requests",
@@ -54,7 +97,9 @@ export const sidebarItems = [
     href: "/cloud/pull-requests",
     group: "workspace",
     placement: "show",
-    integration: "github",
+    integration: "git",
+    description:
+      "Pull requests from connected GitHub and GitLab repositories, grouped by what they need next.",
   },
   {
     id: "initiatives",
@@ -62,6 +107,8 @@ export const sidebarItems = [
     href: "/cloud/initiatives",
     group: "workspace",
     placement: "show",
+    description:
+      "Long-term goals that group several projects, so you can track progress above project level.",
   },
   {
     id: "projects",
@@ -69,6 +116,19 @@ export const sidebarItems = [
     href: "/cloud/projects",
     group: "workspace",
     placement: "show",
+    tabs: [
+      {
+        href: "/cloud/projects",
+        label: "Projects",
+        description:
+          "Time-bound pieces of work with a lead, a target date and progress across their issues.",
+      },
+      {
+        href: "/cloud/roadmap",
+        label: "Roadmap",
+        description: "Projects and their milestones on a timeline.",
+      },
+    ],
   },
   {
     id: "views",
@@ -76,6 +136,8 @@ export const sidebarItems = [
     href: "/cloud/views",
     group: "workspace",
     placement: "show",
+    description:
+      "Saved issue filters that you can reopen at any time or share with your team.",
   },
   {
     id: "cycles",
@@ -83,6 +145,8 @@ export const sidebarItems = [
     href: "/cloud/cycles",
     group: "workspace",
     placement: "show",
+    description:
+      "Fixed-length iterations, like sprints, for planning how much work a team takes on.",
   },
   {
     id: "releases",
@@ -90,6 +154,28 @@ export const sidebarItems = [
     href: "/cloud/releases",
     group: "workspace",
     placement: "show",
+    permission: "releases.view",
+    tabs: [
+      {
+        href: "/cloud/releases",
+        label: "Releases",
+        description:
+          "Collect shipped issues into releases and publish posts about them on your channels.",
+      },
+      {
+        href: "/cloud/releases/products",
+        label: "Products",
+        description:
+          "The products you ship, with the voice, channels and rules Agent follows when it writes release posts.",
+      },
+      {
+        href: "/cloud/releases/connections",
+        label: "Connections",
+        permission: "releases.manage",
+        description:
+          "Social accounts and publishing channels that release posts go out to.",
+      },
+    ],
   },
   {
     id: "automations",
@@ -97,6 +183,20 @@ export const sidebarItems = [
     href: "/cloud/automations",
     group: "workspace",
     placement: "show",
+    tabs: [
+      {
+        href: "/cloud/automations",
+        label: "Automations",
+        description:
+          "Rules that act when something happens in a team, such as labeling, assigning, commenting or asking Agent.",
+      },
+      {
+        href: "/cloud/schedules",
+        label: "Schedules",
+        description:
+          "AI tasks that run on a timetable, such as a nightly dependency check, within a token budget.",
+      },
+    ],
   },
   {
     id: "clients",
@@ -104,28 +204,37 @@ export const sidebarItems = [
     href: "/instances",
     group: "workspace",
     placement: "show",
-    admin: true,
-  },
-  {
-    id: "roadmap",
-    label: "Roadmap",
-    href: "/cloud/roadmap",
-    group: "workspace",
-    placement: "more",
-  },
-  {
-    id: "tasks",
-    label: "AI tasks",
-    href: "/cloud/tasks",
-    group: "workspace",
-    placement: "more",
-  },
-  {
-    id: "schedules",
-    label: "Schedules",
-    href: "/cloud/schedules",
-    group: "workspace",
-    placement: "more",
+    permission: ["clients.manage", "ai.manage"],
+    tabs: [
+      {
+        href: "/instances",
+        label: "Devices",
+        permission: "clients.manage",
+        description:
+          "Computers running the Machdoch app that are linked to this organization. Check their status, control them remotely or revoke them.",
+      },
+      {
+        href: "/workspaces",
+        label: "Workspaces",
+        permission: "clients.manage",
+        description:
+          "Projects open on linked clients. Open one to chat, run tasks or use its files and terminal remotely.",
+      },
+      {
+        href: "/enrollment",
+        label: "Enrollment",
+        permission: "clients.manage",
+        description:
+          "Create the keys that link a new client to this organization.",
+      },
+      {
+        href: "/settings",
+        label: "Profiles",
+        permission: "ai.manage",
+        description:
+          "Shared configuration for clients, such as instructions, prompts, MCP servers and secrets. Assign a profile to clients to keep them in sync.",
+      },
+    ],
   },
   {
     id: "teams",
@@ -133,6 +242,8 @@ export const sidebarItems = [
     href: "/cloud/teams",
     group: "workspace",
     placement: "more",
+    description:
+      "Groups of people with their own issues, workflow, labels and cycles.",
   },
   {
     id: "connections",
@@ -140,46 +251,8 @@ export const sidebarItems = [
     href: "/cloud/connections",
     group: "workspace",
     placement: "more",
-  },
-  {
-    id: "workspaces",
-    label: "Client workspaces",
-    href: "/workspaces",
-    group: "workspace",
-    placement: "more",
-    admin: true,
-  },
-  {
-    id: "copilot",
-    label: "Copilot",
-    href: "/copilot",
-    group: "workspace",
-    placement: "more",
-    admin: true,
-  },
-  {
-    id: "enrollment",
-    label: "Enrollment",
-    href: "/enrollment",
-    group: "workspace",
-    placement: "more",
-    admin: true,
-  },
-  {
-    id: "profiles",
-    label: "Client profiles",
-    href: "/settings",
-    group: "workspace",
-    placement: "more",
-    admin: true,
-  },
-  {
-    id: "privacy",
-    label: "Client privacy",
-    href: "/privacy",
-    group: "workspace",
-    placement: "more",
-    admin: true,
+    description:
+      "Apps and MCP clients you allowed to work with your account. Connect one with the MCP URL below.",
   },
   {
     id: "providers",
@@ -187,15 +260,21 @@ export const sidebarItems = [
     href: "/cloud/providers",
     group: "workspace",
     placement: "more",
-    admin: true,
-  },
-  {
-    id: "execution",
-    label: "AI execution",
-    href: "/cloud/execution",
-    group: "workspace",
-    placement: "more",
-    admin: true,
+    permission: "ai.manage",
+    tabs: [
+      {
+        href: "/cloud/providers",
+        label: "Providers",
+        description:
+          "Accounts for AI models, as API keys or signed-in CLIs, that Agent and AI tasks use.",
+      },
+      {
+        href: "/cloud/execution",
+        label: "Execution profiles",
+        description:
+          "Where AI tasks run, with which repository, provider and model, and which checks they must pass.",
+      },
+    ],
   },
   {
     id: "settings",
@@ -203,17 +282,23 @@ export const sidebarItems = [
     href: "/cloud/settings",
     group: "workspace",
     placement: "more",
-    admin: true,
+    permission: settingsPermissions,
+    description:
+      "Organization, members, roles, sign-in, email and Git settings.",
   },
-] as const satisfies readonly {
+] as const satisfies readonly ({
   id: string;
   label: string;
   href: string;
   group: SidebarGroup;
   placement: SidebarPlacement;
-  admin?: true;
-  integration?: "github";
-}[];
+  permission?: CloudPermission | readonly CloudPermission[];
+  integration?: "git";
+  fullBleed?: true;
+} & (
+  | { description: string; tabs?: never }
+  | { tabs: readonly [SidebarTab, ...SidebarTab[]]; description?: never }
+))[];
 export type SidebarItemId = (typeof sidebarItems)[number]["id"];
 export type SidebarItem = (typeof sidebarItems)[number];
 export const sidebarItemIds = sidebarItems.map((item) => item.id) as [
@@ -258,19 +343,38 @@ export interface SidebarEntry {
   placement: SidebarPlacement;
 }
 
-export interface SidebarAccess {
-  role: CloudRole;
-  github: boolean;
+export interface SidebarAccess extends PermissionHolder {
+  git: boolean;
+}
+
+export type SidebarPage = Omit<SidebarTab, "permission">;
+
+export function sidebarPages(
+  item: SidebarItem,
+  access: PermissionHolder,
+): SidebarPage[] {
+  if (!("tabs" in item))
+    return [
+      { href: item.href, label: item.label, description: item.description },
+    ];
+  const tabs: readonly SidebarTab[] = item.tabs;
+  return tabs.filter(
+    (tab) => !tab.permission || holderCan(access, tab.permission),
+  );
 }
 
 export function canSeeSidebarItem(
   item: SidebarItem,
   access: SidebarAccess,
 ): boolean {
-  if ("integration" in item && !access.github) return false;
-  return (
-    !("admin" in item) || access.role === "owner" || access.role === "admin"
-  );
+  if ("integration" in item && !access.git) return false;
+  if ("permission" in item) {
+    const required: readonly CloudPermission[] =
+      typeof item.permission === "string" ? [item.permission] : item.permission;
+    if (!required.some((permission) => holderCan(access, permission)))
+      return false;
+  }
+  return sidebarPages(item, access).length > 0;
 }
 
 export function sidebarEntries(

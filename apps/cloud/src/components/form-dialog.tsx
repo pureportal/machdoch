@@ -19,6 +19,7 @@ export function FormDialog({
   children,
   focusWhenOpenerRemoved,
   submitDisabled = false,
+  pendingLabel = "Saving…",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -28,6 +29,7 @@ export function FormDialog({
   children: React.ReactNode;
   focusWhenOpenerRemoved?: React.RefObject<HTMLElement | null>;
   submitDisabled?: boolean;
+  pendingLabel?: string;
 }): React.ReactElement {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -108,7 +110,7 @@ export function FormDialog({
                 </Button>
               </DialogClose>
               <Button ref={submit} type="submit" disabled={submitDisabled}>
-                {pending ? "Saving…" : submitLabel}
+                {pending ? pendingLabel : submitLabel}
               </Button>
             </DialogFooter>
           </fieldset>

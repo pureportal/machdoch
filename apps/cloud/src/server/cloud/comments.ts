@@ -5,6 +5,7 @@ import type {
 } from "../../lib/cloud-comment-contract";
 import type { CloudActor, CloudIssue } from "../../lib/cloud-contract";
 import {
+  accessCan,
   checkRevision,
   CloudError,
   command,
@@ -103,7 +104,7 @@ export class CloudComments {
     body: string,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      const issue = await readIssue(sql, actor, issueId, true);
+      const issue = await readIssue(sql, actor, issueId, "comments.write");
       return command(
         sql,
         actor,
@@ -137,8 +138,13 @@ export class CloudComments {
       ).rows[0];
       if (!reference)
         throw new CloudError(404, "not_found", "Comment is unavailable.");
-      const issue = await readIssue(sql, actor, reference.issue_id, true);
-      const role = await requireMembership(sql, actor, "write");
+      const issue = await readIssue(
+        sql,
+        actor,
+        reference.issue_id,
+        "comments.write",
+      );
+      const access = await requireMembership(sql, actor, "comments.write");
       const comment = (
         await sql.query<{
           author_id: string;
@@ -151,12 +157,12 @@ export class CloudComments {
       ).rows[0]!;
       if (
         comment.author_id !== actor.userId &&
-        !(input.kind === "delete" && ["owner", "admin"].includes(role))
+        !(input.kind === "delete" && accessCan(access, "teams.manage"))
       )
         throw new CloudError(
           403,
           "author_required",
-          "Only the author can edit this comment. Administrators can remove it.",
+          "Only the author can edit this comment. Team managers can remove it.",
         );
       return command(
         sql,

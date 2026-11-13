@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type {
@@ -67,7 +68,7 @@ export function TwoFactorEnrollment({
       {setup ? (
         <AuthenticatorQr setup={setup} />
       ) : (
-        !error && <p role="status">Loading…</p>
+        !error && <LoadingState label="Loading…" compact />
       )}
       {setup && (
         <form

@@ -108,7 +108,7 @@ export class CloudSocial {
 
   apps(actor: CloudActor): Promise<SocialApp[]> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       const rows = (
         await sql.query<{
           network: SocialNetwork;
@@ -142,7 +142,7 @@ export class CloudSocial {
     },
   ): Promise<void> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       const storage = await requireCredentialStorage(sql, this.cipher);
       await sql.query(
         `INSERT INTO cloud_social_apps (organization_id,network,client_id,secret,organization_pages,updated_by) VALUES ($1,$2,$3,$4,$5,$6)
@@ -164,7 +164,7 @@ export class CloudSocial {
 
   accounts(actor: CloudActor): Promise<SocialAccount[]> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor);
+      await requireMembership(sql, actor, "releases.view");
       return (
         await sql.query<SocialAccount & Record<string, unknown>>(
           `SELECT a.id,a.network,a.name,a.external_id AS "externalId",u.name AS "connectedBy",
@@ -179,7 +179,7 @@ export class CloudSocial {
 
   removeAccount(actor: CloudActor, id: string): Promise<void> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       const used = await sql.query(
         "SELECT 1 FROM cloud_product_channels WHERE organization_id=$1 AND account_id=$2 LIMIT 1",
         [actor.organizationId, id],
@@ -199,7 +199,7 @@ export class CloudSocial {
 
   startConnect(actor: CloudActor, network: SocialNetwork): Promise<string> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       const app = await this.app(sql, actor.organizationId, network);
       const state = randomBytes(32).toString("base64url");
       await sql.query(
@@ -227,7 +227,7 @@ export class CloudSocial {
     state: string,
   ): Promise<{ id: string }> {
     const app = await this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       const claimed = await sql.query(
         "DELETE FROM cloud_social_oauth_states WHERE state_hash=$1 AND organization_id=$2 AND user_id=$3 AND network=$4 AND expires_at>clock_timestamp() RETURNING state_hash",
         [hash(state), actor.organizationId, actor.userId, network],
@@ -250,7 +250,7 @@ export class CloudSocial {
       throw socialFailure(error);
     }
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       const storage = await requireCredentialStorage(sql, this.cipher);
       const existing = (
         await sql.query<{ id: string }>(
@@ -397,7 +397,7 @@ export class CloudSocial {
     accountId: string,
   ): Promise<SocialAccess> {
     await this.database.transaction((sql) =>
-      requireMembership(sql, actor, "admin"),
+      requireMembership(sql, actor, "releases.manage"),
     );
     return this.access(actor.organizationId, accountId);
   }

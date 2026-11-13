@@ -155,7 +155,7 @@ export class CloudProducts {
 
   list(actor: CloudActor, archived = false): Promise<CloudProduct[]> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor);
+      await requireMembership(sql, actor, "releases.view");
       return (
         await sql.query<ProductRow & Record<string, unknown>>(
           `SELECT ${productColumns} FROM cloud_products p WHERE p.organization_id=$1 AND p.archived=$2 ORDER BY lower(p.definition->>'name'),p.id`,
@@ -170,7 +170,7 @@ export class CloudProducts {
     id: string,
   ): Promise<{ product: CloudProduct; channels: CloudChannel[] }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor);
+      await requireMembership(sql, actor, "releases.view");
       return {
         product: await readProduct(sql, actor.organizationId, id),
         channels: await readChannels(sql, actor.organizationId, id),
@@ -184,7 +184,7 @@ export class CloudProducts {
     input: ProductInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       return command(
         sql,
         actor,
@@ -239,7 +239,7 @@ export class CloudProducts {
     input: { revision: number; product: ProductInput },
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       const current = await readProduct(sql, actor.organizationId, id, true);
       return command(
         sql,
@@ -289,7 +289,7 @@ export class CloudProducts {
     input: { revision: number; archived: boolean },
   ): Promise<void> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       const current = await readProduct(sql, actor.organizationId, id, true);
       checkRevision(current.revision, input.revision);
       await sql.query(
@@ -348,7 +348,7 @@ export class CloudProducts {
     input: ChannelInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       await readProduct(sql, actor.organizationId, productId, true);
       return command(
         sql,
@@ -400,7 +400,7 @@ export class CloudProducts {
     input: { revision: number; channel: ChannelInput },
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       const current = (
         await sql.query<{
           kind: string;
@@ -450,7 +450,7 @@ export class CloudProducts {
 
   removeChannel(actor: CloudActor, id: string): Promise<void> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "releases.manage");
       const published = await sql.query(
         "SELECT 1 FROM cloud_release_posts WHERE organization_id=$1 AND channel_id=$2 AND state IN ('publishing','published') LIMIT 1",
         [actor.organizationId, id],

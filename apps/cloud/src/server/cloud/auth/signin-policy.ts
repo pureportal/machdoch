@@ -26,7 +26,7 @@ export class CloudSigninPolicy {
 
   get(actor: CloudActor) {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "settings.manage");
       return (
         (
           await sql.query<{ required: boolean; revision: number }>(
@@ -45,7 +45,7 @@ export class CloudSigninPolicy {
     session: string,
   ) {
     return this.database.transaction(async (sql) => {
-      if ((await lockAdministration(sql, actor)) !== "owner")
+      if (!(await lockAdministration(sql, actor, "settings.manage")).owner)
         throw new CloudError(
           403,
           "owner_required",

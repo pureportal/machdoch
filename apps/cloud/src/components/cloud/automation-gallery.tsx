@@ -1,6 +1,8 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   automationTemplates,
   type AutomationTemplate,
@@ -51,12 +53,14 @@ export function AutomationGallery({
         : template.requires.includes("product") && !options.products.length
           ? "Needs a product"
           : template.requires.includes("client") &&
-              !["owner", "admin"].includes(workspace.actor.role)
+              !holderCan(workspace.actor, "clients.manage")
             ? "Only owners and administrators"
             : template.requires.includes("client") && !options.clients.length
               ? "Needs a connected client"
-              : template.trigger === "pull_request_changed" && !workspace.github
-                ? "Needs GitHub"
+              : (template.trigger === "pull_request_changed" ||
+                    template.trigger === "git_event") &&
+                  !workspace.gitProviders.length
+                ? "Needs a Git connection"
                 : null;
   const build = (template: AutomationTemplate) =>
     template.build({
@@ -81,25 +85,35 @@ export function AutomationGallery({
     });
   return (
     <div className="cloud-automation-gallery">
-      {workspace.teams.length > 1 && (
-        <div
-          className="cloud-automation-gallery-team"
-          role="group"
-          aria-label="Team"
+      <div className="cloud-automation-gallery-header">
+        {workspace.teams.length > 1 && (
+          <div
+            className="cloud-automation-gallery-team"
+            role="group"
+            aria-label="Team"
+          >
+            {workspace.teams.map((team) => (
+              <button
+                key={team.id}
+                type="button"
+                className="cloud-automation-chip"
+                aria-pressed={team.id === teamId}
+                onClick={() => onTeamChange(team.id)}
+              >
+                {team.name}
+              </button>
+            ))}
+          </div>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onChoose(blankAutomation(teamId))}
         >
-          {workspace.teams.map((team) => (
-            <button
-              key={team.id}
-              type="button"
-              className="cloud-automation-chip"
-              aria-pressed={team.id === teamId}
-              onClick={() => onTeamChange(team.id)}
-            >
-              {team.name}
-            </button>
-          ))}
-        </div>
-      )}
+          <Plus size={14} aria-hidden="true" />
+          Start from scratch
+        </Button>
+      </div>
       {(Object.keys(categoryLabels) as AutomationTemplateCategory[]).map(
         (category) => (
           <section key={category} aria-label={categoryLabels[category]}>
@@ -127,16 +141,6 @@ export function AutomationGallery({
                     </button>
                   );
                 })}
-              {category === "workflow" && (
-                <button
-                  type="button"
-                  className="cloud-automation-template-card"
-                  onClick={() => onChoose(blankAutomation(teamId))}
-                >
-                  <Plus size={16} aria-hidden="true" />
-                  <span>Start from scratch</span>
-                </button>
-              )}
             </div>
           </section>
         ),

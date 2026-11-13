@@ -1,3 +1,4 @@
+import { holderCan } from "@/lib/cloud-permissions";
 import {
   AiActivityView,
   type AiActivityScope,
@@ -17,7 +18,7 @@ export default async function ActivityPage({
 }) {
   const { runtime, actor } = await requireCloudPageSession();
   const workspace = (await requireCloudWorkspace()).workspace;
-  const admin = ["owner", "admin"].includes(workspace.actor.role);
+  const admin = holderCan(workspace.actor, "clients.manage");
   const parameters = await searchParams;
   const runId = cloudId.safeParse(parameters.run);
   const clientId = aiActivityQuerySchema.shape.clientId.safeParse(

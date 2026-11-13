@@ -68,7 +68,7 @@ export class CloudIssueRelations {
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "issues.edit");
       const source = await readIssue(sql, actor, issueId);
       const target = await readIssue(sql, actor, input.targetId);
       return command(
@@ -106,7 +106,7 @@ export class CloudIssueRelations {
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "issues.edit");
       const issue = await readIssue(sql, actor, issueId);
       const relation = (
         await sql.query<{
@@ -161,7 +161,12 @@ export class CloudIssueRelations {
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      const team = await requireTeam(sql, actor, input.issue.teamId, true);
+      const team = await requireTeam(
+        sql,
+        actor,
+        input.issue.teamId,
+        "issues.edit",
+      );
       const parent = await readIssue(sql, actor, parentId);
       return command(
         sql,

@@ -1,31 +1,22 @@
 import {
   Activity,
-  Bot,
   BrainCircuit,
-  CalendarClock,
   CalendarRange,
   CircleDot,
   CircleDotDashed,
   CircleUserRound,
   FolderKanban,
-  FolderTree,
   GitPullRequest,
   Inbox,
-  KeyRound,
   Layers,
   Layers2,
   Megaphone,
-  Map,
   Monitor,
   Plug,
   Settings2,
-  ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
-  SquareTerminal,
   Target,
   Users,
-  Workflow,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -33,15 +24,18 @@ import type { CloudWorkspace } from "@/lib/cloud-contract";
 import {
   canSeeSidebarItem,
   sidebarItems,
+  sidebarPages,
   type SidebarAccess,
   type SidebarItem,
   type SidebarItemId,
+  type SidebarPage,
 } from "@/lib/cloud-sidebar-contract";
 
 export interface NavigationItem {
   href: string;
   label: string;
   icon: LucideIcon;
+  paths?: readonly string[];
 }
 
 export const sidebarIcons: Record<SidebarItemId, LucideIcon> = {
@@ -59,46 +53,78 @@ export const sidebarIcons: Record<SidebarItemId, LucideIcon> = {
   releases: Megaphone,
   automations: Zap,
   clients: Monitor,
-  roadmap: Map,
-  tasks: Bot,
-  schedules: CalendarClock,
   teams: Users,
   connections: Plug,
-  workspaces: FolderTree,
-  copilot: SquareTerminal,
-  enrollment: KeyRound,
-  profiles: SlidersHorizontal,
-  privacy: ShieldCheck,
   providers: Layers,
-  execution: Workflow,
   settings: Settings2,
 };
 
-export function navigationItem(item: SidebarItem): NavigationItem {
-  return { href: item.href, label: item.label, icon: sidebarIcons[item.id] };
+export function navigationItem(
+  item: SidebarItem,
+  access: SidebarAccess,
+): NavigationItem {
+  const pages = sidebarPages(item, access);
+  return {
+    href: pages[0]!.href,
+    label: item.label,
+    icon: sidebarIcons[item.id],
+    paths: pages.map((page) => page.href),
+  };
 }
 
 export function sidebarAccess(workspace: CloudWorkspace): SidebarAccess {
-  return { role: workspace.actor.role, github: workspace.github };
+  return {
+    owner: workspace.actor.owner,
+    permissions: workspace.actor.permissions,
+    git: workspace.gitProviders.length > 0,
+  };
 }
 
 export function navigationFor(access: SidebarAccess): NavigationItem[] {
   return sidebarItems
     .filter((item) => canSeeSidebarItem(item, access))
-    .map(navigationItem);
+    .flatMap((item) =>
+      sidebarPages(item, access).map((page, index) => ({
+        href: page.href,
+        label: index === 0 ? item.label : page.label,
+        icon: sidebarIcons[item.id],
+      })),
+    );
+}
+
+export interface NavigationSection {
+  label: string;
+  pages: SidebarPage[];
+  page: SidebarPage;
+  fullBleed: boolean;
+}
+
+export function navigationSection(
+  access: SidebarAccess,
+  pathname: string,
+  search: URLSearchParams,
+): NavigationSection | null {
+  for (const item of sidebarItems) {
+    if (!canSeeSidebarItem(item, access)) continue;
+    const pages = sidebarPages(item, access);
+    const page = pages.find(
+      (candidate) =>
+        candidate.href.split("?")[0] === pathname &&
+        isNavigationActive(candidate.href, pathname, search),
+    );
+    if (page)
+      return {
+        label: item.label,
+        pages,
+        page,
+        fullBleed: "fullBleed" in item,
+      };
+  }
+  return null;
 }
 
 export const pageNavigation: NavigationItem[] = [
   { href: "/cloud/triage", label: "Triage", icon: CircleDotDashed },
-];
-
-export const clientNavigation: NavigationItem[] = [
-  { href: "/instances", label: "Clients", icon: Monitor },
-  { href: "/workspaces", label: "Workspaces", icon: FolderTree },
-  { href: "/copilot", label: "Copilot", icon: SquareTerminal },
-  { href: "/enrollment", label: "Enrollment", icon: KeyRound },
-  { href: "/settings", label: "Profiles", icon: SlidersHorizontal },
-  { href: "/privacy", label: "Privacy", icon: ShieldCheck },
 ];
 
 export function isNavigationActive(

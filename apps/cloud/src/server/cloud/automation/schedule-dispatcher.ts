@@ -72,7 +72,12 @@ export class CloudScheduleDispatcher {
       await this.database.transaction(async (sql) => {
         await lockExecution(sql, actor.organizationId);
         await expireRuns(sql, actor.organizationId);
-        const team = await requireTeam(sql, actor, snapshot.teamId, true);
+        const team = await requireTeam(
+          sql,
+          actor,
+          snapshot.teamId,
+          "automations.edit",
+        );
         const current = await readSchedule(sql, actor, snapshot.id, true);
         if (
           !current.enabled ||

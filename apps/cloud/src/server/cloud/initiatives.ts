@@ -38,7 +38,7 @@ async function readInitiative(
   id: string,
   write = false,
 ): Promise<CloudInitiative> {
-  await requireMembership(sql, actor, write ? "write" : "read");
+  await requireMembership(sql, actor, write ? "planning.edit" : undefined);
   const initiative = (
     await sql.query<CloudInitiative & Record<string, unknown>>(
       `SELECT ${initiativeColumns} FROM cloud_initiatives n WHERE n.organization_id=$1 AND n.id=$3 FOR ${write ? "UPDATE" : "SHARE"} OF n`,
@@ -126,7 +126,7 @@ export class CloudInitiatives {
     input: InitiativeInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "planning.edit");
       return command(
         sql,
         actor,

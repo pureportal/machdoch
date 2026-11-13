@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -27,7 +28,6 @@ export function AgentDock({ workspace }: { workspace: CloudWorkspace }) {
   const [chats, setChats] = useState<CloudChat[]>([]);
   const onAgentPage =
     pathname === "/cloud/chat" || pathname.startsWith("/cloud/chat/");
-  const role = workspace.actor.role;
   useEffect(() => {
     const toggle = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "j")
@@ -121,8 +121,8 @@ export function AgentDock({ workspace }: { workspace: CloudWorkspace }) {
             workspace={workspace}
             chatId={shell.chatId}
             pageEntity={shell.pageEntity}
-            writable={role !== "viewer"}
-            canConfigure={role === "owner" || role === "admin"}
+            writable={holderCan(workspace.actor, "ai.chat")}
+            canConfigure={holderCan(workspace.actor, "ai.manage")}
             variant="panel"
             initialPrompt={shell.draft}
             sendInitialPrompt={shell.sendDraft}

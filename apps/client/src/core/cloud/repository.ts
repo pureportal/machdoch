@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, relative, sep } from "node:path";
 import { promisify } from "node:util";
-import { githubRepositorySchema } from "@machdoch/fleet-protocol/cloud-repository";
+import { gitRepositoryUrlSchema } from "@machdoch/fleet-protocol/cloud-repository";
 
 const execute = promisify(execFile);
 export function within(root: string, path: string): boolean {
@@ -16,20 +16,21 @@ export function within(root: string, path: string): boolean {
 }
 
 export function canonicalRepository(value: string): string {
-  const scp = /^git@github\.com:([^\s]+)$/i.exec(value);
-  const url = new URL(scp ? `https://github.com/${scp[1]}` : value);
+  const scp = /^git@([^\s:/]+):([^\s]+)$/i.exec(value);
+  const url = new URL(scp ? `ssh://git@${scp[1]}/${scp[2]}` : value);
   if (
-    url.hostname.toLowerCase() !== "github.com" ||
-    url.port ||
     url.password ||
     url.search ||
     url.hash ||
     !["https:", "ssh:"].includes(url.protocol) ||
     (url.username && !(url.protocol === "ssh:" && url.username === "git"))
   )
-    throw new Error("Use a GitHub remote without embedded credentials.");
-  return githubRepositorySchema
-    .parse(`https://github.com${url.pathname.replace(/\.git$/i, "")}`)
+    throw new Error("Use a Git remote without embedded credentials.");
+  const host = url.protocol === "ssh:" ? url.hostname : url.host;
+  return gitRepositoryUrlSchema
+    .parse(
+      `https://${host.toLowerCase()}${url.pathname.replace(/\.git$/i, "")}`,
+    )
     .toLowerCase();
 }
 

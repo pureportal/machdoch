@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Workflow } from "lucide-react";
+import { Cpu, FolderKanban, Plus, Server, Workflow } from "lucide-react";
 import type { CloudAiProvider } from "@machdoch/fleet-protocol/cloud-providers";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import {
@@ -22,6 +22,7 @@ import {
   executionTargetLabels,
   profileAgentLabel,
 } from "./execution-labels";
+import { Timestamp } from "./timestamp";
 
 export function ExecutionSettings({
   workspace,
@@ -86,7 +87,7 @@ export function ExecutionSettings({
   return (
     <>
       <header className="cloud-page-header">
-        <h1>AI execution</h1>
+        <h1>Execution profiles</h1>
         {workspace.projects.length > 0 && (
           <Button onClick={() => editProfile("new")}>
             <Plus />
@@ -112,22 +113,35 @@ export function ExecutionSettings({
         <div className="cloud-grid">
           {profiles.map((entry) => (
             <section className="cloud-card" key={entry.id}>
-              <span className="cloud-icon-tile">
-                <Workflow size={20} />
-              </span>
+              <div className="cloud-card-heading">
+                <span className="cloud-icon-tile">
+                  <Workflow size={20} aria-hidden="true" />
+                </span>
+                {!entry.enabled && (
+                  <span className="cloud-task-state" data-state="paused">
+                    Disabled
+                  </span>
+                )}
+              </div>
               <h2>{entry.name}</h2>
-              <p>
-                {
-                  workspace.projects.find(
-                    (project) => project.id === entry.projectId,
-                  )?.name
-                }
-              </p>
-              <p>
-                {executionTargetLabels[entry.target]} ·{" "}
-                {profileAgentLabel(entry)}
-              </p>
-              {!entry.enabled && <span>Disabled</span>}
+              <div className="cloud-card-metadata">
+                <span>
+                  <FolderKanban size={14} aria-hidden="true" />
+                  {
+                    workspace.projects.find(
+                      (project) => project.id === entry.projectId,
+                    )?.name
+                  }
+                </span>
+                <span>
+                  <Server size={14} aria-hidden="true" />
+                  {executionTargetLabels[entry.target]}
+                </span>
+                <span>
+                  <Cpu size={14} aria-hidden="true" />
+                  {profileAgentLabel(entry)}
+                </span>
+              </div>
               <div className="cloud-card-actions">
                 <Button variant="outline" onClick={() => editProfile(entry)}>
                   Edit profile
@@ -177,11 +191,17 @@ export function ExecutionSettings({
                       <span>Workspace: {worker.workspaceBinding.name}</span>
                     )}
                     <span>
-                      {worker.enabled
-                        ? worker.lastSeenAt
-                          ? `Last seen ${new Date(worker.lastSeenAt).toLocaleString()}`
-                          : "Not connected"
-                        : "Revoked"}
+                      {worker.enabled ? (
+                        worker.lastSeenAt ? (
+                          <>
+                            Last seen <Timestamp value={worker.lastSeenAt} />
+                          </>
+                        ) : (
+                          "Not connected"
+                        )
+                      ) : (
+                        "Revoked"
+                      )}
                     </span>
                   </div>
                   <Button

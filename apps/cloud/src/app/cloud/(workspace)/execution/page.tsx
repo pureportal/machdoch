@@ -1,3 +1,4 @@
+import { holderCan } from "@/lib/cloud-permissions";
 import { redirect } from "next/navigation";
 import { ExecutionSettings } from "@/components/cloud/execution-settings";
 import {
@@ -8,8 +9,7 @@ import {
 export default async function ExecutionPage() {
   const { runtime, actor } = await requireCloudPageSession();
   const workspace = (await requireCloudWorkspace()).workspace;
-  if (!["owner", "admin"].includes(workspace.actor.role))
-    redirect("/cloud/tasks");
+  if (!holderCan(workspace.actor, "ai.manage")) redirect("/cloud/tasks");
   return (
     <ExecutionSettings
       workspace={workspace}

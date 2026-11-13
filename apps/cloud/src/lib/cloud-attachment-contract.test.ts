@@ -7,6 +7,7 @@ import {
   referencedAttachmentIds,
 } from "./cloud-attachment-contract";
 import { availableIssueAgentActions } from "./agent-quick-actions";
+import { builtinRoles } from "./cloud-permissions";
 
 const id = "0b5f4a55-2d1f-4c55-9a43-1f0c1d7b2e10";
 
@@ -46,12 +47,18 @@ describe("attachment contract", () => {
     expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
   });
 
-  it("offers client work only to owners and administrators", () => {
+  it("offers client work only to people who manage clients", () => {
     expect(
-      availableIssueAgentActions("member").map((action) => action.id),
+      availableIssueAgentActions({
+        owner: false,
+        permissions: builtinRoles.member.permissions,
+      }).map((action) => action.id),
     ).not.toContain("client");
     expect(
-      availableIssueAgentActions("admin").map((action) => action.id),
+      availableIssueAgentActions({
+        owner: false,
+        permissions: builtinRoles.admin.permissions,
+      }).map((action) => action.id),
     ).toContain("client");
   });
 });

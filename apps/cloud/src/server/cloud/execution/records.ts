@@ -50,7 +50,7 @@ export async function readProfile(
   id: string,
   write = false,
 ): Promise<ExecutionProfile> {
-  await requireMembership(sql, actor, write ? "write" : "read");
+  await requireMembership(sql, actor, write ? "ai.tasks" : undefined);
   const row = (
     await sql.query<{
       definition: ExecutionProfile;
@@ -125,9 +125,9 @@ export async function hasRunAuthority(
   const grant = await sql.query<{ provider_id: string | null }>(
     `SELECT p.provider_id FROM cloud_execution_profiles p JOIN cloud_teams t ON t.organization_id=p.organization_id AND t.id=p.team_id
     JOIN cloud_memberships m ON m.organization_id=p.organization_id AND m.user_id=$3 JOIN cloud_users u ON u.id=m.user_id
-    WHERE p.organization_id=$1 AND p.id=$2 AND p.enabled AND p.revision=$4 AND m.active AND m.role<>'viewer' AND NOT u.disabled
+    WHERE p.organization_id=$1 AND p.id=$2 AND p.enabled AND p.revision=$4 AND m.active AND cloud_member_can(m.organization_id,m.user_id,'ai.tasks') AND NOT u.disabled
     AND ($5::timestamptz IS NULL OR (clock_timestamp()<$5::timestamptz AND m.authentication_epoch=$6::bigint AND u.authentication_epoch=$7::bigint AND t.access_epoch=$8::bigint))
-    AND (t.visibility='organization' OR m.role IN ('owner','admin') OR EXISTS (SELECT 1 FROM cloud_team_memberships tm WHERE tm.organization_id=t.organization_id AND tm.team_id=t.id AND tm.user_id=m.user_id))
+    AND cloud_team_visible(t.organization_id,t.id,t.visibility,m.user_id)
     FOR SHARE OF p,t,m,u`,
     [
       organizationId,

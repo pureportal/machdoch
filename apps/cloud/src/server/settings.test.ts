@@ -49,7 +49,8 @@ describe("managed settings", () => {
     document.contextPacks.push({
       id: crypto.randomUUID(),
       name: "Long prompt",
-      instructions: "Instructions\n" + "x".repeat(200_000) + "\nEnd instructions",
+      instructions:
+        "Instructions\n" + "x".repeat(200_000) + "\nEnd instructions",
       prompt: "Prompt\n" + "x".repeat(200_000) + "\nEnd prompt",
       provider: null,
       model: null,

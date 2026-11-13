@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Bot, Laptop, LoaderCircle } from "lucide-react";
@@ -74,7 +75,7 @@ export function IssueDelegate({
     }
   }
   if (!available.length) {
-    const administrator = ["owner", "admin"].includes(workspace.actor.role);
+    const administrator = holderCan(workspace.actor, "ai.manage");
     return (
       <Button
         variant="ghost"

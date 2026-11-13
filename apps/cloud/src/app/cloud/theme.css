@@ -42,48 +42,6 @@ html[data-theme="light"]
   --cloud-warning: #96630b;
   --cloud-danger: #bc304b;
 }
-body:has(:is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="sky"]) {
-  --primary: #7bc8ef;
-  --primary-foreground: #112635;
-}
-body:has(
-  :is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="emerald"]
-) {
-  --primary: #73d7b1;
-  --primary-foreground: #10291e;
-}
-body:has(:is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="amber"]) {
-  --primary: #e9c074;
-  --primary-foreground: #2c2010;
-}
-body:has(:is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="rose"]) {
-  --primary: #f59db3;
-  --primary-foreground: #301521;
-}
-html[data-theme="light"]
-  body:has(:is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="sky"]) {
-  --primary: #176a97;
-  --primary-foreground: #fff;
-}
-html[data-theme="light"]
-  body:has(
-    :is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="emerald"]
-  ) {
-  --primary: #167553;
-  --primary-foreground: #fff;
-}
-html[data-theme="light"]
-  body:has(
-    :is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="amber"]
-  ) {
-  --primary: #896012;
-  --primary-foreground: #fff;
-}
-html[data-theme="light"]
-  body:has(:is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="rose"]) {
-  --primary: #b72e59;
-  --primary-foreground: #fff;
-}
 body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
   :where(button, a, input, select, textarea, summary):focus-visible {
   outline: 2px solid var(--ring);
@@ -157,15 +115,40 @@ body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
   text-align: center;
 }
 .cloud-empty > svg {
-  width: 36px;
-  height: 36px;
-  stroke-width: 1.2;
+  box-sizing: content-box;
+  width: 22px;
+  height: 22px;
+  padding: 13px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
   color: var(--primary);
-  opacity: 0.7;
+  stroke-width: 1.7;
 }
-.cloud-empty a {
+.cloud-empty > p:first-of-type {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+.cloud-empty p a {
   color: var(--primary);
   text-underline-offset: 4px;
+}
+.cloud-empty > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 120ms ease;
+}
+.cloud-empty > a:hover {
+  background: var(--cloud-hover);
 }
 @media (pointer: coarse) {
   :where(
@@ -186,4 +169,57 @@ body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
     :where(input, textarea, select) {
     font-size: 16px;
   }
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
+  input[type="checkbox"]:not([role="switch"], .cloud-task-checkbox) {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--foreground) 28%, transparent);
+  border-radius: 4px;
+  background: var(--card);
+  cursor: pointer;
+  appearance: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
+  input[type="checkbox"]:not([role="switch"], .cloud-task-checkbox):hover:not(
+    :disabled
+  ) {
+  border-color: var(--primary);
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
+  input[type="checkbox"]:not([role="switch"], .cloud-task-checkbox):checked {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
+  input[type="checkbox"]:not(
+    [role="switch"],
+    .cloud-task-checkbox
+  ):checked::after {
+  content: "";
+  width: 8px;
+  height: 4.5px;
+  border: solid var(--primary-foreground);
+  border-width: 0 0 2px 2px;
+  transform: translateY(-1px) rotate(-45deg);
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
+  input[type="checkbox"]:not(
+    [role="switch"],
+    .cloud-task-checkbox
+  ):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+  outline-offset: 2px;
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
+  input[type="checkbox"]:not([role="switch"], .cloud-task-checkbox):disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }

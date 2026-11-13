@@ -1,3 +1,8 @@
+import {
+  cloudPermissions,
+  isCloudPermission,
+  permissionCatalog,
+} from "../../../lib/cloud-permissions";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import type { ChatContextEntity } from "../../../lib/cloud-chat-contract";
 import { isCloudError, teamVisibility } from "../access";
@@ -232,9 +237,11 @@ export async function agentContext(
       organization: string;
       person: string;
       role: string;
+      owner: boolean;
+      permissions: string[];
       today: string;
     }>(
-      "SELECT o.name AS organization,u.name AS person,m.role,to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD') AS today FROM cloud_organizations o JOIN cloud_memberships m ON m.organization_id=o.id AND m.user_id=$2 JOIN cloud_users u ON u.id=m.user_id WHERE o.id=$1",
+      "SELECT o.name AS organization,u.name AS person,r.name AS role,r.key='owner' AS owner,r.permissions,to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD') AS today FROM cloud_organizations o JOIN cloud_memberships m ON m.organization_id=o.id AND m.user_id=$2 JOIN cloud_users u ON u.id=m.user_id JOIN cloud_roles r ON r.organization_id=m.organization_id AND r.key=m.role WHERE o.id=$1",
       scope,
     )
   ).rows[0]!;
@@ -310,7 +317,7 @@ export async function agentContext(
   for (const entry of context)
     focus.push(await sectionBuilders[entry.kind](sql, actor, entry.id));
   const sections = [
-    `# Workspace\nOrganization: ${identity.organization}. User: ${identity.person}, role ${identity.role}. Today: ${identity.today} (UTC).`,
+    `# Workspace\nOrganization: ${identity.organization}. User: ${identity.person}, role ${identity.role}. Today: ${identity.today} (UTC).\nThe user may: ${(identity.owner ? cloudPermissions : identity.permissions.filter(isCloudPermission)).map((permission) => permissionCatalog[permission].label.toLowerCase()).join("; ") || "only read what is shared with them"}. Do not propose anything else.`,
     ...(focus.some(Boolean)
       ? [`# Context the user added\n${focus.filter(Boolean).join("\n\n")}`]
       : []),

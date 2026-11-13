@@ -37,7 +37,12 @@ async function readCycle(
   ).rows[0];
   if (!reference)
     throw new CloudError(404, "not_found", "Cycle is unavailable.");
-  await requireTeam(sql, actor, reference.team_id, write);
+  await requireTeam(
+    sql,
+    actor,
+    reference.team_id,
+    write ? "planning.edit" : undefined,
+  );
   return (
     await sql.query<
       CloudCycle & {
@@ -74,7 +79,7 @@ async function cycleIssues(
 ): Promise<CloudIssue[]> {
   return (
     await sql.query<CloudIssue & Record<string, unknown>>(
-      `SELECT ${issueColumns} FROM cloud_issues i WHERE organization_id=$1 AND cycle_id=$2 AND NOT archived ORDER BY identifier,id`,
+      `SELECT ${issueColumns} FROM cloud_issues i WHERE organization_id=$1 AND cycle_id=$2 AND NOT archived ORDER BY split_part(identifier,'-',1),split_part(identifier,'-',2)::integer,id`,
       [actor.organizationId, id],
     )
   ).rows;
@@ -103,7 +108,7 @@ export class CloudCycles {
             );
       const commitment = (
         await sql.query<{ snapshot: IssueSnapshot }>(
-          "SELECT snapshot FROM cloud_cycle_commitments WHERE organization_id=$1 AND cycle_id=$2 ORDER BY snapshot->>'identifier',issue_id",
+          "SELECT snapshot FROM cloud_cycle_commitments WHERE organization_id=$1 AND cycle_id=$2 ORDER BY split_part(snapshot->>'identifier','-',1),split_part(snapshot->>'identifier','-',2)::integer,issue_id",
           [actor.organizationId, id],
         )
       ).rows.map((row) => row.snapshot);

@@ -1,13 +1,15 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowUpRight, Terminal } from "lucide-react";
 import type {
   CloudPullRequest,
   CloudPullRequestDetails,
-} from "@/lib/cloud-github-contract";
+} from "@/lib/cloud-git-contract";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { gitProviderLabels } from "@/lib/git-providers";
 import { cloudRequest } from "./api-client";
 import { PullRequestActions } from "./pull-request-actions";
 import { PullRequestComments } from "./pull-request-comments";
@@ -52,7 +54,7 @@ function Header({ pullRequest }: { pullRequest: CloudPullRequest }) {
           </button>
         )}
       </span>
-      {pullRequest.changedFiles > 0 && (
+      {pullRequest.additions + pullRequest.deletions > 0 && (
         <span>
           <span className="cloud-diff-added">+{pullRequest.additions}</span>{" "}
           <span className="cloud-diff-removed">−{pullRequest.deletions}</span>
@@ -60,7 +62,7 @@ function Header({ pullRequest }: { pullRequest: CloudPullRequest }) {
       )}
       {pullRequest.author && <span>{pullRequest.author}</span>}
       <a href={pullRequest.url} target="_blank" rel="noreferrer">
-        GitHub
+        {gitProviderLabels[pullRequest.provider]}
         <ArrowUpRight size={13} aria-hidden="true" />
       </a>
     </div>
@@ -112,9 +114,7 @@ export function PullRequestDialog({
             {error}
           </p>
         ) : !details ? (
-          <p className="cloud-pull-request-loading" aria-busy="true">
-            Loading…
-          </p>
+          <LoadingState label="Loading pull request…" />
         ) : (
           <>
             <Tabs defaultValue="overview" className="cloud-pull-request-tabs">
@@ -144,6 +144,7 @@ export function PullRequestDialog({
                 <PullRequestFiles
                   pullRequestId={details.pullRequest.id}
                   url={details.pullRequest.url}
+                  provider={details.pullRequest.provider}
                 />
               </TabsContent>
               <TabsContent value="comments">
@@ -162,6 +163,10 @@ export function PullRequestDialog({
                 onChanged();
               }}
               onUpdated={onChanged}
+              onRetargeted={(retargeted) => {
+                setDetails({ ...details, pullRequest: retargeted });
+                onChanged();
+              }}
             />
           </>
         )}

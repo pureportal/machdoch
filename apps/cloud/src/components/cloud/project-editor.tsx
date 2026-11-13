@@ -13,11 +13,8 @@ import {
   cloudRequest,
   createCommandSender,
 } from "./api-client";
-import {
-  ProjectPlanningFields,
-  projectStatusLabels,
-  type ProjectPlanning,
-} from "./project-fields";
+import { projectStatusLabels } from "@/lib/project-status";
+import { ProjectPlanningFields, type ProjectPlanning } from "./project-fields";
 
 type ProjectDraft = Pick<CloudProject, "name" | "description"> &
   ProjectPlanning;

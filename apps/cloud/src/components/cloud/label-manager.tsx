@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { labelColors, type CloudLabel } from "@/lib/cloud-label-contract";
 import { Field } from "@/components/field";
@@ -64,7 +65,7 @@ export function LabelManager({
   return (
     <details onToggle={(event) => setExpanded(event.currentTarget.open)}>
       <summary className="cursor-pointer py-2">Labels</summary>
-      {loading && <p role="status">Loading labels…</p>}
+      {loading && <LoadingState label="Loading labels…" compact />}
       {error && (
         <p role="alert" className="cloud-error">
           {error}

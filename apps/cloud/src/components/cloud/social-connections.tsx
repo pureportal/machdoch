@@ -8,14 +8,13 @@ import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { CloudWorkspace } from "@/lib/cloud-contract";
 import {
   channelKindLabels,
   type SocialAccount,
   type SocialApp,
 } from "@/lib/cloud-release-contract";
 import { cloudRequest } from "./api-client";
-import { ChannelMark, ReleaseSections } from "./release-display";
+import { ChannelMark } from "./release-display";
 import { RelativeTime } from "./relative-time";
 import { useToast } from "./toast";
 
@@ -176,13 +175,11 @@ function AppCard({
 }
 
 export function SocialConnections({
-  workspace,
   initialApps,
   initialAccounts,
   connected,
   error,
 }: {
-  workspace: CloudWorkspace;
   initialApps: SocialApp[];
   initialAccounts: SocialAccount[];
   connected: string | null;
@@ -213,9 +210,6 @@ export function SocialConnections({
       <header className="cloud-page-header">
         <h1>Connections</h1>
       </header>
-      <ReleaseSections
-        admin={["owner", "admin"].includes(workspace.actor.role)}
-      />
       <div className="cloud-social-grid">
         {apps.map((app) => (
           <AppCard

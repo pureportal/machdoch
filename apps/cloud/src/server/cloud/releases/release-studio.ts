@@ -102,7 +102,9 @@ export class CloudReleaseStudio {
     releaseId: string,
     input: VisualInput,
   ): Promise<Buffer> {
-    await this.database.transaction((sql) => requireMembership(sql, actor));
+    await this.database.transaction((sql) =>
+      requireMembership(sql, actor, "releases.edit"),
+    );
     return renderVisual(
       input,
       await this.visualContext(actor.organizationId, releaseId, input.mediaId),
@@ -147,7 +149,7 @@ export class CloudReleaseStudio {
     input: VisualInput,
   ): Promise<ReleaseMedia> {
     await this.database.transaction((sql) =>
-      requireMembership(sql, actor, "write"),
+      requireMembership(sql, actor, "releases.edit"),
     );
     return this.saveVisual(
       actor.organizationId,
@@ -203,7 +205,7 @@ export class CloudReleaseStudio {
         "Video composition needs ffmpeg on the Cloud server.",
       );
     const result = await this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       const release = await readReleaseRow(
         sql,
         actor.organizationId,
@@ -255,7 +257,7 @@ export class CloudReleaseStudio {
     input: { shots: string[] },
   ): Promise<ReleaseCaptureBrief> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       const release = await readReleaseRow(
         sql,
         actor.organizationId,
@@ -382,7 +384,7 @@ export class CloudReleaseStudio {
     input: ReleaseWriteInput,
   ): Promise<{ id: string }> {
     const context = await this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       const release = await readReleaseRow(
         sql,
         actor.organizationId,

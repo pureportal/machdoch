@@ -1,4 +1,5 @@
 "use client";
+import { holderCan } from "@/lib/cloud-permissions";
 import { executionTargetLabels, profileAgentLabel } from "./execution-labels";
 
 import Link from "next/link";
@@ -96,7 +97,7 @@ export function TaskList({
     };
   }, [issueId]);
   const canStart =
-    workspace.actor.role !== "viewer" &&
+    holderCan(workspace.actor, "ai.tasks") &&
     !issue?.archived &&
     (!issue || !["complete", "canceled"].includes(issue.state));
   const selectedProject = issue?.projectId ?? projectId;
@@ -250,7 +251,7 @@ export function TaskList({
         {!available.length && (
           <p>
             No execution profiles for this project.
-            {["owner", "admin"].includes(workspace.actor.role) && (
+            {holderCan(workspace.actor, "ai.manage") && (
               <>
                 {" "}
                 <Link className="underline" href="/cloud/execution">

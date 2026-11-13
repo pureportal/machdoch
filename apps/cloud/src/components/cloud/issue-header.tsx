@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -228,7 +229,7 @@ export function IssueHeader({
           </span>
         )}
         {delegate}
-        {["owner", "admin"].includes(workspace.actor.role) && (
+        {holderCan(workspace.actor, "clients.manage") && (
           <ClientLaunch
             label="Open in client"
             icon={<Laptop />}
@@ -247,13 +248,11 @@ export function IssueHeader({
           align="end"
           options={[
             ...(writable
-              ? availableIssueAgentActions(workspace.actor.role).map(
-                  (action) => ({
-                    value: action.id,
-                    label: action.label,
-                    icon: <Sparkles size={14} aria-hidden="true" />,
-                  }),
-                )
+              ? availableIssueAgentActions(workspace.actor).map((action) => ({
+                  value: action.id,
+                  label: action.label,
+                  icon: <Sparkles size={14} aria-hidden="true" />,
+                }))
               : []),
             {
               value: openChat,

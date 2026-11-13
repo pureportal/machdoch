@@ -8,17 +8,18 @@ import {
 } from "lucide-react";
 import type {
   CloudPullRequestDetails,
-  GitHubCheckRun,
-  GitHubReview,
-} from "@/lib/cloud-github-contract";
+  GitCheckRun,
+  GitReview,
+} from "@/lib/cloud-git-contract";
 import { StateIcon } from "./issue-properties";
+import { PullRequestStack } from "./pull-request-stack";
 
 const reviewLabels: Record<string, string> = {
   APPROVED: "Approved",
   CHANGES_REQUESTED: "Changes requested",
 };
 
-const runIcons: Record<GitHubCheckRun["state"], LucideIcon> = {
+const runIcons: Record<GitCheckRun["state"], LucideIcon> = {
   success: CircleCheck,
   failure: CircleX,
   pending: CircleDashed,
@@ -52,7 +53,7 @@ function mergeSummary(details: CloudPullRequestDetails): string {
   return "Checking";
 }
 
-function checksSummary(runs: GitHubCheckRun[]): string {
+function checksSummary(runs: GitCheckRun[]): string {
   if (!runs.length) return "None";
   const failed = runs.filter((run) => run.state === "failure").length;
   const pending = runs.filter((run) => run.state === "pending").length;
@@ -61,7 +62,7 @@ function checksSummary(runs: GitHubCheckRun[]): string {
   return `${runs.length} passed`;
 }
 
-function reviewsSummary(reviews: GitHubReview[]): string {
+function reviewsSummary(reviews: GitReview[]): string {
   const groups = Object.entries(reviewLabels)
     .map(([state, label]) => {
       const authors = reviews
@@ -145,6 +146,7 @@ export function PullRequestOverview({
           </ul>
         </section>
       )}
+      <PullRequestStack pullRequest={details.pullRequest} />
       {details.issues.length > 0 && (
         <section aria-labelledby="pull-request-issues">
           <h3 id="pull-request-issues" className="cloud-pull-request-heading">

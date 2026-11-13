@@ -1,3 +1,4 @@
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { ArrowUpRight, CalendarRange, LockKeyhole, Users } from "lucide-react";
 import type {
@@ -19,7 +20,7 @@ export function TeamDirectory({
   teams: CloudTeam[];
   workspace: CloudWorkspace;
 }) {
-  const admin = ["owner", "admin"].includes(workspace.actor.role);
+  const admin = holderCan(workspace.actor, "teams.manage");
   return (
     <div className="cloud-team-directory">
       {teams.map((team) => (
@@ -93,7 +94,7 @@ export function TeamDirectory({
             {admin && <EstimateScaleEditor team={team} />}
             <LabelManager
               teamId={team.id}
-              writable={workspace.actor.role !== "viewer"}
+              writable={holderCan(workspace.actor, "planning.edit")}
             />
             {admin && <WorkflowEditor teamId={team.id} />}
           </div>

@@ -92,7 +92,7 @@ export class CloudWorkers {
 
   list(actor: CloudActor, profileId: string): Promise<ExecutionWorker[]> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "ai.manage");
       await readProfile(sql, actor, profileId);
       return (
         await sql.query<ExecutionWorker & Record<string, unknown>>(
@@ -161,7 +161,7 @@ export class CloudWorkers {
     const token = createSecret("mch_cloud_worker");
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "ai.manage");
       const profile = await readProfile(sql, actor, profileId);
       if (!profile.enabled)
         throw new CloudError(
@@ -189,7 +189,7 @@ export class CloudWorkers {
   revoke(actor: CloudActor, key: string, id: string): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "ai.manage");
       const worker = (
         await sql.query<{ profile_id: string }>(
           "SELECT profile_id FROM cloud_execution_workers WHERE organization_id=$1 AND id=$2",
@@ -235,7 +235,7 @@ export class CloudWorkers {
     const token = createSecret("mch_cloud_worker");
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "ai.manage");
       const worker = (
         await sql.query<{ profile_id: string }>(
           "SELECT profile_id FROM cloud_execution_workers WHERE organization_id=$1 AND id=$2",

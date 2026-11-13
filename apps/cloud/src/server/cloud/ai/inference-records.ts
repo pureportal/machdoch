@@ -67,7 +67,7 @@ export async function inferenceAllowed(
 ): Promise<boolean> {
   const grant = await sql.query(
     `SELECT p.id FROM cloud_ai_providers p JOIN cloud_memberships m ON m.organization_id=p.organization_id AND m.user_id=$3 JOIN cloud_users u ON u.id=m.user_id
-    WHERE p.organization_id=$1 AND p.id=$2 AND p.inference_revision=$4 AND p.enabled AND m.active AND m.role<>'viewer' AND NOT u.disabled AND p.models ? $5
+    WHERE p.organization_id=$1 AND p.id=$2 AND p.inference_revision=$4 AND p.enabled AND m.active AND (cloud_member_can(m.organization_id,m.user_id,'ai.chat') OR cloud_member_can(m.organization_id,m.user_id,'ai.tasks')) AND NOT u.disabled AND p.models ? $5
     FOR SHARE OF p,m,u`,
     [
       call.organizationId,

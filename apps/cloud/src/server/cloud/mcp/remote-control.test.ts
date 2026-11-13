@@ -424,3 +424,50 @@ it("stops remote changes when the member loses the team and revokes the connecti
     priority: "none",
   });
 });
+
+it("limits remote tools to what the member's role allows", async () => {
+  const { team } = await privateBoard();
+  const { key } = await runtime.roles.create(owner, randomUUID(), {
+    name: "Reviewer",
+    description: "",
+    scope: "assigned",
+    permissions: ["comments.write", "apps.connect"],
+  });
+  await database.engine.query(
+    "UPDATE cloud_memberships SET role=$2 WHERE user_id=$1",
+    [member.userId, key],
+  );
+  await expect(accessToken(member)).rejects.toMatchObject({
+    code: "invalid_scope",
+  });
+  const { client, ok, call } = await connect(member, [
+    "cloud:read",
+    "cloud:write",
+  ]);
+  const names = (await client.listTools()).tools.map((tool) => tool.name);
+  expect(names).toEqual(
+    expect.arrayContaining(["find_issue", "create_comment", "get_my_access"]),
+  );
+  for (const hidden of [
+    "create_issue",
+    "change_issues",
+    "list_pull_requests",
+    "list_roles",
+  ])
+    expect(names).not.toContain(hidden);
+  expect(await ok("get_my_access")).toMatchObject({
+    role: key,
+    roleName: "Reviewer",
+    scope: "assigned",
+    permissions: [
+      expect.objectContaining({ key: "comments.write" }),
+      expect.objectContaining({ key: "apps.connect" }),
+    ],
+    teams: [expect.objectContaining({ id: team.id })],
+  });
+  await database.engine.query(
+    "UPDATE cloud_roles SET permissions=ARRAY['comments.write'] WHERE key=$1",
+    [key],
+  );
+  await expect(call("get_my_access")).rejects.toThrow("Connect this app");
+});

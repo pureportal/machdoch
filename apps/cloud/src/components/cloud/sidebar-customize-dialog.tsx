@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { useRef, useState } from "react";
 import { GripVertical } from "lucide-react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
@@ -7,6 +8,7 @@ import {
   defaultSidebarPreferences,
   moveSidebarEntry,
   sidebarEntries,
+  sidebarPages,
   sidebarPreferencesFrom,
   type SidebarEntry,
   type SidebarGroup,
@@ -41,10 +43,10 @@ export function SidebarCustomizeDialog({
   preferences: SidebarPreferences;
   onSaved: (preferences: SidebarPreferences) => void;
 }) {
-  const role = workspace.actor.role;
-  const admin = role === "owner" || role === "admin";
+  const admin = holderCan(workspace.actor, "clients.manage");
+  const access = sidebarAccess(workspace);
   const [entries, setEntries] = useState<SidebarEntry[]>(() =>
-    sidebarEntries(preferences, sidebarAccess(workspace)),
+    sidebarEntries(preferences, access),
   );
   const [hiddenSections, setHiddenSections] = useState<SidebarSection[]>(
     preferences.hiddenSections,
@@ -147,7 +149,12 @@ export function SidebarCustomizeDialog({
                         <GripVertical size={14} />
                       </button>
                       <Icon size={15} strokeWidth={1.7} aria-hidden="true" />
-                      <span>{entry.item.label}</span>
+                      <span className="cloud-sidebar-customize-label">
+                        <span>{entry.item.label}</span>
+                        <small>
+                          {sidebarPages(entry.item, access)[0]!.description}
+                        </small>
+                      </span>
                       <span
                         className="cloud-sidebar-placement"
                         role="radiogroup"

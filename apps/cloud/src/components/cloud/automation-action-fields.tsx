@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import {
   changeMeasures,
   type AutomationAction,
@@ -17,6 +16,8 @@ import type { CloudWorkflowStatus } from "@/lib/cloud-workflow-contract";
 import { ChipToggle, VariableMenu } from "./automation-chips";
 import { actionKinds } from "./automation-display";
 import { ClientTargetSelect } from "./automation-client-fields";
+import { GitActionFields, isGitAction } from "./automation-git-action-fields";
+import { TemplateText } from "./automation-template-text";
 import { priorityOptions } from "./issue-properties";
 import type { AutomationOptions } from "./use-automation-options";
 
@@ -68,9 +69,20 @@ export function defaultAction(
           context.options.profiles.find(
             (profile) => profile.teamId === context.teamId,
           )?.id ?? "",
+        instructions: "",
+        acceptanceCriteria: "",
       };
     case "send_webhook":
       return { kind, url: "", body: "" };
+    case "git_comment":
+      return { kind, body: "", identity: "owner" };
+    case "git_review":
+      return { kind, decision: "comment", body: "", identity: "owner" };
+    case "git_merge":
+      return { kind, method: "squash", identity: "owner" };
+    case "git_update_branch":
+    case "git_retarget":
+      return { kind, identity: "owner" };
     case "start_client_session":
       return {
         kind,
@@ -102,41 +114,6 @@ export function defaultAction(
         instructions: "",
       };
   }
-}
-
-function TemplateText({
-  label,
-  value,
-  variables,
-  rows = 4,
-  maxLength,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  variables: string[];
-  rows?: number;
-  maxLength: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="cloud-automation-template">
-      <div className="cloud-automation-template-heading">
-        <Label>{label}</Label>
-        <VariableMenu
-          variables={variables}
-          onInsert={(variable) => onChange(`${value}${variable}`)}
-        />
-      </div>
-      <Textarea
-        aria-label={label}
-        rows={rows}
-        maxLength={maxLength}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
-  );
 }
 
 function ModelSelect({
@@ -187,6 +164,7 @@ export function ActionCard({
   teamId,
   variables,
   hasIssue,
+  hasPullRequest,
   onChange,
   onMove,
   onRemove,
@@ -201,6 +179,7 @@ export function ActionCard({
   teamId: string;
   variables: string[];
   hasIssue: boolean;
+  hasPullRequest: boolean;
   onChange: (action: AutomationAction) => void;
   onMove: (offset: -1 | 1) => void;
   onRemove: () => void;
@@ -450,22 +429,48 @@ export function ActionCard({
         </>
       )}
       {action.kind === "delegate" && (
-        <Select
-          aria-label="Execution profile"
-          value={action.profileId}
-          onChange={(event) =>
-            onChange({ ...action, profileId: event.target.value })
-          }
-        >
-          {!action.profileId && <option value="" />}
-          {options.profiles
-            .filter((profile) => profile.teamId === teamId)
-            .map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-        </Select>
+        <>
+          <Select
+            aria-label="Execution profile"
+            value={action.profileId}
+            onChange={(event) =>
+              onChange({ ...action, profileId: event.target.value })
+            }
+          >
+            {!action.profileId && <option value="" />}
+            {options.profiles
+              .filter((profile) => profile.teamId === teamId)
+              .map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+          </Select>
+          {hasPullRequest && (
+            <>
+              <TemplateText
+                label="Instructions"
+                value={action.instructions}
+                variables={variables}
+                rows={3}
+                maxLength={20_000}
+                onChange={(instructions) =>
+                  onChange({ ...action, instructions })
+                }
+              />
+              <TemplateText
+                label="Done when"
+                value={action.acceptanceCriteria}
+                variables={variables}
+                rows={2}
+                maxLength={20_000}
+                onChange={(acceptanceCriteria) =>
+                  onChange({ ...action, acceptanceCriteria })
+                }
+              />
+            </>
+          )}
+        </>
       )}
       {action.kind === "prepare_release" && (
         <>
@@ -641,6 +646,13 @@ export function ActionCard({
           </Label>
         </>
       )}
+      {isGitAction(action) && (
+        <GitActionFields
+          action={action}
+          variables={variables}
+          onChange={onChange}
+        />
+      )}
       {action.kind === "send_webhook" && (
         <>
           <Input
@@ -675,7 +687,10 @@ export function actionIncomplete(action: AutomationAction): boolean {
     case "remove_labels":
       return !action.labelIds.length;
     case "comment":
+    case "git_comment":
       return !action.body.trim();
+    case "git_review":
+      return action.decision !== "approve" && !action.body.trim();
     case "create_issue":
       return !action.title.trim();
     case "ask_agent":

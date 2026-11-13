@@ -7,7 +7,15 @@ import type {
 } from "../../../lib/cloud-invitation-contract";
 import { createSecret, hashSecret, validateSecret } from "../../crypto";
 import type { SettingsCipher } from "../../settings-crypto";
-import { CloudError, command, recordEvent, requireMembership } from "../access";
+import {
+  CloudError,
+  command,
+  recordEvent,
+  requireMembership,
+  requireRole,
+  requireRoleGrant,
+  roleGrantable,
+} from "../access";
 import { lockAdministration } from "../administration";
 import type { CloudDatabase } from "../database";
 import { requireCredentialStorage } from "../credential-storage";
@@ -40,7 +48,7 @@ export class CloudInvitations {
 
   options(actor: CloudActor): Promise<InvitationOptions> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "members.manage");
       const policy = (
         await sql.query<{ required_sso: boolean }>(
           "SELECT required_sso FROM cloud_signin_policies WHERE organization_id=$1",
@@ -75,7 +83,7 @@ export class CloudInvitations {
         ),
       );
     return this.database.transaction(async (sql) => {
-      const actorRole = await lockAdministration(sql, actor);
+      const access = await lockAdministration(sql, actor, "members.manage");
       const cipher = await requireCredentialStorage(sql, this.cipher);
       const result = await command(
         sql,
@@ -83,12 +91,25 @@ export class CloudInvitations {
         key,
         { kind: "invitation.create", input },
         async () => {
-          if (input.role === "admin" && actorRole !== "owner")
-            throw new CloudError(
-              403,
-              "owner_required",
-              "Only an owner can invite administrators.",
+          await requireRole(sql, actor.organizationId, input.role);
+          await requireRoleGrant(
+            sql,
+            actor.organizationId,
+            access.role,
+            input.role,
+          );
+          if (input.teamIds.length) {
+            const teams = await sql.query(
+              "SELECT id FROM cloud_teams WHERE organization_id=$1 AND id=ANY($2::uuid[])",
+              [actor.organizationId, input.teamIds],
             );
+            if (teams.rows.length !== input.teamIds.length)
+              throw new CloudError(
+                422,
+                "team_unavailable",
+                "Choose existing teams.",
+              );
+          }
           const policy = (
             await sql.query<{ epoch: string; required_sso: boolean }>(
               "SELECT authentication_epoch AS epoch,required_sso FROM cloud_signin_policies WHERE organization_id=$1 FOR SHARE",
@@ -141,13 +162,17 @@ export class CloudInvitations {
             );
           if (
             membership &&
-            ["owner", "admin"].includes(membership.role) &&
-            actorRole !== "owner"
+            !(await roleGrantable(
+              sql,
+              actor.organizationId,
+              access.role,
+              membership.role,
+            ))
           )
             throw new CloudError(
               403,
               "owner_required",
-              "Only an owner can restore administrator or owner access.",
+              "Your role cannot restore this member's access.",
             );
           if (
             input.authentication.kind === "password" &&
@@ -209,8 +234,8 @@ export class CloudInvitations {
           const id = randomUUID(),
             token = createSecret("mch_cloud_invite");
           await sql.query(
-            `INSERT INTO cloud_invitations(id,organization_id,email,role,token_hash,invited_by,expires_at,authentication,provider_id,provider_revision,subject,policy_epoch,target_user_id,target_membership_epoch)
-          VALUES($1,$2,$3,$4,$5,$6,now()+interval '48 hours',$7,$8,$9,$10,$11,$12,$13)`,
+            `INSERT INTO cloud_invitations(id,organization_id,email,role,token_hash,invited_by,expires_at,authentication,provider_id,provider_revision,subject,policy_epoch,target_user_id,target_membership_epoch,team_ids)
+          VALUES($1,$2,$3,$4,$5,$6,now()+interval '48 hours',$7,$8,$9,$10,$11,$12,$13,$14)`,
             [
               id,
               actor.organizationId,
@@ -225,11 +250,14 @@ export class CloudInvitations {
               policy?.epoch ?? "0",
               user?.id ?? null,
               membership?.epoch ?? null,
+              input.teamIds,
             ],
           );
           await recordEvent(sql, actor, "member.invited", id, 1, {
             authentication: input.authentication.kind,
             providerId,
+            role: input.role,
+            teamIds: input.teamIds,
           });
           return {
             id,

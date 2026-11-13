@@ -1,18 +1,34 @@
 import { z } from "zod";
 
-export const githubRepositorySchema = z
+const repositorySegment = /^(?!\.{1,2}$)[A-Za-z0-9_.-]{1,100}$/;
+
+export function isGitRepositoryUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  const segments = url.pathname.slice(1).split("/");
+  return (
+    url.protocol === "https:" &&
+    !url.username &&
+    !url.password &&
+    !url.search &&
+    !url.hash &&
+    url.href === value &&
+    segments.length >= 2 &&
+    segments.length <= 20 &&
+    segments.every((segment) => repositorySegment.test(segment))
+  );
+}
+
+export const gitRepositoryUrlSchema = z
   .string()
-  .regex(
-    /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/,
-    "Use an HTTPS GitHub repository URL without credentials, query, or fragment.",
-  )
+  .max(500)
   .refine(
-    (value) =>
-      !value
-        .slice("https://github.com/".length)
-        .split("/")
-        .some((segment) => segment === "." || segment === ".."),
-    "Use a repository owner and name.",
+    isGitRepositoryUrl,
+    "Use an HTTPS repository URL such as https://github.com/owner/name, without credentials, query, or fragment.",
   );
 
 export const repositoryRequestSchema = z

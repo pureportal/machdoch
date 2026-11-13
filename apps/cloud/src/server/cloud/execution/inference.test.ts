@@ -125,7 +125,7 @@ beforeEach(async () => {
       models: ["test-model"],
       apiKey: "server-only-credential",
       maxOutputTokens: 256,
-      dailyTokenBudget: 300000,
+      dailyTokenBudget: 600000,
       maxConcurrentRequests: 4,
     })
   ).id;

@@ -25,7 +25,12 @@ export async function readSchedule(
   ).rows[0];
   if (!identity)
     throw new CloudError(404, "not_found", "Schedule is unavailable.");
-  await requireTeam(sql, actor, identity.team_id, write);
+  await requireTeam(
+    sql,
+    actor,
+    identity.team_id,
+    write ? "automations.edit" : undefined,
+  );
   await refreshScheduleUsage(sql, actor.organizationId, [id]);
   const result = await sql.query<CloudSchedule & Record<string, unknown>>(
     `SELECT ${scheduleColumns} FROM cloud_schedules s JOIN cloud_users u ON u.id=s.owner_id WHERE s.organization_id=$1 AND s.id=$2 FOR ${write ? "UPDATE" : "SHARE"} OF s`,

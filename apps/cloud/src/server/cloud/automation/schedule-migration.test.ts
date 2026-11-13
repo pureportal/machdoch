@@ -134,6 +134,7 @@ it("carries existing task allocations into the usage ledger and settles them wit
       "041-provider-sign-in.sql",
       "042-ai-activity.sql",
       "043-client-activity.sql",
+      "052-roles.sql",
     ];
     for (const migration of currentCodeMigrations)
       await engine.exec(

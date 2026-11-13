@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -27,7 +28,6 @@ export function AgentPage({
   const [more, setMore] = useState(initialChats.length === 50);
   useEffect(() => setChats(initialChats), [initialChats]);
   const chatId = initial?.chat.id ?? null;
-  const role = workspace.actor.role;
   return (
     <div className="cloud-agent-page">
       <aside className="cloud-agent-history" aria-label="Conversations">
@@ -86,8 +86,8 @@ export function AgentPage({
           chatId={chatId}
           initial={initial}
           pageEntity={null}
-          writable={role !== "viewer"}
-          canConfigure={role === "owner" || role === "admin"}
+          writable={holderCan(workspace.actor, "ai.chat")}
+          canConfigure={holderCan(workspace.actor, "ai.manage")}
           variant="page"
           onCreated={(id, title) => {
             shell.selectChat(id, title);

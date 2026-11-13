@@ -3,18 +3,28 @@ import {
   defaultSidebarPreferences,
   moveSidebarEntry,
   resolveSidebar,
+  canSeeSidebarItem,
   sidebarEntries,
+  sidebarItems,
+  sidebarPages,
   sidebarPreferencesFrom,
   sidebarPreferencesSchema,
 } from "./cloud-sidebar-contract";
+import { builtinRoles, type CloudPermission } from "./cloud-permissions";
+
+const access = {
+  owner: { owner: true, permissions: builtinRoles.owner.permissions },
+  admin: { owner: false, permissions: builtinRoles.admin.permissions },
+  member: { owner: false, permissions: builtinRoles.member.permissions },
+};
 
 const ids = (items: { id: string }[]) => items.map((item) => item.id);
 
 describe("sidebar preferences", () => {
   it("shows Clients directly to administrators by default", () => {
     const admin = resolveSidebar(defaultSidebarPreferences, {
-      role: "admin",
-      github: false,
+      ...access.admin,
+      git: false,
     });
     expect(ids(admin.top)).toEqual([
       "inbox",
@@ -35,8 +45,8 @@ describe("sidebar preferences", () => {
     ]);
     expect(ids(admin.more)).toContain("settings");
     const member = resolveSidebar(defaultSidebarPreferences, {
-      role: "member",
-      github: false,
+      ...access.member,
+      git: false,
     });
     expect(ids(member.workspace)).not.toContain("clients");
     expect(ids(member.more)).not.toContain("settings");
@@ -51,16 +61,16 @@ describe("sidebar preferences", () => {
     expect(
       ids(
         resolveSidebar(defaultSidebarPreferences, {
-          role: "member",
-          github: true,
+          ...access.member,
+          git: true,
         }).workspace,
       ).slice(0, 2),
     ).toEqual(["issues", "pull-requests"]);
     expect(
       ids(
         sidebarEntries(defaultSidebarPreferences, {
-          role: "owner",
-          github: false,
+          ...access.owner,
+          git: false,
         }).map((entry) => entry.item),
       ),
     ).not.toContain("pull-requests");
@@ -73,14 +83,14 @@ describe("sidebar preferences", () => {
         { id: "issues", placement: "show" },
         { id: "pulse", placement: "hide" },
         { id: "projects", placement: "more" },
-        { id: "roadmap", placement: "show" },
+        { id: "teams", placement: "show" },
       ],
       hiddenSections: ["favorites"],
       hiddenTeamIds: [],
     });
     const sidebar = resolveSidebar(preferences, {
-      role: "owner",
-      github: false,
+      ...access.owner,
+      git: false,
     });
     expect(ids(sidebar.top)).toEqual([
       "inbox",
@@ -91,7 +101,7 @@ describe("sidebar preferences", () => {
     expect(ids(sidebar.workspace)).toEqual([
       "clients",
       "issues",
-      "roadmap",
+      "teams",
       "initiatives",
       "views",
       "cycles",
@@ -101,12 +111,12 @@ describe("sidebar preferences", () => {
     expect(ids(sidebar.more)[0]).toBe("projects");
     expect(sidebar.sections.favorites).toBe(false);
     const member = resolveSidebar(preferences, {
-      role: "member",
-      github: false,
+      ...access.member,
+      git: false,
     });
     expect(ids(member.workspace)).toEqual([
       "issues",
-      "roadmap",
+      "teams",
       "initiatives",
       "views",
       "cycles",
@@ -117,8 +127,8 @@ describe("sidebar preferences", () => {
 
   it("reorders entries only within their group", () => {
     const entries = sidebarEntries(defaultSidebarPreferences, {
-      role: "admin",
-      github: false,
+      ...access.admin,
+      git: false,
     });
     const moved = moveSidebarEntry(entries, "clients", "issues");
     expect(ids(moved.map((entry) => entry.item)).slice(5, 8)).toEqual([
@@ -136,8 +146,8 @@ describe("sidebar preferences", () => {
 
   it("round-trips edited entries and rejects duplicates", () => {
     const entries = sidebarEntries(defaultSidebarPreferences, {
-      role: "admin",
-      github: false,
+      ...access.admin,
+      git: false,
     });
     const reordered = [entries[1]!, entries[0]!, ...entries.slice(2)].map(
       (entry) =>
@@ -148,7 +158,7 @@ describe("sidebar preferences", () => {
     const saved = sidebarPreferencesFrom(reordered, ["devices"], []);
     expect(sidebarPreferencesSchema.parse(saved)).toEqual(saved);
     expect(
-      ids(resolveSidebar(saved, { role: "admin", github: false }).top),
+      ids(resolveSidebar(saved, { ...access.admin, git: false }).top),
     ).toEqual(["my-issues", "inbox", "pulse", "activity"]);
     expect(
       sidebarPreferencesSchema.safeParse({
@@ -156,6 +166,47 @@ describe("sidebar preferences", () => {
           { id: "inbox", placement: "show" },
           { id: "inbox", placement: "hide" },
         ],
+        hiddenSections: [],
+        hiddenTeamIds: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("merges related pages into tabs that follow permissions", () => {
+    const item = (id: string) =>
+      sidebarItems.find((candidate) => candidate.id === id)!;
+    const hrefs = (
+      id: string,
+      holder: { owner: boolean; permissions: readonly CloudPermission[] },
+    ) => sidebarPages(item(id), holder).map((page) => page.href);
+    expect(hrefs("clients", access.admin)).toEqual([
+      "/instances",
+      "/workspaces",
+      "/enrollment",
+      "/settings",
+    ]);
+    const profilesOnly = { owner: false, permissions: ["ai.manage"] as const };
+    expect(hrefs("clients", profilesOnly)).toEqual(["/settings"]);
+    expect(
+      canSeeSidebarItem(item("clients"), { ...profilesOnly, git: false }),
+    ).toBe(true);
+    expect(
+      canSeeSidebarItem(item("clients"), { ...access.member, git: false }),
+    ).toBe(false);
+    expect(hrefs("automations", access.member)).toEqual([
+      "/cloud/automations",
+      "/cloud/schedules",
+    ]);
+    expect(hrefs("activity", access.member)).toEqual([
+      "/cloud/activity",
+      "/cloud/tasks",
+    ]);
+    for (const entry of sidebarItems)
+      for (const page of sidebarPages(entry, access.owner))
+        expect(page.description.length, page.href).toBeGreaterThan(20);
+    expect(
+      sidebarPreferencesSchema.safeParse({
+        items: [{ id: "schedules", placement: "show" }],
         hiddenSections: [],
         hiddenTeamIds: [],
       }).success,

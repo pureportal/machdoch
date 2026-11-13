@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { ImagePlus, Package, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -20,7 +21,7 @@ import type { ReleaseMedia } from "@/lib/cloud-release-media-contract";
 import { cloudRequest, cloudUpload, createCommandSender } from "./api-client";
 import { channelKindLabels } from "@/lib/cloud-release-contract";
 import { ChannelEditor } from "./channel-editor";
-import { ChannelMark, mediaUrl, ReleaseSections } from "./release-display";
+import { ChannelMark, mediaUrl } from "./release-display";
 import { PropertyMenu } from "./property-menu";
 import { useToast } from "./toast";
 
@@ -433,7 +434,7 @@ export function ProductList({
     kind: ChannelKind;
     channel?: CloudChannel;
   } | null>(null);
-  const admin = ["owner", "admin"].includes(workspace.actor.role);
+  const admin = holderCan(workspace.actor, "releases.manage");
   const selected =
     products.find((product) => product.id === selectedId) ?? null;
   const loadChannels = useCallback(async (id: string) => {
@@ -472,7 +473,6 @@ export function ProductList({
           </Button>
         )}
       </header>
-      <ReleaseSections admin={admin} />
       <div className="cloud-automation-layout cloud-product-layout">
         <ul className="cloud-automation-list" aria-label="Products">
           {products.map((product) => (

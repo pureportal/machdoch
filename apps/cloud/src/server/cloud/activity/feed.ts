@@ -46,7 +46,7 @@ export class CloudAiActivity {
           LEFT JOIN cloud_teams t ON t.organization_id=r.organization_id AND t.id=r.team_id
           LEFT JOIN cloud_issues i ON i.organization_id=r.organization_id AND i.id=r.issue_id
           WHERE a.organization_id=$1
-          AND (m.role IN ('owner','admin') OR a.actor_id=$2 OR (r.id IS NOT NULL AND ${teamVisibility}))
+          AND (cloud_member_can(m.organization_id,m.user_id,'activity.view_all') OR a.actor_id=$2 OR (r.id IS NOT NULL AND ${teamVisibility}))
           AND ($3::text[] IS NULL OR a.kind=ANY($3::text[]))
           AND (NOT $4::boolean OR a.status IN ('failed','warning'))
           AND ($5::uuid IS NULL OR a.run_id=$5)

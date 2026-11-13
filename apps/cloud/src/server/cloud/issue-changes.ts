@@ -64,7 +64,7 @@ export class CloudIssueChanges {
       for (const reference of ordered)
         issues.push({
           reference,
-          issue: await readIssue(sql, actor, reference.id, true),
+          issue: await readIssue(sql, actor, reference.id, "issues.edit"),
         });
       return command(
         sql,
@@ -99,7 +99,7 @@ export async function applyIssueChangeSet(
   issue: CloudIssue,
   changes: IssueChangeSet,
 ): Promise<number> {
-  const team = await requireTeam(sql, actor, issue.teamId, true);
+  const team = await requireTeam(sql, actor, issue.teamId, "issues.edit");
   const status = await statusForChanges(sql, actor, issue, changes);
   const next = {
     teamId: issue.teamId,

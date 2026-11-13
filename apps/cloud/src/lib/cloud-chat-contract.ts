@@ -7,6 +7,7 @@ import type { ProjectHealth } from "./cloud-project-update-contract";
 import type { TriageDecision } from "./cloud-triage-contract";
 import type { RelationKind } from "./cloud-relation-contract";
 import type { AutomationInput } from "./cloud-automation-contract";
+import type { GitReviewInput } from "./cloud-git-contract";
 import {
   maximumChatAttachments,
   type AttachmentKind,
@@ -134,7 +135,8 @@ export interface AgentActionResult {
     | "project"
     | "release"
     | "automation"
-    | "client_session";
+    | "client_session"
+    | "pull_request";
   id: string;
   label: string;
   href?: string;
@@ -230,6 +232,19 @@ export type AgentAction = AgentActionBase &
         goal: boolean;
         issueId: string | null;
         identifier: string | null;
+      }
+    | {
+        kind: "pull_request_comment";
+        pullRequestId: string;
+        reference: string;
+        body: string;
+      }
+    | {
+        kind: "pull_request_review";
+        pullRequestId: string;
+        reference: string;
+        decision: GitReviewInput;
+        body: string;
       }
     | {
         kind: "automation";

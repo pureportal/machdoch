@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useState } from "react";
 import { Plus, Target } from "lucide-react";
@@ -34,7 +35,7 @@ export function InitiativeList({
   workspace: CloudWorkspace;
 }) {
   const [open, setOpen] = useState(false);
-  const writable = workspace.actor.role !== "viewer";
+  const writable = holderCan(workspace.actor, "planning.edit");
   return (
     <>
       <header className="cloud-page-header">

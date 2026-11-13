@@ -32,7 +32,12 @@ async function requireProjectTeam(
   ).rows[0];
   if (!project)
     throw new CloudError(404, "not_found", "Project is unavailable.");
-  await requireTeam(sql, actor, project.team_id, write);
+  await requireTeam(
+    sql,
+    actor,
+    project.team_id,
+    write ? "planning.edit" : undefined,
+  );
 }
 
 async function readMilestone(

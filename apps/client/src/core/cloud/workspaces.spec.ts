@@ -160,7 +160,9 @@ it("treats a competing lock candidate as a lock but other files as unowned stora
   });
   await expect(
     prepareClientWorkspace(storage, connection, fixture.claim()),
-  ).resolves.toMatchObject({ baseCommit: fixture.registration.profile.baseCommit });
+  ).resolves.toMatchObject({
+    baseCommit: fixture.registration.profile.baseCommit,
+  });
 
   const unowned = join(fixture.root, "unowned");
   const unownedDirectory = join(unowned, fixture.registration.workerId);
@@ -361,6 +363,15 @@ it("validates repository URLs and exposes a focused CLI without execution overri
   expect(() =>
     canonicalRepository("https://secret@github.com/example/project"),
   ).toThrow("credentials");
+  expect(canonicalRepository("git@gitlab.com:Group/Sub/App.git")).toBe(
+    "https://gitlab.com/group/sub/app",
+  );
+  expect(
+    canonicalRepository("ssh://git@git.example.test:2222/team/app.git"),
+  ).toBe("https://git.example.test/team/app");
+  expect(canonicalRepository("https://git.example.test:8443/team/app")).toBe(
+    "https://git.example.test:8443/team/app",
+  );
   expect(
     parseCliArgs([
       "cloud",

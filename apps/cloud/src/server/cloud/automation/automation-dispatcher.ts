@@ -2,6 +2,9 @@ import {
   triggerMatchesEvent,
   type AutomationEvent,
 } from "../../../lib/automation-triggers";
+import type { CloudActor } from "../../../lib/cloud-contract";
+import { actionNeedsIssue } from "../../../lib/cloud-automation-contract";
+import { gitEventVariables } from "../../../lib/git-events";
 import type { CloudDatabase, CloudSql } from "../database";
 import {
   insertAutomationRun,
@@ -23,8 +26,8 @@ const runBatchSize = 10;
 interface QueuedEvent {
   organizationId: string;
   id: string;
-  teamId: string;
-  issueId: string;
+  teamId: string | null;
+  issueId: string | null;
   actorId: string | null;
   event: AutomationEvent;
   depth: number;
@@ -36,9 +39,53 @@ function eventVariables(event: AutomationEvent): Record<string, unknown> {
     return { comment: { body: event.body } };
   if (event.kind === "pull_request_changed")
     return {
-      pullRequest: { title: event.title, url: event.url, stage: event.stage },
+      pullRequest: {
+        id: event.pullRequestId,
+        title: event.title,
+        url: event.url,
+        stage: event.stage,
+      },
     };
+  if (event.kind === "git_event") return gitEventVariables(event.git);
   return {};
+}
+
+async function runIssue(
+  sql: CloudSql,
+  owner: CloudActor,
+  automation: StoredAutomation,
+  queued: QueuedEvent,
+): Promise<{ issueId: string | null } | null> {
+  if (queued.event.kind !== "git_event")
+    return queued.issueId &&
+      (await issueMatchesConditions(sql, owner, automation, queued.issueId))
+      ? { issueId: queued.issueId }
+      : null;
+  for (const issueId of queued.event.git.issueIds)
+    if (await issueMatchesConditions(sql, owner, automation, issueId))
+      return { issueId };
+  return automation.conditions.length ||
+    automation.actions.some(actionNeedsIssue)
+    ? null
+    : { issueId: null };
+}
+
+async function listeningAutomations(
+  sql: CloudSql,
+  queued: QueuedEvent,
+): Promise<StoredAutomation[]> {
+  return (
+    await sql.query<StoredAutomation & Record<string, unknown>>(
+      queued.teamId
+        ? `SELECT ${storedAutomationColumns} FROM cloud_automations WHERE organization_id=$1 AND enabled AND trigger_kind=$2 AND team_id=$3 ORDER BY created_at,id`
+        : `SELECT ${storedAutomationColumns} FROM cloud_automations WHERE organization_id=$1 AND enabled AND trigger_kind=$2 ORDER BY created_at,id`,
+      [
+        queued.organizationId,
+        queued.event.kind,
+        ...(queued.teamId ? [queued.teamId] : []),
+      ],
+    )
+  ).rows;
 }
 
 async function dispatchEvents(sql: CloudSql): Promise<number> {
@@ -50,31 +97,26 @@ async function dispatchEvents(sql: CloudSql): Promise<number> {
   ).rows;
   for (const queued of events) {
     if (queued.depth < maximumAutomationDepth) {
-      const automations = (
-        await sql.query<StoredAutomation & Record<string, unknown>>(
-          `SELECT ${storedAutomationColumns} FROM cloud_automations WHERE organization_id=$1 AND team_id=$2 AND enabled AND trigger_kind=$3 ORDER BY created_at,id`,
-          [queued.organizationId, queued.teamId, queued.event.kind],
-        )
-      ).rows;
-      for (const automation of automations) {
+      for (const automation of await listeningAutomations(sql, queued)) {
         if (
           automation.id === queued.originAutomationId ||
-          !triggerMatchesEvent(automation.trigger, queued.event) ||
-          !(await issueMatchesConditions(
-            sql,
-            {
-              organizationId: queued.organizationId,
-              userId: automation.ownerId,
-            },
-            automation,
-            queued.issueId,
-          ))
+          !triggerMatchesEvent(automation.trigger, queued.event)
         )
           continue;
+        const target = await runIssue(
+          sql,
+          { organizationId: queued.organizationId, userId: automation.ownerId },
+          automation,
+          queued,
+        );
+        if (!target) continue;
         await insertAutomationRun(sql, queued.organizationId, automation, {
           dedupeKey: `event:${queued.id}`,
-          trigger: queued.event.kind,
-          issueId: queued.issueId,
+          trigger:
+            queued.event.kind === "git_event"
+              ? queued.event.git.kind
+              : queued.event.kind,
+          issueId: target.issueId,
           actorId: queued.actorId,
           depth: queued.depth,
           variables: eventVariables(queued.event),

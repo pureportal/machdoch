@@ -29,7 +29,7 @@ export class CloudClients {
 
   private requireAdministrator(actor: CloudActor): Promise<unknown> {
     return this.database.transaction((sql) =>
-      requireMembership(sql, actor, "admin"),
+      requireMembership(sql, actor, "clients.manage"),
     );
   }
 

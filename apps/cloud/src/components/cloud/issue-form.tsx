@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
@@ -12,6 +13,8 @@ import { MarkdownTextarea } from "./markdown-textarea";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { createCommandSender, formText } from "./api-client";
+import { draftForTeam, IssueDraftProperties } from "./issue-draft-properties";
+import { noValue } from "./issue-properties";
 
 export function CreateIssue({
   workspace,
@@ -39,11 +42,32 @@ export function CreateIssue({
   >;
   compactLabel?: string;
 }) {
+  const initialTeam = teamId ?? workspace.teams[0]?.id ?? "";
+  const initialDraft = () =>
+    draftForTeam(workspace, initialTeam, {
+      status: defaults?.status
+        ? JSON.stringify({
+            id: defaults.status.id,
+            revision: defaults.status.revision,
+          })
+        : undefined,
+      priority: defaults?.priority,
+      assigneeId: defaults?.assigneeId ?? undefined,
+      projectId: defaults?.projectId ?? projectId,
+      cycleId: defaults?.cycleId ?? cycleId,
+    });
   const [open, setOpen] = useState(autoOpen);
+  const [team, setTeam] = useState(initialTeam);
+  const [draft, setDraft] = useState(initialDraft);
   const sender = useRef(createCommandSender());
+  function openDialog() {
+    setTeam(initialTeam);
+    setDraft(initialDraft());
+    setOpen(true);
+  }
   const router = useRouter();
   const available =
-    workspace.actor.role !== "viewer" && workspace.teams.length > 0;
+    holderCan(workspace.actor, "issues.edit") && workspace.teams.length > 0;
   useEffect(() => {
     if (!shortcut || !available) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -58,7 +82,7 @@ export function CreateIssue({
       )
         return;
       event.preventDefault();
-      setOpen(true);
+      openDialog();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -71,13 +95,13 @@ export function CreateIssue({
           type="button"
           className="cloud-icon-button"
           aria-label={compactLabel}
-          onClick={() => setOpen(true)}
+          onClick={openDialog}
         >
           <Plus size={14} />
         </button>
       ) : (
         <Button
-          onClick={() => setOpen(true)}
+          onClick={openDialog}
           aria-keyshortcuts={shortcut ? "C" : undefined}
           title={shortcut ? "New issue (C)" : undefined}
         >
@@ -94,39 +118,18 @@ export function CreateIssue({
         title={parent ? "New sub-issue" : "New issue"}
         submitLabel="Create issue"
         onSubmit={async (form) => {
-          const selectedTeam = formText(form, "teamId");
-          const targetProject = defaults?.projectId ?? projectId;
-          const targetCycle = defaults?.cycleId ?? cycleId;
-          const statusTeam = defaults?.status
-            ? workspace.workflows.find((workflow) =>
-                workflow.statuses.some(
-                  (status) => status.id === defaults.status!.id,
-                ),
-              )?.teamId
-            : undefined;
+          const chosen = (value: string) => (value === noValue ? null : value);
           const input = {
-            teamId: selectedTeam,
+            teamId: team,
             title: formText(form, "title"),
             description: formText(form, "description"),
-            projectId: workspace.projects.some(
-              (project) =>
-                project.id === targetProject && project.teamId === selectedTeam,
-            )
-              ? targetProject
+            status: draft.status.startsWith("{")
+              ? (JSON.parse(draft.status) as { id: string; revision: number })
               : null,
-            cycleId: workspace.cycles.some(
-              (cycle) =>
-                cycle.id === targetCycle && cycle.teamId === selectedTeam,
-            )
-              ? targetCycle
-              : null,
-            ...(defaults?.status && statusTeam === selectedTeam
-              ? { status: defaults.status }
-              : {}),
-            ...(defaults?.priority ? { priority: defaults.priority } : {}),
-            ...(defaults?.assigneeId
-              ? { assigneeId: defaults.assigneeId }
-              : {}),
+            priority: draft.priority,
+            assigneeId: chosen(draft.assigneeId),
+            projectId: chosen(draft.projectId),
+            cycleId: chosen(draft.cycleId),
           };
           const result = await sender.current<{ id: string }>(
             parent ? `issues/${parent.id}/children` : "issues",
@@ -142,8 +145,11 @@ export function CreateIssue({
         <Field label="Team" htmlFor="issue-team">
           <Select
             id="issue-team"
-            name="teamId"
-            defaultValue={teamId ?? workspace.teams[0]?.id}
+            value={team}
+            onChange={(event) => {
+              setTeam(event.target.value);
+              setDraft(draftForTeam(workspace, event.target.value, draft));
+            }}
             required
           >
             {workspace.teams.map((team) => (
@@ -169,6 +175,12 @@ export function CreateIssue({
             maxLength={30000}
           />
         </Field>
+        <IssueDraftProperties
+          workspace={workspace}
+          teamId={team}
+          draft={draft}
+          onChange={setDraft}
+        />
       </FormDialog>
     </>
   );

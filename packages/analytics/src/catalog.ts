@@ -254,7 +254,6 @@ export function routeFor(app: AnalyticsApp, pathname: string): string {
     "/users",
     "/settings",
     "/copilot",
-    "/privacy",
   ].includes(pathname)
     ? pathname
     : "/other";

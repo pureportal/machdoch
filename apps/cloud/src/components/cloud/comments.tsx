@@ -1,5 +1,7 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
+import { LoadingState } from "@machdoch/product-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, ChevronsUpDown } from "lucide-react";
 import { CloudMarkdown } from "./cloud-markdown";
@@ -55,8 +57,9 @@ export function IssueComments({
   const sender = useRef(createCommandSender());
   const postingSender = useRef(createCommandSender());
   const draft = useRef<HTMLTextAreaElement>(null);
-  const writable = workspace.actor.role !== "viewer" && !issue.archived;
-  const administrator = ["owner", "admin"].includes(workspace.actor.role);
+  const writable =
+    holderCan(workspace.actor, "comments.write") && !issue.archived;
+  const administrator = holderCan(workspace.actor, "teams.manage");
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       const current = ++sequence.current;
@@ -132,7 +135,7 @@ export function IssueComments({
     <section className="cloud-activity" aria-labelledby="activity-heading">
       <header className="cloud-activity-header">
         <h2 id="activity-heading">Activity</h2>
-        {subscription && workspace.actor.role !== "viewer" && (
+        {subscription && holderCan(workspace.actor, "comments.write") && (
           <Button
             variant="ghost"
             size="sm"
@@ -234,9 +237,7 @@ export function IssueComments({
         )}
       </ol>
       {loading && !comments.length && (
-        <p role="status" className="cloud-activity-loading">
-          Loading activity…
-        </p>
+        <LoadingState label="Loading activity…" compact />
       )}
       {error && (
         <p role="alert" className="cloud-error">
@@ -394,7 +395,8 @@ function CommentEntry({
                 Edit
               </Button>
             )}
-            {((own && workspace.actor.role !== "viewer") || administrator) && (
+            {((own && holderCan(workspace.actor, "comments.write")) ||
+              administrator) && (
               <Button
                 variant="ghost"
                 size="sm"

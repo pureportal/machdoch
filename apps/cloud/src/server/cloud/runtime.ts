@@ -59,10 +59,16 @@ import { CloudExecutionLeases } from "./execution/leases";
 import { CloudExecutionEffects } from "./execution/effects";
 import { CloudTaskInference } from "./execution/inference";
 import { CloudRepositories } from "./execution/repositories";
-import { CloudGitHubAutomations } from "./github/automations";
-import { CloudGitHubConnections } from "./github/connections";
-import { CloudGitHubPullRequests } from "./github/pull-requests";
-import { CloudGitHubSync } from "./github/sync";
+import { CloudGitAccounts } from "./git/accounts";
+import { CloudRoles } from "./roles";
+import { CloudGitStatusRules } from "./git/automations";
+import { CloudGitConnections } from "./git/connections";
+import { CloudGitPullRequests } from "./git/pull-requests";
+import { CloudGitSync } from "./git/sync";
+import { CloudGitWebhooks } from "./git/webhooks";
+import { GitIdentities } from "./git/identity";
+import { CloudGitOAuth } from "./git/oauth-flow";
+import type { GitProvider } from "../../lib/git-providers";
 import { CloudArtifactUploads } from "./execution/artifact-uploads";
 import { CloudArtifacts } from "./execution/artifacts";
 import { CloudAiProviders } from "./ai/providers";
@@ -147,6 +153,7 @@ export interface CloudRuntime {
   workflows: CloudWorkflows;
   poker: CloudPoker;
   administration: CloudAdministrationService;
+  roles: CloudRoles;
   cycles: CloudCycles;
   comments: CloudComments;
   aiProviders: CloudAiProviders;
@@ -159,11 +166,14 @@ export interface CloudRuntime {
     store: CloudInferenceStore;
     worker: CloudInferenceWorker;
   };
-  github: {
-    connections: CloudGitHubConnections;
-    automations: CloudGitHubAutomations;
-    sync: CloudGitHubSync;
-    pullRequests: CloudGitHubPullRequests;
+  git: {
+    connections: CloudGitConnections;
+    accounts: CloudGitAccounts;
+    statusRules: CloudGitStatusRules;
+    sync: CloudGitSync;
+    webhooks: CloudGitWebhooks;
+    oauth: CloudGitOAuth;
+    pullRequests: CloudGitPullRequests;
     syncLoop: CloudPeriodicLoop;
   };
   execution: {
@@ -211,7 +221,7 @@ export function createCloudRuntime(
     credentialsCipher?: SettingsCipher | null;
     modelAdapterFactory?: CloudModelAdapterFactory;
     repositoryFetch?: typeof fetch;
-    githubFetch?: typeof fetch;
+    gitFetch?: typeof fetch;
     automationFetch?: typeof fetch;
     socialFetch?: typeof fetch;
     videoComposer?: CloudVideoComposer;
@@ -249,18 +259,34 @@ export function createCloudRuntime(
     database,
     options.credentialsCipher ?? null,
   );
-  const githubFetch = options.githubFetch ?? fetch;
-  const githubSync = new CloudGitHubSync(
+  const gitFetch = options.gitFetch ?? fetch;
+  const gitConnections = new CloudGitConnections(
+    database,
+    options.credentialsCipher ?? null,
+    origin,
+    gitFetch,
+  );
+  const gitSync = new CloudGitSync(
     database,
     options.credentialsCipher ?? null,
     issueChanges,
-    githubFetch,
+    gitFetch,
+    (provider, id) => gitConnections.webhookUrl(provider, id),
+    origin.startsWith("https://"),
   );
-  const pullRequests = new CloudGitHubPullRequests(
+  const gitCallbackUrl = (provider: GitProvider) =>
+    gitConnections.oauthCallbackUrl(provider);
+  const pullRequests = new CloudGitPullRequests(
     database,
     options.credentialsCipher ?? null,
-    githubSync,
-    githubFetch,
+    new GitIdentities(
+      database,
+      options.credentialsCipher ?? null,
+      gitFetch,
+      gitCallbackUrl,
+    ),
+    gitSync,
+    gitFetch,
   );
   const socialFetch = options.socialFetch ?? fetch;
   const products = new CloudProducts(
@@ -304,6 +330,7 @@ export function createCloudRuntime(
     triage,
     releases,
     studio,
+    pullRequests,
   });
   const releaseDispatcher = new CloudReleaseDispatcher(
     database,
@@ -342,6 +369,7 @@ export function createCloudRuntime(
       studio,
       attachments,
       clients,
+      pullRequests,
       fetch: options.automationFetch ?? fetch,
     }),
   );
@@ -475,6 +503,7 @@ export function createCloudRuntime(
     workflows: new CloudWorkflows(database),
     poker: new CloudPoker(database),
     administration: new CloudAdministrationService(database),
+    roles: new CloudRoles(database),
     cycles,
     comments,
     aiProviders,
@@ -493,21 +522,29 @@ export function createCloudRuntime(
         options.modelAdapterFactory,
       ),
     },
-    github: {
-      connections: new CloudGitHubConnections(
+    git: {
+      connections: gitConnections,
+      accounts: new CloudGitAccounts(
         database,
         options.credentialsCipher ?? null,
-        origin,
-        githubFetch,
+        gitFetch,
       ),
-      automations: new CloudGitHubAutomations(database),
-      sync: githubSync,
+      statusRules: new CloudGitStatusRules(database),
+      sync: gitSync,
+      webhooks: new CloudGitWebhooks(
+        database,
+        options.credentialsCipher ?? null,
+        gitSync,
+        gitFetch,
+      ),
+      oauth: new CloudGitOAuth(
+        database,
+        options.credentialsCipher ?? null,
+        gitFetch,
+        gitCallbackUrl,
+      ),
       pullRequests,
-      syncLoop: new CloudPeriodicLoop(
-        "GitHub sync",
-        () => githubSync.tick(),
-        1,
-      ),
+      syncLoop: new CloudPeriodicLoop("Git sync", () => gitSync.tick(), 1),
     },
     execution: {
       profiles: executionProfiles,
@@ -517,7 +554,11 @@ export function createCloudRuntime(
       leases: new CloudExecutionLeases(database),
       effects: new CloudExecutionEffects(database),
       inference: new CloudTaskInference(database),
-      repositories: new CloudRepositories(database, options.repositoryFetch),
+      repositories: new CloudRepositories(
+        database,
+        options.credentialsCipher ?? null,
+        options.repositoryFetch,
+      ),
       uploads: new CloudArtifactUploads(database),
       artifacts: new CloudArtifacts(database),
     },
@@ -533,7 +574,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   await runtime.automations.loop.close();
   await runtime.releases.loop.close();
   await runtime.activity.exportLoop.close();
-  await runtime.github.syncLoop.close();
+  await runtime.git.syncLoop.close();
   await runtime.authentication.mailWorker.close();
   await runtime.inference.worker.close();
   Object.assign(
@@ -548,7 +589,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.automations.loop.start();
   runtime.releases.loop.start();
   runtime.activity.exportLoop.start();
-  runtime.github.syncLoop.start();
+  runtime.git.syncLoop.start();
 }
 
 export function setCloudRuntimeForTests(
@@ -570,7 +611,7 @@ export async function closeCloudRuntime(): Promise<void> {
     await current.automations.loop.close();
     await current.releases.loop.close();
     await current.activity.exportLoop.close();
-    await current.github.syncLoop.close();
+    await current.git.syncLoop.close();
     await current.authentication.mailWorker.close();
     await current.inference.worker.close();
     await current.database.close();

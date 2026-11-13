@@ -229,6 +229,11 @@ export class CloudInvitationAcceptance {
         );
         if (!updated.rows.length) throw invitationUnavailable();
       }
+      if (invitation.team_ids.length)
+        await sql.query(
+          "INSERT INTO cloud_team_memberships (organization_id,team_id,user_id) SELECT $1,t.id,$2 FROM cloud_teams t WHERE t.organization_id=$1 AND t.id=ANY($3::uuid[]) ON CONFLICT DO NOTHING",
+          [invitation.organization_id, userId, invitation.team_ids],
+        );
       const actor = { organizationId: invitation.organization_id, userId };
       if (
         provider &&

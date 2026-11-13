@@ -37,7 +37,7 @@ export async function authenticateRequest(
           `SELECT u.name FROM cloud_memberships m
       JOIN cloud_users u ON u.id=m.user_id
       JOIN cloud_installation i ON i.organization_id=m.organization_id AND i.id=1
-      WHERE m.organization_id=$1 AND m.user_id=$2 AND m.role IN ('owner','admin') AND m.active AND NOT u.disabled`,
+      WHERE m.organization_id=$1 AND m.user_id=$2 AND cloud_member_can(m.organization_id,m.user_id,'clients.manage') AND m.active AND NOT u.disabled`,
           [actor.organizationId, actor.userId],
         )
       ).rows[0],
@@ -120,7 +120,7 @@ export async function isRemoteSessionActive(
           `SELECT 1 FROM cloud_sessions s
     JOIN cloud_memberships m ON m.organization_id=s.organization_id AND m.user_id=s.user_id
     JOIN cloud_installation i ON i.organization_id=s.organization_id AND i.id=1
-    WHERE s.token_hash=$1 AND cloud_session_active(s) AND m.role IN ('owner','admin')`,
+    WHERE s.token_hash=$1 AND cloud_session_active(s) AND cloud_member_can(m.organization_id,m.user_id,'clients.manage')`,
           [sessionHash],
         )
       ).rows.length,

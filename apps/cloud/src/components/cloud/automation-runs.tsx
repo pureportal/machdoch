@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { CircleCheck, CircleSlash, CircleX } from "lucide-react";
 import type { CloudAutomationRun } from "@/lib/cloud-automation-contract";
-import { actionKinds, triggerKinds } from "./automation-display";
+import { actionKinds, triggerLabel } from "./automation-display";
 import { RelativeTime } from "./relative-time";
 
 const runStateLabels: Record<CloudAutomationRun["state"], string> = {
@@ -39,10 +39,7 @@ export function AutomationRuns({
               {runStateLabels[run.state]}
             </span>
             {showAutomation && <strong>{run.automationName}</strong>}
-            <span>
-              {triggerKinds.find((entry) => entry.kind === run.trigger)
-                ?.label ?? run.trigger}
-            </span>
+            <span>{triggerLabel(run.trigger)}</span>
             {run.issueIdentifier && (
               <Link href={`/cloud/issues/${run.issueIdentifier}`}>
                 {run.issueIdentifier}

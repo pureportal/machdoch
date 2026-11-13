@@ -6,9 +6,11 @@ import {
   type AutomationAction,
   type AutomationInput,
   type AutomationTrigger,
+  type GitIdentity,
   type CloudAutomation,
 } from "../../../lib/cloud-automation-contract";
 import { automationVariableNames } from "../../../lib/automation-text";
+import { holderCan } from "../../../lib/cloud-permissions";
 import { channelKindLabels } from "../../../lib/cloud-release-contract";
 import { issueFilterConditionSchema } from "../../../lib/issue-filter-model";
 import { AgentLookupError } from "./agent-workspace";
@@ -51,6 +53,12 @@ function names(map: Map<string, string>, ids: string[]): string {
   return ids.map((id) => map.get(id) ?? "unavailable").join(" or ");
 }
 
+function gitActor(identity: GitIdentity): string {
+  return identity === "owner"
+    ? "as the owner"
+    : "with the organization connection";
+}
+
 function describeTrigger(
   trigger: AutomationTrigger,
   lookup: AutomationNames,
@@ -80,6 +88,23 @@ function describeTrigger(
       return trigger.stages.length
         ? `A pull request is ${trigger.stages.join(" or ")}`
         : "A pull request changes";
+    case "git_event": {
+      const filters = [
+        trigger.repositoryIds.length
+          ? `in ${trigger.repositoryIds.length} ${trigger.repositoryIds.length === 1 ? "repository" : "repositories"}`
+          : "",
+        trigger.branches.length ? `on ${trigger.branches.join(", ")}` : "",
+        trigger.headBranches.length
+          ? `from ${trigger.headBranches.join(", ")}`
+          : "",
+        trigger.actors.length ? `by ${trigger.actors.join(" or ")}` : "",
+        trigger.contains ? `mentioning “${trigger.contains}”` : "",
+      ].filter(Boolean);
+      return [
+        `Repository event ${trigger.events.join(" or ")}`,
+        ...filters,
+      ].join(" ");
+    }
     case "schedule":
       return `${trigger.frequency === "weekly" ? `Weekly on day ${trigger.weekday}` : trigger.frequency[0]!.toUpperCase() + trigger.frequency.slice(1)} at ${trigger.time} (${trigger.timeZone})${trigger.forEachIssue ? " for each matching issue" : ""}`;
     case "release_created":
@@ -136,6 +161,16 @@ function describeAction(
       return `Send a webhook to ${new URL(action.url).hostname}`;
     case "start_client_session":
       return `Start "${action.title}" on a client${action.goal ? " in goal mode" : ""}`;
+    case "git_comment":
+      return `Comment on the pull request ${gitActor(action.identity)}`;
+    case "git_review":
+      return `${action.decision === "approve" ? "Approve" : action.decision === "request_changes" ? "Request changes on" : "Review"} the pull request ${gitActor(action.identity)}`;
+    case "git_merge":
+      return `${action.method[0]!.toUpperCase()}${action.method.slice(1)} merge the pull request ${gitActor(action.identity)}`;
+    case "git_update_branch":
+      return `Update the pull request branch ${gitActor(action.identity)}`;
+    case "git_retarget":
+      return `Retarget the stacked pull request onto its merged base ${gitActor(action.identity)}`;
   }
 }
 
@@ -301,8 +336,9 @@ export const automationTools: AgentTool[] = [
             })),
           })),
           variables: automationVariableNames.map((name) => `{{${name}}}`),
-          canSendWebhooks: ["owner", "admin"].includes(
-            workspace.snapshot.actor.role,
+          canSendWebhooks: holderCan(
+            workspace.snapshot.actor,
+            "settings.manage",
           ),
         },
         label: `Read automation options for ${team.key}`,

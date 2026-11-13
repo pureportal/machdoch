@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { githubRepositorySchema } from "@machdoch/fleet-protocol/cloud-repository";
+import { gitRepositoryUrlSchema } from "@machdoch/fleet-protocol/cloud-repository";
 import type { TaskArtifact } from "@machdoch/fleet-protocol/cloud-artifacts";
 import { cloudProviderKinds } from "./cloud-providers.ts";
 const cloudId = z.uuid();
@@ -62,7 +62,7 @@ const executionProfileFields = {
   projectId: cloudId,
   name: z.string().trim().min(1).max(120),
   workspacePath: repositoryDirectorySchema.optional(),
-  repository: githubRepositorySchema,
+  repository: gitRepositoryUrlSchema,
   baseCommit: z.string().regex(/^[0-9a-f]{40}$/, "Use a full Git commit SHA."),
   maxDurationSeconds: z.number().int().min(60).max(86_400),
   maxTokens: z.number().int().min(1).max(10_000_000),
@@ -114,6 +114,19 @@ export const runInputSchema = z.strictObject({
     }),
   ]),
 });
+export const pullRequestRunSubjectSchema = z.strictObject({
+  kind: z.literal("pull_request"),
+  id: cloudId,
+  headSha: z.string().regex(/^[0-9a-f]{40}$/),
+  objective: z.string().trim().min(1).max(20_000),
+  acceptanceCriteria: z.string().trim().min(1).max(20_000),
+});
+export type PullRequestRunSubject = z.infer<typeof pullRequestRunSubjectSchema>;
+export const runSubjectSchema = z.discriminatedUnion("kind", [
+  ...runInputSchema.shape.subject.options,
+  pullRequestRunSubjectSchema,
+]);
+export type RunSubject = z.infer<typeof runSubjectSchema>;
 export const runCancelSchema = z.strictObject({ revision });
 export const workerInputSchema = z.strictObject({
   profileId: cloudId,
@@ -122,7 +135,7 @@ export const workerInputSchema = z.strictObject({
 export const clientWorkspaceBindingSchema = z.strictObject({
   workspaceId: cloudId,
   name: z.string().trim().min(1).max(120),
-  repository: githubRepositorySchema,
+  repository: gitRepositoryUrlSchema,
 });
 export type ClientWorkspaceBinding = z.infer<
   typeof clientWorkspaceBindingSchema
@@ -314,7 +327,7 @@ export const runManifestSchema = z
       .int()
       .min(256)
       .max(48 * 1024),
-    subject: runInputSchema.shape.subject,
+    subject: runSubjectSchema,
     title: z.string().max(300),
     objective: z.string().max(30302),
     acceptanceCriteria: z.string().max(20000),

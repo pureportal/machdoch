@@ -12,7 +12,9 @@ export interface InvitationRow extends Record<string, unknown> {
   organization_id: string;
   organization: string;
   email: string;
-  role: "admin" | "member" | "viewer";
+  role: string;
+  role_name: string;
+  team_ids: string[];
   generation: string;
   invited_by: string;
   authentication: "password" | "oidc";
@@ -74,7 +76,7 @@ export async function readInvitation(
 ): Promise<InvitationRow> {
   const row = (
     await sql.query<InvitationRow>(
-      "SELECT i.*,o.name AS organization,i.expires_at>clock_timestamp() AS live FROM cloud_invitations i JOIN cloud_organizations o ON o.id=i.organization_id WHERE i.id=$1 FOR UPDATE OF i",
+      "SELECT i.*,o.name AS organization,r.name AS role_name,i.expires_at>clock_timestamp() AS live FROM cloud_invitations i JOIN cloud_organizations o ON o.id=i.organization_id JOIN cloud_roles r ON r.organization_id=i.organization_id AND r.key=i.role WHERE i.id=$1 FOR UPDATE OF i",
       [id],
     )
   ).rows[0];
@@ -232,6 +234,7 @@ export async function invitationPreview(
     organization: invitation.organization,
     email: invitation.email,
     role: invitation.role,
+    roleName: invitation.role_name,
     existingAccount: !!invitation.target_user_id,
     authentication: invitation.authentication,
     provider,

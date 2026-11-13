@@ -109,7 +109,7 @@ export class FleetDatabase {
           JOIN cloud_users u ON u.id=s.user_id
           JOIN cloud_installation i ON i.id=1 AND i.organization_id=s.organization_id
           WHERE s.token_hash=$1 AND s.authentication_epoch=u.authentication_epoch AND s.membership_epoch=m.authentication_epoch
-          AND cloud_session_active(s) AND m.role IN ('owner','admin') AND m.active AND NOT u.disabled
+          AND cloud_session_active(s) AND cloud_member_can(m.organization_id,m.user_id,'clients.manage') AND m.active AND NOT u.disabled
           FOR SHARE OF s,m,u`,
           [sessionHash],
         );

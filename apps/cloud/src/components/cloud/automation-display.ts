@@ -4,7 +4,13 @@ import {
   CalendarClock,
   CirclePlus,
   CircleDashed,
+  GitBranch,
+  GitMerge,
   GitPullRequest,
+  GitPullRequestArrow,
+  MessageSquareCode,
+  UserRoundCheck,
+  Waypoints,
   Hand,
   Laptop,
   Megaphone,
@@ -34,6 +40,7 @@ import {
   channelKindLabels,
   type CloudProduct,
 } from "@/lib/cloud-release-contract";
+import type { GitEventKind } from "@/lib/git-events";
 import { pullRequestStageLabels } from "./pull-request-state";
 import { priorityNames } from "./issue-properties";
 
@@ -76,9 +83,15 @@ export const triggerKinds: {
   },
   {
     kind: "pull_request_changed",
-    label: "Pull request changes",
+    label: "Linked pull request changes",
     icon: GitPullRequest,
-    group: "GitHub",
+    group: "Repositories",
+  },
+  {
+    kind: "git_event",
+    label: "Repository event",
+    icon: GitBranch,
+    group: "Repositories",
   },
   {
     kind: "release_created",
@@ -120,7 +133,7 @@ export const actionKinds: {
     label: "Start AI task",
     icon: Bot,
     group: "AI",
-    issue: true,
+    issue: false,
   },
   {
     kind: "set_status",
@@ -193,6 +206,41 @@ export const actionKinds: {
     issue: false,
   },
   {
+    kind: "git_comment",
+    label: "Comment on pull request",
+    icon: MessageSquareCode,
+    group: "Pull request",
+    issue: false,
+  },
+  {
+    kind: "git_review",
+    label: "Review pull request",
+    icon: UserRoundCheck,
+    group: "Pull request",
+    issue: false,
+  },
+  {
+    kind: "git_merge",
+    label: "Merge pull request",
+    icon: GitMerge,
+    group: "Pull request",
+    issue: false,
+  },
+  {
+    kind: "git_update_branch",
+    label: "Update branch",
+    icon: GitPullRequestArrow,
+    group: "Pull request",
+    issue: false,
+  },
+  {
+    kind: "git_retarget",
+    label: "Retarget stacked pull request",
+    icon: Waypoints,
+    group: "Pull request",
+    issue: false,
+  },
+  {
     kind: "send_webhook",
     label: "Send webhook",
     icon: Send,
@@ -200,6 +248,36 @@ export const actionKinds: {
     issue: false,
   },
 ];
+
+export const gitEventLabels: Record<GitEventKind, string> = {
+  push: "Commits pushed",
+  branch_created: "Branch created",
+  branch_deleted: "Branch deleted",
+  tag_created: "Tag created",
+  pull_request_opened: "Pull request opened",
+  pull_request_updated: "New commits on pull request",
+  pull_request_ready: "Ready for review",
+  pull_request_draft: "Converted to draft",
+  pull_request_merged: "Pull request merged",
+  pull_request_closed: "Pull request closed",
+  pull_request_reopened: "Pull request reopened",
+  review_approved: "Approved",
+  review_changes_requested: "Changes requested",
+  review_commented: "Review comment",
+  review_dismissed: "Approval withdrawn",
+  comment_created: "Comment added",
+  checks_passed: "Checks passed",
+  checks_failed: "Checks failed",
+  stack_base_merged: "Stacked base merged",
+};
+
+export function triggerLabel(trigger: string): string {
+  return (
+    gitEventLabels[trigger as GitEventKind] ??
+    triggerKinds.find((entry) => entry.kind === trigger)?.label ??
+    trigger
+  );
+}
 
 export const weekdays = [
   "Sunday",
@@ -272,6 +350,22 @@ export function describeTrigger(
             "",
           )}`
         : "Pull request changes";
+    case "git_event": {
+      const events = list(
+        trigger.events.map((event) => gitEventLabels[event].toLowerCase()),
+        "repository event",
+      );
+      const where = [
+        trigger.branches.length ? `on ${trigger.branches.join(", ")}` : "",
+        trigger.headBranches.length
+          ? `from ${trigger.headBranches.join(", ")}`
+          : "",
+        trigger.actors.length ? `by ${trigger.actors.join(", ")}` : "",
+      ].filter(Boolean);
+      return [`${events[0]!.toUpperCase()}${events.slice(1)}`, ...where].join(
+        " ",
+      );
+    }
     case "release_created":
       return trigger.productIds.length
         ? `${list(
@@ -328,6 +422,20 @@ export function describeAction(
       return action.applyProposals ? "Agent acts" : "Ask Agent";
     case "delegate":
       return "Start AI task";
+    case "git_comment":
+      return "Comment on pull request";
+    case "git_review":
+      return action.decision === "approve"
+        ? "Approve pull request"
+        : action.decision === "request_changes"
+          ? "Request changes"
+          : "Review pull request";
+    case "git_merge":
+      return "Merge pull request";
+    case "git_update_branch":
+      return "Update branch";
+    case "git_retarget":
+      return "Retarget stacked pull request";
     case "send_webhook":
       return `Send webhook to ${new URL(action.url).hostname}`;
     case "start_client_session":

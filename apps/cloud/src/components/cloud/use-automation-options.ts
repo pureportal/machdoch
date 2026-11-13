@@ -1,9 +1,11 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { useEffect, useState } from "react";
 import type { ExecutionProfile } from "@machdoch/fleet-protocol/cloud-execution";
 import type { CloudProviderSettings } from "@machdoch/fleet-protocol/cloud-providers";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
+import type { GitRepositoryOption } from "@/lib/cloud-git-contract";
 import type { CloudLabel } from "@/lib/cloud-label-contract";
 import type { CloudProduct } from "@/lib/cloud-release-contract";
 import { api } from "@machdoch/product-ui/fleet-api";
@@ -29,6 +31,7 @@ export interface AutomationOptions {
   models: AgentModelOption[];
   profiles: ExecutionProfile[];
   products: CloudProduct[];
+  repositories: GitRepositoryOption[];
   loaded: boolean;
   error: string;
 }
@@ -42,11 +45,14 @@ export function useAutomationOptions(
     models: [],
     profiles: [],
     products: [],
+    repositories: [],
     loaded: false,
     error: "",
   });
   const teamIds = workspace.teams.map((team) => team.id).join(",");
-  const administrator = ["owner", "admin"].includes(workspace.actor.role);
+  const administrator = holderCan(workspace.actor, "clients.manage");
+  const releases = holderCan(workspace.actor, "releases.view");
+  const git = workspace.gitProviders.length > 0;
   useEffect(() => {
     const abort = new AbortController();
     const signal = abort.signal;
@@ -65,12 +71,17 @@ export function useAutomationOptions(
       cloudRequest<{ profiles: ExecutionProfile[] }>("execution-profiles", {
         signal,
       }),
-      cloudRequest<CloudProduct[]>("products", { signal }),
+      releases
+        ? cloudRequest<CloudProduct[]>("products", { signal })
+        : Promise.resolve([]),
       administrator
         ? api<FleetStatus>("/api/fleet/status", { signal })
         : Promise.resolve(null),
+      git
+        ? cloudRequest<GitRepositoryOption[]>("git/repositories", { signal })
+        : Promise.resolve([]),
     ])
-      .then(([labels, providers, profiles, products, fleet]) =>
+      .then(([labels, providers, profiles, products, fleet, repositories]) =>
         setOptions({
           clients: (fleet?.devices ?? [])
             .filter(canOpenSessions)
@@ -93,6 +104,7 @@ export function useAutomationOptions(
             ),
           profiles: profiles.profiles.filter((profile) => profile.enabled),
           products,
+          repositories,
           loaded: true,
           error: "",
         }),
@@ -106,6 +118,6 @@ export function useAutomationOptions(
         }));
       });
     return () => abort.abort();
-  }, [teamIds, administrator]);
+  }, [teamIds, administrator, releases, git]);
   return options;
 }

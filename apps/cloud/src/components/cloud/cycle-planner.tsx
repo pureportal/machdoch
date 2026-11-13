@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowLeftRight } from "lucide-react";
@@ -131,7 +132,7 @@ export function CyclePlanner({
     [scheduled, backlog],
   );
   const { issues, apply } = useIssueList(initial, workspace);
-  const writable = workspace.actor.role !== "viewer";
+  const writable = holderCan(workspace.actor, "planning.edit");
   const inCycle = sortIssues(
     issues.filter((issue) => issue.cycleId === cycle.id),
     "priority",

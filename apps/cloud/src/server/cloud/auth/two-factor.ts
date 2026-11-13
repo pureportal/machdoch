@@ -12,7 +12,13 @@ import {
   verifySecret,
 } from "../../crypto";
 import type { SettingsCipher } from "../../settings-crypto";
-import { CloudError, command, recordEvent, requireMembership } from "../access";
+import {
+  CloudError,
+  command,
+  recordEvent,
+  requireMembership,
+  roleGrantable,
+} from "../access";
 import { lockAdministration } from "../administration";
 import { requireCredentialStorage } from "../credential-storage";
 import type { CloudDatabase, CloudSql } from "../database";
@@ -564,7 +570,7 @@ export class CloudTwoFactor {
     userId: string,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      const role = await lockAdministration(sql, actor);
+      const access = await lockAdministration(sql, actor, "members.manage");
       return command(
         sql,
         actor,
@@ -585,11 +591,18 @@ export class CloudTwoFactor {
           ).rows[0];
           if (!target)
             throw new CloudError(404, "not_found", "Member is unavailable.");
-          if (role !== "owner" && ["owner", "admin"].includes(target.role))
+          if (
+            !(await roleGrantable(
+              sql,
+              actor.organizationId,
+              access.role,
+              target.role,
+            ))
+          )
             throw new CloudError(
               403,
               "owner_required",
-              "Only an owner can reset two-factor authentication for administrators and owners.",
+              "Your role cannot reset two-factor authentication for this member.",
             );
           if (
             (

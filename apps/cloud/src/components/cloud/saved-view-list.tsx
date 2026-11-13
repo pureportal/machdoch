@@ -64,9 +64,7 @@ export function SavedViewList({
         <div className="cloud-empty">
           <Layers aria-hidden="true" />
           <p>No saved views yet.</p>
-          <Link className="underline" href="/cloud/issues">
-            Open issues
-          </Link>
+          <Link href="/cloud/issues">Open issues</Link>
         </div>
       ) : (
         <ul className="cloud-view-list" aria-label="Saved views">

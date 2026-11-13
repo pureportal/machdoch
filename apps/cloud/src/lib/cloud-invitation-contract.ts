@@ -8,7 +8,18 @@ export const invitationInputSchema = z.strictObject({
     .email()
     .max(254)
     .transform((value) => value.toLowerCase()),
-  role: z.enum(["admin", "member", "viewer"]),
+  role: z
+    .string()
+    .regex(/^[a-z][a-z0-9-]{1,63}$/u, "Choose a role.")
+    .refine(
+      (role) => role !== "owner",
+      "Invite owners as administrators first.",
+    ),
+  teamIds: z
+    .array(cloudId)
+    .max(500)
+    .refine((ids) => new Set(ids).size === ids.length, "Choose each team once.")
+    .default([]),
   authentication: z.discriminatedUnion("kind", [
     z.strictObject({ kind: z.literal("password") }),
     z.strictObject({
@@ -49,7 +60,8 @@ export interface InvitationPreview {
   confirmationId: string;
   organization: string;
   email: string;
-  role: "admin" | "member" | "viewer";
+  role: string;
+  roleName: string;
   existingAccount: boolean;
   authentication: "password" | "oidc";
   provider: string | null;

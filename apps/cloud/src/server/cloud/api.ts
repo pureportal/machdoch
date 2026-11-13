@@ -16,7 +16,11 @@ import {
 import { rememberedSessionCookie } from "./auth/remembered-sessions";
 import { handleMagicLinkApi, handleEmailSettingsApi } from "./auth/api";
 import { handleAiActivityApi } from "./activity/api";
-import { handleGitHubApi, handleGitHubWebhook } from "./github/api";
+import {
+  handleGitApi,
+  handleGitOAuthCallback,
+  handleGitWebhook,
+} from "./git/api";
 import {
   magicConfirmationCookie,
   ssoBrowserCookie,
@@ -68,6 +72,9 @@ import { z } from "zod";
 import {
   memberUpdateSchema,
   organizationUpdateSchema,
+  roleInputSchema,
+  roleKeySchema,
+  roleUpdateSchema,
   teamUpdateSchema,
 } from "../../lib/cloud-administration-contract";
 import { cycleCommandSchema } from "../../lib/cloud-cycle-contract";
@@ -95,6 +102,7 @@ import {
 } from "../../lib/cloud-comment-contract";
 import {
   cloudId,
+  revision,
   cycleInputSchema,
   issueInputSchema,
   issueUpdateSchema,
@@ -331,13 +339,15 @@ async function route(
     );
   }
   if (path[0] === "runner") return handleRunnerApi(runtime, request);
+  if (path[0] === "integrations" && path[2] === "webhooks" && path.length === 4)
+    return handleGitWebhook(runtime, request, path[1] ?? "", path[3] ?? "");
   if (
     path[0] === "integrations" &&
-    path[1] === "github" &&
-    path[2] === "webhooks" &&
+    path[2] === "oauth" &&
+    path[3] === "callback" &&
     path.length === 4
   )
-    return handleGitHubWebhook(runtime, request, path[3] ?? "");
+    return handleGitOAuthCallback(runtime, request, path[1] ?? "");
   if (path[0] === "automations" && path[1] === "hooks" && path.length === 3)
     return handleAutomationWebhook(runtime, request, path[2] ?? "");
   if (isPublicReleaseRoute(path))
@@ -427,11 +437,11 @@ async function route(
   if (path[0] === "ai-activity" || path[0] === "mimorii")
     return handleAiActivityApi(runtime, request, actor);
   if (
-    path[0] === "github" ||
+    path[0] === "git" ||
     path[0] === "pull-requests" ||
     (path[0] === "issues" && path[2] === "pull-requests" && path.length === 3)
   )
-    return handleGitHubApi(runtime, request, actor);
+    return handleGitApi(runtime, request, actor);
   if (routeKey === "GET connections")
     return Response.json({
       connections: await runtime.authorization.connections(actor),
@@ -586,6 +596,18 @@ async function route(
     );
   if (routeKey === "GET administration")
     return Response.json(await runtime.administration.get(actor));
+  if (routeKey === "GET roles")
+    return Response.json(await runtime.roles.list(actor));
+  if (routeKey === "GET me/access")
+    return Response.json(await runtime.roles.mine(actor));
+  if (method === "DELETE" && path[0] === "roles" && path.length === 2) {
+    await runtime.roles.remove(
+      actor,
+      roleKeySchema.parse(path[1]),
+      (await readBody(request, z.strictObject({ revision }))).revision,
+    );
+    return Response.json({ ok: true });
+  }
   if (method === "GET" && path[0] === "cycles" && path.length === 2)
     return Response.json(
       await runtime.cycles.get(actor, cloudId.parse(path[1])),
@@ -830,6 +852,23 @@ async function route(
           key.data,
           cloudId.parse(path[1]),
           await readBody(request, cycleCommandSchema),
+        ),
+      );
+    if (routeKey === "POST roles")
+      return Response.json(
+        await runtime.roles.create(
+          actor,
+          key.data,
+          await readBody(request, roleInputSchema),
+        ),
+      );
+    if (method === "PATCH" && path[0] === "roles" && path.length === 2)
+      return Response.json(
+        await runtime.roles.update(
+          actor,
+          key.data,
+          roleKeySchema.parse(path[1]),
+          await readBody(request, roleUpdateSchema),
         ),
       );
     if (routeKey === "PATCH organization")

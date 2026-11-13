@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -100,7 +101,7 @@ export function TaskDetail({
           </Link>
           <h1>{run.title}</h1>
         </div>
-        {workspace.actor.role !== "viewer" &&
+        {holderCan(workspace.actor, "ai.tasks") &&
           !terminal &&
           !run.cancelRequested && (
             <Button

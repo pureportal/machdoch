@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -54,9 +55,9 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const sections = useCollapsed();
-  const role = workspace.actor.role;
-  const admin = role === "owner" || role === "admin";
-  const sidebar = resolveSidebar(preferences, sidebarAccess(workspace));
+  const admin = holderCan(workspace.actor, "clients.manage");
+  const access = sidebarAccess(workspace);
+  const sidebar = resolveSidebar(preferences, access);
   const devices = useClientDevices(admin && sidebar.sections.devices);
   const teams = workspace.teams.filter(
     (team) => !sidebar.hiddenTeamIds.has(team.id),
@@ -64,7 +65,7 @@ export function Sidebar({
   const link = (item: (typeof sidebar.top)[number]) => (
     <SidebarLink
       key={item.id}
-      item={navigationItem(item)}
+      item={navigationItem(item, access)}
       count={item.id === "inbox" ? unread : 0}
       countLabel="unread"
       onNavigate={onNavigate}

@@ -382,7 +382,7 @@ it("gives the agent the user's role, team vocabulary and assigned work", async (
   const asMember = await database.transaction((sql) =>
     agentContext(sql, member, []),
   );
-  expect(asMember).toContain("User: Mia Member, role member.");
+  expect(asMember).toContain("User: Mia Member, role Member.");
   expect(asMember).toContain(
     "- Product (PRD), you are a member. Statuses: Backlog (backlog)",
   );

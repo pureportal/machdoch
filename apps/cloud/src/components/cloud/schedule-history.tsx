@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { ScheduleOccurrence } from "@/lib/cloud-schedule-contract";
 import { Button } from "@/components/ui/button";
 import { cloudRequest } from "./api-client";
+import { Timestamp } from "./timestamp";
 
 export function ScheduleHistory({ id }: { id: string }) {
   const [open, setOpen] = useState(false),
@@ -72,12 +73,7 @@ export function ScheduleHistory({ id }: { id: string }) {
               className="grid gap-1 text-sm"
             >
               <div className="flex flex-wrap justify-between gap-2">
-                <time dateTime={new Date(item.at).toISOString()}>
-                  {new Date(item.at)
-                    .toISOString()
-                    .replace("T", " ")
-                    .replace(".000Z", " UTC")}
-                </time>
+                <Timestamp value={item.at} />
                 {item.runId ? (
                   <Link
                     className="underline"

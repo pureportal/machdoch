@@ -1,11 +1,12 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronDown,
   ChevronRight,
-  Command,
+  Info,
   LogOut,
   Menu,
   Settings2,
@@ -17,7 +18,10 @@ import { useEffect, useMemo, useState } from "react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { SavedView } from "@/lib/cloud-view-contract";
 import type { CloudFavorite } from "@/lib/cloud-favorite-contract";
-import type { SidebarPreferences } from "@/lib/cloud-sidebar-contract";
+import {
+  settingsPermissions,
+  type SidebarPreferences,
+} from "@/lib/cloud-sidebar-contract";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -28,12 +32,15 @@ import {
 import { cloudRequest } from "./api-client";
 import { inboxChangedEvent } from "./inbox";
 import {
-  clientNavigation,
   isNavigationActive,
   navigationFor,
+  navigationSection,
   sidebarAccess,
   pageNavigation,
 } from "./navigation";
+import { SectionIntro, useHiddenIntros } from "./section-intro";
+import { BrandMark } from "./brand-mark";
+import { BrandFavicon, BrandStyle } from "./brand-theme";
 import { PersonAvatar } from "./person-avatar";
 import { PropertyMenu } from "./property-menu";
 import { SidebarCustomizeDialog } from "./sidebar-customize-dialog";
@@ -127,24 +134,25 @@ export function CloudShell({
     () => workspace.teams.map((team) => team.key),
     [workspace.teams],
   );
-  const admin =
-    workspace.actor.role === "owner" || workspace.actor.role === "admin";
-  const search = useSearchParams();
-  const managingClients = clientNavigation.some(
-    ({ href }) => pathname === href || pathname.startsWith(`${href}/`),
+  const canOpenSettings = settingsPermissions.some((permission) =>
+    holderCan(workspace.actor, permission),
   );
+  const search = useSearchParams();
+  const access = sidebarAccess(workspace);
+  const section = navigationSection(
+    access,
+    pathname,
+    new URLSearchParams(search),
+  );
+  const intros = useHiddenIntros();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [signingOut, setSigningOut] = useState(false);
   const unread = useUnreadCount(initialUnread);
   const favorites = useFavorites(initialFavorites);
   const triage = useTriageCounts(initialTriage);
-  const writable = workspace.actor.role !== "viewer";
-  const items = [
-    ...navigationFor(sidebarAccess(workspace)),
-    ...clientNavigation,
-    ...pageNavigation,
-  ];
+  const writable = holderCan(workspace.actor, "issues.edit");
+  const items = [...navigationFor(access), ...pageNavigation];
   const current =
     items.find((item) =>
       isNavigationActive(item.href, pathname, new URLSearchParams(search)),
@@ -173,7 +181,7 @@ export function CloudShell({
               label: "Customize sidebar",
               icon: <SlidersHorizontal size={14} />,
             },
-            ...(admin
+            ...(canOpenSettings
               ? [
                   {
                     value: "/cloud/settings",
@@ -195,9 +203,7 @@ export function CloudShell({
           }}
         >
           <button type="button" className="cloud-brand">
-            <span className="cloud-brand-mark">
-              <Command size={14} strokeWidth={2.4} />
-            </span>
+            <BrandMark identity={workspace.organization} />
             <span className="cloud-brand-text">
               <span>{workspace.organization.name}</span>
             </span>
@@ -277,8 +283,16 @@ export function CloudShell({
         <AgentShellProvider>
           <div
             className="cloud-shell"
-            data-cloud-accent={workspace.organization.accent}
+            data-cloud-brand=""
+            data-cloud-tint={
+              workspace.organization.brand.tintedSidebar ? "" : undefined
+            }
           >
+            <BrandStyle
+              identity={workspace.organization}
+              scope=".cloud-shell[data-cloud-brand]"
+            />
+            <BrandFavicon identity={workspace.organization} />
             <a className="fleet-skip-link" href="#cloud-content">
               Skip to content
             </a>
@@ -307,6 +321,17 @@ export function CloudShell({
                   <span>{workspace.organization.name}</span>
                   <ChevronRight size={13} />
                   <span>{current?.label ?? "Account"}</span>
+                  {section && !section.fullBleed && (
+                    <button
+                      type="button"
+                      className="cloud-breadcrumb-info"
+                      aria-label="About this page"
+                      aria-pressed={!intros.hidden(section.page.href)}
+                      onClick={() => intros.toggle(section.page.href)}
+                    >
+                      <Info size={13} />
+                    </button>
+                  )}
                 </div>
                 <QuickNavigation
                   access={sidebarAccess(workspace)}
@@ -324,24 +349,19 @@ export function CloudShell({
                 )}
               </header>
               <main id="cloud-content" tabIndex={-1} className="cloud-content">
-                {managingClients && (
-                  <nav aria-label="Clients" className="cloud-client-navigation">
-                    {clientNavigation.map(({ href, label, icon: Icon }) => (
-                      <Link
-                        key={href}
-                        href={href}
-                        aria-current={pathname === href ? "page" : undefined}
-                      >
-                        <Icon size={15} />
-                        {label}
-                      </Link>
-                    ))}
-                  </nav>
+                {section && !section.fullBleed && (
+                  <SectionIntro
+                    section={section}
+                    hidden={intros.hidden(section.page.href)}
+                    onHide={() => intros.toggle(section.page.href)}
+                  />
                 )}
                 {children}
               </main>
             </div>
-            <AgentDock workspace={workspace} />
+            {holderCan(workspace.actor, "ai.chat") && (
+              <AgentDock workspace={workspace} />
+            )}
             {customizing && (
               <SidebarCustomizeDialog
                 onOpenChange={setCustomizing}

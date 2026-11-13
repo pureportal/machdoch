@@ -89,6 +89,7 @@ function inviteInput(email = "new@example.test", sso = false): InvitationInput {
     organizationId: owner.organizationId,
     email,
     role: "member",
+    teamIds: [],
     authentication: sso
       ? { kind: "oidc", providerId, subject: "invited-subject" }
       : { kind: "password" },

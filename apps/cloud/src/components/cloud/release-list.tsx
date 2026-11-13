@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -22,11 +23,7 @@ import type {
 } from "@/lib/cloud-release-contract";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import { cloudRequest, createCommandSender, formText } from "./api-client";
-import {
-  ChannelMark,
-  ReleaseSections,
-  ReleaseStatusPill,
-} from "./release-display";
+import { ChannelMark, ReleaseStatusPill } from "./release-display";
 import { RelativeTime } from "./relative-time";
 import { useToast } from "./toast";
 
@@ -118,8 +115,8 @@ export function ReleaseList({
   const [archived, setArchived] = useState<CloudReleaseSummary[] | null>(null);
   const [loadingArchived, setLoadingArchived] = useState(false);
   const toast = useToast();
-  const admin = ["owner", "admin"].includes(workspace.actor.role);
-  const canWrite = workspace.actor.role !== "viewer";
+  const admin = holderCan(workspace.actor, "releases.manage");
+  const canWrite = holderCan(workspace.actor, "releases.edit");
   const releases = (archived ?? initial).filter(
     (release) => !productId || release.productId === productId,
   );
@@ -150,7 +147,6 @@ export function ReleaseList({
           </Button>
         )}
       </header>
-      <ReleaseSections admin={admin} />
       {products.length > 0 && (
         <div className="cloud-release-filter" role="group" aria-label="Filter">
           {(products.length > 1

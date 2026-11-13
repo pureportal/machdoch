@@ -6,7 +6,7 @@ import {
 } from "@machdoch/fleet-protocol";
 import { maximumWorkspaceRequestBodyBytes } from "@machdoch/fleet-protocol/workspace";
 import type { CloudServerConfig } from "./config";
-import { maximumGitHubWebhookBytes } from "../lib/cloud-github-contract";
+import { maximumGitWebhookBytes } from "../lib/cloud-git-contract";
 import { maximumTaskInferenceRequestBytes } from "@machdoch/fleet-protocol/cloud-inference";
 
 const maximumAuthenticationBodyBytes = 16 * 1024;
@@ -53,8 +53,12 @@ export function maximumRequestBodyBytes(
     return maximumMediaBytes;
   if (/^\/api\/v1\/(attachments|attachment-uploads\/[^/]+)$/u.test(pathname))
     return maximumAttachmentBytes;
-  if (/^\/api\/v1\/integrations\/github\/webhooks\/[^/]+$/u.test(pathname))
-    return maximumGitHubWebhookBytes;
+  if (
+    /^\/api\/v1\/integrations\/(?:github|gitlab)\/webhooks\/[^/]+$/u.test(
+      pathname,
+    )
+  )
+    return maximumGitWebhookBytes;
   if (/^\/api\/instances\/[^/]+\/runs$/u.test(pathname))
     return 1024 * 1024 + maximumSmallApiBodyBytes;
   if (pathname.startsWith("/api/settings/")) {

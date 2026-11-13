@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { OidcProvider, SsoAdministration } from "@/lib/cloud-sso-contract";
-import type { ManagedMember } from "@/lib/cloud-administration-contract";
+import type {
+  CloudRoleRecord,
+  ManagedMember,
+} from "@/lib/cloud-administration-contract";
 import { SsoProviderEditor } from "./sso-provider-editor";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
@@ -15,10 +18,14 @@ import { cloudRequest, createCommandSender, formText } from "./api-client";
 export function SsoSettings({
   members,
   owner,
+  grantableRoles,
 }: {
   members: ManagedMember[];
   owner: boolean;
+  grantableRoles: CloudRoleRecord[];
 }) {
+  const grantable = (role: string) =>
+    grantableRoles.some((entry) => entry.key === role);
   const [data, setData] = useState<SsoAdministration | null>(null);
   const [policy, setPolicy] = useState<{
     required: boolean;
@@ -122,28 +129,30 @@ export function SsoSettings({
                   Edit
                 </Button>
               )}
-              <Button
-                variant="outline"
-                disabled={pending}
-                onClick={() => {
-                  setPending(true);
-                  setError("");
-                  sender.current = createCommandSender();
-                  setNewMember(false);
-                  void cloudRequest<typeof identities>(
-                    `sso-providers/${provider.id}/mappings`,
-                  )
-                    .then((rows) => {
-                      setIdentities(rows);
-                      setMapping(provider);
-                    })
-                    .catch((reason: Error) => setError(reason.message))
-                    .finally(() => setPending(false));
-                }}
-                aria-label={`Identities for ${provider.name}`}
-              >
-                Identities
-              </Button>
+              {!!grantableRoles.length && (
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => {
+                    setPending(true);
+                    setError("");
+                    sender.current = createCommandSender();
+                    setNewMember(false);
+                    void cloudRequest<typeof identities>(
+                      `sso-providers/${provider.id}/mappings`,
+                    )
+                      .then((rows) => {
+                        setIdentities(rows);
+                        setMapping(provider);
+                      })
+                      .catch((reason: Error) => setError(reason.message))
+                      .finally(() => setPending(false));
+                  }}
+                  aria-label={`Identities for ${provider.name}`}
+                >
+                  Identities
+                </Button>
+              )}
               {provider.enabled && (
                 <>
                   {!data?.linkedProviderIds.includes(provider.id) && (
@@ -229,12 +238,10 @@ export function SsoSettings({
           <div key={identity.userId} className="grid gap-2">
             <strong className="break-all">{identity.email}</strong>
             <span className="break-all">{identity.subject}</span>
-            {(owner ||
-              members.some(
-                (member) =>
-                  member.id === identity.userId &&
-                  !["owner", "admin"].includes(member.role),
-              )) && (
+            {members.some(
+              (member) =>
+                member.id === identity.userId && grantable(member.role),
+            ) && (
               <Button
                 type="button"
                 variant="outline"
@@ -291,10 +298,18 @@ export function SsoSettings({
               />
             </Field>
             <Field label="Role" htmlFor="sso-member-role">
-              <Select id="sso-member-role" name="role" defaultValue="member">
-                <option value="member">Member</option>
-                <option value="viewer">Viewer</option>
-                {owner && <option value="admin">Administrator</option>}
+              <Select
+                id="sso-member-role"
+                name="role"
+                defaultValue={grantable("member") ? "member" : undefined}
+              >
+                {grantableRoles
+                  .filter((role) => role.key !== "owner")
+                  .map((role) => (
+                    <option key={role.key} value={role.key}>
+                      {role.name}
+                    </option>
+                  ))}
               </Select>
             </Field>
           </>
@@ -303,11 +318,7 @@ export function SsoSettings({
             <Select id="sso-member" name="userId" required>
               <option value="">Select member</option>
               {members
-                .filter(
-                  (member) =>
-                    member.active &&
-                    (owner || !["admin", "owner"].includes(member.role)),
-                )
+                .filter((member) => member.active && grantable(member.role))
                 .map((member) => (
                   <option key={member.id} value={member.id}>
                     {member.email}

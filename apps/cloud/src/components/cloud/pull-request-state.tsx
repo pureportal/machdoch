@@ -4,7 +4,7 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
 } from "lucide-react";
-import type { PullRequestStage } from "@/lib/github-automation";
+import type { PullRequestStage } from "@/lib/git-automation";
 
 export const pullRequestStageLabels: Record<PullRequestStage, string> = {
   attention: "Needs attention",

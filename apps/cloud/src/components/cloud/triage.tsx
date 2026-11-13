@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useState } from "react";
@@ -34,7 +35,7 @@ export function Triage({
 }) {
   const router = useRouter();
   const toast = useToast();
-  const writable = workspace.actor.role !== "viewer";
+  const writable = holderCan(workspace.actor, "issues.edit");
   const { issues, apply } = useIssueList(initial, workspace, teamId ?? "");
   const applyChange: ApplyChange = (targets, changes) =>
     apply(

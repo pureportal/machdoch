@@ -1,4 +1,3 @@
-import type { CloudRole } from "../../../lib/cloud-contract";
 import type {
   ChannelInput,
   ProductInput,
@@ -17,7 +16,12 @@ import { requireCredentialStorage } from "../credential-storage";
 import type { CloudDatabase } from "../database";
 import { webhookContext } from "./products";
 import type { CloudReleaseMedia } from "./release-media";
-import { canPublish, readReleaseRow, touchRelease } from "./releases";
+import {
+  canPublish,
+  readReleaseRow,
+  touchRelease,
+  type PublishRights,
+} from "./releases";
 import { socialFailure, type CloudSocial } from "./social-accounts";
 
 const webhookTimeoutMs = 15_000;
@@ -120,11 +124,12 @@ export class CloudReleasePublisher {
       const release = await readReleaseRow(sql, organizationId, post.releaseId);
       const role = post.publisherId
         ? (
-            await sql.query<{ role: CloudRole }>(
-              `SELECT m.role FROM cloud_memberships m JOIN cloud_users u ON u.id=m.user_id WHERE m.organization_id=$1 AND m.user_id=$2 AND m.active AND NOT u.disabled`,
+            await sql.query<PublishRights>(
+              `SELECT cloud_member_can($1,$2,'releases.manage') AS manage,cloud_member_can($1,$2,'releases.edit') AS edit
+              FROM cloud_users u WHERE u.id=$2 AND NOT u.disabled`,
               [organizationId, post.publisherId],
             )
-          ).rows[0]?.role
+          ).rows[0]
         : undefined;
       const delivered = (
         await sql.query<ReleaseDelivery & Record<string, unknown>>(

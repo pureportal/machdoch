@@ -37,7 +37,12 @@ async function readRound(
   ).rows[0];
   if (!reference)
     throw new CloudError(404, "not_found", "Poker round is unavailable.");
-  const issue = await readIssue(sql, actor, reference.issue_id, write);
+  const issue = await readIssue(
+    sql,
+    actor,
+    reference.issue_id,
+    write ? "issues.edit" : undefined,
+  );
   const round = (
     await sql.query<StoredRound>(
       `SELECT id,issue_id AS "issueId",facilitator_id AS "facilitatorId",issue_revision AS "issueRevision",
@@ -58,7 +63,7 @@ export class CloudPoker {
     issueRevision: number,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      const issue = await readIssue(sql, actor, issueId, true);
+      const issue = await readIssue(sql, actor, issueId, "issues.edit");
       return command(
         sql,
         actor,
@@ -135,7 +140,7 @@ export class CloudPoker {
         JOIN cloud_memberships m ON m.organization_id=v.organization_id AND m.user_id=v.user_id
         JOIN cloud_teams t ON t.organization_id=v.organization_id AND t.id=$6
         WHERE v.organization_id=$1 AND v.round_id=$2 AND v.generation=$3 AND m.active AND NOT u.disabled
-        AND (t.visibility='organization' OR m.role IN ('owner','admin') OR EXISTS (SELECT 1 FROM cloud_team_memberships tm WHERE tm.organization_id=m.organization_id AND tm.user_id=m.user_id AND tm.team_id=t.id))
+        AND cloud_team_visible(t.organization_id,t.id,t.visibility,m.user_id)
         ORDER BY u.name,v.user_id`,
           [
             actor.organizationId,
@@ -215,7 +220,7 @@ export class CloudPoker {
       await lockExecution(sql, actor.organizationId);
       const { round, issue } = await readRound(sql, actor, id, true);
       if (input.kind === "takeover")
-        await requireMembership(sql, actor, "admin");
+        await requireMembership(sql, actor, "teams.manage");
       else if (round.facilitatorId !== actor.userId)
         throw new CloudError(
           403,

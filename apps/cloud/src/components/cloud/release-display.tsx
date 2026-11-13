@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { Webhook } from "lucide-react";
 import {
   channelKindLabels,
@@ -63,33 +61,6 @@ export function ReleaseStatusPill({ status }: { status: ReleaseStatus }) {
     <span className="cloud-release-status" data-status={status}>
       {releaseStatusLabels[status]}
     </span>
-  );
-}
-
-const sections = [
-  { href: "/cloud/releases", label: "Releases" },
-  { href: "/cloud/releases/products", label: "Products" },
-  { href: "/cloud/releases/connections", label: "Connections" },
-];
-
-export function ReleaseSections({ admin }: { admin: boolean }) {
-  const pathname = usePathname();
-  return (
-    <nav className="cloud-release-sections" aria-label="Release sections">
-      {sections
-        .filter(
-          (section) => admin || section.href !== "/cloud/releases/connections",
-        )
-        .map((section) => (
-          <Link
-            key={section.href}
-            href={section.href}
-            aria-current={pathname === section.href ? "page" : undefined}
-          >
-            {section.label}
-          </Link>
-        ))}
-    </nav>
   );
 }
 

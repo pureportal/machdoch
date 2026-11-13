@@ -5,13 +5,15 @@ import {
   GitMerge,
   GitPullRequestArrow,
   MessageSquareCode,
+  Waypoints,
   Wrench,
 } from "lucide-react";
-import {
-  githubMergeMethods,
-  type CloudPullRequest,
-  type CloudPullRequestDetails,
-} from "@/lib/cloud-github-contract";
+import type {
+  CloudPullRequest,
+  CloudPullRequestDetails,
+  GitMergeMethod,
+} from "@/lib/cloud-git-contract";
+import { gitProviderLabels } from "@/lib/git-providers";
 import {
   pullRequestChecksPrompt,
   pullRequestConflictPrompt,
@@ -28,22 +30,20 @@ import { ClientLaunch } from "./client-launch";
 import { hasConflicts } from "./pull-request-overview";
 import { useToast } from "./toast";
 
-type MergeMethod = (typeof githubMergeMethods)[number];
-
-const mergeLabels: Record<MergeMethod, string> = {
+const mergeLabels: Record<GitMergeMethod, string> = {
   squash: "Squash and merge",
   merge: "Merge commit",
   rebase: "Rebase and merge",
 };
 
 function mergeConsequence(
-  method: MergeMethod,
-  pullRequest: CloudPullRequest,
+  method: GitMergeMethod,
+  details: CloudPullRequestDetails,
 ): string {
-  const { headRef, baseRef } = pullRequest;
-  if (method === "rebase")
-    return `Rebase ${headRef} onto ${baseRef} on GitHub.`;
-  return `${method === "squash" ? "Squash" : "Merge"} ${headRef} into ${baseRef} on GitHub.`;
+  const { headRef, baseRef, provider } = details.pullRequest;
+  const where = `on ${gitProviderLabels[provider]} as ${details.actingAs}`;
+  if (method === "rebase") return `Rebase ${headRef} onto ${baseRef} ${where}.`;
+  return `${method === "squash" ? "Squash" : "Merge"} ${headRef} into ${baseRef} ${where}.`;
 }
 
 export function PullRequestActions({
@@ -51,15 +51,20 @@ export function PullRequestActions({
   launch,
   onMerged,
   onUpdated,
+  onRetargeted,
 }: {
   details: CloudPullRequestDetails;
   launch: boolean;
   onMerged: (pullRequest: CloudPullRequest) => void;
   onUpdated: () => void;
+  onRetargeted: (pullRequest: CloudPullRequest) => void;
 }) {
   const toast = useToast();
-  const [method, setMethod] = useState<MergeMethod>("squash");
+  const [method, setMethod] = useState<GitMergeMethod>(
+    details.mergeMethods[0] ?? "squash",
+  );
   const [updating, setUpdating] = useState(false);
+  const [retargeting, setRetargeting] = useState(false);
   const [updateRequested, setUpdateRequested] = useState(false);
   const { pullRequest } = details;
   const open = pullRequest.state === "open";
@@ -101,6 +106,7 @@ export function PullRequestActions({
     pullRequest.mergeableState === "behind" &&
     !conflicts &&
     !updateRequested;
+  const retargetTo = details.canMerge ? pullRequest.stack?.retargetTo : null;
   if (!tasks.length && !details.canMerge) return null;
   return (
     <DialogFooter className="cloud-pull-request-actions">
@@ -146,14 +152,40 @@ export function PullRequestActions({
           Update branch
         </Button>
       )}
+      {retargetTo && (
+        <Button
+          variant="outline"
+          size="sm"
+          aria-busy={retargeting}
+          disabled={retargeting}
+          onClick={() => {
+            setRetargeting(true);
+            void cloudRequest<CloudPullRequest>(
+              `pull-requests/${pullRequest.id}/retarget`,
+              { method: "POST", body: { baseRef: retargetTo } },
+            )
+              .then((retargeted) => {
+                toast(`Retargeted onto ${retargetTo}`);
+                onRetargeted(retargeted);
+              })
+              .catch((reason: Error) => toast(reason.message, "error"))
+              .finally(() => setRetargeting(false));
+          }}
+        >
+          <Waypoints />
+          Retarget to {retargetTo}
+        </Button>
+      )}
       {details.canMerge && (
         <div className="cloud-pull-request-merge">
           <Select
             aria-label="Merge method"
             value={method}
-            onChange={(event) => setMethod(event.target.value as MergeMethod)}
+            onChange={(event) =>
+              setMethod(event.target.value as GitMergeMethod)
+            }
           >
-            {githubMergeMethods.map((entry) => (
+            {details.mergeMethods.map((entry) => (
               <option key={entry} value={entry}>
                 {mergeLabels[entry]}
               </option>
@@ -167,7 +199,7 @@ export function PullRequestActions({
               </Button>
             }
             title="Merge pull request"
-            description={mergeConsequence(method, pullRequest)}
+            description={mergeConsequence(method, details)}
             actionLabel="Merge"
             destructive={false}
             onConfirm={async () => {

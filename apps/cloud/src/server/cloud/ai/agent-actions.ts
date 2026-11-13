@@ -1,3 +1,5 @@
+import { automationMarker } from "../../../lib/git-events";
+import type { CloudGitPullRequests } from "../git/pull-requests";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import type { AgentAction } from "../../../lib/cloud-chat-contract";
 import { CloudError, isCloudError } from "../access";
@@ -36,6 +38,7 @@ interface AgentActionServices {
   triage: CloudTriage;
   releases: CloudReleases;
   studio: CloudReleaseStudio;
+  pullRequests: CloudGitPullRequests;
 }
 
 const textChanges = ["title", "description", "acceptanceCriteria"] as const;
@@ -427,6 +430,39 @@ export class CloudAgentActions {
       return this.configureAutomation(actor, action);
     if (action.kind === "client_session")
       return this.startClientSession(actor, action);
+    if (action.kind === "pull_request_comment") {
+      const posted = await this.services.pullRequests.comment(
+        actor,
+        action.pullRequestId,
+        `${action.body}
+
+${automationMarker}`,
+      );
+      return {
+        kind: "pull_request",
+        id: action.pullRequestId,
+        label: action.reference,
+        href: posted.url,
+      };
+    }
+    if (action.kind === "pull_request_review") {
+      await this.services.pullRequests.review(actor, action.pullRequestId, {
+        decision: action.decision,
+        body: action.body
+          ? `${action.body}
+
+${automationMarker}`
+          : "",
+      });
+      return {
+        kind: "pull_request",
+        id: action.pullRequestId,
+        label: action.reference,
+        href: (
+          await this.services.pullRequests.get(actor, action.pullRequestId)
+        ).url,
+      };
+    }
     if (action.kind === "project_update") {
       await this.services.projectUpdates.create(
         actor,

@@ -8,6 +8,7 @@ import type {
   CloudRun,
   RunAttempt,
   RunDetail,
+  PullRequestRunSubject,
   RunInput,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import {
@@ -36,6 +37,14 @@ export class CloudRuns {
     actor: CloudActor,
     key: string,
     input: RunInput,
+  ): Promise<{ id: string }> {
+    return this.database.transaction((sql) => admitRun(sql, actor, key, input));
+  }
+
+  createForPullRequest(
+    actor: CloudActor,
+    key: string,
+    input: { profileId: string; subject: PullRequestRunSubject },
   ): Promise<{ id: string }> {
     return this.database.transaction((sql) => admitRun(sql, actor, key, input));
   }
@@ -144,7 +153,7 @@ export class CloudRuns {
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "ai.tasks");
       const run = await readRun(sql, actor.organizationId, id);
       await requireTeam(sql, actor, run.teamId);
       return command(

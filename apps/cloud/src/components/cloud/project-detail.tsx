@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -51,7 +52,7 @@ import { PersonAvatar } from "./person-avatar";
 import { ProjectEditor } from "./project-editor";
 import { CloudMarkdown } from "./cloud-markdown";
 import { formatProjectDate, ProjectOverview } from "./project-overview";
-import { projectStatusLabels, projectStatusStates } from "./project-fields";
+import { projectStatusLabels, projectStatusStates } from "@/lib/project-status";
 import { TaskState } from "./task-state";
 import { useToast } from "./toast";
 import { useIssueList } from "./use-issue-list";
@@ -274,7 +275,7 @@ export function ProjectDetail({
     label: project.name,
     title: null,
   });
-  const writable = workspace.actor.role !== "viewer";
+  const writable = holderCan(workspace.actor, "planning.edit");
   const definitions = useMemo(
     () =>
       filterFieldDefinitions(workspace, labels, project.teamId).filter(
@@ -472,7 +473,7 @@ export function ProjectDetail({
           />
           <ConnectedClients
             clients={clients}
-            administrator={["owner", "admin"].includes(workspace.actor.role)}
+            administrator={holderCan(workspace.actor, "clients.manage")}
           />
           {runs.length > 0 && (
             <section className="cloud-card cloud-project-runs">

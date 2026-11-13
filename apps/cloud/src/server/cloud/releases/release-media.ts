@@ -187,7 +187,7 @@ export class CloudReleaseMedia {
     body: ReadableStream<Uint8Array>,
   ): Promise<ReleaseMedia> {
     await this.database.transaction((sql) =>
-      requireMembership(sql, actor, "write"),
+      requireMembership(sql, actor, "releases.edit"),
     );
     return this.store(
       actor.organizationId,
@@ -200,7 +200,7 @@ export class CloudReleaseMedia {
 
   list(actor: CloudActor, owner: MediaOwner): Promise<ReleaseMedia[]> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor);
+      await requireMembership(sql, actor, "releases.view");
       return (
         await sql.query<ReleaseMedia & Record<string, unknown>>(
           `SELECT ${mediaColumns} FROM cloud_release_media m WHERE m.organization_id=$1 AND m.product_id=$2 AND m.state='ready'
@@ -213,7 +213,7 @@ export class CloudReleaseMedia {
 
   get(actor: CloudActor, id: string): Promise<ReleaseMedia> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor);
+      await requireMembership(sql, actor, "releases.view");
       return this.readRow(sql, actor.organizationId, id);
     });
   }
@@ -224,7 +224,7 @@ export class CloudReleaseMedia {
     input: { caption: string; altText: string },
   ): Promise<ReleaseMedia> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       await this.readRow(sql, actor.organizationId, id);
       await sql.query(
         "UPDATE cloud_release_media SET caption=$3,alt_text=$4 WHERE organization_id=$1 AND id=$2",
@@ -236,7 +236,7 @@ export class CloudReleaseMedia {
 
   remove(actor: CloudActor, id: string): Promise<void> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       const used = await sql.query(
         "SELECT 1 FROM cloud_release_posts WHERE organization_id=$1 AND $2=ANY(media_ids) AND state IN ('publishing','published') LIMIT 1",
         [actor.organizationId, id],

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import {
-  actionNeedsIssue,
+  actionNeedsManualIssue,
   type AutomationInput,
   type AutomationSecret,
   type CloudAutomation,
@@ -147,7 +147,12 @@ export class CloudAutomations {
             "An automation stays in its original team.",
           );
       }
-      const team = await requireTeam(sql, actor, input.teamId, true);
+      const team = await requireTeam(
+        sql,
+        actor,
+        input.teamId,
+        "automations.edit",
+      );
       await validateAutomation(sql, actor, team, input);
       return current;
     });
@@ -165,7 +170,12 @@ export class CloudAutomations {
         "Create automations in the browser.",
       );
     return this.database.transaction(async (sql) => {
-      const team = await requireTeam(sql, actor, input.teamId, true);
+      const team = await requireTeam(
+        sql,
+        actor,
+        input.teamId,
+        "automations.edit",
+      );
       return command(
         sql,
         actor,
@@ -238,7 +248,12 @@ export class CloudAutomations {
               "automation_team",
               "An automation stays in its original team.",
             );
-          const team = await requireTeam(sql, actor, current.teamId, true);
+          const team = await requireTeam(
+            sql,
+            actor,
+            current.teamId,
+            "automations.edit",
+          );
           await validateAutomation(sql, actor, team, automation);
           await sql.query(
             `UPDATE cloud_automations SET name=$3,trigger_kind=$4,trigger=$5,conditions=$6,actions=$7,daily_limit=$8,next_run_at=$9,
@@ -278,7 +293,7 @@ export class CloudAutomations {
       const current = await readAutomation(sql, actor, id, true);
       if (input.enabled || current.ownerId === actor.userId)
         requireOwner(current, actor);
-      else await requireMembership(sql, actor, "admin");
+      else await requireMembership(sql, actor, "teams.manage");
       return command(
         sql,
         actor,
@@ -287,7 +302,12 @@ export class CloudAutomations {
         async () => {
           checkRevision(current.revision, input.revision);
           if (input.enabled) {
-            const team = await requireTeam(sql, actor, current.teamId, true);
+            const team = await requireTeam(
+              sql,
+              actor,
+              current.teamId,
+              "automations.edit",
+            );
             await validateAutomation(sql, actor, team, current);
           }
           await sql.query(
@@ -309,7 +329,7 @@ export class CloudAutomations {
     return this.database.transaction(async (sql) => {
       const current = await readAutomation(sql, actor, id, true);
       if (current.ownerId === actor.userId) requireOwner(current, actor);
-      else await requireMembership(sql, actor, "admin");
+      else await requireMembership(sql, actor, "teams.manage");
       await sql.query(
         "DELETE FROM cloud_automations WHERE organization_id=$1 AND id=$2",
         [actor.organizationId, id],
@@ -341,9 +361,9 @@ export class CloudAutomations {
     input: { issueId: string | null },
   ): Promise<{ runIds: string[] }> {
     const result = await this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "automations.edit");
       const automation = await readAutomation(sql, actor, id, true);
-      await requireTeam(sql, actor, automation.teamId, true);
+      await requireTeam(sql, actor, automation.teamId, "automations.edit");
       return command(
         sql,
         actor,
@@ -392,7 +412,7 @@ export class CloudAutomations {
                 "automation_conditions",
                 "This issue does not match the automation's conditions.",
               );
-          } else if (automation.actions.some(actionNeedsIssue))
+          } else if (automation.actions.some(actionNeedsManualIssue))
             throw new CloudError(
               422,
               "automation_issue_required",

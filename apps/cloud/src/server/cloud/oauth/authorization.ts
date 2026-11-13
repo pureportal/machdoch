@@ -6,7 +6,13 @@ import type {
   CloudOAuthScope,
 } from "../../../lib/cloud-oauth-contract";
 import { createSecret, hashSecret } from "../../crypto";
-import { CloudError, recordEvent, requireMembership } from "../access";
+import { grantableScopes } from "../../../lib/cloud-permissions";
+import {
+  actorMember,
+  CloudError,
+  recordEvent,
+  requireMembership,
+} from "../access";
 import type { CloudDatabase } from "../database";
 import {
   authorizeSchema,
@@ -68,7 +74,10 @@ export class CloudAuthorization {
 
   async consent(actor: CloudActor, id: string): Promise<CloudConsent> {
     return this.database.transaction(async (sql) => {
-      const role = await requireMembership(sql, actor);
+      const access = await requireMembership(sql, actor, "apps.connect");
+      const grantable = grantableScopes(
+        actorMember({ id: actor.userId, name: "" }, access).permissions,
+      );
       const request = (
         await sql.query<AuthorizationRequest>(
           `UPDATE cloud_oauth_requests SET organization_id=$2,user_id=$3 WHERE id=$1 AND decided_at IS NULL
@@ -93,9 +102,7 @@ export class CloudAuthorization {
         clientName: nativeCloudClient.name,
         ...details,
         redirectUri: request.redirect_uri,
-        scopes: request.scopes.filter(
-          (scope) => role !== "viewer" || scope === "cloud:read",
-        ),
+        scopes: request.scopes.filter((scope) => grantable.includes(scope)),
       };
     });
   }
@@ -108,7 +115,10 @@ export class CloudAuthorization {
     sessionToken: string,
   ): Promise<string> {
     return this.database.transaction(async (sql) => {
-      const role = await requireMembership(sql, actor);
+      const access = await requireMembership(sql, actor, "apps.connect");
+      const grantable = grantableScopes(
+        actorMember({ id: actor.userId, name: "" }, access).permissions,
+      );
       const request = (
         await sql.query<AuthorizationRequest>(
           `SELECT * FROM cloud_oauth_requests WHERE id=$1 AND organization_id=$2 AND user_id=$3
@@ -128,8 +138,7 @@ export class CloudAuthorization {
           new Set(scopes).size !== scopes.length ||
           scopes.some(
             (scope) =>
-              !request.scopes.includes(scope) ||
-              (role === "viewer" && scope !== "cloud:read"),
+              !request.scopes.includes(scope) || !grantable.includes(scope),
           ))
       )
         throw new CloudError(

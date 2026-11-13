@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { InvitationOptions } from "@/lib/cloud-invitation-contract";
+import type { CloudRoleRecord } from "@/lib/cloud-administration-contract";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Input } from "@/components/ui/input";
@@ -16,15 +17,18 @@ import {
 
 export function InvitationEditor({
   organizationId,
-  owner,
+  roles,
+  teams,
   onClose,
   onCreated,
 }: {
   organizationId: string;
-  owner: boolean;
+  roles: CloudRoleRecord[];
+  teams: { id: string; name: string }[];
   onClose: () => void;
   onCreated: (url: string) => void;
 }) {
+  const invitable = roles.filter((role) => role.key !== "owner");
   const [options, setOptions] = useState<InvitationOptions | null>(null);
   const [method, setMethod] = useState("password");
   const [error, setError] = useState("");
@@ -77,6 +81,7 @@ export function InvitationEditor({
             organizationId,
             email: formText(form, "email"),
             role: formText(form, "role"),
+            teamIds: form.getAll("teamIds").map(String),
             authentication:
               method === "password"
                 ? { kind: "password" }
@@ -107,16 +112,33 @@ export function InvitationEditor({
         />
       </Field>
       <Field label="Role" htmlFor="invite-role">
-        <Select id="invite-role" name="role" defaultValue="member">
-          {(owner ? ["admin", "member", "viewer"] : ["member", "viewer"]).map(
-            (role) => (
-              <option key={role} value={role}>
-                {role[0]!.toUpperCase() + role.slice(1)}
-              </option>
-            ),
-          )}
+        <Select
+          id="invite-role"
+          name="role"
+          defaultValue={
+            invitable.some((role) => role.key === "member")
+              ? "member"
+              : undefined
+          }
+        >
+          {invitable.map((role) => (
+            <option key={role.key} value={role.key}>
+              {role.name}
+            </option>
+          ))}
         </Select>
       </Field>
+      {teams.length > 0 && (
+        <fieldset className="cloud-check-grid">
+          <legend>Teams</legend>
+          {teams.map((team) => (
+            <label key={team.id}>
+              <input type="checkbox" name="teamIds" value={team.id} />
+              {team.name}
+            </label>
+          ))}
+        </fieldset>
+      )}
       {options ? (
         <Field label="Sign-in method" htmlFor="invite-method">
           <Select

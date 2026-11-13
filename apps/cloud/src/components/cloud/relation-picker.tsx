@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { useEffect, useState } from "react";
 import type { CloudIssue } from "@/lib/cloud-contract";
 import { Input } from "@/components/ui/input";
@@ -101,7 +102,7 @@ export function RelationPicker({
             </label>
           ))}
       </div>
-      {loading && <p role="status">Loading issues…</p>}
+      {loading && <LoadingState label="Loading issues…" compact />}
       {!loading && !error && !choices.some((issue) => issue.id !== issueId) && (
         <p role="status">No issues found.</p>
       )}

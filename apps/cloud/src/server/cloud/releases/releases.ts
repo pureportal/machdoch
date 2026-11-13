@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CloudActor, CloudRole } from "../../../lib/cloud-contract";
+import type { CloudActor } from "../../../lib/cloud-contract";
 import type {
   CloudRelease,
   CloudReleaseSummary,
@@ -15,6 +15,7 @@ import type {
 } from "../../../lib/cloud-release-contract";
 import { releaseStatus } from "../../../lib/release-posts";
 import {
+  accessCan,
   checkRevision,
   CloudError,
   command,
@@ -22,6 +23,7 @@ import {
   recordEvent,
   requireMembership,
   teamVisibility,
+  type CloudAccess,
 } from "../access";
 import type { CloudDatabase, CloudSql } from "../database";
 import { readProduct } from "./products";
@@ -133,8 +135,8 @@ async function readItems(
   return (
     await sql.query<ReleaseItem & Record<string, unknown>>(
       `SELECT i.id AS "issueId",i.identifier,i.title,i.state,${timestamp("i.updated_at")} AS "completedAt",x.included,
-      COALESCE((SELECT jsonb_agg(jsonb_build_object('title',g.title,'url',g.url) ORDER BY g.number) FROM cloud_github_pull_request_issues gl
-        JOIN cloud_github_pull_requests g ON g.organization_id=gl.organization_id AND g.id=gl.pull_request_id
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('title',g.title,'url',g.url) ORDER BY g.number) FROM cloud_git_pull_request_issues gl
+        JOIN cloud_git_pull_requests g ON g.organization_id=gl.organization_id AND g.id=gl.pull_request_id
         WHERE gl.organization_id=i.organization_id AND gl.issue_id=i.id AND g.state='merged'),'[]'::jsonb) AS "pullRequests"
       FROM cloud_release_items x JOIN cloud_issues i ON i.organization_id=x.organization_id AND i.id=x.issue_id
       JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
@@ -160,12 +162,23 @@ async function readJobs(
   ).rows;
 }
 
-export function canPublish(role: CloudRole, product: ProductInput): boolean {
-  return (
-    role === "owner" ||
-    role === "admin" ||
-    (role === "member" && product.membersCanPublish)
-  );
+export type PublishRights = {
+  manage: boolean;
+  edit: boolean;
+};
+
+export function publishRights(access: CloudAccess): PublishRights {
+  return {
+    manage: accessCan(access, "releases.manage"),
+    edit: accessCan(access, "releases.edit"),
+  };
+}
+
+export function canPublish(
+  rights: PublishRights,
+  product: ProductInput,
+): boolean {
+  return rights.manage || (rights.edit && product.membersCanPublish);
 }
 
 function summary(
@@ -245,7 +258,7 @@ export class CloudReleases {
     filters: { productId?: string; archived?: boolean } = {},
   ): Promise<CloudReleaseSummary[]> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor);
+      await requireMembership(sql, actor, "releases.view");
       const rows = (
         await sql.query<ReleaseRow & Record<string, unknown>>(
           `SELECT ${releaseColumns} FROM ${releaseFrom} WHERE r.organization_id=$1 AND r.archived=$2 AND ($3::uuid IS NULL OR r.product_id=$3)
@@ -272,7 +285,9 @@ export class CloudReleases {
 
   get(actor: CloudActor, id: string): Promise<CloudRelease> {
     return this.database.transaction(async (sql) => {
-      const role = await requireMembership(sql, actor);
+      const role = publishRights(
+        await requireMembership(sql, actor, "releases.view"),
+      );
       const row = await readReleaseRow(sql, actor.organizationId, id);
       if (!row.archived) await ensurePosts(sql, actor.organizationId, row);
       const posts = await readPosts(sql, actor.organizationId, id);
@@ -294,7 +309,7 @@ export class CloudReleases {
 
   find(actor: CloudActor, reference: string): Promise<{ id: string } | null> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor);
+      await requireMembership(sql, actor, "releases.view");
       const value = reference.trim();
       const match = (
         await sql.query<{ id: string }>(
@@ -314,7 +329,7 @@ export class CloudReleases {
     input: ReleaseInput,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       const product = await readProduct(
         sql,
         actor.organizationId,
@@ -388,7 +403,7 @@ export class CloudReleases {
     input: ReleaseUpdate,
   ): Promise<{ id: string; revision: number }> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       const current = await readReleaseRow(sql, actor.organizationId, id, true);
       return command(
         sql,
@@ -441,7 +456,7 @@ export class CloudReleases {
     input: { revision: number; excludedIssueIds: string[] },
   ): Promise<void> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       const current = await readReleaseRow(sql, actor.organizationId, id, true);
       checkRevision(current.revision, input.revision);
       await sql.query(
@@ -454,7 +469,7 @@ export class CloudReleases {
 
   refreshItems(actor: CloudActor, id: string): Promise<void> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       const current = await readReleaseRow(sql, actor.organizationId, id, true);
       await collectItems(
         sql,
@@ -472,7 +487,7 @@ export class CloudReleases {
     input: { revision: number; archived: boolean },
   ): Promise<void> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       const current = await readReleaseRow(sql, actor.organizationId, id, true);
       checkRevision(current.revision, input.revision);
       if (input.archived) {
@@ -538,7 +553,7 @@ export class CloudReleases {
     },
   ): Promise<ReleasePost> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "write");
+      await requireMembership(sql, actor, "releases.edit");
       const post = await this.readPost(sql, actor.organizationId, id);
       await command(
         sql,
@@ -587,7 +602,9 @@ export class CloudReleases {
     change: PostStateChange,
   ): Promise<ReleasePost> {
     const post = await this.database.transaction(async (sql) => {
-      const role = await requireMembership(sql, actor, "write");
+      const role = publishRights(
+        await requireMembership(sql, actor, "releases.edit"),
+      );
       const current = await this.readPost(sql, actor.organizationId, id);
       const release = await readReleaseRow(
         sql,

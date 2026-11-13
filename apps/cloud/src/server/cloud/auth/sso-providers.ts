@@ -14,6 +14,9 @@ import {
   command,
   recordEvent,
   requireMembership,
+  requireRole,
+  requireRoleGrant,
+  roleGrantable,
 } from "../access";
 import { lockAdministration } from "../administration";
 import { requireCredentialStorage } from "../credential-storage";
@@ -86,7 +89,7 @@ export class CloudSsoProviders {
 
   async discover(actor: CloudActor, issuer: string, signal?: AbortSignal) {
     await this.database.transaction((sql) =>
-      requireMembership(sql, actor, "admin"),
+      requireMembership(sql, actor, "settings.manage"),
     );
     const metadata = await runOidcJob(
       actor.organizationId,
@@ -94,14 +97,14 @@ export class CloudSsoProviders {
       signal,
     );
     await this.database.transaction((sql) =>
-      requireMembership(sql, actor, "admin"),
+      requireMembership(sql, actor, "settings.manage"),
     );
     return metadata;
   }
 
   get(actor: CloudActor): Promise<SsoAdministration> {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "settings.manage");
       const rows = await sql.query<SsoProviderRow>(
         "SELECT * FROM cloud_sso_providers WHERE organization_id=$1 ORDER BY configuration->>'name',id",
         [actor.organizationId],
@@ -127,7 +130,7 @@ export class CloudSsoProviders {
     input: OidcSave,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
-      if ((await lockAdministration(sql, actor)) !== "owner")
+      if (!(await lockAdministration(sql, actor, "settings.manage")).owner)
         throw new CloudError(
           403,
           "owner_required",
@@ -258,7 +261,7 @@ export class CloudSsoProviders {
 
   mappings(actor: CloudActor, providerId: string) {
     return this.database.transaction(async (sql) => {
-      await requireMembership(sql, actor, "admin");
+      await requireMembership(sql, actor, "settings.manage");
       return (
         await sql.query<{ userId: string; subject: string; email: string }>(
           'SELECT m.user_id AS "userId",m.subject,u.email FROM cloud_sso_mappings m JOIN cloud_users u ON u.id=m.user_id WHERE m.organization_id=$1 AND m.provider_id=$2 ORDER BY u.email',
@@ -276,7 +279,7 @@ export class CloudSsoProviders {
     subject: string,
   ) {
     return this.database.transaction(async (sql) => {
-      const role = await lockAdministration(sql, actor);
+      const access = await lockAdministration(sql, actor, "members.manage");
       return command(
         sql,
         actor,
@@ -291,7 +294,12 @@ export class CloudSsoProviders {
           ).rows[0];
           if (
             !member ||
-            (role !== "owner" && ["owner", "admin"].includes(member.role))
+            !(await roleGrantable(
+              sql,
+              actor.organizationId,
+              access.role,
+              member.role,
+            ))
           )
             throw new CloudError(
               403,
@@ -324,13 +332,14 @@ export class CloudSsoProviders {
     input: SsoMember,
   ) {
     return this.database.transaction(async (sql) => {
-      const role = await lockAdministration(sql, actor);
-      if (input.role === "admin" && role !== "owner")
-        throw new CloudError(
-          403,
-          "owner_required",
-          "Only an owner can add administrators.",
-        );
+      const access = await lockAdministration(sql, actor, "members.manage");
+      await requireRole(sql, actor.organizationId, input.role);
+      await requireRoleGrant(
+        sql,
+        actor.organizationId,
+        access.role,
+        input.role,
+      );
       return command(
         sql,
         actor,
@@ -394,7 +403,7 @@ export class CloudSsoProviders {
     subject: string,
   ) {
     return this.database.transaction(async (sql) => {
-      const role = await lockAdministration(sql, actor);
+      const access = await lockAdministration(sql, actor, "members.manage");
       return command(
         sql,
         actor,
@@ -409,7 +418,12 @@ export class CloudSsoProviders {
           ).rows[0];
           if (
             !member ||
-            (role !== "owner" && ["owner", "admin"].includes(member.role))
+            !(await roleGrantable(
+              sql,
+              actor.organizationId,
+              access.role,
+              member.role,
+            ))
           )
             throw new CloudError(
               403,

@@ -96,7 +96,10 @@ export const ssoMemberSchema = z.strictObject({
       (value) => !value.includes("\u0000"),
       "Name must not contain a null character.",
     ),
-  role: z.enum(["admin", "member", "viewer"]),
+  role: z
+    .string()
+    .regex(/^[a-z][a-z0-9-]{1,63}$/u, "Choose a role.")
+    .refine((role) => role !== "owner", "Add owners as administrators first."),
   subject: oidcSubjectSchema,
 });
 export type SsoMember = z.infer<typeof ssoMemberSchema>;

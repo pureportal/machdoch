@@ -97,6 +97,24 @@ async function requireProducts(
     );
 }
 
+async function requireRepositories(
+  sql: CloudSql,
+  actor: CloudActor,
+  ids: string[],
+): Promise<void> {
+  if (!ids.length) return;
+  const found = await sql.query(
+    "SELECT 1 FROM cloud_git_repositories WHERE organization_id=$1 AND id=ANY($2::uuid[])",
+    [actor.organizationId, ids],
+  );
+  if (found.rows.length !== new Set(ids).size)
+    throw new CloudError(
+      422,
+      "repository_unavailable",
+      "Choose connected repositories.",
+    );
+}
+
 export async function validateAutomation(
   sql: CloudSql,
   actor: CloudActor,
@@ -110,6 +128,8 @@ export async function validateAutomation(
     await requireLabels(sql, actor, team.id, trigger.labelIds);
   if (trigger.kind === "release_created")
     await requireProducts(sql, actor, trigger.productIds);
+  if (trigger.kind === "git_event")
+    await requireRepositories(sql, actor, trigger.repositoryIds);
   for (const action of input.actions) {
     switch (action.kind) {
       case "set_status":
@@ -150,8 +170,10 @@ export async function validateAutomation(
           await requireModel(sql, actor, action.providerId, action.model);
         break;
       case "send_webhook":
+        await requireMembership(sql, actor, "settings.manage");
+        break;
       case "start_client_session":
-        await requireMembership(sql, actor, "admin");
+        await requireMembership(sql, actor, "clients.manage");
         break;
     }
   }

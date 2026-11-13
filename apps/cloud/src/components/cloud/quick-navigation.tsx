@@ -1,5 +1,6 @@
 "use client";
 
+import { holderCan } from "@/lib/cloud-permissions";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
@@ -67,9 +68,7 @@ export function QuickNavigation({
       clearTimeout(timer);
     };
   }, [query, open]);
-  const devices = useClientDevices(
-    open && ["owner", "admin"].includes(access.role),
-  );
+  const devices = useClientDevices(open && holderCan(access, "clients.manage"));
   const groups = [
     { label: "Go to", items: navigationFor(access) },
     {

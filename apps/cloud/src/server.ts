@@ -66,7 +66,7 @@ async function runServer(
   cloud.automations.loop.start();
   cloud.releases.loop.start();
   cloud.activity.exportLoop.start();
-  cloud.github.syncLoop.start();
+  cloud.git.syncLoop.start();
   const clientMonitor = new CloudClientMonitor(cloud.database, getRuntime());
   const clientMonitorLoop = new CloudPeriodicLoop(
     "Client monitor",
