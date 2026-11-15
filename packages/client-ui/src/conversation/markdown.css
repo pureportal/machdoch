@@ -1,5 +1,5 @@
-:where(.app-markdown),
-:where(.app-markdown) * {
+.app-markdown,
+.app-markdown * {
   -webkit-user-select: text;
   user-select: text;
 }
