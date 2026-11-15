@@ -281,9 +281,9 @@ export const sidebarItems = [
       },
       {
         href: "/cloud/execution",
-        label: "Execution profiles",
+        label: "AI setup",
         description:
-          "Where AI tasks run, with which repository, provider and model, and which checks they must pass.",
+          "Which repository AI works in for each project, which checks must pass, and whether Autopilot ships changes.",
       },
     ],
   },

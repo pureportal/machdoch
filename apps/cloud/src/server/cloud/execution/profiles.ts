@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import type {
+  ExecutionCheck,
   ExecutionProfile,
   ExecutionProfileInput,
   ExecutionProfileUpdate,
+  ExecutionRepository,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import {
   checkRevision,
@@ -14,13 +16,90 @@ import {
   requireTeam,
   teamVisibility,
 } from "../access";
-import type { CloudDatabase } from "../database";
+import type { CloudDatabase, CloudSql } from "../database";
 import { fenceRun, lockExecution, readProfile, readRun } from "./records";
 import { readInferenceProvider } from "../ai/budgets";
 import { requireFetchableRepository } from "../git/repository-access";
+import { gitConnection } from "../git/connections";
+import { gitClient } from "../git/git-client";
+import type { GitProvider } from "../../../lib/git-providers";
+import type { SettingsCipher } from "../../settings-crypto";
+import { detectRepositoryChecks } from "./check-detection";
+
+async function requireSingleAutopilot(
+  sql: CloudSql,
+  actor: CloudActor,
+  projectId: string,
+  id: string,
+  autopilot: boolean,
+): Promise<void> {
+  if (!autopilot) return;
+  const other = await sql.query(
+    "SELECT id FROM cloud_execution_profiles WHERE organization_id=$1 AND project_id=$2 AND id<>$3 AND (definition->>'autopilot')::boolean",
+    [actor.organizationId, projectId, id],
+  );
+  if (other.rows.length)
+    throw new CloudError(
+      409,
+      "autopilot_taken",
+      "Another setup already runs Autopilot for this project. Turn it off there first.",
+    );
+}
 
 export class CloudExecutionProfiles {
-  constructor(private readonly database: CloudDatabase) {}
+  constructor(
+    private readonly database: CloudDatabase,
+    private readonly cipher: SettingsCipher | null,
+    private readonly transport: typeof fetch,
+  ) {}
+
+  repositories(actor: CloudActor): Promise<ExecutionRepository[]> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "ai.manage");
+      return (
+        await sql.query<ExecutionRepository & Record<string, unknown>>(
+          `SELECT web_url AS url,full_name AS "fullName",provider,default_branch AS "defaultBranch",private
+          FROM cloud_git_repositories WHERE organization_id=$1 AND web_url IS NOT NULL ORDER BY lower(full_name)`,
+          [actor.organizationId],
+        )
+      ).rows;
+    });
+  }
+
+  async detectChecks(
+    actor: CloudActor,
+    repository: string,
+    branch: string | null,
+  ): Promise<ExecutionCheck[]> {
+    const target = await this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "ai.manage");
+      const row = (
+        await sql.query<{
+          provider: GitProvider;
+          full_name: string;
+          default_branch: string;
+        }>(
+          "SELECT provider,full_name,default_branch FROM cloud_git_repositories WHERE organization_id=$1 AND lower(web_url)=lower($2)",
+          [actor.organizationId, repository.replace(/\.git$/u, "")],
+        )
+      ).rows[0];
+      if (!row) return null;
+      return {
+        ...row,
+        connection: await gitConnection(
+          sql,
+          this.cipher,
+          actor.organizationId,
+          row.provider,
+        ),
+      };
+    });
+    if (!target) return [];
+    const client = gitClient(target.connection, this.transport);
+    return detectRepositoryChecks((path) =>
+      client.fileText(target.full_name, path, branch ?? target.default_branch),
+    );
+  }
 
   list(actor: CloudActor, projectId?: string): Promise<ExecutionProfile[]> {
     return this.database.transaction(async (sql) => {
@@ -93,8 +172,15 @@ export class CloudExecutionProfiles {
               );
           }
           const id = randomUUID();
+          await requireSingleAutopilot(
+            sql,
+            actor,
+            input.projectId,
+            id,
+            input.autopilot,
+          );
           await sql.query(
-            "INSERT INTO cloud_execution_profiles (organization_id,id,project_id,team_id,name,definition) VALUES ($1,$2,$3,$4,$5,$6)",
+            "INSERT INTO cloud_execution_profiles (organization_id,id,project_id,team_id,name,definition,check_actor_id) VALUES ($1,$2,$3,$4,$5,$6,$7)",
             [
               actor.organizationId,
               id,
@@ -102,6 +188,7 @@ export class CloudExecutionProfiles {
               project.team_id,
               input.name,
               JSON.stringify(input),
+              input.checkPullRequests ? actor.userId : null,
             ],
           );
           await recordEvent(sql, actor, "execution_profile.created", id, 1, {});
@@ -148,14 +235,22 @@ export class CloudExecutionProfiles {
               );
           }
           const { revision: expected, enabled, ...definition } = input;
+          await requireSingleAutopilot(
+            sql,
+            actor,
+            profile.projectId,
+            id,
+            input.autopilot,
+          );
           await sql.query(
-            "UPDATE cloud_execution_profiles SET name=$3,definition=$4,enabled=$5,revision=revision+1 WHERE organization_id=$1 AND id=$2",
+            "UPDATE cloud_execution_profiles SET name=$3,definition=$4,enabled=$5,check_actor_id=$6,revision=revision+1 WHERE organization_id=$1 AND id=$2",
             [
               actor.organizationId,
               id,
               input.name,
               JSON.stringify({ ...definition, projectId: profile.projectId }),
               enabled,
+              input.checkPullRequests ? actor.userId : null,
             ],
           );
           await sql.query(

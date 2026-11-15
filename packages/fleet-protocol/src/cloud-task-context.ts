@@ -4,9 +4,27 @@ import { taskSystemPrompt } from "./cloud-agent-tools.ts";
 
 export const taskInferenceReservationOverhead = 1024;
 export const sharedAgentMaximumTaskBytes = 32 * 1024;
+const changeReportFormat =
+  "Finish with a Markdown report using exactly these sections: '## What changed' (the user-visible result), '## Decisions' (each choice you made, why, and any alternative you rejected), and '## Checks' (only checks you actually ran, with their results).";
+const checkReportFormat =
+  "Do not change the code; your edits are discarded. Finish with a Markdown report using exactly these sections: '## Verdict' (one sentence: whether the pull request is ready to merge), '## Problems' (each problem with the file, the evidence and why it matters, or 'None found'), and '## Checks' (every command you ran and what you inspected, with results).";
+
+export function taskReportFormat(
+  manifest: Pick<RunManifest, "subject">,
+): string {
+  return manifest.subject.kind === "pull_request" &&
+    manifest.subject.purpose === "check"
+    ? checkReportFormat
+    : changeReportFormat;
+}
 export type TaskPromptManifest = Pick<
   RunManifest,
-  "title" | "objective" | "acceptanceCriteria" | "profile"
+  | "title"
+  | "objective"
+  | "acceptanceCriteria"
+  | "profile"
+  | "branch"
+  | "subject"
 >;
 export function sharedAgentTask(
   manifest: TaskPromptManifest,
@@ -17,8 +35,9 @@ export function sharedAgentTask(
     const task = JSON.stringify({
       objective: manifest.objective,
       acceptanceCriteria: manifest.acceptanceCriteria,
-      baseCommit: manifest.profile.baseCommit,
+      branch: manifest.branch,
       requiredChecks: manifest.profile.requiredChecks,
+      reportFormat: taskReportFormat(manifest),
       ...(excerpt
         ? {
             verificationFeedback: excerpt,
@@ -47,8 +66,9 @@ export function taskInferencePayload(
         title: manifest.title,
         objective: manifest.objective,
         acceptanceCriteria: manifest.acceptanceCriteria,
-        baseCommit: manifest.profile.baseCommit,
+        branch: manifest.branch,
         requiredChecks: manifest.profile.requiredChecks,
+        reportFormat: taskReportFormat(manifest),
       },
     }) +
     "\n\n" +

@@ -49,7 +49,11 @@ function modelEntry(call: ModelCall): RunTimelineEntry {
     id: `model-${call.id}`,
     at: call.at,
     kind: "model",
-    status: failed ? "failed" : call.state === "complete" ? "passed" : "started",
+    status: failed
+      ? "failed"
+      : call.state === "complete"
+        ? "passed"
+        : "started",
     title: failed
       ? `Model request failed${call.errorCode ? ` (${call.errorCode})` : ""}`
       : tools.length

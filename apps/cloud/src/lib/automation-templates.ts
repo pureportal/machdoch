@@ -384,23 +384,16 @@ export const automationTemplates: AutomationTemplate[] = [
   },
   {
     id: "delegate-label",
-    name: "Delegate labeled issues to an AI task",
+    name: "Assign labeled issues to Machdoch AI",
     category: "agent",
     trigger: "label_added",
     requires: ["profile"],
     build: (context) =>
       automation(
         context,
-        "Delegate labeled issues to an AI task",
+        "Assign labeled issues to Machdoch AI",
         { kind: "label_added", labelIds: labelIds(context, "agent", "ai") },
-        [
-          {
-            kind: "delegate",
-            profileId: context.profileId ?? "",
-            instructions: "",
-            acceptanceCriteria: "",
-          },
-        ],
+        [{ kind: "assign", assignee: "ai" }],
       ),
   },
   {

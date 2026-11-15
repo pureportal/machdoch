@@ -295,6 +295,13 @@ export class CloudAutomationExecutor {
         return succeeded("Priority changed");
       case "assign": {
         const issueId = this.requireIssue(run);
+        if (action.assignee === "ai") {
+          await issueChanges.apply(owner, key("assign"), {
+            issues: [{ id: issueId }],
+            changes: { aiAssigned: true },
+          });
+          return succeeded("Assigned to Machdoch AI");
+        }
         const assigneeId =
           action.assignee === "unassigned"
             ? null
@@ -305,7 +312,9 @@ export class CloudAutomationExecutor {
           return skipped("Nobody triggered this run.");
         await issueChanges.apply(owner, key("assign"), {
           issues: [{ id: issueId }],
-          changes: { assigneeId },
+          changes: assigneeId
+            ? { assigneeId }
+            : { assigneeId: null, aiAssigned: false },
         });
         return succeeded(assigneeId ? "Assigned" : "Unassigned");
       }
@@ -358,6 +367,7 @@ export class CloudAutomationExecutor {
               profileId: action.profileId,
               subject: {
                 kind: "pull_request",
+                purpose: "fix",
                 id: current.id,
                 headSha:
                   typeof pullRequest.headSha === "string"

@@ -475,7 +475,13 @@ async function route(
   if (path[0] === "ai-providers")
     return handleAiProviderApi(runtime, request, actor);
   if (
-    ["execution-profiles", "execution-workers", "runs"].includes(path[0] ?? "")
+    [
+      "execution-profiles",
+      "execution-workers",
+      "execution-repositories",
+      "execution-checks",
+      "runs",
+    ].includes(path[0] ?? "")
   )
     return handleExecutionApi(runtime, request, actor);
   if (routeKey === "GET workspace")
@@ -1002,15 +1008,16 @@ async function route(
         ),
         { status: 201 },
       );
-    if (routeKey === "POST issues")
-      return Response.json(
-        await runtime.planning.createIssue(
-          actor,
-          key.data,
-          await readBody(request, issueInputSchema),
-        ),
-        { status: 201 },
+    if (routeKey === "POST issues") {
+      const input = await readBody(request, issueInputSchema);
+      const created = await runtime.planning.createIssue(
+        actor,
+        key.data,
+        input,
       );
+      if (input.aiAssigned) runtime.autopilot.loop.wake();
+      return Response.json(created, { status: 201 });
+    }
     if (routeKey === "POST poker") {
       const input = await readBody(request, pokerInputSchema);
       return Response.json(
@@ -1045,14 +1052,12 @@ async function route(
           await readBody(request, triageDecisionSchema),
         ),
       );
-    if (routeKey === "POST issues/changes")
-      return Response.json(
-        await runtime.issueChanges.apply(
-          actor,
-          key.data,
-          await readBody(request, issueChangesSchema),
-        ),
-      );
+    if (routeKey === "POST issues/changes") {
+      const input = await readBody(request, issueChangesSchema);
+      const result = await runtime.issueChanges.apply(actor, key.data, input);
+      if (input.changes.aiAssigned) runtime.autopilot.loop.wake();
+      return Response.json(result);
+    }
     if (routeKey === "POST views")
       return Response.json(
         await runtime.views.create(

@@ -182,21 +182,38 @@ export async function prepareRepository(
   input: Record<string, unknown>,
   emit: (message: Record<string, unknown>) => void,
 ) {
-  if (typeof input.commit !== "string" || !/^[a-f0-9]{40}$/.test(input.commit))
-    throw new Error("Use a full commit SHA");
+  const commit =
+    typeof input.commit === "string" && /^[a-f0-9]{40}$/.test(input.commit)
+      ? input.commit
+      : null;
+  const reference =
+    typeof input.reference === "string" &&
+    (input.reference === "HEAD" ||
+      /^refs\/heads\/[A-Za-z0-9._/-]{1,240}$/.test(input.reference)) &&
+    !input.reference.includes("..")
+      ? input.reference
+      : null;
+  if ((commit === null) === (reference === null))
+    throw new Error("Use a full commit SHA or a branch reference");
   const url = await openRepositoryGateway(emit);
   let result;
   try {
     result = await runShell({
-      command: `test ! -e .git && git -c init.templateDir= init -q && git -c core.hooksPath=/dev/null -c protocol.version=2 -c credential.helper= -c http.followRedirects=false fetch --no-tags --depth=1 '${url}' '${input.commit}' && git -c core.hooksPath=/dev/null checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = '${input.commit}'`,
+      command: `test ! -e .git && git -c init.templateDir= init -q && git -c core.hooksPath=/dev/null -c protocol.version=2 -c credential.helper= -c http.followRedirects=false fetch --no-tags --depth=1 '${url}' '${commit ?? reference}' && git -c core.hooksPath=/dev/null checkout --detach FETCH_HEAD && git rev-parse HEAD`,
       timeoutMs: 300000,
     });
   } finally {
     await closeRepositoryGateway();
   }
-  if (result.exitCode !== 0 || result.timedOut)
+  const fetched = result.stdout.trim();
+  if (
+    result.exitCode !== 0 ||
+    result.timedOut ||
+    !/^[a-f0-9]{40}$/.test(fetched) ||
+    (commit !== null && fetched !== commit)
+  )
     throw new Error(
       "Repository preparation failed: " + result.stderr.slice(-2000),
     );
-  return { baseCommit: input.commit };
+  return { baseCommit: fetched };
 }

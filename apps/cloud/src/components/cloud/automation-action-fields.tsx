@@ -285,6 +285,7 @@ export function ActionCard({
           }
         >
           <option value="trigger_actor">Whoever triggered it</option>
+          <option value="ai">Machdoch AI</option>
           <option value="unassigned">Unassigned</option>
           {members}
         </Select>

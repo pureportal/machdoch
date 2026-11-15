@@ -22,6 +22,7 @@ import {
   weekdays,
 } from "./automation-display";
 import { pullRequestStageLabels } from "./pull-request-state";
+import { TimezoneSelect } from "./timezone-select";
 
 const frequencyLabels = {
   hourly: "Every hour",
@@ -274,11 +275,10 @@ export function TriggerFields({
                 onChange({ ...trigger, time: event.target.value })
               }
             />
-            <Input
+            <TimezoneSelect
               aria-label="Time zone"
               value={trigger.timeZone}
               required
-              maxLength={64}
               onChange={(event) =>
                 onChange({ ...trigger, timeZone: event.target.value })
               }

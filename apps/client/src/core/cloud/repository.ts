@@ -101,10 +101,7 @@ export interface ClientRepository {
 export async function inspectClientRepository(
   workspace: string,
   repository: string,
-  baseCommit: string,
 ): Promise<ClientRepository> {
-  if (!/^[a-f0-9]{40}$/.test(baseCommit))
-    throw new Error("Use a full base commit SHA.");
   const workspaceRoot = await realpath(workspace);
   const repositoryRoot = await realpath(
     (
@@ -126,41 +123,6 @@ export async function inspectClientRepository(
     throw new Error(
       "The workspace origin does not match this cloud project's repository.",
     );
-  const commit = (
-    await workspaceGit(repositoryRoot, [
-      "rev-parse",
-      "--verify",
-      `${baseCommit}^{commit}`,
-    ])
-  ).trim();
-  if (commit !== baseCommit)
-    throw new Error(
-      "Fetch the configured base commit before connecting this workspace.",
-    );
-  const tree = await workspaceGit(repositoryRoot, [
-    "ls-tree",
-    "-r",
-    "-z",
-    baseCommit,
-  ]);
-  if (tree.split("\0").some((entry) => entry.startsWith("160000 ")))
-    throw new Error(
-      "This commit contains submodules. An independent checkout is required and is not configured for this runner.",
-    );
-  const subdirectory = relative(repositoryRoot, workspaceRoot);
-  if (subdirectory) {
-    const type = (
-      await workspaceGit(repositoryRoot, [
-        "cat-file",
-        "-t",
-        `${baseCommit}:${subdirectory.replaceAll("\\", "/")}`,
-      ])
-    ).trim();
-    if (type !== "tree")
-      throw new Error(
-        "The workspace directory is absent from the configured base commit.",
-      );
-  }
   const gitDirectory = await realpath(
     (
       await workspaceGit(repositoryRoot, [
@@ -174,7 +136,58 @@ export async function inspectClientRepository(
     workspaceRoot,
     repositoryRoot,
     gitDirectory,
-    subdirectory,
+    subdirectory: relative(repositoryRoot, workspaceRoot),
     repository,
   };
+}
+
+export async function resolveClientCommit(
+  source: ClientRepository,
+  branch: string | null,
+  pinned: string | null,
+): Promise<string> {
+  const reference = pinned ?? `refs/remotes/origin/${branch ?? "HEAD"}`;
+  let commit: string;
+  try {
+    commit = (
+      await workspaceGit(source.repositoryRoot, [
+        "rev-parse",
+        "--verify",
+        "--end-of-options",
+        `${reference}^{commit}`,
+      ])
+    ).trim();
+  } catch {
+    throw new Error(
+      `Fetch the latest ${branch ?? "default branch"} changes in this workspace, then retry.`,
+    );
+  }
+  if (!/^[a-f0-9]{40}$/.test(commit) || (pinned !== null && commit !== pinned))
+    throw new Error(
+      `Fetch the latest ${branch ?? "default branch"} changes in this workspace, then retry.`,
+    );
+  const tree = await workspaceGit(source.repositoryRoot, [
+    "ls-tree",
+    "-r",
+    "-z",
+    commit,
+  ]);
+  if (tree.split("\0").some((entry) => entry.startsWith("160000 ")))
+    throw new Error(
+      "This commit contains submodules. An independent checkout is required and is not configured for this runner.",
+    );
+  if (source.subdirectory) {
+    const type = (
+      await workspaceGit(source.repositoryRoot, [
+        "cat-file",
+        "-t",
+        `${commit}:${source.subdirectory.replaceAll("\\", "/")}`,
+      ])
+    ).trim();
+    if (type !== "tree")
+      throw new Error(
+        "The workspace directory is absent from the base commit.",
+      );
+  }
+  return commit;
 }

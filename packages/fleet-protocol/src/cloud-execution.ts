@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { gitRepositoryUrlSchema } from "@machdoch/fleet-protocol/cloud-repository";
 import type { TaskArtifact } from "@machdoch/fleet-protocol/cloud-artifacts";
+import type {
+  ChangedFileStat,
+  DeliveryState,
+  RunDelivery,
+  RunReview,
+} from "@machdoch/fleet-protocol/cloud-delivery";
 import { cloudProviderKinds } from "./cloud-providers.ts";
 const cloudId = z.uuid();
 const revision = z.number().int().min(1).max(2_147_483_646);
@@ -58,17 +64,33 @@ export type ExecutionCheck = z.infer<typeof executionCheckSchema>;
 export const clientAgents = ["machdoch", "codex-cli", "claude-cli"] as const;
 export type ClientAgent = (typeof clientAgents)[number];
 const modelName = z.string().trim().min(1).max(160);
+export const gitBranchSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(255)
+  .refine(
+    (value) =>
+      !/[\s~^:?*[\\]/u.test(value) &&
+      !["..", "@{", "//", "/."].some((part) => value.includes(part)) &&
+      !value.startsWith("/") &&
+      !value.startsWith(".") &&
+      !value.endsWith("/") &&
+      !value.endsWith(".lock"),
+    "Use a valid branch name.",
+  );
 const executionProfileFields = {
   projectId: cloudId,
   name: z.string().trim().min(1).max(120),
   workspacePath: repositoryDirectorySchema.optional(),
   repository: gitRepositoryUrlSchema,
-  baseCommit: z.string().regex(/^[0-9a-f]{40}$/, "Use a full Git commit SHA."),
+  branch: gitBranchSchema.optional(),
+  autopilot: z.boolean().default(false),
+  checkPullRequests: z.boolean().default(false),
   maxDurationSeconds: z.number().int().min(60).max(86_400),
   maxTokens: z.number().int().min(1).max(10_000_000),
   requiredChecks: z
     .array(executionCheckSchema)
-    .min(1)
     .max(30)
     .refine(
       (items) => new Set(items.map((item) => item.name)).size === items.length,
@@ -116,12 +138,19 @@ export const runInputSchema = z.strictObject({
 });
 export const pullRequestRunSubjectSchema = z.strictObject({
   kind: z.literal("pull_request"),
+  purpose: z.enum(["check", "fix"]),
   id: cloudId,
   headSha: z.string().regex(/^[0-9a-f]{40}$/),
   objective: z.string().trim().min(1).max(20_000),
   acceptanceCriteria: z.string().trim().min(1).max(20_000),
 });
 export type PullRequestRunSubject = z.infer<typeof pullRequestRunSubjectSchema>;
+export function isPullRequestCheck(subject: { kind: string }): boolean {
+  return (
+    subject.kind === "pull_request" &&
+    (subject as PullRequestRunSubject).purpose === "check"
+  );
+}
 export const runSubjectSchema = z.discriminatedUnion("kind", [
   ...runInputSchema.shape.subject.options,
   pullRequestRunSubjectSchema,
@@ -244,6 +273,10 @@ export interface CloudRun {
   deadlineAt: string;
   summary: string | null;
   cancelRequested: boolean;
+  deliverySummary: {
+    state: DeliveryState;
+    pullRequestNumber: number | null;
+  } | null;
 }
 export interface RunAttempt {
   id: string;
@@ -255,7 +288,11 @@ export interface RunAttempt {
 }
 export interface RunDetail extends CloudRun {
   contextChanged: boolean;
+  baseCommit: string | null;
   candidateCommit: string | null;
+  reviews: RunReview[];
+  delivery: RunDelivery | null;
+  changes: ChangedFileStat[];
   reason: string | null;
   manifest: RunManifest;
   inputDigest: string;
@@ -270,6 +307,7 @@ export interface RunDetail extends CloudRun {
 }
 export interface WorkerClaim extends AttemptIdentity {
   manifest: RunManifest;
+  baseCommit: string | null;
   inputDigest: string;
   leaseExpiresAt: string;
   deadlineAt: string;
@@ -282,6 +320,13 @@ export interface ExecutionWorker {
   lastSeenAt: string | null;
   expiresAt: string;
   workspaceBinding: ClientWorkspaceBinding | null;
+}
+export interface ExecutionRepository {
+  url: string;
+  fullName: string;
+  provider: "github" | "gitlab";
+  defaultBranch: string;
+  private: boolean;
 }
 export interface ProjectClient {
   id: string;
@@ -332,6 +377,7 @@ export const runManifestSchema = z
     objective: z.string().max(30302),
     acceptanceCriteria: z.string().max(20000),
     profile: executionProfileSchema,
+    branch: gitBranchSchema.nullable(),
     provider: z
       .strictObject({
         id: cloudId,
@@ -354,6 +400,10 @@ export const workerGrantIdentitySchema = attemptIdentitySchema.extend({
 export type WorkerGrantIdentity = z.infer<typeof workerGrantIdentitySchema>;
 export const workerClaimReceiptSchema = workerGrantIdentitySchema.extend({
   manifest: runManifestSchema,
+  baseCommit: z
+    .string()
+    .regex(/^[0-9a-f]{40}$/)
+    .nullable(),
   inputDigest: z.string().regex(/^[a-f0-9]{64}$/),
   leaseExpiresAt: z.iso.datetime(),
   deadlineAt: z.iso.datetime(),

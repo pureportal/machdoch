@@ -190,7 +190,7 @@ export class NativeClientRunner implements TaskRunner {
               attemptId: claim.attemptId,
               epoch: claim.epoch,
               environmentId,
-              baseCommit: claim.manifest.profile.baseCommit,
+              baseCommit: workspace.baseCommit,
               isolation: "independent-checkout",
             },
             signal,
@@ -350,7 +350,9 @@ export class NativeClientRunner implements TaskRunner {
       await this.progress(claim, "running", signal);
       await this.report(
         claim,
-        attempt ? `${agentLabel} repairing failed checks` : `${agentLabel} started`,
+        attempt
+          ? `${agentLabel} repairing failed checks`
+          : `${agentLabel} started`,
         "started",
         connection.binding.name,
       );
@@ -381,7 +383,7 @@ export class NativeClientRunner implements TaskRunner {
       await this.progress(claim, "validating", signal);
       const candidate = await snapshotNativeCandidate(
         workspace.checkoutRoot,
-        profile.baseCommit,
+        workspace.baseCommit,
         join(workspace.directory, "artifacts"),
         signal,
       );
@@ -421,7 +423,7 @@ export class NativeClientRunner implements TaskRunner {
       const validation = await prepareValidationCheckout({
         directory: join(workspace.directory, `validation-${attempt + 1}`),
         repositoryRoot: connection.repositoryRoot,
-        baseCommit: profile.baseCommit,
+        baseCommit: workspace.baseCommit,
         bundlePath: candidate.bundlePath,
         candidateCommit: candidate.candidateCommit,
         signal,

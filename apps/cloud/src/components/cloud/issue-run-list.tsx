@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Bot } from "lucide-react";
 import type { CloudRun } from "@machdoch/fleet-protocol/cloud-execution";
 import { cloudRequest } from "./api-client";
-import { TaskState } from "./task-state";
+import { TaskBadge } from "./task-state";
 
 const pollMs = 10_000;
 
@@ -41,7 +41,7 @@ export function IssueRunList({ issueId }: { issueId: string }) {
             <Link href={`/cloud/tasks/${run.id}`} prefetch={false}>
               {run.title}
             </Link>
-            <TaskState state={run.state} />
+            <TaskBadge run={run} />
           </li>
         ))}
       </ul>

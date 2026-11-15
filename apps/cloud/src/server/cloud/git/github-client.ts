@@ -15,10 +15,12 @@ import {
   type GitAccess,
   type GitChecks,
   type GitClient,
+  type GitPullRequestDraft,
   type GitPullRequestRecord,
   type GitRepositoryRecord,
   type GitWebhookTarget,
 } from "./git-client";
+import { CloudError } from "../access";
 import { gitRequest, type GitRequestInit } from "./git-http";
 
 export const githubWebhookEvents = [
@@ -456,6 +458,55 @@ export class GitHubClient implements GitClient {
         insecure_ssl: "0",
       },
     };
+  }
+
+  async createPullRequest(
+    fullName: string,
+    input: GitPullRequestDraft,
+  ): Promise<GitPullRequestRecord> {
+    return githubPullRequest(
+      await this.request(`/repos/${fullName}/pulls`, githubPullRequestSchema, {
+        method: "POST",
+        body: {
+          title: input.title,
+          body: input.body,
+          head: input.head,
+          base: input.base,
+        },
+      }),
+    );
+  }
+
+  async closePullRequest(fullName: string, number: number): Promise<void> {
+    await this.request(`/repos/${fullName}/pulls/${number}`, z.unknown(), {
+      method: "PATCH",
+      body: { state: "closed" },
+    });
+  }
+
+  async deleteBranch(fullName: string, branch: string): Promise<void> {
+    await this.request(
+      `/repos/${fullName}/git/refs/heads/${branch.split("/").map(encodeURIComponent).join("/")}`,
+      z.unknown(),
+      { method: "DELETE" },
+    );
+  }
+
+  async fileText(
+    fullName: string,
+    path: string,
+    ref: string,
+  ): Promise<string | null> {
+    try {
+      const file = await this.request(
+        `/repos/${fullName}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`,
+        z.object({ content: z.string(), encoding: z.literal("base64") }),
+      );
+      return Buffer.from(file.content, "base64").toString("utf8");
+    } catch (error) {
+      if (error instanceof CloudError && error.status === 404) return null;
+      throw error;
+    }
   }
 
   async createWebhook(

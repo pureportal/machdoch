@@ -121,7 +121,6 @@ try {
   await form
     .getByLabel("Repository URL")
     .fill("https://github.com/example/project");
-  await form.getByLabel("Base commit (SHA)", { exact: true }).fill(commit);
   await form.getByLabel("Provider", { exact: true }).selectOption(provider.id);
   await form.getByLabel("Model", { exact: true }).selectOption("fixture-model");
   await form.getByLabel("Check name 1", { exact: true }).fill("unit");

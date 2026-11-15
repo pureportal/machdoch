@@ -49,10 +49,18 @@ try {
       claim.manifest.profile.maxDurationSeconds * 1000,
       (request, signal) => connection.repository(claim, request, signal),
     );
-    const prepared = await sandbox.call("prepare_repository", {
-      commit: claim.manifest.profile.baseCommit,
-    });
+    const prepared = await sandbox.call(
+      "prepare_repository",
+      claim.baseCommit
+        ? { commit: claim.baseCommit }
+        : {
+            reference: claim.manifest.branch
+              ? `refs/heads/${claim.manifest.branch}`
+              : "HEAD",
+          },
+    );
     if (!prepared.ok) throw new Error(prepared.error);
+    const { baseCommit } = prepared.result as { baseCommit: string };
     const acceptAnchor = await sandbox.supervisor.anchor();
     const accepted = workerLeaseReceiptSchema.parse(
       await connection.command("accept", {
@@ -60,7 +68,7 @@ try {
         attemptId: claim.attemptId,
         epoch: claim.epoch,
         environmentId: job.environments[0]!.id,
-        baseCommit: claim.manifest.profile.baseCommit,
+        baseCommit,
         isolation: "microvm",
       }),
     );

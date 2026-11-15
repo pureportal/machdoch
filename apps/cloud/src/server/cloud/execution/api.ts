@@ -20,6 +20,7 @@ import {
   workerProgressSchema,
   clientWorkspaceBindingSchema,
 } from "@machdoch/fleet-protocol/cloud-execution";
+import { workerReviewRequestSchema } from "@machdoch/fleet-protocol/cloud-delivery";
 import { bearerToken } from "../../request-auth";
 import { CloudError } from "../access";
 import { readBody } from "../request-body";
@@ -135,6 +136,21 @@ export async function handleRunnerApi(
         await readBody(request, taskInferenceReadSchema),
       ),
     );
+  if (endpoint === "/api/v1/runner/review") {
+    const result = await runtime.execution.reviews.submit(
+      token,
+      await readBody(request, workerReviewRequestSchema),
+    );
+    runtime.inference.worker.wake();
+    return Response.json(result);
+  }
+  if (endpoint === "/api/v1/runner/review/result")
+    return Response.json(
+      await runtime.execution.reviews.result(
+        token,
+        await readBody(request, workerReviewRequestSchema),
+      ),
+    );
   if (endpoint === "/api/v1/runner/claims") {
     const input = await readBody(request, workerClaimSchema);
     return Response.json(await leases.claim(token, input.claimId));
@@ -229,6 +245,22 @@ export async function handleExecutionApi(
       return Response.json(
         await runtime.execution.runs.get(actor, cloudId.parse(path[1])),
       );
+    if (path[0] === "runs" && path[2] === "changes" && path.length === 3)
+      return Response.json(
+        await runtime.execution.runs.changes(actor, cloudId.parse(path[1])),
+      );
+    if (path[0] === "execution-repositories" && path.length === 1)
+      return Response.json({
+        repositories: await runtime.execution.profiles.repositories(actor),
+      });
+    if (path[0] === "execution-checks" && path.length === 1)
+      return Response.json({
+        checks: await runtime.execution.profiles.detectChecks(
+          actor,
+          z.string().max(500).parse(url.searchParams.get("repository")),
+          url.searchParams.get("branch") || null,
+        ),
+      });
   }
   if (
     method === "POST" &&
@@ -304,6 +336,21 @@ export async function handleExecutionApi(
       ),
       { status: 201 },
     );
+  if (
+    path[0] === "runs" &&
+    path.length === 3 &&
+    ["merge", "publish"].includes(path[2]!) &&
+    method === "POST"
+  ) {
+    await readBody(request, z.strictObject({}));
+    const id = cloudId.parse(path[1]);
+    const result =
+      path[2] === "merge"
+        ? await runtime.execution.runs.merge(actor, id)
+        : await runtime.execution.runs.retryDelivery(actor, id);
+    runtime.autopilot.loop.wake();
+    return Response.json(result);
+  }
   if (
     path[0] === "runs" &&
     path.length === 3 &&

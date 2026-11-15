@@ -23,9 +23,11 @@ export const terminalStates = new Set<RunState>([
 ]);
 export const runColumns = `r.id,r.team_id AS "teamId",r.project_id AS "projectId",r.issue_id AS "issueId",r.title,r.state,r.revision,r.epoch,r.attempt_id AS "attemptId",r.summary,COALESCE(r.stop_reason='canceled',false) AS "cancelRequested",
   to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
-  to_char(r.deadline_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "deadlineAt"`;
+  to_char(r.deadline_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "deadlineAt",
+  (SELECT jsonb_build_object('state',d.state,'pullRequestNumber',d.pull_request_number) FROM cloud_run_deliveries d WHERE d.organization_id=r.organization_id AND d.run_id=r.id) AS "deliverySummary"`;
 export interface StoredRun extends CloudRun, Record<string, unknown> {
   candidateCommit: string | null;
+  baseCommit: string | null;
   actorId: string;
   profileId: string;
   manifest: RunManifest;
@@ -84,7 +86,7 @@ export async function readRun(
 ): Promise<StoredRun> {
   const row = (
     await sql.query<StoredRun>(
-      `SELECT ${runColumns},r.result->>'candidateCommit' AS "candidateCommit",r.actor_id AS "actorId",r.profile_id AS "profileId",r.manifest,r.input_digest AS "inputDigest",r.planning_digest AS "planningDigest",r.stop_reason AS "stopReason",r.stop_message AS "stopMessage"
+      `SELECT ${runColumns},r.result->>'candidateCommit' AS "candidateCommit",r.actor_id AS "actorId",r.profile_id AS "profileId",r.manifest,r.input_digest AS "inputDigest",r.planning_digest AS "planningDigest",r.stop_reason AS "stopReason",r.stop_message AS "stopMessage",r.base_commit AS "baseCommit"
     FROM cloud_runs r WHERE r.organization_id=$1 AND r.id=$2 ${lock ? "FOR UPDATE" : ""}`,
       [organizationId, id],
     )

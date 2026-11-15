@@ -6,7 +6,7 @@ import type {
   RunManifest,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import { readVisiblePullRequest } from "../git/pull-requests";
-import { sameRepository } from "../git/repository-access";
+import { defaultBranch, sameRepository } from "../git/repository-access";
 import { checkRevision, CloudError, command } from "../access";
 import type { CloudSql } from "../database";
 import { readIssue } from "../planning";
@@ -48,11 +48,12 @@ export async function admitRun(
         maxTokens: Math.min(configuredProfile.maxTokens, automated.tokenLimit),
       }
     : configuredProfile;
-  let profile = limitedProfile;
+  const profile = limitedProfile;
   const automation = automated?.grant;
   let title: string;
   let objective: string;
   let acceptanceCriteria: string;
+  let branch = configuredProfile.branch ?? null;
   if (input.subject.kind === "issue") {
     const issue = await readIssue(sql, actor, input.subject.id);
     if (issue.projectId !== profile.projectId)
@@ -89,7 +90,7 @@ export async function admitRun(
         "The pull request has new commits. Start the task again.",
       );
     title =
-      `${pullRequest.repository}#${pullRequest.number} ${pullRequest.title}`.slice(
+      `${input.subject.purpose === "check" ? "Check " : ""}${pullRequest.repository}#${pullRequest.number} ${pullRequest.title}`.slice(
         0,
         300,
       );
@@ -99,7 +100,7 @@ export async function admitRun(
       `Branch: ${pullRequest.headRef} into ${pullRequest.baseRef}, checked out at ${pullRequest.headSha}.`,
     ].join("\n\n");
     acceptanceCriteria = input.subject.acceptanceCriteria;
-    profile = { ...limitedProfile, baseCommit: pullRequest.headSha };
+    branch = pullRequest.headRef;
   } else {
     if (input.subject.id !== profile.projectId)
       throw new CloudError(
@@ -203,11 +204,16 @@ export async function admitRun(
           maxOutputTokens: configured.maxOutputTokens,
         };
       }
+      const manifestBranch =
+        branch ??
+        (await defaultBranch(sql, actor.organizationId, profile.repository));
       const contextLimitBytes = taskContextLimit({
         title,
         objective,
         acceptanceCriteria,
         profile,
+        branch: manifestBranch,
+        subject: input.subject,
       });
       const manifest: RunManifest = {
         ...(automation ? { automation } : {}),
@@ -217,6 +223,7 @@ export async function admitRun(
         objective,
         acceptanceCriteria,
         profile,
+        branch: manifestBranch,
         provider,
         actorId: actor.userId,
       };

@@ -19,6 +19,8 @@ import {
   StateIcon,
   statusChange,
   statusOptions,
+  assigneeChange,
+  assigneeValue,
 } from "./issue-properties";
 import { PersonAvatar } from "./person-avatar";
 import { PropertyMenu } from "./property-menu";
@@ -109,7 +111,11 @@ export function AssigneeCell({
   const assignee = workspace.members.find(
     (member) => member.id === issue.assigneeId,
   );
-  const avatar = assignee ? (
+  const avatar = issue.aiAssigned ? (
+    <span title="Machdoch AI" className="cloud-ai-avatar">
+      <Bot size={12} aria-hidden="true" />
+    </span>
+  ) : assignee ? (
     <span title={assignee.name}>
       <PersonAvatar name={assignee.name} className="cloud-avatar-small" />
     </span>
@@ -122,15 +128,13 @@ export function AssigneeCell({
       label="Assignee"
       align="end"
       options={assigneeOptions(workspace)}
-      value={issue.assigneeId ?? noValue}
-      onSelect={(value) =>
-        apply([issue], { assigneeId: referenceValue(value) })
-      }
+      value={assigneeValue(issue)}
+      onSelect={(value) => apply([issue], assigneeChange(value))}
     >
       <button
         type="button"
         className="cloud-cell-button"
-        aria-label={`Assignee of ${issue.identifier}: ${assignee?.name ?? "Unassigned"}`}
+        aria-label={`Assignee of ${issue.identifier}: ${issue.aiAssigned ? "Machdoch AI" : (assignee?.name ?? "Unassigned")}`}
       >
         {avatar}
       </button>

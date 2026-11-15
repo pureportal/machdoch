@@ -118,7 +118,7 @@ export const automationActionSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     kind: z.literal("assign"),
-    assignee: z.union([z.enum(["trigger_actor", "unassigned"]), cloudId]),
+    assignee: z.union([z.enum(["trigger_actor", "unassigned", "ai"]), cloudId]),
   }),
   z.strictObject({
     kind: z.literal("add_labels"),

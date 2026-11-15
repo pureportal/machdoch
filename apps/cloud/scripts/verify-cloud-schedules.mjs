@@ -72,9 +72,8 @@ try {
   await dialog.locator("summary").filter({ hasText: "Issue options" }).click();
   await dialog.getByLabel("Repeat", { exact: true }).selectOption("daily");
   await dialog
-    .getByLabel("Starts (UTC)", { exact: true })
-    .fill("2026-01-01T00:00");
-  await dialog.getByLabel("Timezone", { exact: true }).fill("Europe/Berlin");
+    .getByLabel("Timezone", { exact: true })
+    .selectOption("Europe/Berlin");
   await dialog.getByLabel("Time", { exact: true }).fill("02:30");
   await page.route("**/api/v1/recurrence/preview", (route) =>
     route.continue({

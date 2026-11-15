@@ -9,7 +9,7 @@ import { RunnerJournal } from "./journal.ts";
 import { recoverRunner } from "./recovery.ts";
 import type { RunnerConfiguration } from "./configuration.ts";
 import { TaskEnvironments } from "./task-environments.ts";
-import { executeTask } from "./task-workflow.ts";
+import { executePullRequestCheck, executeTask } from "./task-workflow.ts";
 import { createHash } from "node:crypto";
 import type { RepositorySource } from "./task-environments.ts";
 
@@ -20,6 +20,7 @@ export type RunnerTarget =
       checkConnection: () => Promise<void>;
       prepareSource: (
         registration: WorkerRegistration,
+        claim: WorkerClaim,
         signal: AbortSignal,
       ) => Promise<{
         baseCommit: string;
@@ -27,6 +28,21 @@ export type RunnerTarget =
         sha256: string;
       }>;
     };
+
+function localSource(
+  prepared: { baseCommit: string; bytes: Buffer; sha256: string },
+  claim: WorkerClaim,
+): RepositorySource {
+  if (
+    (claim.baseCommit !== null && prepared.baseCommit !== claim.baseCommit) ||
+    !Buffer.isBuffer(prepared.bytes) ||
+    prepared.bytes.length > 64 * 1024 * 1024 ||
+    createHash("sha256").update(prepared.bytes).digest("hex") !==
+      prepared.sha256
+  )
+    throw new Error("The exported source does not match this task.");
+  return { kind: "local", ...prepared };
+}
 
 export class CloudRunner {
   constructor(
@@ -56,24 +72,8 @@ export class CloudRunner {
           ? "This worker belongs to a client execution profile. Enroll a worker for a cloud profile before starting this runner."
           : "Choose a worker enrolled for a Client (Linux) execution profile.",
       );
-    signal.throwIfAborted();
-    let source: RepositorySource = { kind: "broker" };
-    if (this.target.kind === "client-linux") {
-      if (!registration.workspaceBinding)
-        throw new Error("Connect this client workspace before running tasks.");
-      const prepared = await this.target.prepareSource(registration, signal);
-      if (
-        prepared.baseCommit !== registration.profile.baseCommit ||
-        !Buffer.isBuffer(prepared.bytes) ||
-        prepared.bytes.length > 64 * 1024 * 1024 ||
-        createHash("sha256").update(prepared.bytes).digest("hex") !==
-          prepared.sha256
-      )
-        throw new Error(
-          "The exported source does not match the current execution profile.",
-        );
-      source = { kind: "local", ...prepared };
-    }
+    if (this.target.kind === "client-linux" && !registration.workspaceBinding)
+      throw new Error("Connect this client workspace before running tasks.");
     signal.throwIfAborted();
     const planned = this.journal.plan();
     const environments = new TaskEnvironments(
@@ -81,7 +81,6 @@ export class CloudRunner {
       this.journal,
       this.connection,
       signal,
-      source,
     );
     let claim: WorkerClaim | null = null;
     let failure: unknown;
@@ -101,8 +100,6 @@ export class CloudRunner {
           claim.manifest.profile.target !== this.target.kind ||
           claim.manifest.profile.id !== registration.profile.id ||
           claim.manifest.profile.revision !== registration.profile.revision ||
-          claim.manifest.profile.baseCommit !==
-            registration.profile.baseCommit ||
           claim.manifest.profile.workspacePath !==
             registration.profile.workspacePath
         )
@@ -110,6 +107,13 @@ export class CloudRunner {
             "The task does not match this worker's accepted execution profile.",
           );
         signal.throwIfAborted();
+        if (this.target.kind === "client-linux")
+          environments.useSource(
+            localSource(
+              await this.target.prepareSource(registration, claim, signal),
+              claim,
+            ),
+          );
         this.journal.transition("starting");
         const environment = await environments.start(
           sandbox,
@@ -125,7 +129,7 @@ export class CloudRunner {
               attemptId: claim.attemptId,
               epoch: claim.epoch,
               environmentId: sandbox.environmentId,
-              baseCommit: claim.manifest.profile.baseCommit,
+              baseCommit: environments.baseCommit,
               isolation: "microvm",
             },
             environment.signal,
@@ -134,14 +138,24 @@ export class CloudRunner {
         if (receipt.instruction !== "continue" || receipt.localStopSeconds <= 0)
           throw new Error("Task execution authority ended");
         this.journal.transition("running");
-        finish = await executeTask(
-          this.connection,
-          claim,
-          environments,
-          environment,
-          usage,
-          this.configuration.repairAttempts,
-        );
+        const subject = claim.manifest.subject;
+        finish =
+          subject.kind === "pull_request" && subject.purpose === "check"
+            ? await executePullRequestCheck(
+                this.connection,
+                claim,
+                environments,
+                environment,
+                usage,
+              )
+            : await executeTask(
+                this.connection,
+                claim,
+                environments,
+                environment,
+                usage,
+                this.configuration.repairAttempts,
+              );
       }
     } catch (error) {
       failure = error;

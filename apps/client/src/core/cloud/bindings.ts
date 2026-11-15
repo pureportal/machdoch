@@ -120,7 +120,6 @@ export class ClientCloudBindings {
     const repository = await inspectClientRepository(
       workspace,
       registration.profile.repository,
-      registration.profile.baseCommit,
     );
     if (
       repository.subdirectory.replaceAll("\\", "/") !==

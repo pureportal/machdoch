@@ -23,6 +23,7 @@
     "typecheck": "next typegen && tsc --noEmit --pretty false",
     "verify:cloud:chat-live": "node scripts/verify-cloud-chat-live.mjs",
     "verify:cloud:task-live": "node --import @oxc-node/core/register scripts/verify-cloud-task-live.mjs",
+    "verify:cloud:autopilot": "node --import @oxc-node/core/register scripts/verify-cloud-autopilot.ts",
     "verify:cloud:repository": "node --import @oxc-node/core/register scripts/verify-cloud-repository.mjs",
     "verify:cloud:mcp": "node --import @oxc-node/core/register scripts/verify-cloud-mcp.mjs",
     "verify:cloud:artifacts": "node --import @oxc-node/core/register scripts/verify-cloud-artifacts.mjs",

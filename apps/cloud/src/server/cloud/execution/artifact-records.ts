@@ -52,6 +52,7 @@ export async function requireResultArtifacts(
   organizationId: string,
   input: WorkerFinish,
   requiredChecks: ExecutionCheck[],
+  candidateRequired: boolean,
 ): Promise<void> {
   const artifacts = (
     await sql.query<{
@@ -70,7 +71,10 @@ export async function requireResultArtifacts(
       ],
     )
   ).rows;
-  if (!artifacts.some((artifact) => artifact.kind === "candidate"))
+  if (
+    candidateRequired &&
+    !artifacts.some((artifact) => artifact.kind === "candidate")
+  )
     throw new CloudError(
       409,
       "candidate_artifact_required",

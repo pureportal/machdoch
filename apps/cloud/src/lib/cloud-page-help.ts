@@ -79,15 +79,26 @@ Agent and sandbox tasks use these providers. Tasks on a linked client use that c
 **Daily tokens** and **Parallel requests** limit each provider. **Token usage** shows today's consumption.
 `,
   "/cloud/execution": `
-![Issue, execution profile, runner, required checks](/help/execution-flow.svg)
+Each project gets one setup: pick the repository and the AI works from the latest commit of its default branch. Checks are suggested from the repository's own scripts.
 
-| Target | Runs |
+To hand an issue to AI, choose **Machdoch AI** as its assignee, or use **Assign to AI** on the issue. This also works for many issues at once from the issue list. The AI then:
+
+1. changes the code in a sandbox,
+2. runs the checks again in a fresh sandbox,
+3. gets an independent AI review that approves the change or sends it back, for up to three rounds,
+4. opens a pull request.
+
+With **Autopilot** on, the pull request merges once the repository's own checks pass. A person decides instead when tests were removed or skipped, sensitive areas such as security, billing, migrations or infrastructure changed, the change is very large, or the review did not approve it. Closing or canceling the issue removes its pull request and branch.
+
+With **Check pull requests** on, every new pull request and every new push to it is checked in a sandbox. The AI builds it, runs its tests and inspects the changed screens when the sandbox has a browser. The configured checks then run in a fresh sandbox, an independent AI review reads the pull request's diff, and the verdict is posted as a comment on the pull request. Machdoch's own branches and draft pull requests are skipped.
+
+| Runs on | Where |
 | --- | --- |
 | Cloud sandbox | In a sandbox managed by Cloud |
 | Client sandbox | In a Linux sandbox on a linked client |
 | Linked client | Codex CLI, Claude Code or Machdoch in a checkout on a linked client |
 
-Each profile belongs to one project. Tasks wait until a **runner** of the profile picks them up. For a linked client, connect the local checkout with \`machdoch cloud connect\` and start the runner with **Run tasks** in the desktop app or \`machdoch cloud run <connection id>\`.
+Tasks wait until a **runner** of the setup picks them up. For a linked client, connect the local checkout with \`machdoch cloud connect\` and start the runner with **Run tasks** in the desktop app or \`machdoch cloud run <connection id>\`.
 
 Sandbox targets use models from [AI providers](/cloud/providers).
 `,

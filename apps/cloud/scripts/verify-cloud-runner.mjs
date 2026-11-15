@@ -75,7 +75,6 @@ try {
   await form
     .getByLabel("Repository URL", { exact: true })
     .fill("https://github.com/octocat/Hello-World");
-  await form.getByLabel("Base commit (SHA)", { exact: true }).fill(baseCommit);
   await form.getByLabel("Provider", { exact: true }).selectOption(provider.id);
   await form.getByLabel("Model", { exact: true }).selectOption("fixture");
   await form.getByLabel("Time limit (minutes)").fill("5");

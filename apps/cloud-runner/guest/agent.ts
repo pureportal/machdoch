@@ -49,7 +49,7 @@ const tools = {
   freeze_repository: { execute: freezeRepository, keys: [] as string[] },
   prepare_repository: {
     execute: (input: Record<string, unknown>) => prepareRepository(input, emit),
-    keys: ["commit"],
+    keys: ["commit", "reference"],
   },
   prepare_local_repository: {
     execute: prepareLocalRepository,

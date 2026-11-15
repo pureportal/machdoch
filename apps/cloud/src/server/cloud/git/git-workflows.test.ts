@@ -625,7 +625,8 @@ it("starts AI tasks on pull requests pinned to their head commit", async () => {
       name: repository,
       target: "cloud",
       repository,
-      baseCommit: "a".repeat(40),
+      autopilot: false,
+      checkPullRequests: false,
       providerId: provider.id,
       model: "fixture",
       maxDurationSeconds: 600,
@@ -683,7 +684,7 @@ it("starts AI tasks on pull requests pinned to their head commit", async () => {
     headSha: sha(9),
     acceptanceCriteria: "Regressions are fixed.",
   });
-  expect(manifest.profile.baseCommit).toBe(sha(9));
+  expect(manifest.branch).toBe("feature/regressions");
   expect(manifest.title).toBe("acme/app#9 Regression fixes");
   expect(manifest.objective).toContain(
     "Review feature/regressions for regressions.",

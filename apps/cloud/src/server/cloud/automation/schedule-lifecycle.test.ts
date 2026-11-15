@@ -57,7 +57,7 @@ async function accepted() {
     attemptId: claim.attemptId,
     epoch: claim.epoch,
     environmentId: randomUUID(),
-    baseCommit: claim.manifest.profile.baseCommit,
+    baseCommit: "a".repeat(40),
     isolation: "microvm",
   });
   return { worker, claim };

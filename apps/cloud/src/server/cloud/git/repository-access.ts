@@ -34,6 +34,21 @@ async function connectedRepository(
   );
 }
 
+export async function defaultBranch(
+  sql: CloudSql,
+  organizationId: string,
+  url: string,
+): Promise<string | null> {
+  return (
+    (
+      await sql.query<{ default_branch: string }>(
+        "SELECT default_branch FROM cloud_git_repositories WHERE organization_id=$1 AND lower(web_url)=$2 LIMIT 1",
+        [organizationId, repositoryKey(url)],
+      )
+    ).rows[0]?.default_branch ?? null
+  );
+}
+
 export async function requireFetchableRepository(
   sql: CloudSql,
   organizationId: string,

@@ -58,6 +58,10 @@ export const cloudMigrations = [
   "055-pulse.sql",
   "056-pull-request-reviewers.sql",
   "057-team-resources.sql",
+  "058-autopilot.sql",
+  "059-branch-profiles.sql",
+  "060-ai-assignment.sql",
+  "061-pull-request-checks.sql",
 ];
 
 export interface CloudSql {

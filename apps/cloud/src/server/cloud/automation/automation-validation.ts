@@ -176,7 +176,7 @@ export async function validateAutomation(
         await requireStatuses(sql, actor, team.id, [action.statusId]);
         break;
       case "assign":
-        if (!["trigger_actor", "unassigned"].includes(action.assignee))
+        if (!["trigger_actor", "unassigned", "ai"].includes(action.assignee))
           await requireMember(sql, actor, action.assignee);
         break;
       case "add_labels":

@@ -13,6 +13,7 @@ import {
   referenceValue,
   statusChange,
   statusOptions,
+  assigneeChange,
 } from "./issue-properties";
 import { PropertyMenu, type PropertyOption } from "./property-menu";
 
@@ -65,9 +66,7 @@ export function IssueBulkBar({
       <BulkMenu
         label="Assignee"
         options={assigneeOptions(workspace)}
-        onSelect={(value) =>
-          apply(issues, { assigneeId: referenceValue(value) })
-        }
+        onSelect={(value) => apply(issues, assigneeChange(value))}
       />
       {teamId && (
         <>

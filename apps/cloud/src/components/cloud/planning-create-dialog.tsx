@@ -16,6 +16,33 @@ import {
   ProjectPlanningFields,
   initialProjectPlanning,
 } from "./project-fields";
+import { TimezoneSelect } from "./timezone-select";
+
+const cycleLengths = [7, 14, 21, 28];
+
+function isoDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return isoDate(date);
+}
+
+function teamKey(name: string): string {
+  const words = name
+    .normalize("NFKD")
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  const key =
+    words.length > 1
+      ? words.map((word) => word[0]).join("")
+      : (words[0] ?? "").slice(0, 3);
+  return key.replace(/^[0-9]+/, "").slice(0, 10);
+}
 
 export function PlanningCreateDialog({
   kind,
@@ -31,6 +58,21 @@ export function PlanningCreateDialog({
   const sender = useRef(createCommandSender());
   const router = useRouter();
   const [planning, setPlanning] = useState(initialProjectPlanning);
+  const [teamName, setTeamName] = useState("");
+  const [key, setKey] = useState<string | null>(null);
+  const [teamId, setTeamId] = useState(workspace.teams[0]?.id ?? "");
+  const today = isoDate(new Date());
+  const teamCycles = workspace.cycles.filter(
+    (cycle) => cycle.teamId === teamId,
+  );
+  const latestEnd = teamCycles
+    .map((cycle) => cycle.endsOn)
+    .sort()
+    .at(-1);
+  const [startsOn, setStartsOn] = useState<string | null>(null);
+  const [length, setLength] = useState(14);
+  const start =
+    startsOn ?? (latestEnd && latestEnd > today ? latestEnd : today);
   const labels = {
     single: { teams: "team", projects: "project", cycles: "cycle" }[kind],
   };
@@ -44,6 +86,10 @@ export function PlanningCreateDialog({
         if (!next) {
           sender.current = createCommandSender();
           setPlanning(initialProjectPlanning);
+          setTeamName("");
+          setKey(null);
+          setStartsOn(null);
+          setLength(14);
         }
       }}
       onSubmit={async (form) => {
@@ -67,8 +113,8 @@ export function PlanningCreateDialog({
           body = {
             name,
             teamId: formText(form, "teamId"),
-            startsOn: formText(form, "startsOn"),
-            endsOn: formText(form, "endsOn"),
+            startsOn: start,
+            endsOn: addDays(start, length),
             timezone: formText(form, "timezone"),
             capacity:
               formText(form, "capacity") === ""
@@ -80,7 +126,19 @@ export function PlanningCreateDialog({
       }}
     >
       <Field label="Name" htmlFor="catalog-name">
-        <Input name="name" id="catalog-name" required maxLength={120} />
+        <Input
+          name="name"
+          id="catalog-name"
+          required
+          maxLength={120}
+          key={kind === "cycles" ? teamId : kind}
+          defaultValue={
+            kind === "cycles" ? `Cycle ${teamCycles.length + 1}` : undefined
+          }
+          onChange={(event) => {
+            if (kind === "teams") setTeamName(event.target.value);
+          }}
+        />
       </Field>
       {kind === "teams" ? (
         <>
@@ -92,10 +150,12 @@ export function PlanningCreateDialog({
               minLength={2}
               maxLength={10}
               pattern="[A-Z][A-Z0-9]{1,9}"
-              onInput={(event) => {
-                event.currentTarget.value =
-                  event.currentTarget.value.toUpperCase();
-              }}
+              value={key ?? teamKey(teamName)}
+              onChange={(event) =>
+                setKey(
+                  event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""),
+                )
+              }
             />
           </Field>
           <Field label="Visibility" htmlFor="catalog-visibility">
@@ -107,7 +167,16 @@ export function PlanningCreateDialog({
         </>
       ) : (
         <Field label="Team" htmlFor="catalog-team">
-          <Select id="catalog-team" name="teamId" required>
+          <Select
+            id="catalog-team"
+            name="teamId"
+            required
+            value={teamId}
+            onChange={(event) => {
+              setTeamId(event.target.value);
+              setStartsOn(null);
+            }}
+          >
             {workspace.teams.map((team) => (
               <option key={team.id} value={team.id}>
                 {team.name}
@@ -136,20 +205,35 @@ export function PlanningCreateDialog({
       {kind === "cycles" && (
         <>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Start date" htmlFor="cycle-start">
-              <Input type="date" id="cycle-start" name="startsOn" required />
+            <Field label="Starts" htmlFor="cycle-start">
+              <Input
+                type="date"
+                id="cycle-start"
+                required
+                value={start}
+                onChange={(event) => setStartsOn(event.target.value)}
+              />
             </Field>
-            <Field label="End date (exclusive)" htmlFor="cycle-end">
-              <Input type="date" id="cycle-end" name="endsOn" required />
+            <Field label="Length" htmlFor="cycle-length">
+              <Select
+                id="cycle-length"
+                value={String(length)}
+                onChange={(event) => setLength(Number(event.target.value))}
+              >
+                {cycleLengths.map((days) => (
+                  <option key={days} value={days}>
+                    {days / 7} {days === 7 ? "week" : "weeks"}
+                  </option>
+                ))}
+              </Select>
             </Field>
           </div>
           <Field label="Time zone" htmlFor="cycle-timezone">
-            <Input
+            <TimezoneSelect
               id="cycle-timezone"
               name="timezone"
               defaultValue={Intl.DateTimeFormat().resolvedOptions().timeZone}
               required
-              maxLength={100}
             />
           </Field>
           <Field label="Capacity (points)" htmlFor="cycle-capacity">

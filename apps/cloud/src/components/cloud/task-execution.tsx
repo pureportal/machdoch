@@ -14,11 +14,11 @@ export function TaskExecution({ run }: { run: RunDetail }) {
         </h2>
         <dl className="cloud-task-properties">
           <div>
-            <dt>Profile</dt>
+            <dt>Setup</dt>
             <dd>{profile.name}</dd>
           </div>
           <div>
-            <dt>Target</dt>
+            <dt>Runs on</dt>
             <dd>{executionTargetLabels[profile.target]}</dd>
           </div>
           <div>
@@ -76,28 +76,50 @@ export function TaskExecution({ run }: { run: RunDetail }) {
           )}
         </dl>
       </section>
-      <details className="cloud-card cloud-task-repository">
-        <summary>
+      <section className="cloud-card">
+        <h2>
           <GitBranch size={16} aria-hidden="true" />
-          Repository
-        </summary>
+          Source
+        </h2>
         <dl className="cloud-task-properties">
           <div>
             <dt>Repository</dt>
-            <dd>{profile.repository}</dd>
+            <dd>
+              {new URL(profile.repository).pathname
+                .slice(1)
+                .replace(/\.git$/, "")}
+            </dd>
           </div>
+          <div>
+            <dt>Branch</dt>
+            <dd>{run.manifest.branch ?? "Default branch"}</dd>
+          </div>
+          {run.baseCommit && (
+            <div>
+              <dt>Started from</dt>
+              <dd className="font-mono text-xs" title={run.baseCommit}>
+                {run.baseCommit.slice(0, 7)}
+              </dd>
+            </div>
+          )}
+          {run.delivery && (
+            <div>
+              <dt>
+                {run.delivery.kind === "check"
+                  ? "Pull request branch"
+                  : "Change branch"}
+              </dt>
+              <dd className="font-mono text-xs">{run.delivery.branch}</dd>
+            </div>
+          )}
           {profile.workspacePath && (
             <div>
               <dt>Directory</dt>
               <dd>{profile.workspacePath}</dd>
             </div>
           )}
-          <div>
-            <dt>Base commit</dt>
-            <dd className="font-mono text-xs">{profile.baseCommit}</dd>
-          </div>
         </dl>
-      </details>
+      </section>
     </aside>
   );
 }

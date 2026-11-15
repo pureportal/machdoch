@@ -243,9 +243,9 @@ export function ScheduleTaskFields({
       )}
       {!loading && !error && !profiles.length && (
         <p>
-          No execution profiles for this team.{" "}
+          AI is not set up for this team yet.{" "}
           <Link className="underline" href="/cloud/execution">
-            Configure a profile
+            Set up AI
           </Link>
         </p>
       )}

@@ -11,7 +11,7 @@ import type { CloudWorkspace } from "@/lib/cloud-contract";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { TaskState } from "./task-state";
+import { TaskBadge } from "./task-state";
 import { Timestamp } from "./timestamp";
 
 export function TaskResults({
@@ -77,7 +77,7 @@ export function TaskResults({
                   <span className="cloud-issue-title">{run.title}</span>
                   <ArrowUpRight size={15} aria-hidden="true" />
                 </div>
-                <TaskState state={run.state} />
+                <TaskBadge run={run} />
                 <span className="cloud-task-project">
                   <FolderKanban size={14} aria-hidden="true" />
                   {

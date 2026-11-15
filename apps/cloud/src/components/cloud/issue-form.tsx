@@ -14,7 +14,7 @@ import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { createCommandSender, formText } from "./api-client";
 import { draftForTeam, IssueDraftProperties } from "./issue-draft-properties";
-import { noValue } from "./issue-properties";
+import { noValue, aiAssignee } from "./issue-properties";
 
 export function CreateIssue({
   workspace,
@@ -127,7 +127,9 @@ export function CreateIssue({
               ? (JSON.parse(draft.status) as { id: string; revision: number })
               : null,
             priority: draft.priority,
-            assigneeId: chosen(draft.assigneeId),
+            assigneeId:
+              draft.assigneeId === aiAssignee ? null : chosen(draft.assigneeId),
+            aiAssigned: draft.assigneeId === aiAssignee,
             projectId: chosen(draft.projectId),
             cycleId: chosen(draft.cycleId),
           };

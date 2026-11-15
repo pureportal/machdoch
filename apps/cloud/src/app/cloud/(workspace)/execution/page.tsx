@@ -6,7 +6,11 @@ import {
   requireCloudWorkspace,
 } from "@/server/cloud/page-auth";
 
-export default async function ExecutionPage() {
+export default async function ExecutionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>;
+}) {
   const { runtime, actor } = await requireCloudPageSession();
   const workspace = (await requireCloudWorkspace()).workspace;
   if (!holderCan(workspace.actor, "ai.manage")) redirect("/cloud/tasks");
@@ -15,6 +19,7 @@ export default async function ExecutionPage() {
       workspace={workspace}
       profiles={await runtime.execution.profiles.list(actor)}
       providers={(await runtime.aiProviders.list(actor, true)).providers}
+      focusProjectId={(await searchParams).project ?? null}
     />
   );
 }

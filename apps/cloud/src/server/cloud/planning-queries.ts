@@ -3,6 +3,7 @@ import { pullRequestStages } from "../../lib/git-automation";
 import {
   meFilterValue,
   noneFilterValue,
+  aiFilterValue,
   type IssueFilterCondition,
 } from "../../lib/issue-filter-model";
 
@@ -11,7 +12,7 @@ export const cycleColumns = `id,team_id AS "teamId",name,to_char(starts_on,'YYYY
 export const issueColumns = `i.id, i.team_id AS "teamId", i.identifier, i.title, i.description, i.acceptance_criteria AS "acceptanceCriteria",
   (SELECT jsonb_build_object('id',s.id,'revision',s.revision) FROM cloud_workflow_statuses s WHERE s.organization_id=i.organization_id AND s.id=i.status_id) AS status,
   (SELECT s.name FROM cloud_workflow_statuses s WHERE s.organization_id=i.organization_id AND s.id=i.status_id) AS "statusName",
-  i.state, i.priority, i.project_id AS "projectId", i.milestone_id AS "milestoneId", i.cycle_id AS "cycleId", i.assignee_id AS "assigneeId",
+  i.state, i.priority, i.project_id AS "projectId", i.milestone_id AS "milestoneId", i.cycle_id AS "cycleId", i.assignee_id AS "assigneeId", i.ai_assigned AS "aiAssigned",
   i.estimate, i.estimate_points AS "estimatePoints", to_char(i.due_on, 'YYYY-MM-DD') AS "dueOn", i.archived, i.revision,
   to_char(i.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"`;
 
@@ -19,7 +20,7 @@ const pullRequestStageOrder = `CASE p.stage ${pullRequestStages.map((stage, inde
 
 export const issueSummaryColumns = `i.id, i.team_id AS "teamId", i.identifier, i.title,
   jsonb_build_object('id',s.id,'revision',s.revision) AS status, s.name AS "statusName",
-  i.state, i.priority, i.project_id AS "projectId", i.milestone_id AS "milestoneId", i.cycle_id AS "cycleId", i.assignee_id AS "assigneeId",
+  i.state, i.priority, i.project_id AS "projectId", i.milestone_id AS "milestoneId", i.cycle_id AS "cycleId", i.assignee_id AS "assigneeId", i.ai_assigned AS "aiAssigned",
   i.estimate, i.estimate_points AS "estimatePoints", to_char(i.due_on, 'YYYY-MM-DD') AS "dueOn", i.archived, i.revision,
   to_char(i.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt",
   to_char(i.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
@@ -68,7 +69,7 @@ function conditionPredicate(
   bind: (value: unknown) => string,
 ): string {
   const ids = condition.values
-    .filter((value) => value !== noneFilterValue)
+    .filter((value) => value !== noneFilterValue && value !== aiFilterValue)
     .map((value) => (value === meFilterValue ? actor.userId : value));
   const none = condition.values.includes(noneFilterValue);
   const anyOf = (...predicates: (string | false)[]) =>
@@ -84,7 +85,11 @@ function conditionPredicate(
     case "status":
       return reference("i.status_id");
     case "assignee":
-      return reference("i.assignee_id");
+      return anyOf(
+        ids.length > 0 && `i.assignee_id=ANY(${bind(ids)}::uuid[])`,
+        none && "(i.assignee_id IS NULL AND NOT i.ai_assigned)",
+        condition.values.includes(aiFilterValue) && "i.ai_assigned",
+      );
     case "creator":
       return reference(issueCreator);
     case "priority":

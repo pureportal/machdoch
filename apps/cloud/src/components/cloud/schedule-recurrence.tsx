@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cloudRequest } from "./api-client";
+import { TimezoneSelect } from "./timezone-select";
 
 type Preview = ReturnType<typeof previewRecurrence>;
 type Frequency =
@@ -20,11 +21,16 @@ type Frequency =
   | "once"
   | "advanced";
 
+function localInput(instant: Date): string {
+  const offset = instant.getTimezoneOffset() * 60_000;
+  return new Date(instant.getTime() - offset).toISOString().slice(0, 16);
+}
+
 function editorValues(input?: RecurrenceInput) {
   const values = {
     frequency: "weekly" as Frequency,
-    start: new Date().toISOString().slice(0, 16),
-    timezone: "UTC",
+    start: localInput(new Date()),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     time: "09:00",
     weekday: "1",
     monthDay: "1",
@@ -33,9 +39,9 @@ function editorValues(input?: RecurrenceInput) {
   };
   if (!input) return values;
   values.frequency = "advanced";
-  values.start = new Date(input.kind === "once" ? input.at : input.start)
-    .toISOString()
-    .slice(0, 16);
+  values.start = localInput(
+    new Date(input.kind === "once" ? input.at : input.start),
+  );
   if (input.kind === "once") values.frequency = "once";
   if (input.kind === "interval" && !input.end && input.everyMs % 60000 === 0) {
     values.frequency = "interval";
@@ -111,6 +117,9 @@ export function ScheduleRecurrence({
   waitingForTask: boolean;
 }) {
   const [defaults] = useState(() => editorValues(initial));
+  const [futureStart] = useState(
+    () => new Date(defaults.start).getTime() > Date.now() + 60_000,
+  );
   const [frequency, setFrequency] = useState<Frequency>(defaults.frequency);
   const [timezone, setTimezone] = useState(defaults.timezone);
   const [start, setStart] = useState(defaults.start);
@@ -141,7 +150,7 @@ export function ScheduleRecurrence({
   const feedback = useRef<HTMLDivElement | null>(null);
   let input: RecurrenceInput | null = null;
   try {
-    const instant = `${start}:00Z`;
+    const instant = new Date(start).toISOString();
     if (frequency === "advanced")
       input = JSON.parse(advanced) as RecurrenceInput;
     else if (frequency === "once") input = { kind: "once", at: instant };
@@ -230,22 +239,27 @@ export function ScheduleRecurrence({
         </Field>
       ) : (
         <>
-          <Field label="Starts (UTC)" htmlFor="schedule-start">
-            <Input
-              id="schedule-start"
-              type="datetime-local"
-              value={start}
-              onChange={(event) => setStart(event.target.value)}
-              required
-            />
-          </Field>
+          {(["once", "interval", "fixed-delay"].includes(frequency) ||
+            futureStart) && (
+            <Field
+              label={frequency === "once" ? "Runs at" : "Starts"}
+              htmlFor="schedule-start"
+            >
+              <Input
+                id="schedule-start"
+                type="datetime-local"
+                value={start}
+                onChange={(event) => setStart(event.target.value)}
+                required
+              />
+            </Field>
+          )}
           {!["interval", "fixed-delay", "once"].includes(frequency) && (
             <Field label="Timezone" htmlFor="schedule-timezone">
-              <Input
+              <TimezoneSelect
                 id="schedule-timezone"
                 value={timezone}
                 onChange={(event) => setTimezone(event.target.value)}
-                maxLength={100}
                 required
               />
             </Field>
@@ -309,15 +323,25 @@ export function ScheduleRecurrence({
               }
               htmlFor="schedule-interval"
             >
-              <Input
-                id="schedule-interval"
-                type="number"
-                min={1}
-                max={52560000}
-                value={interval}
-                onChange={(event) => setInterval(event.target.value)}
-                required
-              />
+              <>
+                <Input
+                  id="schedule-interval"
+                  type="number"
+                  min={1}
+                  max={52560000}
+                  list="schedule-interval-presets"
+                  value={interval}
+                  onChange={(event) => setInterval(event.target.value)}
+                  required
+                />
+                <datalist id="schedule-interval-presets">
+                  <option value="15">15 minutes</option>
+                  <option value="30">30 minutes</option>
+                  <option value="60">1 hour</option>
+                  <option value="240">4 hours</option>
+                  <option value="1440">1 day</option>
+                </datalist>
+              </>
             </Field>
           )}
           {frequency === "cron" && (

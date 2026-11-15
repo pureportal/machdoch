@@ -11,7 +11,13 @@ import {
   requireInferenceCapacity,
 } from "../ai/budgets";
 import { lockInference, reapInference } from "../ai/inference-records";
-import { executionDigest, mayExecute, readAttempt } from "./attempts";
+import {
+  executionDigest,
+  mayExecute,
+  readAttempt,
+  type StoredAttempt,
+} from "./attempts";
+import type { StoredRun } from "./records";
 import { requireWorker } from "./workers";
 import {
   taskInferencePayload,
@@ -39,6 +45,106 @@ async function readReceipt(
         ],
       )
     ).rows[0] ?? null
+  );
+}
+
+export interface RunInferenceCall {
+  requestId: string;
+  digest: string;
+  userPrompt: string;
+  systemPrompt: string;
+  toolsJson: string;
+  optionsJson: string;
+  inputBytes: number;
+  purpose: "task" | "review";
+}
+
+export async function queueRunInference(
+  sql: CloudSql,
+  organizationId: string,
+  run: StoredRun,
+  attempt: StoredAttempt,
+  call: RunInferenceCall,
+): Promise<void> {
+  const usage = (
+    await sql.query<{ tokens: number; calls: number; active: number }>(
+      `SELECT COALESCE(sum(COALESCE(actual_tokens,reserved_tokens)),0)::double precision AS tokens,count(*)::integer AS calls,
+      count(*) FILTER (WHERE state IN ('queued','running','cancel_requested'))::integer AS active
+      FROM cloud_inference_calls WHERE organization_id=$1 AND run_id=$2`,
+      [organizationId, run.id],
+    )
+  ).rows[0]!;
+  if (usage.active)
+    throw new CloudError(
+      409,
+      "inference_active",
+      "Wait for the task's current inference request.",
+    );
+  if (usage.calls >= 512)
+    throw new CloudError(
+      409,
+      "inference_limit",
+      "The task reached its inference request limit.",
+    );
+  const granted = run.manifest.provider;
+  if (!granted)
+    throw new CloudError(
+      409,
+      "inference_unavailable",
+      "This task runs with the client's own agent and cannot use cloud inference.",
+    );
+  const provider = await readInferenceProvider(sql, organizationId, granted.id);
+  if (
+    call.inputBytes > 256 * 1024 ||
+    Buffer.byteLength(call.toolsJson, "utf8") > 128 * 1024
+  )
+    throw new CloudError(
+      422,
+      "context_limit",
+      "Shorten the task context before requesting inference.",
+    );
+  const maxOutputTokens = Math.min(
+    provider.maxOutputTokens,
+    granted.maxOutputTokens,
+    run.manifest.profile.maxTokens -
+      usage.tokens -
+      call.inputBytes -
+      taskInferenceReservationOverhead,
+  );
+  if (maxOutputTokens < 1)
+    throw new CloudError(
+      409,
+      "task_budget_exceeded",
+      "The task's remaining token budget cannot cover this request.",
+    );
+  const reservation =
+    call.inputBytes + maxOutputTokens + taskInferenceReservationOverhead;
+  const budget = await readProviderBudget(sql, organizationId, provider);
+  requireInferenceCapacity(budget, reservation);
+  await sql.query(
+    `INSERT INTO cloud_inference_calls (organization_id,id,run_id,attempt_id,run_epoch,request_digest,actor_id,provider_id,provider_revision,model,user_prompt,system_prompt,tools,reserved_tokens,max_output_tokens,budget_day,state,deadline_at,model_options,purpose)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::date,'queued',LEAST($17::timestamptz,clock_timestamp()+interval '120 seconds'),$18,$19)`,
+    [
+      organizationId,
+      call.requestId,
+      run.id,
+      attempt.id,
+      attempt.epoch,
+      call.digest,
+      run.actorId,
+      provider.id,
+      provider.inferenceRevision,
+      run.manifest.profile.model,
+      call.userPrompt,
+      call.systemPrompt,
+      call.toolsJson,
+      reservation,
+      maxOutputTokens,
+      budget.budgetDay,
+      run.deadlineAt,
+      call.optionsJson,
+      call.purpose,
+    ],
   );
 }
 
@@ -94,97 +200,27 @@ export class CloudTaskInference {
           "request_conflict",
           "Choose a new inference request ID.",
         );
-      const usage = (
-        await sql.query<{ tokens: number; calls: number; active: number }>(
-          `SELECT COALESCE(sum(COALESCE(actual_tokens,reserved_tokens)),0)::double precision AS tokens,count(*)::integer AS calls,
-        count(*) FILTER (WHERE state IN ('queued','running','cancel_requested'))::integer AS active
-        FROM cloud_inference_calls WHERE organization_id=$1 AND run_id=$2`,
-          [worker.organizationId, run.id],
-        )
-      ).rows[0]!;
-      if (usage.active)
-        throw new CloudError(
-          409,
-          "inference_active",
-          "Wait for the task's current inference request.",
-        );
-      if (usage.calls >= 512)
-        throw new CloudError(
-          409,
-          "inference_limit",
-          "The task reached its inference request limit.",
-        );
-      const granted = run.manifest.provider;
-      if (!granted)
-        throw new CloudError(
-          409,
-          "inference_unavailable",
-          "This task runs with the client's own agent and cannot use cloud inference.",
-        );
-      const provider = await readInferenceProvider(
-        sql,
-        worker.organizationId,
-        granted.id,
-      );
       const { userPrompt, systemPrompt, toolsJson, optionsJson, inputBytes } =
         taskInferencePayload(run.manifest, input);
       if (
-        inputBytes > 256 * 1024 ||
-        Buffer.byteLength(toolsJson, "utf8") > 128 * 1024 ||
         Buffer.byteLength(input.context, "utf8") >
-          run.manifest.contextLimitBytes
+        run.manifest.contextLimitBytes
       )
         throw new CloudError(
           422,
           "context_limit",
           "Shorten the task context before requesting inference.",
         );
-      const maxOutputTokens = Math.min(
-        provider.maxOutputTokens,
-        granted.maxOutputTokens,
-        run.manifest.profile.maxTokens -
-          usage.tokens -
-          inputBytes -
-          taskInferenceReservationOverhead,
-      );
-      if (maxOutputTokens < 1)
-        throw new CloudError(
-          409,
-          "task_budget_exceeded",
-          "The task's remaining token budget cannot cover this request.",
-        );
-      const reservation =
-        inputBytes + maxOutputTokens + taskInferenceReservationOverhead;
-      const budget = await readProviderBudget(
-        sql,
-        worker.organizationId,
-        provider,
-      );
-      requireInferenceCapacity(budget, reservation);
-      await sql.query(
-        `INSERT INTO cloud_inference_calls (organization_id,id,run_id,attempt_id,run_epoch,request_digest,actor_id,provider_id,provider_revision,model,user_prompt,system_prompt,tools,reserved_tokens,max_output_tokens,budget_day,state,deadline_at,model_options)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::date,'queued',LEAST($17::timestamptz,clock_timestamp()+interval '120 seconds'),$18)`,
-        [
-          worker.organizationId,
-          input.requestId,
-          run.id,
-          attempt.id,
-          attempt.epoch,
-          digest,
-          run.actorId,
-          provider.id,
-          provider.inferenceRevision,
-          run.manifest.profile.model,
-          userPrompt,
-          systemPrompt,
-          toolsJson,
-          reservation,
-          maxOutputTokens,
-          budget.budgetDay,
-          run.deadlineAt,
-          optionsJson,
-        ],
-      );
+      await queueRunInference(sql, worker.organizationId, run, attempt, {
+        requestId: input.requestId,
+        digest,
+        userPrompt,
+        systemPrompt,
+        toolsJson,
+        optionsJson,
+        inputBytes,
+        purpose: "task",
+      });
       const { digest: _, ...receipt } = (await readReceipt(
         sql,
         worker.organizationId,

@@ -147,8 +147,8 @@ export async function createIssueInTransaction(
   ).rows[0]!.number;
   const id = randomUUID();
   await sql.query(
-    `INSERT INTO cloud_issues (organization_id,id,team_id,identifier,title,description,acceptance_criteria,state,priority,project_id,cycle_id,assignee_id,estimate,estimate_points,estimate_scale_revision,due_on,status_id,milestone_id)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+    `INSERT INTO cloud_issues (organization_id,id,team_id,identifier,title,description,acceptance_criteria,state,priority,project_id,cycle_id,assignee_id,estimate,estimate_points,estimate_scale_revision,due_on,status_id,milestone_id,ai_assigned,ai_assigned_by)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,CASE WHEN $19 THEN $20::uuid END)`,
     [
       actor.organizationId,
       id,
@@ -168,6 +168,8 @@ export async function createIssueInTransaction(
       input.dueOn,
       status.id,
       input.milestoneId,
+      input.aiAssigned,
+      actor.userId,
     ],
   );
   const issue = await readIssue(sql, actor, id);
@@ -477,7 +479,8 @@ export class CloudPlanning {
           const scaleChanged = issue.estimate !== input.estimate;
           await sql.query(
             `UPDATE cloud_issues SET title=$3,description=$4,acceptance_criteria=$5,state=$6,priority=$7,project_id=$8,cycle_id=$9,assignee_id=$10,
-          estimate=$11,estimate_points=$12,estimate_scale_revision=CASE WHEN $13 THEN $14 ELSE estimate_scale_revision END,due_on=$15,archived=$16,status_id=$17,milestone_id=$18,revision=revision+1,updated_at=clock_timestamp()
+          estimate=$11,estimate_points=$12,estimate_scale_revision=CASE WHEN $13 THEN $14 ELSE estimate_scale_revision END,due_on=$15,archived=$16,status_id=$17,milestone_id=$18,
+          ai_assigned=$19,ai_assigned_by=CASE WHEN $19 THEN COALESCE(CASE WHEN ai_assigned THEN ai_assigned_by END,$20::uuid) END,revision=revision+1,updated_at=clock_timestamp()
           WHERE organization_id=$1 AND id=$2`,
             [
               actor.organizationId,
@@ -498,6 +501,8 @@ export class CloudPlanning {
               input.archived,
               status.id,
               input.milestoneId,
+              input.aiAssigned,
+              actor.userId,
             ],
           );
           const updated = await readIssue(sql, actor, id);
@@ -584,6 +589,29 @@ export async function validateIssueLinks(
         `${label} is unavailable for this team.`,
       );
   }
+  if (input.aiAssigned && input.assigneeId)
+    throw new CloudError(
+      422,
+      "invalid_assignee",
+      "Assign the issue to AI or to a person, not both.",
+    );
+  if (
+    input.aiAssigned &&
+    !(
+      input.projectId &&
+      (
+        await sql.query(
+          "SELECT 1 FROM cloud_execution_profiles WHERE organization_id=$1 AND project_id=$2 AND enabled LIMIT 1",
+          [actor.organizationId, input.projectId],
+        )
+      ).rows.length
+    )
+  )
+    throw new CloudError(
+      422,
+      "ai_unavailable",
+      "Set up AI for this issue's project before assigning it to AI.",
+    );
   if (input.assigneeId) {
     const member = await sql.query(
       `SELECT m.user_id FROM cloud_memberships m JOIN cloud_users u ON u.id=m.user_id WHERE m.organization_id=$1 AND m.user_id=$2 AND m.active AND NOT u.disabled

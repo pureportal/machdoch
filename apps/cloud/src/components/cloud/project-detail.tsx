@@ -53,7 +53,8 @@ import { ProjectEditor } from "./project-editor";
 import { CloudMarkdown } from "./cloud-markdown";
 import { formatProjectDate, ProjectOverview } from "./project-overview";
 import { projectStatusLabels, projectStatusStates } from "@/lib/project-status";
-import { TaskState } from "./task-state";
+import { TaskBadge } from "./task-state";
+import { ProjectAi } from "./project-ai";
 import { useToast } from "./toast";
 import { useIssueList } from "./use-issue-list";
 import { useIssueSelection } from "./use-issue-selection";
@@ -475,6 +476,10 @@ export function ProjectDetail({
             issues={projectIssues}
             writable={writable}
           />
+          <ProjectAi
+            projectId={project.id}
+            administrator={holderCan(workspace.actor, "ai.manage")}
+          />
           <ConnectedClients
             clients={clients}
             administrator={holderCan(workspace.actor, "clients.manage")}
@@ -488,7 +493,7 @@ export function ProjectDetail({
                     <Link href={`/cloud/tasks/${run.id}`} prefetch={false}>
                       {run.title}
                     </Link>
-                    <TaskState state={run.state} />
+                    <TaskBadge run={run} />
                   </li>
                 ))}
               </ul>

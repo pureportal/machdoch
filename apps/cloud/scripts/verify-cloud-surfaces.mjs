@@ -89,7 +89,8 @@ async function connectClient(projectId) {
     target: "client",
     agent: "claude-cli",
     repository: "https://github.com/example/cloud-workspace",
-    baseCommit: "a".repeat(40),
+    autopilot: false,
+    checkPullRequests: false,
     maxDurationSeconds: 1800,
     maxTokens: 10000,
     requiredChecks: [

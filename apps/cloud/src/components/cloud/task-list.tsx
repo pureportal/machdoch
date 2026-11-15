@@ -100,20 +100,41 @@ export function TaskList({
     holderCan(workspace.actor, "ai.tasks") &&
     !issue?.archived &&
     (!issue || !["complete", "canceled"].includes(issue.state));
-  const selectedProject = issue?.projectId ?? projectId;
+  const readyProjects = workspace.projects.filter((project) =>
+    profiles.some((profile) => profile.projectId === project.id),
+  );
+  const selectedProject =
+    issue?.projectId ??
+    (readyProjects.some((project) => project.id === projectId)
+      ? projectId
+      : (readyProjects[0]?.id ?? ""));
   const available = profiles.filter(
     (profile) => profile.projectId === selectedProject,
   );
+  async function queue(profileId: string, subject: Record<string, unknown>) {
+    const result = await sender.current<{ id: string }>("runs", {
+      profileId,
+      subject,
+    });
+    router.push(`/cloud/tasks/${result.id}`);
+    router.refresh();
+  }
   function start() {
     if (issue && !issue.projectId) {
-      setError("Assign a project before starting a task.");
+      setError("Add the issue to a project before starting a task.");
       return;
     }
     sender.current = createCommandSender();
+    if (issue && available.length === 1) {
+      setError("");
+      void queue(available[0]!.id, {
+        kind: "issue",
+        id: issue.id,
+        revision: issue.revision,
+      }).catch((reason: Error) => setError(reason.message));
+      return;
+    }
     setOpen(true);
-    void cloudRequest<{ profiles: ExecutionProfile[] }>("execution-profiles")
-      .then((settings) => setProfiles(enabledProfiles(settings.profiles)))
-      .catch((reason: Error) => setError(reason.message));
   }
   return (
     <section
@@ -132,8 +153,8 @@ export function TaskList({
             disabled={dirty}
             onClick={start}
           >
-            <Plus />
-            New task
+            {issue ? <Bot /> : <Plus />}
+            {issue ? "Start AI task" : "New task"}
           </Button>
         )}
       </header>
@@ -159,13 +180,12 @@ export function TaskList({
         open={open}
         onOpenChange={setOpen}
         title="New AI task"
-        submitLabel="Queue task"
+        submitLabel="Start task"
+        submitDisabled={!available.length}
         onSubmit={async (form) => {
           const profileId = formText(form, "profileId");
-          if (!profileId)
-            throw new Error("Configure an execution profile for this project.");
           const project = workspace.projects.find(
-            (entry) => entry.id === projectId,
+            (entry) => entry.id === selectedProject,
           );
           if (!issue && !project) throw new Error("Choose a project.");
           const subject = issue
@@ -178,12 +198,7 @@ export function TaskList({
                 objective: formText(form, "objective"),
                 acceptanceCriteria: formText(form, "acceptanceCriteria"),
               };
-          const result = await sender.current<{ id: string }>("runs", {
-            profileId,
-            subject,
-          });
-          router.push(`/cloud/tasks/${result.id}`);
-          router.refresh();
+          await queue(profileId, subject);
         }}
       >
         {!issue && (
@@ -191,14 +206,14 @@ export function TaskList({
             <Field label="Project" htmlFor="task-project">
               <Select
                 id="task-project"
-                value={projectId}
+                value={selectedProject}
                 onChange={(event) => setProjectId(event.target.value)}
                 required
               >
                 <option value="" disabled>
                   Select project
                 </option>
-                {workspace.projects.map((project) => (
+                {readyProjects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
                   </option>
@@ -207,9 +222,9 @@ export function TaskList({
             </Field>
             <Field label="Purpose" htmlFor="task-purpose">
               <Select id="task-purpose" name="purpose">
-                <option value="research">Research</option>
+                <option value="research">Research and report</option>
                 <option value="maintenance">Maintenance</option>
-                <option value="test">Test</option>
+                <option value="test">Testing</option>
               </Select>
             </Field>
             <Field label="Objective" htmlFor="task-objective">
@@ -230,32 +245,38 @@ export function TaskList({
             </Field>
           </>
         )}
-        <Field label="Execution profile" htmlFor="task-profile">
-          <Select
-            id="task-profile"
-            name="profileId"
-            required
-            key={selectedProject}
-          >
-            <option value="" disabled>
-              Select profile
-            </option>
-            {available.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name} · {executionTargetLabels[profile.target]} ·{" "}
-                {profileAgentLabel(profile)}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        {available.length > 1 ? (
+          <Field label="AI setup" htmlFor="task-profile">
+            <Select
+              id="task-profile"
+              name="profileId"
+              required
+              key={selectedProject}
+              defaultValue={available[0]!.id}
+            >
+              {available.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name} · {executionTargetLabels[profile.target]} ·{" "}
+                  {profileAgentLabel(profile)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : (
+          available[0] && (
+            <input type="hidden" name="profileId" value={available[0].id} />
+          )
+        )}
         {!available.length && (
           <p>
-            No execution profiles for this project.
+            {readyProjects.length || issue
+              ? "AI is not set up for this project yet."
+              : "AI is not set up for any project yet."}
             {holderCan(workspace.actor, "ai.manage") && (
               <>
                 {" "}
                 <Link className="underline" href="/cloud/execution">
-                  Configure execution
+                  Set up AI
                 </Link>
               </>
             )}

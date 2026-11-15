@@ -19,6 +19,8 @@ export type RepositorySource =
   | { kind: "broker" }
   | { kind: "local"; baseCommit: string; bytes: Buffer; sha256: string };
 export class TaskEnvironments {
+  private source: RepositorySource = { kind: "broker" };
+  private resolvedBase: string | null = null;
   private readonly active = new Map<
     string,
     { sandbox: VirtualMachineSandbox; keeper: LeaseKeeper | null }
@@ -28,8 +30,15 @@ export class TaskEnvironments {
     private readonly journal: RunnerJournal,
     private readonly connection: RunnerConnection,
     private readonly signal: AbortSignal,
-    private readonly source: RepositorySource,
   ) {}
+  useSource(source: RepositorySource): void {
+    this.source = source;
+  }
+  get baseCommit(): string {
+    if (!this.resolvedBase)
+      throw new Error("The task repository has not been prepared");
+    return this.resolvedBase;
+  }
   async prepare(id: string): Promise<VirtualMachineSandbox> {
     this.signal.throwIfAborted();
     const sandbox = await VirtualMachineSandbox.create(this.configuration, {
@@ -64,8 +73,9 @@ export class TaskEnvironments {
     this.active.set(sandbox.environmentId, { sandbox, keeper });
     keeper.start();
     const environment = { sandbox, keeper, signal: keeper.signal };
+    const pinned = this.resolvedBase ?? claim.baseCommit;
     if (this.source.kind === "local") {
-      if (this.source.baseCommit !== claim.manifest.profile.baseCommit)
+      if (pinned !== null && this.source.baseCommit !== pinned)
         throw new Error("The local source belongs to another commit.");
       await importBytes(environment, "source.pack", this.source.bytes);
     }
@@ -74,18 +84,26 @@ export class TaskEnvironments {
       this.source.kind === "broker"
         ? "prepare_repository"
         : "prepare_local_repository",
-      { commit: claim.manifest.profile.baseCommit },
-      z.strictObject({ baseCommit: z.string() }),
+      this.source.kind === "local"
+        ? { commit: this.source.baseCommit }
+        : pinned
+          ? { commit: pinned }
+          : {
+              reference: claim.manifest.branch
+                ? `refs/heads/${claim.manifest.branch}`
+                : "HEAD",
+            },
+      z.strictObject({ baseCommit: z.string().regex(/^[a-f0-9]{40}$/) }),
     );
-    if (source.baseCommit !== claim.manifest.profile.baseCommit)
+    if (pinned !== null && source.baseCommit !== pinned)
       throw new Error("Prepared repository does not match the task");
+    this.resolvedBase = source.baseCommit;
     return environment;
   }
-  async restore(
+  async launch(
     claim: WorkerClaim,
     role: "agent" | "validation",
-    bundle: Buffer,
-    candidateCommit: string,
+    bundle?: { bytes: Buffer; candidateCommit: string },
   ): Promise<ManagedEnvironment> {
     const planned = this.journal.addEnvironment(role);
     const sandbox = await this.prepare(planned.id);
@@ -100,12 +118,14 @@ export class TaskEnvironments {
       anchor,
       receipt.localStopSeconds,
     );
-    await importBytes(environment, "incoming.bundle", bundle);
-    await requireShell(
-      environment,
-      `git -c core.hooksPath=/dev/null bundle verify /tmp/machdoch-artifacts/incoming.bundle && git -c core.hooksPath=/dev/null fetch /tmp/machdoch-artifacts/incoming.bundle refs/machdoch/candidate && git -c core.hooksPath=/dev/null checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = '${candidateCommit}' && git merge-base --is-ancestor '${claim.manifest.profile.baseCommit}' HEAD`,
-      300000,
-    );
+    if (bundle) {
+      await importBytes(environment, "incoming.bundle", bundle.bytes);
+      await requireShell(
+        environment,
+        `git -c core.hooksPath=/dev/null bundle verify /tmp/machdoch-artifacts/incoming.bundle && git -c core.hooksPath=/dev/null fetch /tmp/machdoch-artifacts/incoming.bundle refs/machdoch/candidate && git -c core.hooksPath=/dev/null checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = '${bundle.candidateCommit}' && git merge-base --is-ancestor '${this.baseCommit}' HEAD`,
+        300000,
+      );
+    }
     if (role === "validation")
       await guest(
         environment,

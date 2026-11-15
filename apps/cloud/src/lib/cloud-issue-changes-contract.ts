@@ -18,6 +18,7 @@ export const issueChangeSetSchema = z
     statusCategory: z.enum(issueStates),
     priority: z.enum(issuePriorities),
     assigneeId: cloudId.nullable(),
+    aiAssigned: z.boolean(),
     projectId: cloudId.nullable(),
     milestoneId: cloudId.nullable(),
     cycleId: cloudId.nullable(),

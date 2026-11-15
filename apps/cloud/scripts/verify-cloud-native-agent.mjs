@@ -122,7 +122,8 @@ try {
     name: "Local agent",
     target: "client",
     repository: "https://github.com/example/native-agent",
-    baseCommit,
+    autopilot: false,
+    checkPullRequests: false,
     agent,
     ...(process.env.CLOUD_NATIVE_MODEL
       ? { model: process.env.CLOUD_NATIVE_MODEL }

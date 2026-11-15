@@ -23,6 +23,7 @@ export function claimFixture(): WorkerClaim {
     attemptId: randomUUID(),
     epoch: 1,
     inputDigest: "a".repeat(64),
+    baseCommit: null,
     leaseExpiresAt: new Date(Date.now() + 90000).toISOString(),
     deadlineAt: new Date(Date.now() + 3600000).toISOString(),
     manifest: {
@@ -39,6 +40,7 @@ export function claimFixture(): WorkerClaim {
       objective: "Verify recovery",
       acceptanceCriteria: "No duplicate execution",
       actorId: randomUUID(),
+      branch: "main",
       profile: {
         id: randomUUID(),
         revision: 1,
@@ -48,7 +50,8 @@ export function claimFixture(): WorkerClaim {
         name: "Runner",
         target: "cloud",
         repository: "https://github.com/example/project",
-        baseCommit: "b".repeat(40),
+        autopilot: false,
+        checkPullRequests: false,
         providerId,
         model: "fixture",
         maxDurationSeconds: 3600,

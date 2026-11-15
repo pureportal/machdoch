@@ -68,7 +68,8 @@ try {
     projectId: project.id,
     target: "cloud",
     repository: "https://github.com/example/project",
-    baseCommit: "a".repeat(40),
+    autopilot: false,
+    checkPullRequests: false,
     providerId: provider.id,
     model: "fixture",
     maxTokens: 10000,
@@ -162,7 +163,7 @@ try {
     attemptId: claim.attemptId,
     epoch: claim.epoch,
     environmentId: randomUUID(),
-    baseCommit: claim.manifest.profile.baseCommit,
+    baseCommit: "a".repeat(40),
     isolation: "microvm",
   });
   const requestId = randomUUID();
@@ -346,7 +347,7 @@ try {
     attemptId: uncertainClaim.attemptId,
     epoch: uncertainClaim.epoch,
     environmentId: randomUUID(),
-    baseCommit: uncertainClaim.manifest.profile.baseCommit,
+    baseCommit: "a".repeat(40),
     isolation: "microvm",
   });
   const uncertainRequest = randomUUID(),

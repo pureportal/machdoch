@@ -14,7 +14,12 @@ import { workerClaimReceiptSchema } from "@machdoch/fleet-protocol/cloud-executi
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
 import type { ClientCloudConnection } from "./bindings.js";
-import { inspectClientRepository, within, workspaceGit } from "./repository.js";
+import {
+  inspectClientRepository,
+  resolveClientCommit,
+  within,
+  workspaceGit,
+} from "./repository.js";
 
 // Concurrent tasks queue behind a whole checkout, which runs about ten Git
 // commands of up to a minute each.
@@ -113,7 +118,6 @@ export async function prepareClientWorkspace(
     profile.revision !== linked.profile.revision ||
     profile.projectId !== linked.profile.projectId ||
     profile.repository !== connection.binding.repository ||
-    profile.baseCommit !== linked.profile.baseCommit ||
     connection.subdirectory.replaceAll("\\", "/") !==
       (profile.workspacePath ?? "") ||
     linked.workspaceBinding?.workspaceId !== connection.binding.workspaceId
@@ -132,7 +136,6 @@ export async function prepareClientWorkspace(
   const source = await inspectClientRepository(
     connection.workspaceRoot,
     profile.repository,
-    profile.baseCommit,
   );
   if (
     source.repositoryRoot !== connection.repositoryRoot ||
@@ -193,19 +196,24 @@ export async function prepareClientWorkspace(
         join(directory, "attempts", claim.attemptId),
       );
       const recordPath = join(environment, "preparation.json");
-      const proposed = preparationSchema.parse({
-        runId: claim.runId,
-        attemptId: claim.attemptId,
-        epoch: claim.epoch,
-        inputDigest: claim.inputDigest,
-        baseCommit: profile.baseCommit,
-        phase: "preparing",
-      });
       let record;
+      let proposed;
       try {
         record = preparationSchema.parse(
           JSON.parse(await readFile(recordPath, "utf8")),
         );
+        proposed = preparationSchema.parse({
+          runId: claim.runId,
+          attemptId: claim.attemptId,
+          epoch: claim.epoch,
+          inputDigest: claim.inputDigest,
+          baseCommit: record.baseCommit,
+          phase: "preparing",
+        });
+        if (claim.baseCommit !== null && record.baseCommit !== claim.baseCommit)
+          throw new Error(
+            "The prepared workspace belongs to another task grant.",
+          );
       } catch (error) {
         if (
           !(
@@ -219,6 +227,18 @@ export async function prepareClientWorkspace(
           throw new Error(
             "Task storage has files without a preparation record. Preserve it for recovery.",
           );
+        proposed = preparationSchema.parse({
+          runId: claim.runId,
+          attemptId: claim.attemptId,
+          epoch: claim.epoch,
+          inputDigest: claim.inputDigest,
+          baseCommit: await resolveClientCommit(
+            source,
+            claim.manifest.branch,
+            claim.baseCommit,
+          ),
+          phase: "preparing",
+        });
         await writeFile(recordPath, JSON.stringify(proposed), {
           flag: "wx",
           mode: 0o600,
@@ -266,17 +286,17 @@ export async function prepareClientWorkspace(
             "--depth=1",
             "--",
             pathToFileURL(source.repositoryRoot).href,
-            profile.baseCommit,
+            record.baseCommit,
           ]);
           await git([
             "checkout",
             "--no-track",
             "-B",
             branch,
-            profile.baseCommit,
+            record.baseCommit,
           ]);
         }
-        await readyWorkspace(checkoutRoot, branch, profile.baseCommit);
+        await readyWorkspace(checkoutRoot, branch, record.baseCommit);
         try {
           await workspaceGit(
             checkoutRoot,
@@ -307,7 +327,7 @@ export async function prepareClientWorkspace(
           { ...proposed, phase: "ready" },
           { mode: 0o600 },
         );
-      } else await readyWorkspace(checkoutRoot, branch, profile.baseCommit);
+      } else await readyWorkspace(checkoutRoot, branch, record.baseCommit);
       const workspaceRoot = await realpath(
         join(checkoutRoot, source.subdirectory),
       );
@@ -319,7 +339,7 @@ export async function prepareClientWorkspace(
         checkoutRoot,
         workspaceRoot,
         branch,
-        baseCommit: profile.baseCommit,
+        baseCommit: record.baseCommit,
       };
     },
     {

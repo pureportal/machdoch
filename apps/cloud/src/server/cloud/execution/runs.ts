@@ -1,4 +1,13 @@
 import { admitRun } from "./admission";
+import { parseUnifiedDiff, type DiffFile } from "../../../lib/unified-diff";
+import { readRunDelivery } from "./deliveries";
+import {
+  readCandidateDiff,
+  readReviewedDiff,
+  readRunChanges,
+  readRunReviews,
+} from "./reviews";
+import { isPullRequestCheck } from "@machdoch/fleet-protocol/cloud-execution";
 import { runPlanningChanged } from "./planning-context";
 import { readRunTimeline } from "./run-timeline";
 import type { TaskArtifact } from "@machdoch/fleet-protocol/cloud-artifacts";
@@ -134,6 +143,14 @@ export class CloudRuns {
         attempts,
         usage,
         artifacts,
+        reviews: await readRunReviews(sql, actor.organizationId, id),
+        delivery: await readRunDelivery(sql, actor.organizationId, id),
+        changes: await readRunChanges(
+          sql,
+          actor.organizationId,
+          id,
+          run.candidateCommit,
+        ),
         timeline: await readRunTimeline(sql, actor.organizationId, id),
         reason: stopMessage,
         contextChanged: await runPlanningChanged(
@@ -142,6 +159,69 @@ export class CloudRuns {
           run,
         ),
       };
+    });
+  }
+
+  changes(
+    actor: CloudActor,
+    id: string,
+  ): Promise<{ files: DiffFile[]; truncated: boolean }> {
+    return this.database.transaction(async (sql) => {
+      const run = await readRun(sql, actor.organizationId, id, false);
+      await requireTeam(sql, actor, run.teamId);
+      if (!run.candidateCommit) return { files: [], truncated: false };
+      const diff = isPullRequestCheck(run.manifest.subject)
+        ? await readReviewedDiff(sql, actor.organizationId, id)
+        : await readCandidateDiff(
+            sql,
+            actor.organizationId,
+            id,
+            run.candidateCommit,
+          );
+      return {
+        files: diff ? parseUnifiedDiff(diff.text) : [],
+        truncated: diff?.truncated ?? false,
+      };
+    });
+  }
+
+  merge(actor: CloudActor, id: string): Promise<{ id: string }> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "git.act");
+      const run = await readRun(sql, actor.organizationId, id, false);
+      await requireTeam(sql, actor, run.teamId);
+      const updated = await sql.query(
+        `UPDATE cloud_run_deliveries SET state='merging',auto_merge=true,reason=NULL,attempts=0,next_attempt_at=clock_timestamp(),updated_at=clock_timestamp()
+        WHERE organization_id=$1 AND run_id=$2 AND state IN ('open','needs_person') AND pull_request_number IS NOT NULL RETURNING run_id`,
+        [actor.organizationId, id],
+      );
+      if (!updated.rows.length)
+        throw new CloudError(
+          409,
+          "delivery_unavailable",
+          "This change has no open pull request to merge.",
+        );
+      return { id };
+    });
+  }
+
+  retryDelivery(actor: CloudActor, id: string): Promise<{ id: string }> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "ai.tasks");
+      const run = await readRun(sql, actor.organizationId, id, false);
+      await requireTeam(sql, actor, run.teamId);
+      const updated = await sql.query(
+        `UPDATE cloud_run_deliveries SET state='publishing',reason=NULL,attempts=0,next_attempt_at=clock_timestamp(),updated_at=clock_timestamp()
+        WHERE organization_id=$1 AND run_id=$2 AND (state='failed' OR (state='needs_person' AND pull_request_number IS NULL)) RETURNING run_id`,
+        [actor.organizationId, id],
+      );
+      if (!updated.rows.length)
+        throw new CloudError(
+          409,
+          "delivery_unavailable",
+          "This change cannot be published again.",
+        );
+      return { id };
     });
   }
 

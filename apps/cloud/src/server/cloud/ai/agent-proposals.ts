@@ -96,6 +96,7 @@ export const proposalTools: AgentTool[] = [
         milestoneId: milestone?.id ?? null,
         cycleId: cycle?.id ?? null,
         assigneeId: assignee?.id ?? null,
+        aiAssigned: false,
         estimate,
         dueOn: input.dueOn ?? null,
       };

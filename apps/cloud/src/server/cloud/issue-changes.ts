@@ -108,8 +108,14 @@ export async function applyIssueChangeSet(
     acceptanceCriteria: changes.acceptanceCriteria ?? issue.acceptanceCriteria,
     status: issue.status,
     priority: changes.priority ?? issue.priority,
-    assigneeId:
-      changes.assigneeId === undefined ? issue.assigneeId : changes.assigneeId,
+    assigneeId: changes.aiAssigned
+      ? null
+      : changes.assigneeId === undefined
+        ? issue.assigneeId
+        : changes.assigneeId,
+    aiAssigned: changes.assigneeId
+      ? false
+      : (changes.aiAssigned ?? issue.aiAssigned),
     projectId:
       changes.projectId === undefined ? issue.projectId : changes.projectId,
     milestoneId:
@@ -131,6 +137,7 @@ export async function applyIssueChangeSet(
     next.acceptanceCriteria === issue.acceptanceCriteria &&
     next.priority === issue.priority &&
     next.assigneeId === issue.assigneeId &&
+    next.aiAssigned === issue.aiAssigned &&
     next.projectId === issue.projectId &&
     next.milestoneId === issue.milestoneId &&
     next.cycleId === issue.cycleId &&
@@ -143,7 +150,8 @@ export async function applyIssueChangeSet(
   const points = await validateIssueLinks(sql, actor, team, next, issue);
   await sql.query(
     `UPDATE cloud_issues SET title=$3,description=$4,acceptance_criteria=$5,state=$6,priority=$7,project_id=$8,cycle_id=$9,assignee_id=$10,
-     estimate=$11,estimate_points=$12,estimate_scale_revision=CASE WHEN $13 THEN $14 ELSE estimate_scale_revision END,due_on=$15,archived=$16,status_id=$17,milestone_id=$18,revision=revision+1,updated_at=clock_timestamp()
+     estimate=$11,estimate_points=$12,estimate_scale_revision=CASE WHEN $13 THEN $14 ELSE estimate_scale_revision END,due_on=$15,archived=$16,status_id=$17,milestone_id=$18,
+     ai_assigned=$19,ai_assigned_by=CASE WHEN $19 THEN COALESCE(CASE WHEN ai_assigned THEN ai_assigned_by END,$20::uuid) END,revision=revision+1,updated_at=clock_timestamp()
      WHERE organization_id=$1 AND id=$2`,
     [
       actor.organizationId,
@@ -164,6 +172,8 @@ export async function applyIssueChangeSet(
       archived,
       status?.id ?? issue.status.id,
       next.milestoneId,
+      next.aiAssigned,
+      actor.userId,
     ],
   );
   const updated = await readIssue(sql, actor, issue.id);

@@ -2,26 +2,25 @@
 
 import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  FileText,
-  ListChecks,
-  Target,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import {
   terminalRunStates,
   type RunDetail,
 } from "@machdoch/fleet-protocol/cloud-execution";
-import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskFiles } from "./task-files";
 import { TaskState } from "./task-state";
 import { TaskExecution } from "./task-execution";
 import { TaskTimeline } from "./task-timeline";
+import { TaskStages } from "./task-stages";
+import { TaskOutcome } from "./task-outcome";
+import { TaskReport } from "./task-report";
+import { TaskReview } from "./task-review";
+import { TaskChanges } from "./task-changes";
 import {
   CloudRequestError,
   cloudRequest,
@@ -30,6 +29,16 @@ import {
 
 const activePollMs = 3000;
 const settledPollMs = 30_000;
+
+function settled(run: RunDetail): boolean {
+  return (
+    terminalRunStates.some((state) => state === run.state) &&
+    (!run.delivery ||
+      ["merged", "closed", "failed", "needs_person", "open"].includes(
+        run.delivery.state,
+      ))
+  );
+}
 
 export function TaskDetail({
   initial,
@@ -42,6 +51,10 @@ export function TaskDetail({
   const [error, setError] = useState("");
   const [canceling, setCanceling] = useState(false);
   const sender = useRef(createCommandSender());
+  const refresh = useCallback(async () => {
+    const next = await cloudRequest<RunDetail>(`runs/${initial.id}`);
+    setRun(next);
+  }, [initial.id]);
   useEffect(() => {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -53,11 +66,13 @@ export function TaskDetail({
             signal: abort.signal,
           });
           if (!abort.signal.aborted) {
-            delay = terminalRunStates.some((state) => state === next.state)
-              ? settledPollMs
-              : activePollMs;
+            delay = settled(next) ? settledPollMs : activePollMs;
             setRun((previous) =>
-              previous && previous.revision > next.revision ? previous : next,
+              previous &&
+              previous.revision > next.revision &&
+              previous.delivery?.updatedAt === next.delivery?.updatedAt
+                ? previous
+                : next,
             );
             setError("");
           }
@@ -86,12 +101,11 @@ export function TaskDetail({
       </p>
     );
   const terminal = terminalRunStates.some((state) => state === run.state);
-  const objective =
-    run.manifest.objective === run.title
-      ? ""
-      : run.manifest.objective.startsWith(run.title + "\n")
-        ? run.manifest.objective.slice(run.title.length).trimStart()
-        : run.manifest.objective;
+  const latestReview = run.reviews.at(-1);
+  const findings =
+    latestReview && latestReview.candidateCommit === run.candidateCommit
+      ? latestReview.findings
+      : [];
   return (
     <>
       <header className="cloud-page-header">
@@ -132,24 +146,17 @@ export function TaskDetail({
           AI activity <ArrowUpRight size={14} aria-hidden="true" />
         </Link>
       </div>
-      {run.state === "queued" && (
-        <p className="cloud-task-notice">Waiting for an available runner.</p>
-      )}
+      <TaskOutcome
+        run={run}
+        canMerge={holderCan(workspace.actor, "git.act")}
+        canPublish={holderCan(workspace.actor, "ai.tasks")}
+        onChanged={refresh}
+      />
+      <TaskStages run={run} />
       {run.contextChanged && (
         <p role="status" className="cloud-error mb-6">
           Planning has changed since this task started. Review the current{" "}
           {run.issueId ? "issue" : "project"} before using the result.
-        </p>
-      )}
-      {run.reason &&
-        ["failed", "timed_out", "reconciling"].includes(run.state) && (
-          <p role="alert" className="cloud-error mb-6">
-            {run.reason}
-          </p>
-        )}
-      {["cancel_requested", "reconciling"].includes(run.state) && (
-        <p className="cloud-task-notice">
-          Waiting for the runner to stop and confirm ongoing actions.
         </p>
       )}
       {error && (
@@ -158,62 +165,66 @@ export function TaskDetail({
         </p>
       )}
       <div className="cloud-task-layout">
-        <div className="cloud-task-content">
-          {run.summary && (
-            <section
-              className="cloud-card cloud-task-result"
-              data-state={run.state}
-            >
-              <h2>
-                <FileText size={17} aria-hidden="true" />
-                Result
-              </h2>
-              <MarkdownContent content={run.summary} />
-            </section>
-          )}
-          <TaskTimeline entries={run.timeline} live={!terminal} />
-          <section className="cloud-card cloud-task-brief">
-            {objective && (
-              <div>
-                <h2>
-                  <Target size={17} aria-hidden="true" />
-                  Objective
-                </h2>
-                <MarkdownContent content={objective} />
-              </div>
+        <Tabs defaultValue="overview" className="cloud-task-content">
+          <TabsList aria-label="Task">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="changes">
+              Changes
+              {run.changes.length > 0 && (
+                <span className="cloud-tab-count">{run.changes.length}</span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="review">
+              Review
+              {run.reviews.length > 0 && (
+                <span className="cloud-tab-count">{run.reviews.length}</span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
+            <TabsTrigger value="files">Files</TabsTrigger>
+          </TabsList>
+          <TabsContent value="overview">
+            <TaskReport run={run} />
+          </TabsContent>
+          <TabsContent value="changes">
+            <TaskChanges
+              runId={run.id}
+              candidateCommit={run.candidateCommit}
+              findings={findings}
+            />
+          </TabsContent>
+          <TabsContent value="review">
+            <TaskReview reviews={run.reviews} />
+          </TabsContent>
+          <TabsContent value="activity">
+            <TaskTimeline entries={run.timeline} live={!terminal} />
+          </TabsContent>
+          <TabsContent value="files">
+            <TaskFiles
+              runId={run.id}
+              files={run.artifacts}
+              candidateCommit={run.candidateCommit}
+            />
+            {run.attempts.length > 0 && (
+              <section className="cloud-card mt-5">
+                <h2>Attempts</h2>
+                <ul className="cloud-attempt-list">
+                  {run.attempts.map((attempt) => (
+                    <li key={attempt.id}>
+                      <div>
+                        <span className="cloud-attempt-number">
+                          {attempt.epoch}
+                        </span>
+                        <span>{attempt.workerName}</span>
+                      </div>
+                      <span className="capitalize">{attempt.state}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             )}
-            <div>
-              <h2>
-                <ListChecks size={17} aria-hidden="true" />
-                Acceptance criteria
-              </h2>
-              <MarkdownContent content={run.manifest.acceptanceCriteria} />
-            </div>
-          </section>
-          <TaskFiles
-            runId={run.id}
-            files={run.artifacts}
-            candidateCommit={run.candidateCommit}
-          />
-          {run.attempts.length > 0 && (
-            <section className="cloud-card">
-              <h2>Attempts</h2>
-              <ul className="cloud-attempt-list">
-                {run.attempts.map((attempt) => (
-                  <li key={attempt.id}>
-                    <div>
-                      <span className="cloud-attempt-number">
-                        {attempt.epoch}
-                      </span>
-                      <span>{attempt.workerName}</span>
-                    </div>
-                    <span className="capitalize">{attempt.state}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </div>
+          </TabsContent>
+        </Tabs>
         <TaskExecution run={run} />
       </div>
       <FormDialog
@@ -225,7 +236,7 @@ export function TaskDetail({
           await sender.current(`runs/${run.id}/cancel`, {
             revision: run.revision,
           });
-          setRun(await cloudRequest<RunDetail>(`runs/${run.id}`));
+          await refresh();
         }}
       >
         <p>

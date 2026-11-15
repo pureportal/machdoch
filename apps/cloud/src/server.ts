@@ -64,6 +64,7 @@ async function runServer(
   cloud.authentication.mailWorker.start();
   cloud.scheduleLoop.start();
   cloud.automations.loop.start();
+  cloud.autopilot.loop.start();
   cloud.releases.loop.start();
   cloud.pulse.loop.start();
   cloud.activity.exportLoop.start();

@@ -17,6 +17,7 @@ import {
   type GitAccess,
   type GitChecks,
   type GitClient,
+  type GitPullRequestDraft,
   type GitPullRequestRecord,
   type GitRepositoryRecord,
   type GitWebhookTarget,
@@ -515,6 +516,60 @@ export class GitLabClient implements GitClient {
       enable_ssl_verification: true,
       ...gitlabHookEvents,
     };
+  }
+
+  async createPullRequest(
+    fullName: string,
+    input: GitPullRequestDraft,
+  ): Promise<GitPullRequestRecord> {
+    return gitlabMergeRequest(
+      await this.request(
+        `${this.project(fullName)}/merge_requests`,
+        gitlabMergeRequestSchema,
+        {
+          method: "POST",
+          body: {
+            title: input.title,
+            description: input.body,
+            source_branch: input.head,
+            target_branch: input.base,
+            remove_source_branch: true,
+          },
+        },
+      ),
+    );
+  }
+
+  async closePullRequest(fullName: string, number: number): Promise<void> {
+    await this.request(this.mergeRequestPath(fullName, number), z.unknown(), {
+      method: "PUT",
+      body: { state_event: "close" },
+    });
+  }
+
+  async deleteBranch(fullName: string, branch: string): Promise<void> {
+    await this.request(
+      `${this.project(fullName)}/repository/branches/${encodeURIComponent(branch)}`,
+      z.unknown(),
+      { method: "DELETE" },
+    );
+  }
+
+  async fileText(
+    fullName: string,
+    path: string,
+    ref: string,
+  ): Promise<string | null> {
+    try {
+      const file = await this.request(
+        `${this.project(fullName)}/repository/files/${encodeURIComponent(path)}?ref=${encodeURIComponent(ref)}`,
+        z.object({ content: z.string(), encoding: z.literal("base64") }),
+      );
+      return Buffer.from(file.content, "base64").toString("utf8");
+    } catch (error) {
+      if (error instanceof CloudError && error.status === 404) return null;
+      throw error;
+    }
   }
 
   async createWebhook(

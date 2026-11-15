@@ -64,7 +64,8 @@ async function setup() {
       name: "Client",
       target: "client",
       repository,
-      baseCommit: commit,
+      autopilot: false,
+      checkPullRequests: false,
       agent: "codex-cli",
       maxDurationSeconds: 300,
       maxTokens: 10000,
@@ -108,10 +109,12 @@ async function setup() {
       source,
       "Client checkout",
     );
+  let pinned = commit;
   const claim = (): WorkerClaim => ({
     runId: randomUUID(),
     attemptId: randomUUID(),
     epoch: 1,
+    baseCommit: pinned,
     inputDigest: "b".repeat(64),
     leaseExpiresAt: new Date(Date.now() + 300000).toISOString(),
     deadlineAt: new Date(Date.now() + 300000).toISOString(),
@@ -123,6 +126,7 @@ async function setup() {
       actorId: randomUUID(),
       subject: { kind: "issue", id: randomUUID(), revision: 1 },
       profile: registration.profile,
+      branch: "main",
       provider: null,
     },
   });
@@ -133,6 +137,10 @@ async function setup() {
     bindings,
     connect,
     claim,
+    commit: () => pinned,
+    pin: (value: string) => {
+      pinned = value;
+    },
     loseResponse: () => {
       loseResponse = true;
     },
@@ -161,7 +169,7 @@ it("treats a competing lock candidate as a lock but other files as unowned stora
   await expect(
     prepareClientWorkspace(storage, connection, fixture.claim()),
   ).resolves.toMatchObject({
-    baseCommit: fixture.registration.profile.baseCommit,
+    baseCommit: fixture.commit(),
   });
 
   const unowned = join(fixture.root, "unowned");
@@ -443,9 +451,9 @@ it("links an explicit Linux client only to the configured repository directory",
     "-m",
     "Worker",
   ]);
-  fixture.registration.profile.baseCommit = (
-    await workspaceGit(fixture.source, ["rev-parse", "HEAD"])
-  ).trim();
+  fixture.pin(
+    (await workspaceGit(fixture.source, ["rev-parse", "HEAD"])).trim(),
+  );
   const { agent: _, ...profile } = fixture.registration.profile as Extract<
     WorkerRegistration["profile"],
     { target: "client" }

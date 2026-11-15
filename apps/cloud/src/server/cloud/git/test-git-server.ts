@@ -32,6 +32,18 @@ export class FakeGitServer {
   readonly github = new Map<number, FakeChange>();
   readonly gitlab = new Map<number, FakeChange>();
   readonly logins = new Map<string, string>();
+  readonly branches = new Map<string, string>();
+  readonly files = new Map<string, string>();
+  readonly pullFiles = new Map<
+    number,
+    {
+      filename: string;
+      status: string;
+      additions: number;
+      deletions: number;
+      patch: string;
+    }[]
+  >();
   readonly oauthGrants: {
     code?: string;
     refreshToken?: string;
@@ -157,10 +169,47 @@ export class FakeGitServer {
       });
     if (path === "/repos/acme/app/hooks" && method === "POST")
       return json({ id: 99 }, 201);
+    if (path === "/repos/acme/app/pulls" && method === "POST") {
+      const draft = body as {
+        title: string;
+        body: string;
+        head: string;
+        base: string;
+      };
+      const number = Math.max(0, ...this.github.keys()) + 1;
+      return json(
+        this.githubPull(
+          this.add(this.github, number, {
+            title: draft.title,
+            body: draft.body,
+            headRef: draft.head,
+            baseRef: draft.base,
+            author: "acme-bot",
+            headSha: this.branches.get(draft.head) ?? sha(number),
+          }),
+        ),
+        201,
+      );
+    }
     if (path === "/repos/acme/app/pulls")
       return json(
         this.sorted(this.github).map((change) => this.githubPull(change)),
       );
+    const branch = /^\/repos\/acme\/app\/git\/refs\/heads\/(.+)$/u.exec(path);
+    if (branch && method === "DELETE") {
+      this.branches.delete(decodeURIComponent(branch[1]!));
+      return new Response(null, { status: 204 });
+    }
+    const file = /^\/repos\/acme\/app\/contents\/(.+)$/u.exec(path);
+    if (file) {
+      const content = this.files.get(decodeURIComponent(file[1]!));
+      return content === undefined
+        ? json({ message: "Not Found" }, 404)
+        : json({
+            content: Buffer.from(content).toString("base64"),
+            encoding: "base64",
+          });
+    }
     if (/^\/repos\/acme\/app\/commits\/[0-9a-f]{40}\/check-runs$/u.test(path))
       return json({
         check_runs: [
@@ -183,7 +232,11 @@ export class FakeGitServer {
     const change = match ? this.github.get(Number(match[1])) : undefined;
     if (!match || !change) return json({ message: "Not Found" }, 404);
     if (!match[2] && method === "PATCH") {
-      this.update(change, { baseRef: (body as { base: string }).base });
+      const patch = body as { base?: string; state?: "closed" };
+      this.update(
+        change,
+        patch.state ? { state: patch.state } : { baseRef: patch.base! },
+      );
       return json({ number: change.number });
     }
     if (!match[2]) return json(this.githubPull(change));
@@ -191,6 +244,8 @@ export class FakeGitServer {
       this.update(change, { state: "merged" });
       return json({ merged: true });
     }
+    if (match[2] === "files")
+      return json(this.pullFiles.get(change.number) ?? []);
     if (match[2] === "reviews" && method === "POST") return json({ id: 3 });
     if (["reviews", "comments", "commits"].includes(match[2])) return json([]);
     return json({ message: "Not Found" }, 404);

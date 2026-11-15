@@ -19,6 +19,7 @@ import {
   leaseSeconds,
   localStopSeconds,
   mayExecute,
+  pinnedBaseCommit,
   readAttempt,
   settleRun,
   validateSuccessfulResult,
@@ -253,9 +254,10 @@ export class CloudExecutionLeases {
           );
         return grant;
       }
+      const pinned = pinnedBaseCommit(run);
       if (
         run.state !== "preparing" ||
-        input.baseCommit !== run.manifest.profile.baseCommit ||
+        (pinned !== null && input.baseCommit !== pinned) ||
         input.isolation !==
           (run.manifest.profile.target === "client"
             ? "independent-checkout"
@@ -271,8 +273,8 @@ export class CloudExecutionLeases {
         [worker.organizationId, attempt.id, input.environmentId, digest],
       );
       await sql.query(
-        "UPDATE cloud_runs SET state='running',revision=revision+1 WHERE organization_id=$1 AND id=$2",
-        [worker.organizationId, run.id],
+        "UPDATE cloud_runs SET state='running',base_commit=$3,revision=revision+1 WHERE organization_id=$1 AND id=$2",
+        [worker.organizationId, run.id, input.baseCommit],
       );
       await recordRun(
         sql,

@@ -20,6 +20,7 @@ export type IssueFilterField = (typeof issueFilterFields)[number];
 
 export const noneFilterValue = "none";
 export const meFilterValue = "me";
+export const aiFilterValue = "ai";
 export const dueFilterValues = ["overdue", "week", "month", "none"] as const;
 export const createdFilterValues = ["day", "week", "month"] as const;
 export const estimateFilterValues = ["none", "set"] as const;
@@ -28,7 +29,10 @@ const maximumValues = 50;
 
 const valueSchemas: Record<IssueFilterField, z.ZodType<string>> = {
   status: cloudId,
-  assignee: z.union([cloudId, z.enum([meFilterValue, noneFilterValue])]),
+  assignee: z.union([
+    cloudId,
+    z.enum([meFilterValue, noneFilterValue, aiFilterValue]),
+  ]),
   creator: z.union([cloudId, z.literal(meFilterValue)]),
   priority: z.enum(issuePriorities),
   label: z.union([cloudId, z.literal(noneFilterValue)]),

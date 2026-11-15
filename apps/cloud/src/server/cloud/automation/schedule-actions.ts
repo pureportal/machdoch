@@ -110,6 +110,8 @@ export async function validateScheduleAction(
       objective: `${issue.title}\n\n${issue.description}`.trim(),
       acceptanceCriteria: issue.acceptanceCriteria.trim(),
       profile,
+      branch: profile.branch ?? null,
+      subject: action.run.subject,
     });
   } else {
     if (action.run.subject.id !== profile.projectId)
@@ -134,6 +136,8 @@ export async function validateScheduleAction(
       objective: action.run.subject.objective,
       acceptanceCriteria: action.run.subject.acceptanceCriteria,
       profile,
+      branch: profile.branch ?? null,
+      subject: action.run.subject,
     });
   }
   if (profile.target === "client")

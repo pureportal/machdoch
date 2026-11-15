@@ -1460,3 +1460,64 @@ body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface) .m-loading-state {
     bottom: 10px;
   }
 }
+.cloud-select {
+  display: block;
+  height: 36px;
+}
+.cloud-select-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+.cloud-select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--input);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.cloud-select-trigger > svg {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--muted-foreground);
+}
+.cloud-select-trigger:disabled {
+  background: var(--muted);
+  cursor: default;
+  opacity: 0.6;
+}
+.cloud-select:focus-within .cloud-select-trigger {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 15%, transparent);
+}
+.cloud-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-select-value[data-placeholder="true"] {
+  color: var(--muted-foreground);
+}
+.cloud-select-menu {
+  width: max(var(--radix-popover-trigger-width), 200px);
+  max-width: min(420px, calc(100vw - 24px));
+}
+@media (max-width: 640px) {
+  .cloud-select-trigger {
+    font-size: 16px;
+  }
+}

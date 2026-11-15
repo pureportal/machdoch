@@ -81,7 +81,6 @@ try {
   await form
     .getByLabel("Repository URL", { exact: true })
     .fill("https://github.com/example/project");
-  await form.getByLabel("Base commit (SHA)", { exact: true }).fill(commit);
   assert.equal(
     await form.getByLabel("Model", { exact: true }).isDisabled(),
     true,

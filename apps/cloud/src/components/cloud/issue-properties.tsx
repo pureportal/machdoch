@@ -1,6 +1,12 @@
 "use client";
 
-import { Calendar, CircleSlash, FolderKanban, UserRound } from "lucide-react";
+import {
+  Bot,
+  Calendar,
+  CircleSlash,
+  FolderKanban,
+  UserRound,
+} from "lucide-react";
 import {
   issuePriorities,
   issueStates,
@@ -76,12 +82,19 @@ export const priorityOptions: PropertyOption[] = (
     icon: <IssuePriority priority={priority} compact />,
   }));
 
+export const aiAssignee = "ai";
+
 export function assigneeOptions(workspace: CloudWorkspace): PropertyOption[] {
   return [
     {
       value: noValue,
       label: "Unassigned",
       icon: <UserRound size={14} aria-hidden="true" />,
+    },
+    {
+      value: aiAssignee,
+      label: "Machdoch AI",
+      icon: <Bot size={14} aria-hidden="true" />,
     },
     ...workspace.members.map((member) => ({
       value: member.id,
@@ -151,6 +164,20 @@ export function estimateOptions(
   ];
 }
 
+export function assigneeValue(
+  issue: Pick<CloudIssue, "assigneeId" | "aiAssigned">,
+): string {
+  return issue.aiAssigned ? aiAssignee : (issue.assigneeId ?? noValue);
+}
+
+export function assigneeChange(value: string): IssueChangeSet {
+  return value === aiAssignee
+    ? { aiAssigned: true }
+    : value === noValue
+      ? { assigneeId: null, aiAssigned: false }
+      : { assigneeId: value };
+}
+
 export function referenceValue(value: string): string | null {
   return value === noValue ? null : value;
 }
@@ -162,7 +189,14 @@ export function applyIssueChanges<T extends CloudIssueSummary | CloudIssue>(
 ): T {
   const next = { ...issue };
   if (changes.priority !== undefined) next.priority = changes.priority;
-  if (changes.assigneeId !== undefined) next.assigneeId = changes.assigneeId;
+  if (changes.aiAssigned) {
+    next.aiAssigned = true;
+    next.assigneeId = null;
+  } else if (changes.aiAssigned === false) next.aiAssigned = false;
+  if (changes.assigneeId !== undefined) {
+    next.assigneeId = changes.assigneeId;
+    if (changes.assigneeId) next.aiAssigned = false;
+  }
   if (changes.projectId !== undefined) {
     if (changes.projectId !== next.projectId) next.milestoneId = null;
     next.projectId = changes.projectId;

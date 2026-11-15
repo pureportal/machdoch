@@ -4,6 +4,7 @@ import type {
   WorkerClaim,
   WorkerFinish,
 } from "@machdoch/fleet-protocol/cloud-execution";
+import { isPullRequestCheck } from "@machdoch/fleet-protocol/cloud-execution";
 import { CloudError } from "../access";
 import type { CloudSql } from "../database";
 import {
@@ -100,6 +101,15 @@ export async function mayExecute(
   return true;
 }
 
+export function pinnedBaseCommit(run: StoredRun): string | null {
+  return (
+    run.baseCommit ??
+    (run.manifest.subject.kind === "pull_request"
+      ? run.manifest.subject.headSha
+      : null)
+  );
+}
+
 export function claimReceipt(
   run: StoredRun,
   attempt: StoredAttempt,
@@ -109,6 +119,7 @@ export function claimReceipt(
     attemptId: attempt.id,
     epoch: attempt.epoch,
     manifest: run.manifest,
+    baseCommit: pinnedBaseCommit(run),
     inputDigest: run.inputDigest,
     leaseExpiresAt: attempt.leaseExpiresAt,
     deadlineAt: run.deadlineAt,
@@ -209,6 +220,7 @@ export async function validateSuccessfulResult(
       "The task exceeded its token budget.",
     );
   if (
+    !isPullRequestCheck(run.manifest.subject) &&
     run.manifest.profile.requiredChecks.some(
       (required) =>
         !input.checks.some(
@@ -229,5 +241,6 @@ export async function validateSuccessfulResult(
     organizationId,
     input,
     run.manifest.profile.requiredChecks,
+    !isPullRequestCheck(run.manifest.subject),
   );
 }

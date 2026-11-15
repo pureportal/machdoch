@@ -133,7 +133,8 @@ async function queuePrivateTask() {
     target: "client",
     agent: "codex-cli",
     repository: "https://github.com/example/project",
-    baseCommit: "a".repeat(40),
+    autopilot: false,
+    checkPullRequests: false,
     maxDurationSeconds: 3600,
     maxTokens: 10000,
     requiredChecks: [

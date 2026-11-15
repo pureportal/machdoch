@@ -3,6 +3,7 @@
 import type { ExecutionCheck } from "@machdoch/fleet-protocol/cloud-execution";
 import { Field } from "@/components/field";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 
@@ -25,7 +26,7 @@ export function ExecutionChecks({
   }
   return (
     <fieldset className="grid min-w-0 gap-3">
-      <legend className="mb-2 font-medium">Required checks</legend>
+      <legend className="mb-2 font-medium">Checks</legend>
       {checks.map((check, index) => (
         <fieldset
           key={check.key}
@@ -58,31 +59,30 @@ export function ExecutionChecks({
             />
           </Field>
           <div className="flex items-end justify-between gap-3">
-            <Field
-              label="Timeout (seconds)"
-              htmlFor={`check-${check.key}-timeout`}
-            >
-              <Input
+            <Field label="Timeout" htmlFor={`check-${check.key}-timeout`}>
+              <Select
                 id={`check-${check.key}-timeout`}
-                className="max-w-32"
+                className="max-w-40"
                 aria-label={`Check timeout ${index + 1}`}
-                type="number"
-                min={1}
-                max={300}
-                step={1}
-                required
-                value={
-                  Number.isNaN(check.timeoutSeconds) ? "" : check.timeoutSeconds
-                }
+                value={String(check.timeoutSeconds)}
                 onChange={(event) =>
-                  update(index, { timeoutSeconds: event.target.valueAsNumber })
+                  update(index, { timeoutSeconds: Number(event.target.value) })
                 }
-              />
+              >
+                {[...new Set([30, 60, 120, 180, 300, check.timeoutSeconds])]
+                  .sort((left, right) => left - right)
+                  .map((seconds) => (
+                    <option key={seconds} value={seconds}>
+                      {seconds < 60
+                        ? `${seconds} seconds`
+                        : `${seconds / 60} min`}
+                    </option>
+                  ))}
+              </Select>
             </Field>
             <Button
               type="button"
               variant="ghost"
-              disabled={checks.length === 1}
               aria-label={`Remove check ${index + 1}`}
               onClick={() =>
                 onChange(checks.filter((_, position) => position !== index))

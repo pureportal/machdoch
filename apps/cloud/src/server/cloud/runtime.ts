@@ -57,6 +57,12 @@ import { CloudWorkers } from "./execution/workers";
 import { CloudClientWorkspaces } from "./execution/client-workspaces";
 import { CloudExecutionLeases } from "./execution/leases";
 import { CloudExecutionEffects } from "./execution/effects";
+import { CloudRunReviews } from "./execution/reviews";
+import { CloudAutopilot } from "./execution/autopilot";
+import { CloudDeliveries } from "./execution/deliveries";
+import type { pushCandidate } from "./execution/candidate-push";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { CloudTaskInference } from "./execution/inference";
 import { CloudRepositories } from "./execution/repositories";
 import { CloudGitAccounts } from "./git/accounts";
@@ -101,6 +107,11 @@ export interface CloudRuntime {
   schedules: CloudSchedules;
   scheduleDispatcher: CloudScheduleDispatcher;
   scheduleLoop: CloudPeriodicLoop;
+  autopilot: {
+    autopilot: CloudAutopilot;
+    deliveries: CloudDeliveries;
+    loop: CloudPeriodicLoop;
+  };
   releases: {
     products: CloudProducts;
     social: CloudSocial;
@@ -191,6 +202,7 @@ export interface CloudRuntime {
     leases: CloudExecutionLeases;
     effects: CloudExecutionEffects;
     inference: CloudTaskInference;
+    reviews: CloudRunReviews;
     repositories: CloudRepositories;
     uploads: CloudArtifactUploads;
     artifacts: CloudArtifacts;
@@ -233,6 +245,8 @@ export function createCloudRuntime(
     socialFetch?: typeof fetch;
     videoComposer?: CloudVideoComposer;
     mailSender?: MailSender;
+    gitCacheDirectory?: string;
+    candidatePush?: typeof pushCandidate;
   } = {},
 ): CloudRuntime {
   const aiProviders = new CloudAiProviders(
@@ -321,7 +335,11 @@ export function createCloudRuntime(
   const automations = new CloudAutomations(database, origin, () =>
     wakeAutomations(),
   );
-  const executionProfiles = new CloudExecutionProfiles(database);
+  const executionProfiles = new CloudExecutionProfiles(
+    database,
+    options.credentialsCipher ?? null,
+    options.gitFetch ?? fetch,
+  );
   const agentActions = new CloudAgentActions({
     origin,
     attachments,
@@ -392,6 +410,24 @@ export function createCloudRuntime(
       fetch: options.automationFetch ?? fetch,
     }),
   );
+  const autopilot = new CloudAutopilot(database, issueChanges);
+  const deliveries = new CloudDeliveries(
+    database,
+    options.credentialsCipher ?? null,
+    gitFetch,
+    gitSync,
+    issueChanges,
+    origin,
+    options.gitCacheDirectory ??
+      process.env.MACHDOCH_CLOUD_GIT_CACHE ??
+      join(tmpdir(), "machdoch-cloud-git"),
+    options.candidatePush,
+  );
+  const autopilotLoop = new CloudPeriodicLoop(
+    "Autopilot",
+    async () => (await autopilot.tick()) + (await deliveries.tick()),
+    1,
+  );
   const automationLoop = new CloudPeriodicLoop(
     "Automation dispatch",
     () => automationDispatcher.tick(),
@@ -448,6 +484,7 @@ export function createCloudRuntime(
       loop: automationLoop,
     },
     pulse: { writer: pulse, loop: pulseLoop },
+    autopilot: { autopilot, deliveries, loop: autopilotLoop },
     activity: {
       feed: new CloudAiActivity(database),
       mimorii: new CloudMimoriiConnections(
@@ -575,6 +612,11 @@ export function createCloudRuntime(
       leases: new CloudExecutionLeases(database),
       effects: new CloudExecutionEffects(database),
       inference: new CloudTaskInference(database),
+      reviews: new CloudRunReviews(
+        database,
+        options.credentialsCipher ?? null,
+        gitFetch,
+      ),
       repositories: new CloudRepositories(
         database,
         options.credentialsCipher ?? null,
@@ -593,6 +635,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.cliLogins.close();
   await runtime.scheduleLoop.close();
   await runtime.automations.loop.close();
+  await runtime.autopilot.loop.close();
   await runtime.releases.loop.close();
   await runtime.pulse.loop.close();
   await runtime.activity.exportLoop.close();
@@ -609,6 +652,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.authentication.mailWorker.start();
   runtime.scheduleLoop.start();
   runtime.automations.loop.start();
+  runtime.autopilot.loop.start();
   runtime.releases.loop.start();
   runtime.pulse.loop.start();
   runtime.activity.exportLoop.start();
@@ -632,6 +676,7 @@ export async function closeCloudRuntime(): Promise<void> {
     current.cliLogins.close();
     await current.scheduleLoop.close();
     await current.automations.loop.close();
+    await current.autopilot.loop.close();
     await current.releases.loop.close();
     await current.pulse.loop.close();
     await current.activity.exportLoop.close();

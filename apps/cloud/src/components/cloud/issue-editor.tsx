@@ -11,6 +11,7 @@ import {
   Triangle,
   UserRound,
   Users,
+  Bot,
 } from "lucide-react";
 import type { CloudMilestone } from "@/lib/cloud-milestone-contract";
 import { IssueRunList } from "./issue-run-list";
@@ -53,6 +54,8 @@ import {
   referenceValue,
   statusChange,
   statusOptions,
+  assigneeChange,
+  assigneeValue,
 } from "./issue-properties";
 import { PersonAvatar } from "./person-avatar";
 import { PropertyMenu, type PropertyOption } from "./property-menu";
@@ -278,20 +281,7 @@ export function IssueEditor({
                 <IssueDelegate
                   issue={issue}
                   workspace={workspace}
-                  onBeforeStart={async (projectId) => {
-                    const result = await cloudRequest<IssueChangesResult>(
-                      "issues/changes",
-                      {
-                        method: "POST",
-                        key: crypto.randomUUID(),
-                        body: {
-                          issues: [{ id: issue.id }],
-                          changes: { projectId },
-                        },
-                      },
-                    );
-                    return result.updated[0]!.revision;
-                  }}
+                  onAssign={changeProperties}
                 />
               )}
             </>
@@ -467,9 +457,16 @@ export function IssueEditor({
               label="Assignee"
               writable={writable}
               options={assigneeOptions(workspace)}
-              value={issue.assigneeId ?? noValue}
+              value={assigneeValue(issue)}
               display={
-                assignee ? (
+                issue.aiAssigned ? (
+                  <>
+                    <span className="cloud-ai-avatar">
+                      <Bot size={12} aria-hidden="true" />
+                    </span>
+                    Machdoch AI
+                  </>
+                ) : assignee ? (
                   <>
                     <PersonAvatar
                       name={assignee.name}
@@ -484,9 +481,7 @@ export function IssueEditor({
                   </span>
                 )
               }
-              onSelect={(value) =>
-                changeProperties({ assigneeId: referenceValue(value) })
-              }
+              onSelect={(value) => changeProperties(assigneeChange(value))}
             />
             <Property
               label="Estimate"

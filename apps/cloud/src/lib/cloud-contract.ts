@@ -147,6 +147,7 @@ export const issueInputSchema = z.strictObject({
   milestoneId: cloudId.nullable().default(null),
   cycleId: cloudId.nullable().default(null),
   assigneeId: cloudId.nullable().default(null),
+  aiAssigned: z.boolean().default(false),
   estimate: z.string().max(16).nullable().default(null),
   dueOn: date.nullable().default(null),
 });

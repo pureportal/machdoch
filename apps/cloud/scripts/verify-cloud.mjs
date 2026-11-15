@@ -39,7 +39,10 @@ try {
   await signIn(owner, "owner@example.test");
   await owner.getByRole("link", { name: "Settings", exact: true }).click();
   await owner.getByLabel("Name", { exact: true }).fill("Verification studio");
-  await owner.getByRole("radio", { name: "Violet", exact: true }).first().click();
+  await owner
+    .getByRole("radio", { name: "Violet", exact: true })
+    .first()
+    .click();
   await owner.getByRole("radio", { name: "Initials", exact: true }).click();
   await owner.getByRole("button", { name: "Save organization" }).click();
   await owner
@@ -94,10 +97,8 @@ try {
   await owner.getByRole("link", { name: "Cycles", exact: true }).click();
   await owner.getByRole("button", { name: "New cycle" }).click();
   await dialog(owner).getByLabel("Name", { exact: true }).fill("Cycle one");
-  await dialog(owner).getByLabel("Start date").fill("2026-10-01");
-  await dialog(owner)
-    .getByLabel("End date (exclusive)", { exact: true })
-    .fill("2026-10-15");
+  await dialog(owner).getByLabel("Starts").fill("2026-10-01");
+  await dialog(owner).getByLabel("Length", { exact: true }).selectOption("14");
   await dialog(owner)
     .getByLabel("Capacity (points)", { exact: true })
     .fill("30");

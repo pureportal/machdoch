@@ -58,6 +58,13 @@ export interface GitChecks {
   runs: GitCheckRun[];
 }
 
+export interface GitPullRequestDraft {
+  title: string;
+  body: string;
+  head: string;
+  base: string;
+}
+
 export interface GitWebhookTarget {
   url: string;
   secret: string;
@@ -92,6 +99,13 @@ export interface GitClient {
     input: { decision: GitReviewInput; body: string; headSha: string },
   ): Promise<void>;
   retarget(fullName: string, number: number, baseRef: string): Promise<void>;
+  createPullRequest(
+    fullName: string,
+    input: GitPullRequestDraft,
+  ): Promise<GitPullRequestRecord>;
+  closePullRequest(fullName: string, number: number): Promise<void>;
+  deleteBranch(fullName: string, branch: string): Promise<void>;
+  fileText(fullName: string, path: string, ref: string): Promise<string | null>;
   createWebhook(fullName: string, target: GitWebhookTarget): Promise<number>;
   updateWebhook(
     fullName: string,

@@ -12,7 +12,11 @@ import {
   exportClientSourcePack,
   sourcePackRuntimeSchema,
 } from "./source-pack.js";
-import { inspectClientRepository, within } from "./repository.js";
+import {
+  inspectClientRepository,
+  resolveClientCommit,
+  within,
+} from "./repository.js";
 import { NativeClientRunner } from "./native-runner.js";
 
 const nativeRepairAttempts = 1;
@@ -112,7 +116,7 @@ export async function createClientCloudWorker(
     checkConnection: async () => {
       await currentConnection();
     },
-    prepareSource: async (registration, signal) => {
+    prepareSource: async (registration, claim, signal) => {
       const current = await currentConnection();
       if (
         registration.workerId !== current.registration.workerId ||
@@ -130,7 +134,6 @@ export async function createClientCloudWorker(
       const source = await inspectClientRepository(
         current.workspaceRoot,
         registration.profile.repository,
-        registration.profile.baseCommit,
       );
       if (
         source.repositoryRoot !== current.repositoryRoot ||
@@ -144,7 +147,11 @@ export async function createClientCloudWorker(
         );
       return exportClientSourcePack(
         source,
-        registration.profile.baseCommit,
+        await resolveClientCommit(
+          source,
+          claim.manifest.branch,
+          claim.baseCommit,
+        ),
         sourceDirectory,
         { ...runtime.source, supervisor: runtime.sandbox.supervisor },
         signal,
