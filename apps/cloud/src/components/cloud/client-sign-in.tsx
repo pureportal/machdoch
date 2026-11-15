@@ -74,7 +74,7 @@ export function ClientSignInForm({
               />
               The organization
             </label>
-            {shared && <p>Agent tasks stay off until you allow them.</p>}
+            {shared && <p>Only admins can assign agent tasks until you allow others.</p>}
           </fieldset>
         )}
         {error && (

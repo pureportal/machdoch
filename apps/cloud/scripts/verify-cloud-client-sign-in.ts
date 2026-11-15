@@ -201,7 +201,7 @@ try {
     async (page) => {
       await page.getByLabel("The organization").check();
       await page
-        .getByText("Agent tasks stay off until you allow them.")
+        .getByText("Only admins can assign agent tasks until you allow others.")
         .waitFor();
     },
     "04-consent-organization",
@@ -233,7 +233,7 @@ try {
   assert.ok(
     await devices.getByText("Ada Lovelace", { exact: true }).isVisible(),
   );
-  await devices.getByText("Organization · Agent tasks off").waitFor();
+  await devices.getByText("Organization · Agent tasks: Only admins").waitFor();
   await capture(clients, "06-clients-admin");
 
   await clients
@@ -241,7 +241,7 @@ try {
     .click();
   const dialog = clients.getByRole("dialog");
   await dialog.getByLabel("Who can assign agent tasks").waitFor();
-  await capture(clients, "07-agent-access-off");
+  await capture(clients, "07-agent-access-admins");
   await dialog.getByLabel("Who can assign agent tasks").selectOption("people");
   await dialog.getByLabel("Ada Lovelace").check();
   await assertEventually(

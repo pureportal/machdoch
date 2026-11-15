@@ -213,7 +213,7 @@ describe("client sign-in", () => {
     ).toBe(200);
   });
 
-  it("keeps organization clients off until an admin allows agent tasks", async () => {
+  it("lets admins always use organization clients and others once allowed", async () => {
     const owner = await signInAs("owner");
     const ada = await addMember("ada");
     expect((await signInClient(ada, true)).status).toBe(403);
@@ -221,9 +221,9 @@ describe("client sign-in", () => {
 
     expect(await listed(ada)).toEqual([]);
     expect(await listed(owner)).toEqual([
-      expect.objectContaining({ instanceId, usable: false, ownerName: null }),
+      expect.objectContaining({ instanceId, usable: true, ownerName: null }),
     ]);
-    expect(await openSession(owner, instanceId!)).toBe(403);
+    expect(await openSession(owner, instanceId!)).toBe(503);
     expect(
       (
         await request(`/api/instances/${instanceId}/agent-access`, "PUT", {
@@ -243,9 +243,10 @@ describe("client sign-in", () => {
       expect.objectContaining({ instanceId, usable: true, mine: false }),
     ]);
     expect(await openSession(ada, instanceId!)).toBe(503);
-    expect(await openSession(owner, instanceId!)).toBe(403);
+    expect(await openSession(owner, instanceId!)).toBe(503);
     expect((await allow("admins")).status).toBe(200);
     expect(await listed(ada)).toEqual([]);
+    expect(await openSession(ada, instanceId!)).toBe(403);
     expect(await openSession(owner, instanceId!)).toBe(503);
     expect(
       (

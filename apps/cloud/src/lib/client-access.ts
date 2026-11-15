@@ -1,11 +1,6 @@
 import { z } from "zod";
 
-export const agentAccessModes = [
-  "off",
-  "admins",
-  "everyone",
-  "people",
-] as const;
+export const agentAccessModes = ["admins", "everyone", "people"] as const;
 export type AgentAccess = (typeof agentAccessModes)[number];
 
 export const agentAccessSchema = z.strictObject({
@@ -31,15 +26,14 @@ export function canUseClient(
   client: ClientAccessPolicy,
 ): boolean {
   if (client.ownerUserId) return client.ownerUserId === user.userId;
+  if (user.manager) return true;
   switch (client.agentAccess) {
     case "admins":
-      return user.manager;
+      return false;
     case "everyone":
       return user.startsTasks;
     case "people":
       return client.agentUsers.includes(user.userId);
-    case "off":
-      return false;
   }
 }
 

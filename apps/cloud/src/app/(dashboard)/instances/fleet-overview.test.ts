@@ -8,7 +8,7 @@ import {
 const access = {
   ownerUserId: null,
   ownerName: null,
-  agentAccess: "off",
+  agentAccess: "admins",
   agentUsers: [],
   mine: false,
   usable: false,

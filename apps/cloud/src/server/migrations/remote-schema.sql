@@ -13,7 +13,11 @@ CREATE TABLE IF NOT EXISTS remote.instances (
   enrolled_at double precision NOT NULL, last_seen_at double precision, revoked_at double precision
 );
 ALTER TABLE remote.instances ADD COLUMN IF NOT EXISTS owner_user_id uuid;
-ALTER TABLE remote.instances ADD COLUMN IF NOT EXISTS agent_access text NOT NULL DEFAULT 'off' CHECK (agent_access IN ('off','admins','everyone','people'));
+ALTER TABLE remote.instances ADD COLUMN IF NOT EXISTS agent_access text NOT NULL DEFAULT 'admins';
+UPDATE remote.instances SET agent_access = 'admins' WHERE agent_access = 'off';
+ALTER TABLE remote.instances ALTER COLUMN agent_access SET DEFAULT 'admins';
+ALTER TABLE remote.instances DROP CONSTRAINT IF EXISTS instances_agent_access_check;
+ALTER TABLE remote.instances ADD CONSTRAINT instances_agent_access_check CHECK (agent_access IN ('admins','everyone','people'));
 ALTER TABLE remote.instances ADD COLUMN IF NOT EXISTS agent_users uuid[] NOT NULL DEFAULT '{}';
 CREATE TABLE IF NOT EXISTS remote.audit_log (
   id serial PRIMARY KEY, occurred_at double precision NOT NULL, action text NOT NULL,

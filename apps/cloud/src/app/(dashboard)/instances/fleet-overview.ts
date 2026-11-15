@@ -21,8 +21,7 @@ export interface FleetInstance {
 }
 
 export const agentAccessLabels: Record<AgentAccess, string> = {
-  off: "Nobody",
-  admins: "Admins",
+  admins: "Only admins",
   everyone: "Everyone",
   people: "Selected people",
 };
@@ -35,7 +34,6 @@ export function clientOwner(device: FleetInstance): string {
 
 export function clientAccessSummary(device: FleetInstance): string {
   if (device.ownerUserId) return clientOwner(device);
-  if (device.agentAccess === "off") return "Organization · Agent tasks off";
   const access =
     device.agentAccess === "people"
       ? `${device.agentUsers.length} ${device.agentUsers.length === 1 ? "person" : "people"}`
