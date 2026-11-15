@@ -26,17 +26,17 @@
 .m-application-navigation {
   z-index: 10;
   display: flex;
-  width: 80px;
+  width: 64px;
   min-height: 0;
   flex-shrink: 0;
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
   overflow-y: auto;
   border-right: 1px solid var(--app-border);
   background: var(--app-bg);
-  padding: 24px 0;
+  padding: 12px 0;
 }
 
 .m-navigation-group {
@@ -44,19 +44,19 @@
   flex-shrink: 0;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .m-navigation-button,
 .m-navigation-logo {
   position: relative;
   display: grid;
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 16px;
+  border-radius: 8px;
   background: transparent;
   color: var(--app-text-muted);
   cursor: pointer;
@@ -70,15 +70,15 @@
 }
 
 .m-navigation-button svg {
+  width: 18px;
+  height: 18px;
+}
+.m-navigation-logo svg {
   width: 20px;
   height: 20px;
 }
-.m-navigation-logo svg {
-  width: 24px;
-  height: 24px;
-}
 .m-navigation-separator {
-  width: 40px;
+  width: 32px;
   height: 1px;
   flex-shrink: 0;
   margin: 8px 0;
@@ -89,8 +89,7 @@
   color: var(--app-text);
 }
 .m-navigation-button[data-active="true"] {
-  border-color: color-mix(in srgb, var(--app-sky-500) 25%, transparent);
-  background: var(--app-surface-raised);
+  background: color-mix(in srgb, var(--app-text) 8%, transparent);
   color: var(--app-sky-400);
 }
 
@@ -133,12 +132,17 @@
 .m-appearance-options legend {
   margin-bottom: 8px;
   color: var(--app-text-soft);
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
 }
 .m-appearance-options fieldset > div {
-  display: flex;
+  display: inline-flex;
+  max-width: 100%;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 2px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  padding: 3px;
 }
 .m-appearance-options label {
   display: flex;
@@ -149,21 +153,26 @@
 }
 .m-appearance-options button {
   display: inline-flex;
-  min-height: 36px;
+  min-height: 30px;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--app-border-strong);
-  border-radius: 8px;
-  background: var(--app-surface);
-  padding: 6px 12px;
-  color: var(--app-text-soft);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  padding: 4px 12px;
+  color: var(--app-text-muted);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
 }
+.m-appearance-options button:hover:not(:disabled) {
+  background: var(--app-hover);
+  color: var(--app-text);
+}
 .m-appearance-options button[aria-pressed="true"] {
-  border-color: var(--app-sky-500);
-  background: color-mix(in srgb, var(--app-sky-500) 12%, var(--app-surface));
+  border-color: var(--app-border-strong);
+  background: var(--app-surface-raised);
   color: var(--app-text);
 }
 .m-appearance-options button:focus-visible {
@@ -284,13 +293,12 @@
 
 @media (min-width: 768px) {
   :root[data-density="compact"] .m-application-navigation {
-    width: 64px;
-    gap: 16px;
-    padding-block: 16px;
+    width: 56px;
+    gap: 12px;
+    padding-block: 10px;
   }
   :root[data-density="compact"] :is(.m-navigation-button, .m-navigation-logo) {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
+    width: 36px;
+    height: 36px;
   }
 }

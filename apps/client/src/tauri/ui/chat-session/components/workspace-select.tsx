@@ -247,9 +247,7 @@ export const WorkspaceSelect = ({
       >
         <div className="grid gap-3">
           <div className="grid gap-1">
-            <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
-              Workspaces
-            </p>
+            <p className="text-xs font-medium text-slate-500">Workspaces</p>
             {description ? (
               <p className="text-sm leading-5 text-slate-400">{description}</p>
             ) : null}

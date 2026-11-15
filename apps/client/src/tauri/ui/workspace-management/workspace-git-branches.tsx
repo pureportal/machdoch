@@ -457,9 +457,7 @@ const BranchRow = ({
       ) : null}
       <span className="flex-1" />
       {isCurrent ? (
-        <span className="px-2 text-[10px] uppercase tracking-wide text-sky-300">
-          Current
-        </span>
+        <span className="px-2 text-[11px] text-sky-300">Current</span>
       ) : (
         <Button
           type="button"
@@ -583,7 +581,7 @@ export const WorkspaceGitBranches = ({
             type="button"
             aria-expanded={remotesOpen || query.trim().length > 0}
             onClick={() => setRemotesOpen((open) => !open)}
-            className="flex h-7 w-full items-center gap-1.5 px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-300"
+            className="flex h-7 w-full items-center gap-1.5 px-2 text-[11px] font-medium text-slate-500 hover:text-slate-300"
           >
             {remotesOpen || query.trim() ? (
               <ChevronDown className="size-3.5" />

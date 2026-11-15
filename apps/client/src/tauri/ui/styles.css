@@ -224,20 +224,51 @@ body {
   border-color: var(--app-border);
 }
 
-.app-tooltip-content {
-  background: var(--app-inverse-surface);
-  border-color: var(--app-inverse-border);
-  color: var(--app-inverse-text);
-  box-shadow: var(--app-elevated-shadow);
-}
-
-.app-tooltip-arrow {
-  fill: var(--app-inverse-surface);
-  stroke: var(--app-inverse-border);
-}
-
 .app-settings-dialog {
   box-shadow: var(--app-elevated-shadow);
+}
+
+:where(input[type="checkbox"]:not([role="switch"])) {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--app-text) 28%, transparent);
+  border-radius: 4px;
+  background: var(--app-surface);
+  appearance: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+:where(input[type="checkbox"]:not([role="switch"]):hover:not(:disabled)) {
+  border-color: var(--app-primary);
+}
+
+:where(input[type="checkbox"]:not([role="switch"]):checked) {
+  border-color: var(--app-primary);
+  background: var(--app-primary);
+}
+
+:where(input[type="checkbox"]:not([role="switch"]):checked)::after {
+  content: "";
+  width: 8px;
+  height: 4.5px;
+  border: solid var(--app-on-primary);
+  border-width: 0 0 2px 2px;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+:where(input[type="checkbox"]:not([role="switch"]):focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--app-primary) 55%, transparent);
+  outline-offset: 2px;
+}
+
+:where(input[type="checkbox"]:not([role="switch"]):disabled) {
+  opacity: 0.45;
 }
 
 .app-shell :is(input, textarea, select),
@@ -337,49 +368,14 @@ body {
   font-size: 13px;
 }
 
-:root[data-density="compact"] .app-shell-rail {
-  width: 3.75rem !important;
-  padding-top: 0.875rem !important;
-  padding-bottom: 0.875rem !important;
-}
-
-:root[data-density="compact"] .app-shell-rail-group {
-  gap: 0.625rem !important;
-}
-
-:root[data-density="compact"] .app-shell-rail-button {
-  width: 2.5rem !important;
-  height: 2.5rem !important;
-  border-radius: 0.9rem !important;
-}
-
-:root[data-density="compact"] .app-shell-rail-button svg {
-  width: 1.05rem !important;
-  height: 1.05rem !important;
-}
-
-:root[data-density="compact"] .app-shell-rail [class~="w-10"] {
-  width: 2rem !important;
+.app-shell-version {
+  color: var(--app-text-faint);
+  font-size: 11px;
 }
 
 @media (max-height: 800px) {
-  .app-shell-rail {
-    padding-top: 0.75rem !important;
-    padding-bottom: 0.75rem !important;
-  }
-
-  .app-shell-rail-group {
-    gap: 0.5rem !important;
-  }
-
-  .app-shell-rail-button {
-    width: 2.5rem !important;
-    height: 2.5rem !important;
-    border-radius: 0.9rem !important;
-  }
-
   .app-shell-version {
-    display: none !important;
+    display: none;
   }
 }
 
@@ -393,8 +389,7 @@ body {
 }
 
 :root[data-density="compact"] .app-sessions-sidebar-header p:first-child {
-  font-size: 0.625rem !important;
-  letter-spacing: 0.18em !important;
+  font-size: 0.75rem !important;
 }
 
 :root[data-density="compact"] .app-sessions-sidebar-header p:last-child {
@@ -410,7 +405,7 @@ body {
 :root[data-density="compact"] .app-sessions-new-button {
   height: 1.75rem !important;
   min-height: 1.75rem !important;
-  border-radius: 0.65rem !important;
+  border-radius: 0.5rem !important;
 }
 
 :root[data-density="compact"] .app-sessions-toolbar-button {
@@ -441,7 +436,7 @@ body {
 
 :root[data-density="compact"] .app-sessions-filter-input {
   height: 2rem !important;
-  border-radius: 0.7rem !important;
+  border-radius: 0.5rem !important;
   font-size: 0.75rem !important;
 }
 
@@ -467,7 +462,7 @@ body {
 
 :root[data-density="compact"] .app-session-filter-select {
   height: 2rem !important;
-  border-radius: 0.7rem !important;
+  border-radius: 0.5rem !important;
   padding-right: 0.5rem !important;
   padding-left: 0.5rem !important;
   gap: 0.375rem !important;
@@ -480,7 +475,7 @@ body {
 }
 
 :root[data-density="compact"] .app-sessions-empty {
-  border-radius: 0.8rem !important;
+  border-radius: 0.5rem !important;
   padding: 1rem !important;
   font-size: 0.75rem !important;
   line-height: 1.15rem !important;
@@ -489,7 +484,7 @@ body {
 :root[data-density="compact"] .app-session-card {
   gap: 0.375rem !important;
   min-height: 2.85rem !important;
-  border-radius: 0.625rem !important;
+  border-radius: 0.5rem !important;
   padding: 0.35rem 0.45rem 0.5rem !important;
   box-shadow: none !important;
 }
@@ -724,26 +719,6 @@ body {
 
 :root[data-theme="light"] .app-message-avatar {
   box-shadow: 0 6px 14px hsl(206 43% 16% / 0.08);
-}
-
-:root[data-theme="light"] .app-session-card {
-  background: var(--app-surface) !important;
-  border-color: var(--app-border) !important;
-  box-shadow: 0 8px 18px hsl(206 43% 16% / 0.06);
-}
-
-:root[data-theme="light"] .app-session-card:hover {
-  background: color-mix(
-    in srgb,
-    var(--app-primary-soft) 55%,
-    var(--app-surface)
-  ) !important;
-  border-color: var(--app-sky-200) !important;
-}
-
-:root[data-theme="light"] .app-session-card[class*="bg-sky-500"] {
-  background: var(--app-primary-soft) !important;
-  border-color: var(--app-sky-300) !important;
 }
 
 :root[data-theme="light"] .app-session-card--needs-read {

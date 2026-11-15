@@ -260,7 +260,7 @@ export const SessionReasoningPicker = ({
       >
         <div className="grid gap-3">
           <div className="grid gap-1">
-            <p className="text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+            <p className="text-xs font-medium text-slate-500">
               Reasoning mode
             </p>
             <p className="text-sm leading-6 text-slate-400">

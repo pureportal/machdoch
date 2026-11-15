@@ -149,7 +149,7 @@ export const WorkspaceRunList = ({
             aria-label={SECTION_TITLES[section.runType]}
             className="mb-3 last:mb-0"
           >
-            <h3 className="px-2.5 pb-1 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+            <h3 className="px-2.5 pb-1 text-[11px] font-medium text-slate-500">
               {SECTION_TITLES[section.runType]}
             </h3>
             {section.groups.map((group) => (

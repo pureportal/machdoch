@@ -45,7 +45,7 @@ export const RalphInspectorDetails = ({
 }: RalphInspectorDetailsProps): JSX.Element => {
   return (
     <details className="group grid gap-2 rounded-lg bg-slate-900/35 px-3 py-2 ring-1 ring-slate-800/60">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200 [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-cyan-200 [&::-webkit-details-marker]:hidden">
         <span>{title}</span>
         <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" />
       </summary>

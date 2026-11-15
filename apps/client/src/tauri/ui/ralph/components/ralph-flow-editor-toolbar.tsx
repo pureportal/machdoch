@@ -69,7 +69,7 @@ export const RalphFlowEditorToolbar = ({
         {hasSelectedFlow ? (
           <span
             className={cn(
-              "hidden shrink-0 rounded border px-1.5 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] min-[1450px]:inline",
+              "hidden shrink-0 rounded border px-1.5 py-0.5 text-[0.62rem] font-medium min-[1450px]:inline",
               selectedScope === "user"
                 ? "border-sky-400/30 bg-sky-500/10 text-sky-100"
                 : "border-slate-700 bg-slate-900 text-slate-400",
@@ -119,7 +119,7 @@ export const RalphFlowEditorToolbar = ({
           ) : null}
         </div>
         <div className="flex max-w-full min-w-0 flex-wrap items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/45 p-1">
-          <span className="hidden px-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-slate-500 2xl:inline">
+          <span className="hidden px-1 text-[11px] font-medium text-slate-500 2xl:inline">
             Add
           </span>
           {BLOCK_ACTIONS.map((action) => {

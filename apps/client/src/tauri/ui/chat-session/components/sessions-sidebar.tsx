@@ -392,7 +392,7 @@ export const SessionsSidebar = ({
       <SessionSidebarCommands {...sidebarCommandState} />
       <div className="app-sessions-sidebar-header flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-slate-900 px-4 py-1.5">
         <div className="min-w-0">
-          <p className="truncate text-[11px] leading-4 font-semibold tracking-[0.18em] text-slate-500 uppercase">
+          <p className="truncate text-[13px] leading-5 font-semibold text-slate-100">
             Sessions
           </p>
           <p className="truncate text-xs leading-4 text-slate-400">
@@ -475,7 +475,7 @@ export const SessionsSidebar = ({
               onChange={(event) =>
                 onSessionSearchQueryChange(event.target.value)
               }
-              className="app-sessions-filter-input h-9 rounded-xl border-slate-800 bg-slate-950/80 text-sm text-slate-100 placeholder:text-slate-600"
+              className="app-sessions-filter-input h-9 rounded-lg border-slate-800 bg-slate-950/80 text-sm text-slate-100 placeholder:text-slate-600"
             />
 
             {showSessionProjectFilter ? (
@@ -526,7 +526,7 @@ export const SessionsSidebar = ({
                   aria-label={`Session scope: ${selectedScopeFilter.label}`}
                   data-active={sessionScopeFilter !== "all"}
                   className={cn(
-                    "app-session-filter-select h-9 w-full min-w-0 justify-start rounded-xl border-slate-800 bg-slate-950/70 px-2.5 text-xs font-medium text-slate-300 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
+                    "app-session-filter-select h-9 w-full min-w-0 justify-start rounded-lg border-slate-800 bg-slate-950/70 px-2.5 text-xs font-medium text-slate-300 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
                     sessionScopeFilter !== "all" &&
                       "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
                   )}
@@ -571,7 +571,7 @@ export const SessionsSidebar = ({
                   aria-label={`Session status: ${selectedStatusFilterLabel}`}
                   data-active={!selectedStatusFilters.includes("any")}
                   className={cn(
-                    "app-session-filter-select h-9 w-full min-w-0 justify-start rounded-xl border-slate-800 bg-slate-950/70 px-2.5 text-xs font-medium text-slate-300 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
+                    "app-session-filter-select h-9 w-full min-w-0 justify-start rounded-lg border-slate-800 bg-slate-950/70 px-2.5 text-xs font-medium text-slate-300 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100",
                     !selectedStatusFilters.includes("any") &&
                       "border-sky-500/30 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
                   )}
@@ -619,7 +619,7 @@ export const SessionsSidebar = ({
               className="app-sessions-empty rounded-2xl bg-slate-950/60"
             />
           ) : (
-            <>
+            <div className="app-session-list grid gap-0.5">
               {renderedSessions.map((session, index) => {
                 const isActive = session.id === activeSessionId;
                 const archived = isSessionArchived(session);
@@ -671,9 +671,9 @@ export const SessionsSidebar = ({
                 return (
                   <Fragment key={session.id}>
                     {index === unpinnedSessionDividerIndex ? (
-                      <div className="app-session-pin-separator -my-1 flex items-center gap-2 px-1">
+                      <div className="app-session-pin-separator my-1.5 flex items-center gap-2 px-1">
                         <span className="h-px flex-1 bg-gradient-to-r from-slate-800/20 via-slate-800 to-slate-800/20" />
-                        <span className="text-[10px] font-semibold tracking-[0.18em] text-slate-500 uppercase">
+                        <span className="text-[11px] font-medium text-slate-500">
                           Unpinned
                         </span>
                         <span className="h-px flex-1 bg-gradient-to-r from-slate-800/20 via-slate-800 to-slate-800/20" />
@@ -703,16 +703,16 @@ export const SessionsSidebar = ({
                       <div
                         tabIndex={-1}
                         className={cn(
-                          "app-session-card group relative flex min-h-[3.15rem] items-start overflow-hidden rounded-lg border px-2.5 pt-1.5 pb-2 transition-colors",
+                          "app-session-card group relative flex min-h-[3.15rem] items-start overflow-hidden rounded-lg border border-transparent px-2.5 pt-1.5 pb-2 transition-colors",
                           hasUnreadCompletion && "app-session-card--needs-read",
                           needsInput && "app-session-card--needs-input",
                           isActive
-                            ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
-                            : "border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900",
+                            ? "bg-[color-mix(in_srgb,var(--app-text)_8%,transparent)]"
+                            : "hover:bg-[var(--app-hover)]",
                           archived &&
                             (isActive
-                              ? "border-dashed"
-                              : "border-dashed opacity-80"),
+                              ? "border-dashed border-slate-800"
+                              : "border-dashed border-slate-800 opacity-80"),
                         )}
                       >
                         <button
@@ -785,7 +785,7 @@ export const SessionsSidebar = ({
                                   {sessionTitle}
                                 </p>
                                 {needsInput ? (
-                                  <span className="app-session-needs-input inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-amber-200 uppercase">
+                                  <span className="app-session-needs-input inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">
                                     <AgentQuestionIcon className="h-3 w-3" />
                                     Needs input
                                   </span>
@@ -794,7 +794,7 @@ export const SessionsSidebar = ({
                             </div>
                           </div>
 
-                          <div className="app-session-meta mt-0.5 flex w-full min-w-0 items-center justify-between gap-2 text-[10px] font-medium tracking-wide text-slate-500 uppercase">
+                          <div className="app-session-meta mt-0.5 flex w-full min-w-0 items-center justify-between gap-2 text-[11px] text-slate-500">
                             <span className="flex min-w-0 flex-1 items-center gap-1.5">
                               {primaryTag ? (
                                 <span className="app-session-tag-chip max-w-20 shrink-0 truncate rounded-full border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
@@ -882,7 +882,7 @@ export const SessionsSidebar = ({
                   {filteredSessions.length - renderedSessions.length})
                 </Button>
               ) : null}
-            </>
+            </div>
           )}
         </div>
       </ScrollArea>

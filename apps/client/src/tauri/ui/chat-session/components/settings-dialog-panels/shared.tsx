@@ -224,7 +224,7 @@ export const SettingPanel = ({
       )}
     >
       <div className="grid gap-1">
-        <p className="text-sm font-medium text-slate-200">{label}</p>
+        <p className="text-[13px] font-medium text-slate-200">{label}</p>
         {detail ? (
           <p className="text-xs leading-5 text-slate-400">{detail}</p>
         ) : null}
@@ -277,9 +277,9 @@ export function ChoiceButtons<TValue extends string>({
             disabled={disabled || option.disabled}
             onClick={() => onChange(option.value)}
             className={cn(
-              "h-9 shrink-0 rounded-md border-transparent bg-transparent px-3 text-sm text-slate-300 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40",
+              "h-8 shrink-0 rounded-md border-transparent bg-transparent px-3 text-[13px] font-medium text-slate-400 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:opacity-40",
               selected &&
-                "border-sky-500/30 bg-sky-500/15 text-sky-100 hover:bg-sky-500/20",
+                "border-[var(--app-border-strong)] bg-[var(--app-surface-raised)] text-[var(--app-text)] hover:bg-[var(--app-surface-raised)]",
             )}
           >
             {option.label}

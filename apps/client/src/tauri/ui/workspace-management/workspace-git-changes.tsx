@@ -193,9 +193,7 @@ const ChangeGroup = ({
   return (
     <section aria-label={title} className="min-w-0">
       <header className="flex h-7 items-center gap-2 px-2">
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          {title}
-        </h4>
+        <h4 className="text-[11px] font-medium text-slate-500">{title}</h4>
         <span className="rounded-full bg-slate-800 px-1.5 text-[10px] text-slate-400">
           {changes.length}
         </span>

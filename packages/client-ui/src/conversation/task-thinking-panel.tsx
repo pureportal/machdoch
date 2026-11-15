@@ -231,7 +231,7 @@ const StoryItemDetails = ({
       <div className="app-thinking-details mt-2 grid min-w-0 gap-2 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
         {hasStartedDetail ? (
           <div className="min-w-0">
-            <p className="m-0 text-[10px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+            <p className="m-0 text-[11px] font-medium text-slate-500">
               Started
             </p>
             <p className="mt-1 text-xs leading-5 text-slate-300 wrap-break-word">
@@ -242,7 +242,7 @@ const StoryItemDetails = ({
 
         {inputPreview ? (
           <div className="min-w-0">
-            <p className="m-0 text-[10px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+            <p className="m-0 text-[11px] font-medium text-slate-500">
               Input
             </p>
             <pre className="app-thinking-code mt-1 max-h-28 max-w-full overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950/80 px-3 py-2 text-xs leading-5 text-slate-300 wrap-break-word">
@@ -253,7 +253,7 @@ const StoryItemDetails = ({
 
         {outputPreview ? (
           <div className="min-w-0">
-            <p className="m-0 text-[10px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+            <p className="m-0 text-[11px] font-medium text-slate-500">
               Result
             </p>
             <pre className="app-thinking-code mt-1 max-h-28 max-w-full overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950/80 px-3 py-2 text-xs leading-5 text-slate-300 wrap-break-word">
@@ -264,7 +264,7 @@ const StoryItemDetails = ({
 
         {outputLineCount > 0 ? (
           <div className="min-w-0">
-            <p className="m-0 text-[10px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+            <p className="m-0 text-[11px] font-medium text-slate-500">
               Terminal
               {item.kind === "tool-call"
                 ? ` · ${outputLineCount} line${outputLineCount === 1 ? "" : "s"}`

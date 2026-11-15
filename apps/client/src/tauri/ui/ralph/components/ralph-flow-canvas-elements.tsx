@@ -160,7 +160,7 @@ const RalphNoteNode = ({
           <FileText className="h-3.5 w-3.5 shrink-0 text-white/70" />
           <span className="truncate text-xs font-semibold">{block.title}</span>
         </div>
-        <span className="shrink-0 rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[0.58rem] font-bold uppercase tracking-wide text-white/55">
+        <span className="shrink-0 rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[0.58rem] font-medium text-white/55">
           Note
         </span>
       </div>

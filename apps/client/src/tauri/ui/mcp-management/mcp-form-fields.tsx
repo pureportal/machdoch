@@ -68,7 +68,7 @@ export const ToggleField = ({
         disabled={disabled}
         aria-describedby={detail ? detailId : undefined}
         onChange={(event) => onChange(event.target.checked)}
-        className="mt-0.5 size-4 shrink-0 rounded border-slate-700 bg-slate-950 accent-sky-400"
+        className="mt-0.5"
       />
       <span className="grid min-w-0 gap-0.5">
         <span className="font-medium">{label}</span>

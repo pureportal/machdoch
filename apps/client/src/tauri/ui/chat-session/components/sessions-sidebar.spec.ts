@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createSession } from "../../chat-session.model";
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
-import { ALL_SESSION_PROJECTS_FILTER } from "../_helpers/session-history-index";
+import { DEFAULT_SESSION_PROJECT_FILTER } from "../_helpers/session-project-filter";
 import {
   createSessionActionItems,
   SessionsSidebar,
@@ -65,7 +65,7 @@ const createProps = (
     sessionScopeFilter: "all",
     sessionStatusFilters: ["any"],
     sessionSearchQuery: "",
-    sessionProjectFilter: ALL_SESSION_PROJECTS_FILTER,
+    sessionProjectFilter: DEFAULT_SESSION_PROJECT_FILTER,
     inactiveSessionArchiveDays: 7,
     archivedSessionRetentionDays: 7,
     sessionProjectFacets: [],

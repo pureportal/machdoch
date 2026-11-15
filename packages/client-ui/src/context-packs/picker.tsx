@@ -986,7 +986,7 @@ export const SmartContextPackPicker = ({
           <div className="border-b border-slate-800/80 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase">
+                <p className="text-[11px] font-medium text-slate-500">
                   Context packs
                 </p>
                 <p className="mt-1 truncate text-sm font-semibold text-slate-100">

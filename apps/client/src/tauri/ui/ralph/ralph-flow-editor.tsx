@@ -10308,7 +10308,7 @@ export const RalphFlowEditor = ({
                               className="grid gap-2 rounded-md border border-slate-800 bg-slate-950 p-3"
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                <span className="min-w-0 truncate text-xs font-medium text-slate-400">
                                   Field {index + 1}
                                 </span>
                                 <Button
@@ -11534,7 +11534,7 @@ export const RalphFlowEditor = ({
                         data-ralph-inspector-section="behavior"
                         className="grid gap-2 rounded-lg bg-slate-900/25 p-3 text-sm text-slate-100 ring-1 ring-slate-800/60"
                       >
-                        <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
+                        <div className="text-xs font-medium text-slate-400">
                           Behavior
                         </div>
                         <label className="flex items-center gap-2 rounded border border-slate-800 bg-slate-950 px-3 py-2">
@@ -11860,7 +11860,7 @@ export const RalphFlowEditor = ({
 
                           <div className="grid gap-2 rounded-md bg-slate-950/50 p-2 ring-1 ring-slate-800/50">
                             <div className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                              <span className="text-xs font-medium text-slate-400">
                                 Variables
                               </span>
                               <Button
@@ -12094,7 +12094,7 @@ export const RalphFlowEditor = ({
                         selectedBlockOutputs.length === 0 && "hidden",
                       )}
                     >
-                      <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
+                      <div className="text-xs font-medium text-slate-400">
                         Routes
                       </div>
                       <RalphSelectedRouteSummary
@@ -12246,7 +12246,7 @@ export const RalphFlowEditor = ({
                       return (
                         <>
                           <div className="grid gap-2 text-sm">
-                            <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
+                            <div className="text-xs font-medium text-slate-400">
                               Route
                             </div>
                             <div className="grid gap-1.5 rounded-lg bg-slate-950/60 px-3 py-2 text-xs ring-1 ring-slate-800/60">
@@ -12346,7 +12346,7 @@ export const RalphFlowEditor = ({
                     {draftFlow ? (
                       <>
                         <div className="grid gap-3">
-                          <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
+                          <div className="text-xs font-medium text-slate-400">
                             Flow
                           </div>
                           <label className="grid gap-1.5 text-sm text-slate-200">
@@ -12437,7 +12437,7 @@ export const RalphFlowEditor = ({
                         </div>
 
                         <div className="grid gap-2 rounded-lg bg-slate-900/25 p-3 ring-1 ring-slate-800/60">
-                          <div className="text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
+                          <div className="text-xs font-medium text-slate-400">
                             Variables
                           </div>
                           {setupVariables.length > 0 ? (
@@ -12467,7 +12467,7 @@ export const RalphFlowEditor = ({
 
                         <div className="grid gap-2 rounded-lg bg-slate-900/25 p-3 ring-1 ring-slate-800/60">
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-slate-400 uppercase">
+                            <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
                               <History className="h-3.5 w-3.5 text-slate-400" />
                               History
                             </div>
@@ -12779,7 +12779,7 @@ export const RalphFlowEditor = ({
                           </div>
                           <div className="grid gap-1.5 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                              <span className="text-[11px] font-medium text-slate-500">
                                 Save to
                               </span>
                               <span className="text-[0.68rem] text-slate-500">
@@ -12863,7 +12863,7 @@ export const RalphFlowEditor = ({
                         </div>
                       </SubmitShortcut>
                       <div className="grid min-h-0 content-start gap-2 border-t border-slate-800 pt-3 xl:border-l xl:border-t-0 xl:pl-3 xl:pt-0">
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        <div className="text-xs font-medium text-slate-500">
                           Result
                         </div>
                         {generationJob ? (
@@ -13252,7 +13252,7 @@ export const RalphFlowEditor = ({
                                   </div>
                                 ) : null}
                                 {visiblePendingInput.interview ? (
-                                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-teal-200/75">
+                                  <div className="text-[11px] font-medium text-teal-200/75">
                                     Interview turn{" "}
                                     {visiblePendingInput.interview.turn} /{" "}
                                     {visiblePendingInput.interview.maxTurns}
@@ -13398,7 +13398,7 @@ export const RalphFlowEditor = ({
 
                             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                               <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                <span className="text-[11px] font-medium text-slate-500">
                                   Scope
                                 </span>
                                 <span className="truncate text-xs text-slate-200">
@@ -13406,7 +13406,7 @@ export const RalphFlowEditor = ({
                                 </span>
                               </div>
                               <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                <span className="text-[11px] font-medium text-slate-500">
                                   Runtime
                                 </span>
                                 <span className="truncate text-xs text-slate-200">
@@ -13414,7 +13414,7 @@ export const RalphFlowEditor = ({
                                 </span>
                               </div>
                               <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                <span className="text-[11px] font-medium text-slate-500">
                                   Variables
                                 </span>
                                 <span className="truncate text-xs text-slate-200">
@@ -13425,7 +13425,7 @@ export const RalphFlowEditor = ({
                                 </span>
                               </div>
                               <div className="grid gap-1 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                <span className="text-[11px] font-medium text-slate-500">
                                   Selected flow
                                 </span>
                                 <span className="truncate text-xs text-slate-200">
@@ -13699,7 +13699,7 @@ export const RalphFlowEditor = ({
 
                                   <div className="grid gap-2 md:grid-cols-2">
                                     <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                      <div className="mb-1 flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
                                         <Workflow className="h-3 w-3" />
                                         Current block
                                       </div>
@@ -13710,7 +13710,7 @@ export const RalphFlowEditor = ({
                                       </div>
                                     </div>
                                     <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                      <div className="mb-1 flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
                                         <Variable className="h-3 w-3" />
                                         Variables
                                       </div>
@@ -14365,7 +14365,7 @@ export const RalphFlowEditor = ({
                               </div>
                               <div className="grid gap-2 md:grid-cols-2">
                                 <div className="rounded border border-slate-800 bg-slate-950/80 p-2">
-                                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                  <div className="text-[11px] font-medium text-slate-500">
                                     Current block
                                   </div>
                                   <div className="mt-1 truncate text-sm text-slate-200">
@@ -14375,7 +14375,7 @@ export const RalphFlowEditor = ({
                                   </div>
                                 </div>
                                 <div className="rounded border border-slate-800 bg-slate-950/80 p-2">
-                                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                  <div className="text-[11px] font-medium text-slate-500">
                                     Last output
                                   </div>
                                   <div className="mt-1">
@@ -14651,7 +14651,7 @@ export const RalphFlowEditor = ({
                                     ) : null}
                                     <div className="grid gap-2 md:grid-cols-4">
                                       <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                        <div className="text-[11px] font-medium text-slate-500">
                                           Variables
                                         </div>
                                         <div className="mt-1 text-sm text-slate-200">
@@ -14663,7 +14663,7 @@ export const RalphFlowEditor = ({
                                         </div>
                                       </div>
                                       <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                        <div className="text-[11px] font-medium text-slate-500">
                                           Blocks
                                         </div>
                                         <div className="mt-1 text-sm text-slate-200">
@@ -14674,7 +14674,7 @@ export const RalphFlowEditor = ({
                                         </div>
                                       </div>
                                       <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                        <div className="text-[11px] font-medium text-slate-500">
                                           Events
                                         </div>
                                         <div className="mt-1 text-sm text-slate-200">
@@ -14682,7 +14682,7 @@ export const RalphFlowEditor = ({
                                         </div>
                                       </div>
                                       <div className="rounded border border-slate-800 bg-slate-950 p-2">
-                                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                        <div className="text-[11px] font-medium text-slate-500">
                                           Validation
                                         </div>
                                         <div className="mt-1 text-sm text-slate-200">

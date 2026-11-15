@@ -92,7 +92,7 @@ const groupFinishedTasks = (
 };
 
 const SECTION_HEADING_CLASS_NAME =
-  "mb-1 text-[10px] font-semibold tracking-[0.12em] text-slate-500 uppercase";
+  "mb-1 text-[11px] font-medium text-slate-500";
 
 export const AgentSteeringList = ({
   steering,

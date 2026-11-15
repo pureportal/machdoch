@@ -55,14 +55,14 @@ export const ShellTitlebar = ({
       >
         <MachdochLogo className="h-4 w-4" data-tauri-drag-region />
         <span
-          className="text-[11px] font-bold tracking-[0.2em] text-slate-400 uppercase"
+          className="text-xs font-semibold text-slate-300"
           data-tauri-drag-region
         >
           Machdoch
         </span>
         {IS_DEVELOPMENT_BUILD ? (
           <span
-            className="hidden sm:inline rounded-full border border-amber-300/35 bg-amber-300/10 px-2 py-0.5 text-[9px] font-bold tracking-[0.12em] text-amber-200 uppercase shadow-[0_0_12px_rgba(252,211,77,0.08)]"
+            className="hidden sm:inline rounded-full border border-amber-300/35 bg-amber-300/10 px-2 py-0.5 text-[10px] font-medium text-amber-200"
             data-tauri-drag-region
           >
             Developer

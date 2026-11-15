@@ -104,10 +104,8 @@
   background: color-mix(in srgb, var(--app-slate-900) 55%, transparent);
   color: var(--app-text-faint);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 500;
   text-align: left;
-  text-transform: uppercase;
 }
 
 .m-memory-table th:last-child {
@@ -501,9 +499,7 @@
 .m-composer-model-heading > span {
   color: var(--app-slate-500);
   font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-weight: 500;
 }
 
 .m-composer-model-heading > strong {
@@ -750,9 +746,7 @@
   padding: 0 0.25rem;
   color: var(--app-slate-500);
   font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-weight: 500;
 }
 
 .m-composer-model-recent .m-composer-model-option {

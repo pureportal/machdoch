@@ -181,7 +181,7 @@ export const WorkspaceRunArguments = ({
   onChange: (values: WorkspaceRunInputValues) => void;
 }): JSX.Element => (
   <fieldset disabled={disabled} className="grid gap-2.5 disabled:opacity-60">
-    <legend className="mb-2.5 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+    <legend className="mb-2.5 text-[11px] font-medium text-slate-500">
       Arguments
     </legend>
     <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">

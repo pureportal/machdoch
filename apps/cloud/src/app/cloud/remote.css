@@ -24,9 +24,6 @@ html[data-theme="light"] .cloud-remote-surface {
 .cloud-remote-surface .m-application-navigation {
   background: var(--cloud-sidebar);
 }
-.cloud-remote-surface .m-navigation-button {
-  border-radius: 7px;
-}
 .cloud-remote-surface .m-product-topbar {
   background: var(--card);
   border-color: var(--border);

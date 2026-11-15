@@ -101,7 +101,7 @@ export const AgentQuestionCard = ({
             <fieldset key={item.id} className="m-0 min-w-0 border-0 p-0" disabled={!pending || sending || !onSubmit}>
               <legend className="mb-1.5 text-sm text-slate-200">
                 {item.header ? (
-                  <span className="mr-2 rounded-md bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-300">
+                  <span className="mr-2 rounded-md bg-slate-800 px-1.5 py-0.5 text-[11px] font-medium text-slate-300">
                     {item.header}
                   </span>
                 ) : null}

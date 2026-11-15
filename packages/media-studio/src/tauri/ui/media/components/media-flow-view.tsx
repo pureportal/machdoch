@@ -771,7 +771,7 @@ const MediaFlowGroupCard = ({
     )}
     style={{ width: data.width, height: data.height }}
   >
-    <div className="flex items-center gap-2 text-[10px] font-semibold tracking-[0.12em] uppercase">
+    <div className="flex items-center gap-2 text-[11px] font-medium">
       <Group className="h-3.5 w-3.5" />
       <span className="truncate">{data.label}</span>
       <span className="ml-auto shrink-0 opacity-55">
@@ -792,7 +792,7 @@ const MediaFlowCommentCard = ({
       GROUP_STYLES[data.color],
     )}
   >
-    <div className="flex items-center gap-1.5 text-[9px] font-semibold tracking-[0.12em] uppercase opacity-65">
+    <div className="flex items-center gap-1.5 text-[9px] font-medium opacity-65">
       <StickyNote className="h-3 w-3" />
       Comment
     </div>
@@ -1914,7 +1914,7 @@ const NodePalettePanel = ({
               >
                 <h3
                   id={`node-category-${category}`}
-                  className="text-[9px] font-bold tracking-[0.15em] text-slate-600 uppercase"
+                  className="text-[9px] font-medium text-slate-600"
                 >
                   {category}
                 </h3>
@@ -2250,7 +2250,7 @@ const VisualGroupsPanel = ({
       <section className="mt-5" aria-labelledby="visual-groups-heading">
         <h3
           id="visual-groups-heading"
-          className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
+          className="text-[11px] font-medium text-slate-600"
         >
           Groups · {layout.groups.length}
         </h3>
@@ -2285,7 +2285,7 @@ const VisualGroupsPanel = ({
         <div className="flex items-center justify-between gap-3">
           <h3
             id="canvas-comments-heading"
-            className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
+            className="text-[11px] font-medium text-slate-600"
           >
             Comments · {layout.comments.length}
           </h3>
@@ -3341,7 +3341,7 @@ const NodeInspector = ({
                 key={key}
                 className="rounded-lg border border-rose-400/20 bg-rose-400/5 px-3 py-2.5"
               >
-                <dt className="text-[9px] tracking-wide text-rose-300 uppercase">
+                <dt className="text-[9px] text-rose-300">
                   {key.replaceAll(/([A-Z])/g, " $1")}
                 </dt>
                 <dd className="mt-1 break-words text-[11px] leading-4 text-slate-300">
@@ -3357,7 +3357,7 @@ const NodeInspector = ({
         <section className="mt-6" aria-labelledby="node-connections-heading">
           <h3
             id="node-connections-heading"
-            className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
+            className="text-[11px] font-medium text-slate-600"
           >
             Connections
           </h3>
@@ -3520,7 +3520,7 @@ const NodeInspector = ({
         <section className="mt-6" aria-labelledby="node-diagnostics-heading">
           <h3
             id="node-diagnostics-heading"
-            className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
+            className="text-[11px] font-medium text-slate-600"
           >
             Compiler diagnostics
           </h3>
@@ -3896,7 +3896,7 @@ const FlowPortabilityPanel = ({
             >
               <h3
                 id="flow-import-mutations-heading"
-                className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
+                className="text-[11px] font-medium text-slate-600"
               >
                 Safe import plan
               </h3>
@@ -3920,7 +3920,7 @@ const FlowPortabilityPanel = ({
             >
               <h3
                 id="flow-import-issues-heading"
-                className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
+                className="text-[11px] font-medium text-slate-600"
               >
                 Compatibility report
               </h3>
@@ -3952,7 +3952,7 @@ const FlowPortabilityPanel = ({
             >
               <h3
                 id="unknown-flow-nodes-heading"
-                className="text-[10px] font-bold tracking-[0.14em] text-slate-600 uppercase"
+                className="text-[11px] font-medium text-slate-600"
               >
                 Preserved unknown nodes
               </h3>
@@ -6281,7 +6281,7 @@ export const MediaFlowView = ({
             </div>
             {planErrors.length > 0 ? (
               <section className="mt-4" aria-label="Flow errors">
-                <div className="text-[10px] font-bold tracking-[0.14em] text-rose-300 uppercase">
+                <div className="text-[11px] font-medium text-rose-300">
                   Fix before running
                 </div>
                 <ul className="mt-2 space-y-2">
@@ -6414,7 +6414,7 @@ export const MediaFlowView = ({
           </DialogHeader>
           <div className="min-h-0 overflow-y-auto px-6 py-5">
             <div>
-              <div className="text-[10px] font-semibold tracking-[0.12em] text-slate-400 uppercase">
+              <div className="text-[11px] font-medium text-slate-400">
                 Inputs
               </div>
               <ul className="mt-2 space-y-2">

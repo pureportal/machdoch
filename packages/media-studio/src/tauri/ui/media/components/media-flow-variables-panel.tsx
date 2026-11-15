@@ -271,7 +271,7 @@ export const MediaFlowVariablesPanel = ({
         <div className="flex items-center justify-between gap-3">
           <h2
             id="flow-variables-heading"
-            className="text-[10px] font-bold tracking-[0.14em] text-slate-500 uppercase"
+            className="text-[11px] font-medium text-slate-500"
           >
             Run variables · {flow.variables.length}
           </h2>
@@ -613,7 +613,7 @@ export const MediaFlowVariablesPanel = ({
         <div className="flex items-center justify-between gap-3">
           <h2
             id="flow-presets-heading"
-            className="text-[10px] font-bold tracking-[0.14em] text-slate-500 uppercase"
+            className="text-[11px] font-medium text-slate-500"
           >
             Binding presets · {flow.presets.length}
           </h2>
@@ -689,7 +689,7 @@ export const MediaFlowVariablesPanel = ({
                     {preset.name}
                   </div>
                   {active ? (
-                    <span className="text-[8px] font-semibold tracking-wide text-violet-300 uppercase">
+                    <span className="text-[8px] font-medium text-violet-300">
                       active
                     </span>
                   ) : null}

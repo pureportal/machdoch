@@ -227,7 +227,7 @@ export const ExecutionFileChanges = ({
             </div>
             <span
               className={cn(
-                "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase",
+                "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium",
                 fileChanges.status === "complete"
                   ? "border-sky-500/25 bg-sky-500/10 text-sky-200"
                   : "border-amber-500/25 bg-amber-500/10 text-amber-200",

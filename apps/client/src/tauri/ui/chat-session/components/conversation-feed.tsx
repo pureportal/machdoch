@@ -454,7 +454,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   ) : null}
 
                   {isActiveEditing && !isEditing ? (
-                    <span className="mb-2 inline-flex rounded-full border border-sky-300/30 bg-sky-400/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-sky-100">
+                    <span className="mb-2 inline-flex rounded-full border border-sky-300/30 bg-sky-400/10 px-2 py-0.5 text-[11px] font-medium text-sky-100">
                       Editing
                     </span>
                   ) : null}
@@ -1395,7 +1395,7 @@ export const ConversationFeed = ({
                   id={promptEnhancementPreviewPanelId}
                   className="app-original-prompt-panel max-w-[90%] min-w-0 rounded-2xl border border-emerald-500/20 bg-slate-950/80 px-4 py-3 text-sm leading-6 text-slate-300 shadow-lg shadow-slate-950/20 wrap-break-word"
                 >
-                  <div className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-200/80">
+                  <div className="mb-2 text-[11px] font-medium text-emerald-200/80">
                     Original prompt
                   </div>
                   <MarkdownContent

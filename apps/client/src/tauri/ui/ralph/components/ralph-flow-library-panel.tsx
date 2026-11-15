@@ -179,7 +179,7 @@ export const RalphFlowLibraryPanel = ({
         >
           <Workflow className="h-4 w-4" />
         </Button>
-        <span className="origin-center rotate-90 whitespace-nowrap text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-slate-600">
+        <span className="origin-center rotate-90 whitespace-nowrap text-[11px] font-medium text-slate-600">
           Flows
         </span>
       </aside>
@@ -190,7 +190,7 @@ export const RalphFlowLibraryPanel = ({
     <aside className="app-ralph-flow-library col-start-1 row-start-1 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-slate-800 bg-slate-950/85">
       <div className="grid gap-2.5 border-b border-slate-800 p-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold tracking-[0.16em] text-slate-300 uppercase">
+          <span className="text-xs font-medium text-slate-300">
             Flow library
           </span>
           <div className="flex items-center gap-1">
@@ -293,7 +293,7 @@ export const RalphFlowLibraryPanel = ({
               row.type === "heading" ? (
                 <div
                   key={`heading-${row.scope}`}
-                  className="flex min-w-0 items-center justify-between gap-2 px-2 pb-1 pt-3 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500 first:pt-1"
+                  className="flex min-w-0 items-center justify-between gap-2 px-2 pb-1 pt-3 text-[11px] font-medium text-slate-500 first:pt-1"
                 >
                   <span>{RALPH_FLOW_SCOPE_LABELS[row.scope]}</span>
                   <span>{row.count}</span>

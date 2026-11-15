@@ -57,7 +57,7 @@ export const FlowNodeHeader = ({
 }: FlowNodeHeaderProps): JSX.Element => (
   <div className="min-w-0">
     <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
-      <span className="truncate text-[10px] font-bold tracking-[0.13em] uppercase opacity-60">
+      <span className="truncate text-[11px] font-medium opacity-60">
         {category}
       </span>
       {icon}

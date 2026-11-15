@@ -147,7 +147,7 @@ export const SettingsNavigation = ({
                 onChange={(event) =>
                   onSectionChange(event.target.value as SettingsDialogSectionId)
                 }
-                className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                className="h-9 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               >
                 {SETTINGS_SECTION_GROUP_ORDER.map((group) => (
                   <optgroup key={group} label={group}>
@@ -183,7 +183,7 @@ export const SettingsNavigation = ({
                 if (groupSections.length === 0) return null;
                 return (
                   <div key={group} className="grid gap-0.5">
-                    <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-[0.08em] text-slate-500 uppercase">
+                    <p className="px-3 pb-1.5 text-[11px] font-medium text-slate-500">
                       {group}
                     </p>
                     {groupSections.map((section) => {
@@ -209,7 +209,7 @@ export const SettingsNavigation = ({
                           className={cn(
                             "h-8 w-full justify-start gap-2.5 rounded-lg px-3 text-[13px] font-medium text-slate-400 hover:bg-slate-900 hover:text-slate-100",
                             selected &&
-                              "bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-sky-100",
+                              "bg-[color-mix(in_srgb,var(--app-text)_8%,transparent)] text-[var(--app-text)] hover:bg-[color-mix(in_srgb,var(--app-text)_8%,transparent)] hover:text-[var(--app-text)]",
                           )}
                         >
                           <Icon

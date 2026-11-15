@@ -214,7 +214,7 @@ const CategorySelection = ({
                 {category.label}
               </span>
               {category.sensitive ? (
-                <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-amber-200 uppercase">
+                <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-200">
                   Sensitive
                 </span>
               ) : null}
@@ -270,7 +270,7 @@ const InterfaceSelection = ({
             <span className="flex flex-wrap items-center gap-2 text-sm text-slate-200">
               {networkInterface.name}
               {networkInterface.recommended ? (
-                <span className="text-[10px] font-medium text-emerald-300 uppercase">
+                <span className="text-[11px] font-medium text-emerald-300">
                   Recommended
                 </span>
               ) : null}
@@ -1978,9 +1978,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
           <div className="grid gap-4">
             <div className="grid justify-items-center gap-2 rounded-2xl border border-sky-500/25 bg-sky-500/5 px-5 py-6 text-center">
               <Wifi className="size-6 text-sky-300" />
-              <p className="text-xs font-medium tracking-[0.16em] text-slate-500 uppercase">
-                Live session
-              </p>
+              <p className="text-xs font-medium text-slate-500">Live session</p>
               <p className="text-2xl font-semibold tracking-tight text-slate-50">
                 {status.sessionLabel}
               </p>
@@ -2110,7 +2108,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
           <div className="grid justify-items-center gap-5 rounded-2xl border border-emerald-500/25 bg-emerald-500/5 px-5 py-7 text-center">
             <ShieldCheck className="size-7 text-emerald-300" />
             <div>
-              <p className="text-xs font-medium tracking-[0.16em] text-slate-500 uppercase">
+              <p className="text-xs font-medium text-slate-500">
                 Secure comparison code
               </p>
               <p className="mt-3 font-mono text-4xl font-semibold tracking-[0.22em] text-white sm:text-5xl">

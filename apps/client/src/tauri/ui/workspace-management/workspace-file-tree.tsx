@@ -800,7 +800,7 @@ export const WorkspaceFileTree = ({
   return (
     <aside className="flex min-h-0 min-w-0 flex-col border-r border-slate-800/80 bg-slate-950/45">
       <header className="flex h-10 shrink-0 items-center gap-1 border-b border-slate-800/80 px-2">
-        <span className="min-w-0 flex-1 truncate px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        <span className="min-w-0 flex-1 truncate px-1 text-[11px] font-medium text-slate-500">
           Explorer
         </span>
         <TreeAction

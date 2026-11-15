@@ -47,7 +47,7 @@ export function OriginalPromptPanel({
       id={id}
       className="app-original-prompt-panel max-w-[90%] min-w-0 rounded-2xl border border-emerald-500/20 bg-slate-950/80 px-4 py-3 text-sm leading-6 text-slate-300 shadow-lg shadow-slate-950/20 wrap-break-word"
     >
-      <div className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-200/80">
+      <div className="mb-2 text-[11px] font-medium text-emerald-200/80">
         Original prompt
       </div>
       {children}

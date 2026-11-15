@@ -295,7 +295,7 @@ export const TrayMenuShell = (): JSX.Element => {
                   machdoch
                 </p>
                 {IS_DEVELOPMENT_BUILD ? (
-                  <span className="shrink-0 rounded-full border border-amber-300/35 bg-amber-300/10 px-2 py-0.5 text-[9px] font-bold tracking-[0.12em] text-amber-200 uppercase shadow-[0_0_12px_rgba(252,211,77,0.08)]">
+                  <span className="shrink-0 rounded-full border border-amber-300/35 bg-amber-300/10 px-2 py-0.5 text-[10px] font-medium text-amber-200">
                     Developer
                   </span>
                 ) : null}

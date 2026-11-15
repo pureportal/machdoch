@@ -165,10 +165,8 @@
 }
 
 .m-product-brand span {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .m-product-topbar-divider {
@@ -322,11 +320,9 @@
 }
 
 .m-product-sidebar-title {
-  color: var(--m-text-faint);
-  font-size: 12px;
+  color: var(--m-text);
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
 }
 
 .m-product-primary-button,
@@ -538,21 +534,21 @@
 
 .m-product-session-item {
   position: relative;
-  margin-bottom: 8px;
-  border: 1px solid var(--m-control-border);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--m-bg) 70%, transparent);
+  margin-bottom: 2px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
   color: var(--m-text-muted);
 }
 
 .m-product-session-item:hover {
-  border-color: var(--app-border-strong);
-  background: var(--m-bg);
+  background: var(--app-hover);
   color: var(--m-text);
 }
 
 .m-product-session-item[data-archived="true"] {
   border-style: dashed;
+  border-color: var(--m-control-border);
 }
 
 .m-product-session-open {
@@ -625,10 +621,8 @@
   gap: 8px;
   margin: 4px 4px 12px;
   color: var(--m-text-faint);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .m-product-session-divider::before,
@@ -671,11 +665,8 @@
 }
 
 .m-product-session-item[data-active="true"] {
-  border-color: color-mix(in srgb, var(--app-sky-500) 30%, transparent);
-  background: var(--m-accent-soft);
+  background: color-mix(in srgb, var(--app-text) 8%, transparent);
   color: var(--m-text);
-  box-shadow: 0 10px 24px
-    color-mix(in srgb, var(--app-sky-950) 20%, transparent);
 }
 
 .m-product-session-title-row,
@@ -775,10 +766,8 @@
 .m-product-session-meta {
   justify-content: space-between;
   color: var(--m-text-faint);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .m-product-session-meta > span:last-child {
@@ -1406,9 +1395,7 @@
 .m-product-option-popover > strong {
   color: var(--app-text-faint);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-weight: 500;
 }
 
 .m-product-option-popover > div {
@@ -2219,10 +2206,8 @@
 .m-media-prompt > span,
 .m-media-controls label > span {
   color: var(--m-text-faint);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .m-media-prompt textarea {
@@ -2388,8 +2373,7 @@
 
 .m-media-run-heading span {
   color: var(--m-text-faint);
-  font-size: 9px;
-  text-transform: uppercase;
+  font-size: 11px;
 }
 
 .m-media-run-heading span[data-state="running"],
@@ -2668,8 +2652,7 @@
 .m-ralph-card header span,
 .m-ralph-run header span {
   color: var(--m-text-faint);
-  font-size: 9px;
-  text-transform: uppercase;
+  font-size: 11px;
 }
 
 .m-ralph-run header span[data-state="running"],

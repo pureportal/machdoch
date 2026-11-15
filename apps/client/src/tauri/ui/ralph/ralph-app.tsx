@@ -137,7 +137,7 @@ const RuntimeModelPicker = ({
           sideOffset={5}
           className="z-[90] w-72"
         >
-          <div className="px-2 pb-1 pt-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          <div className="px-2 pb-1 pt-1.5 text-[11px] font-medium text-slate-500">
             Provider
           </div>
           {providers.map((nextProvider) => {
@@ -167,7 +167,7 @@ const RuntimeModelPicker = ({
             );
           })}
 
-          <div className="mt-1 border-t border-slate-800 px-2 pb-1 pt-2 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          <div className="mt-1 border-t border-slate-800 px-2 pb-1 pt-2 text-[11px] font-medium text-slate-500">
             Model
           </div>
           {models.map((entry) => {
@@ -204,7 +204,7 @@ const RuntimeModelPicker = ({
       )}
     >
       <label className="grid min-w-0 gap-1">
-        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        <span className="text-[11px] font-medium text-slate-500">
           {label}
         </span>
         <DropdownMenu>
@@ -257,7 +257,7 @@ const RuntimeModelPicker = ({
       </label>
 
       <label className="grid min-w-0 gap-1">
-        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        <span className="text-[11px] font-medium text-slate-500">
           Model
         </span>
         <DropdownMenu>
@@ -839,7 +839,7 @@ export const RalphApp = ({
         </div>
         <div className="grid min-w-0 grid-cols-1 items-end gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(13rem,1fr)_minmax(0,max-content)_minmax(0,max-content)_auto]">
           <div className="grid min-w-0 gap-1">
-            <span className="flex min-w-0 items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-slate-500">
               <span className="truncate">Workspace</span>
               {!settingsLoaded || !shellStateLoaded ? (
                 <LoaderCircle className="h-3 w-3 shrink-0 animate-spin text-sky-300" />
