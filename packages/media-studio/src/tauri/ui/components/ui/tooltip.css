@@ -1,0 +1,11 @@
+.app-tooltip-content {
+  background: var(--app-inverse-surface);
+  border-color: var(--app-inverse-border);
+  color: var(--app-inverse-text);
+  box-shadow: var(--app-elevated-shadow);
+}
+
+.app-tooltip-arrow {
+  fill: var(--app-inverse-surface);
+  stroke: var(--app-inverse-border);
+}

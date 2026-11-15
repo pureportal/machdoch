@@ -154,7 +154,7 @@ body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
       .cloud-auth,
       .cloud-remote-surface
     )
-    :where(button, input:not([type="checkbox"]), select) {
+    :where(button, input:not([type="checkbox"], [type="radio"]), select) {
     min-height: 44px;
   }
   :where(

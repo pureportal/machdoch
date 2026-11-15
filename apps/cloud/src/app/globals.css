@@ -48,7 +48,7 @@ body {
 
 @media (pointer: coarse) {
   :where(.fleet-dialog, form)
-    :where(button, a, input:not([type="checkbox"]), select) {
+    :where(button, a, input:not([type="checkbox"], [type="radio"]), select) {
     min-height: 44px;
   }
 

@@ -2,6 +2,9 @@ import * as React from "react";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
 
 import { cn } from "../../lib/utils";
+import "./tooltip.css";
+
+const touchTooltipDurationMs = 1500;
 
 function TooltipProvider({
   delayDuration = 300,
@@ -17,9 +20,40 @@ function TooltipProvider({
 }
 
 function Tooltip({
+  open: controlledOpen,
+  defaultOpen = false,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const onOpenChangeRef = React.useRef(onOpenChange);
+  React.useEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+  });
+  const setOpen = React.useCallback(
+    (next: boolean) => {
+      if (controlledOpen === undefined) setUncontrolledOpen(next);
+      onOpenChangeRef.current?.(next);
+    },
+    [controlledOpen],
+  );
+  React.useEffect(() => {
+    if (!open || !window.matchMedia("(hover: none)").matches) return;
+    const timer = window.setTimeout(
+      () => setOpen(false),
+      touchTooltipDurationMs,
+    );
+    return () => window.clearTimeout(timer);
+  }, [open, setOpen]);
+  return (
+    <TooltipPrimitive.Root
+      data-slot="tooltip"
+      open={open}
+      onOpenChange={setOpen}
+      {...props}
+    />
+  );
 }
 
 function TooltipTrigger({
