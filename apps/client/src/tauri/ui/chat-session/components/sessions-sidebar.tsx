@@ -708,7 +708,7 @@ export const SessionsSidebar = ({
                           needsInput && "app-session-card--needs-input",
                           isActive
                             ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
-                            : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950",
+                            : "border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900",
                           archived &&
                             (isActive
                               ? "border-dashed"

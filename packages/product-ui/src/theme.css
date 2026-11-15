@@ -21,7 +21,6 @@
 
   --app-brand-primary: #1768dc;
   --app-brand-background: #f6f7f3;
-  --app-brand-inverse-muted: #bccbd5;
   --app-brand-on-secondary: #19382d;
   --app-brand-warning: #805300;
 
@@ -121,22 +120,28 @@
   --sidebar-border: var(--app-slate-300);
   --sidebar-ring: var(--app-sky-500);
 
-  --app-bg: hsl(207 48% 8%);
-  --app-surface: hsl(206 44% 11%);
-  --app-surface-raised: hsl(206 43% 14%);
-  --app-surface-muted: hsl(206 38% 19%);
-  --app-hover: hsl(206 34% 21%);
-  --app-border: hsl(206 32% 19%);
-  --app-border-strong: hsl(207 22% 31%);
+  --app-bg: hsl(210 14% 7%);
+  --app-surface: hsl(210 12% 12%);
+  --app-surface-raised: hsl(210 11% 15%);
+  --app-surface-muted: hsl(210 10% 19%);
+  --app-hover: hsl(210 10% 22%);
+  --app-border: hsl(210 9% 23%);
+  --app-border-strong: hsl(210 8% 34%);
   --app-text: var(--app-brand-background);
-  --app-text-soft: hsl(204 24% 87%);
-  --app-text-muted: var(--app-brand-inverse-muted);
-  --app-text-faint: hsl(207 14% 60%);
-  --app-elevated-shadow: 0 24px 70px hsl(207 60% 3% / 0.45);
+  --app-text-soft: hsl(210 12% 89%);
+  --app-text-muted: hsl(210 9% 78%);
+  --app-text-faint: hsl(210 7% 62%);
+  --app-elevated-shadow: 0 24px 70px hsl(210 20% 2% / 0.55);
 }
 
 :root[data-theme="dark"],
 .dark {
+  --app-slate-600: hsl(210 7% 42%);
+  --app-slate-700: hsl(210 8% 31%);
+  --app-slate-800: hsl(210 9% 21%);
+  --app-slate-900: hsl(210 11% 15%);
+  --app-slate-950: hsl(210 14% 7%);
+
   --sidebar: var(--app-slate-950);
   --sidebar-foreground: var(--app-slate-100);
   --sidebar-primary: var(--app-sky-500);

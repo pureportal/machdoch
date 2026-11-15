@@ -11,6 +11,7 @@
     "./composer-controls": "./src/composer-controls.ts",
     ".": "./src/index.ts",
     "./application-shell": "./src/application-shell.tsx",
+    "./machdoch-logo": "./src/machdoch-logo.tsx",
     "./styles.css": "./src/styles.css",
     "./theme.css": "./src/theme.css",
     "./application-shell.css": "./src/application-shell.css",

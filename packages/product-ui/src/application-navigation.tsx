@@ -1,7 +1,8 @@
-import { Menu, TerminalSquare, type LucideIcon } from "lucide-react";
+import { Menu, type LucideIcon } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { Fragment, type ReactNode } from "react";
 import { navigationFeature } from "@machdoch/analytics/catalog";
+import { MachdochLogo } from "./machdoch-logo";
 
 export type ApplicationActivity =
   | "idle"
@@ -143,7 +144,7 @@ export function ApplicationNavigation({
       >
         <div className="m-navigation-group">
           <div className="m-navigation-logo" aria-hidden="true">
-            <TerminalSquare />
+            <MachdochLogo />
           </div>
           <div className="m-navigation-separator" />
           {items.map((item, index) => (

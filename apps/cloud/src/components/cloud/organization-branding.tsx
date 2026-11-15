@@ -10,6 +10,7 @@ import {
   Type,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { MachdochLogo } from "@machdoch/product-ui/machdoch-logo";
 import { useRef, useState } from "react";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
@@ -162,6 +163,11 @@ export function OrganizationBranding({
               value={draft.brand.mark}
               onChange={(mark) => updateBrand({ mark })}
               options={[
+                {
+                  value: "machdoch",
+                  label: "Machdoch",
+                  icon: <MachdochLogo width={14} height={14} />,
+                },
                 { value: "icon", label: "Icon", icon: <Shapes size={14} /> },
                 {
                   value: "initials",

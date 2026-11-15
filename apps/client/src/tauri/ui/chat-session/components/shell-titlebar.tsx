@@ -1,4 +1,5 @@
-import { Power, TerminalSquare } from "lucide-react";
+import { Power } from "lucide-react";
+import { MachdochLogo } from "@machdoch/product-ui/machdoch-logo";
 import type { JSX, MouseEventHandler, ReactNode } from "react";
 import {
   ControlTooltip,
@@ -52,10 +53,7 @@ export const ShellTitlebar = ({
         className="relative z-10 flex items-center gap-2"
         data-tauri-drag-region
       >
-        <TerminalSquare
-          className="h-4 w-4 text-sky-500"
-          data-tauri-drag-region
-        />
+        <MachdochLogo className="h-4 w-4" data-tauri-drag-region />
         <span
           className="text-[11px] font-bold tracking-[0.2em] text-slate-400 uppercase"
           data-tauri-drag-region

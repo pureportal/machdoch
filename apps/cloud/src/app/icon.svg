@@ -1,6 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="18" fill="#142b2b" />
-  <path d="M20 20h24v24H20zM32 10v10m0 24v10M10 32h10m24 0h10" fill="none" stroke="#b5ebcf" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="m32 24 8 8-8 8-8-8 8-8Z" fill="#b5ebcf" />
-  <g fill="#b5ebcf"><circle cx="32" cy="8" r="4" /><circle cx="32" cy="56" r="4" /><circle cx="8" cy="32" r="4" /><circle cx="56" cy="32" r="4" /></g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="44 40 432 432">
+  <defs>
+    <linearGradient id="machdoch-logo-front" x1="0" y1="64" x2="0" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3AD4EA"/>
+      <stop offset="1" stop-color="#1A78E0"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M96 152l116 104-116 104" stroke="#3AD4EA" stroke-width="64"/>
+    <path d="M248 112l160 144-160 144" stroke="url(#machdoch-logo-front)" stroke-width="96"/>
+  </g>
 </svg>

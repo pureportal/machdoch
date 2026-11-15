@@ -24,6 +24,7 @@ export function BrandFavicon({ identity }: { identity: BrandIdentity }) {
   const { brand, logoDark, logoLight, name } = identity;
   const Icon = brandIconComponents[brand.icon];
   useEffect(() => {
+    if (brand.mark === "machdoch") return;
     const generatedHref = () =>
       `data:image/svg+xml,${encodeURIComponent(
         brandFaviconSvg({

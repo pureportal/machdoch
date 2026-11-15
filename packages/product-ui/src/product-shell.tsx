@@ -1,4 +1,5 @@
 import { ApplicationShell } from "./application-shell";
+import { MachdochLogo } from "./machdoch-logo";
 import {
   productCommandSchema,
   type ProductSnapshot,
@@ -342,7 +343,7 @@ export function ProductShell({
           </a>
           {navigationInTopbar ? navigation : null}
           <div className="m-product-brand" aria-label="Machdoch">
-            <TerminalSquare aria-hidden="true" />
+            <MachdochLogo />
             <span>Machdoch</span>
           </div>
           <div className="m-product-topbar-divider" />

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="44 40 432 432">
+  <defs>
+    <linearGradient id="machdoch-logo-front" x1="0" y1="64" x2="0" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3AD4EA"/>
+      <stop offset="1" stop-color="#1A78E0"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M96 152l116 104-116 104" stroke="#3AD4EA" stroke-width="64"/>
+    <path d="M248 112l160 144-160 144" stroke="url(#machdoch-logo-front)" stroke-width="96"/>
+  </g>
+</svg>

@@ -63,6 +63,7 @@ export const cloudMigrations = [
   "060-ai-assignment.sql",
   "061-pull-request-checks.sql",
   "062-client-sign-in.sql",
+  "063-machdoch-brand-mark.sql",
 ];
 
 export interface CloudSql {

@@ -57,6 +57,19 @@ describe("organization brand", () => {
     ).toBe(false);
   });
 
+  it("defaults to the Machdoch logo without an uploaded image", () => {
+    expect(defaultOrganizationBrand.mark).toBe("machdoch");
+    expect(
+      organizationUpdateSchema.safeParse({
+        revision: 1,
+        name: "Acme",
+        brand: defaultOrganizationBrand,
+        logoDark: null,
+        logoLight: null,
+      }).success,
+    ).toBe(true);
+  });
+
   it("requires at least one uploaded logo when the image mark is selected", () => {
     const input = {
       revision: 1,

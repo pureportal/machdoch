@@ -347,14 +347,12 @@ body {
   gap: 0.625rem !important;
 }
 
-:root[data-density="compact"] .app-shell-logo,
 :root[data-density="compact"] .app-shell-rail-button {
   width: 2.5rem !important;
   height: 2.5rem !important;
   border-radius: 0.9rem !important;
 }
 
-:root[data-density="compact"] .app-shell-logo svg,
 :root[data-density="compact"] .app-shell-rail-button svg {
   width: 1.05rem !important;
   height: 1.05rem !important;
@@ -374,7 +372,6 @@ body {
     gap: 0.5rem !important;
   }
 
-  .app-shell-logo,
   .app-shell-rail-button {
     width: 2.5rem !important;
     height: 2.5rem !important;

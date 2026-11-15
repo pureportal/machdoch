@@ -34,6 +34,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { CSSProperties } from "react";
+import { MachdochLogo } from "@machdoch/product-ui/machdoch-logo";
 import { brandShapeRadius, type BrandThemeColors } from "@/lib/brand-palette";
 import type { CloudOrganization } from "@/lib/cloud-administration-contract";
 import {
@@ -109,14 +110,17 @@ export function BrandMark({
   const darkLogo = brandLogo(identity, theme ?? "dark");
   const lightLogo = brandLogo(identity, theme ?? "light");
   const image = brand.mark === "image" && darkLogo;
+  const logo = brand.mark === "machdoch";
   return (
     <span
       aria-hidden="true"
       className={cn("cloud-brand-mark", className)}
-      data-image={image ? "" : undefined}
+      data-image={image || logo ? "" : undefined}
       style={style}
     >
-      {image ? (
+      {logo ? (
+        <MachdochLogo />
+      ) : image ? (
         darkLogo === lightLogo ? (
           <img src={darkLogo} alt="" />
         ) : (

@@ -37,7 +37,7 @@ export const brandIcons = [
 ] as const;
 export type BrandIcon = (typeof brandIcons)[number];
 
-export const brandMarkKinds = ["icon", "initials", "image"] as const;
+export const brandMarkKinds = ["machdoch", "icon", "initials", "image"] as const;
 export type BrandMarkKind = (typeof brandMarkKinds)[number];
 
 export const brandShapes = ["rounded", "circle", "square"] as const;
@@ -81,7 +81,7 @@ export type OrganizationBrand = z.infer<typeof organizationBrandSchema>;
 export const defaultOrganizationBrand: OrganizationBrand = {
   color: "#7bc8ef",
   gradient: null,
-  mark: "icon",
+  mark: "machdoch",
   icon: "command",
   initials: "",
   shape: "rounded",
