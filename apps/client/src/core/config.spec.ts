@@ -121,7 +121,7 @@ describe("loadRuntimeConfig", () => {
     expect(config.mode).toBe("machdoch");
     expect(config.provider).toBe("unconfigured");
     expect(config.model).toBe("gpt-5.6-sol");
-    expect(config.contextWindow).toBe("highest");
+    expect(config.contextWindow).toBe("default");
     expect(config.reasoningMode).toBe("standard");
     expect(config.answerLanguage).toBe("English");
     expect(config.offline).toBe(false);

@@ -51,6 +51,7 @@ import { fail, unsupportedConfigSetting } from "./cli-config-values.js";
 import { additionalConfigFamily } from "./cli-config-additional.js";
 import { desktopConfigFamily } from "./cli-desktop-config.js";
 import { documentConfigFamily } from "./cli-config-documents.js";
+import { DEFAULT_CONTEXT_WINDOW } from "@machdoch/fleet-protocol/context-window";
 export const CLI_CONFIG_SETTING_DEFINITIONS = [
   ...ADDITIONAL_CONFIG_SETTINGS,
   ...DESKTOP_CONFIG_DEFINITIONS,
@@ -250,7 +251,7 @@ export const printConfigSummary = async (
     ["Model", config.model],
     ["Reasoning", config.reasoning],
     ["Reasoning mode", config.reasoningMode ?? "standard"],
-    ["Context window", String(config.contextWindow ?? "highest")],
+    ["Context window", String(config.contextWindow ?? DEFAULT_CONTEXT_WINDOW)],
     ["Offline", String(config.offline)],
     ["Executor turns", formatLimit(agentLimits.executorTurns)],
     [

@@ -60,6 +60,7 @@ import {
   getSmartContextPackScope,
   getSmartContextPackScopeLabel,
 } from "@machdoch/client-ui/context-packs/helpers";
+import { DEFAULT_CONTEXT_WINDOW } from "@machdoch/fleet-protocol/context-window";
 import {
   acknowledgeFleetControlCommand,
   cancelDesktopTask,
@@ -1174,7 +1175,7 @@ export const useFleetControl = (options: {
         reasoning: options.activeReasoning,
         defaultReasoning: options.defaultReasoning,
         contextWindow: options.activeSession.contextWindow,
-        workspaceContextWindow: options.runtimeSnapshot?.contextWindow ?? "highest",
+        workspaceContextWindow: options.runtimeSnapshot?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
         contextWindowTokens: getDiscoveredModelCapabilities(options.activeSession.provider, options.activeSession.model)?.contextWindowTokens,
         longContextWindowTokens: getDiscoveredLongContextWindowTokens(options.activeSession.provider, options.activeSession.model),
         reasoningOptions: [

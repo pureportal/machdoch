@@ -26,7 +26,7 @@ it("shows exactly four presets with resolved workspace and model sizes", () => {
   expect(
     screen
       .getByRole("button", {
-        name: "Context size: Workspace Default (872,000 tokens)",
+        name: "Context size: Workspace Default (272,000 tokens)",
       })
       .getAttribute("data-active"),
   ).toBe("true");
@@ -36,9 +36,9 @@ it("shows exactly four presets with resolved workspace and model sizes", () => {
       .getAllByRole("radio")
       .map((radio) => radio.closest("label")?.textContent),
   ).toEqual([
-    "Workspace Default872,000 tokens",
-    "Lowest272,000 tokens",
-    "Provider Default272,000 tokens",
+    "Workspace Default272,000 tokens",
+    "Lowest200,000 tokens",
+    "Standard272,000 tokens",
     "Highest872,000 tokens",
   ]);
   expect(screen.queryByRole("slider")).toBeNull();
@@ -61,13 +61,13 @@ it("uses the configured workspace preset and commits inheritance separately", ()
   );
   open();
   expect(
-    screen.getByRole("radio", { name: "Workspace Default 272,000 tokens" }),
+    screen.getByRole("radio", { name: "Workspace Default 200,000 tokens" }),
   ).toBeTruthy();
   choose("Workspace Default");
   apply();
   expect(onChange).toHaveBeenLastCalledWith(undefined);
   open();
-  choose("Provider Default");
+  choose("Standard");
   apply();
   expect(onChange).toHaveBeenLastCalledWith("default");
 });
@@ -138,17 +138,43 @@ it("preserves the selected preset through model and provider changes, including 
   expect(onChange).not.toHaveBeenCalled();
 });
 
-it.each(["codex-cli", "copilot-cli", "claude-cli", "openai"])(
+it("offers Claude CLI auto-compact sizes for a native 1M model", () => {
+  render(
+    <ContextWindowPicker
+      provider="claude-cli"
+      model="opus"
+      value={undefined}
+      onChange={vi.fn()}
+    />,
+  );
+  open();
+  expect(
+    screen
+      .getAllByRole("radio")
+      .map((radio) => radio.closest("label")?.textContent),
+  ).toEqual([
+    "Workspace Default400,000 tokens",
+    "Lowest200,000 tokens",
+    "Standard400,000 tokens",
+    "Highest1,000,000 tokens",
+  ]);
+});
+
+it.each([
+  ["codex-cli", 200_000],
+  ["copilot-cli", 128_000],
+  ["openai", 1_000_000],
+])(
   "disables a single-size %s model",
-  (provider) => {
+  (provider, tokens) => {
     const onChange = vi.fn();
     render(
       <ContextWindowPicker
         provider={provider}
         model="sonnet"
         capabilities={{
-          contextWindowTokens: 1_000_000,
-          longContextWindowTokens: 1_000_000,
+          contextWindowTokens: tokens,
+          longContextWindowTokens: tokens,
         }}
         value="highest"
         onChange={onChange}

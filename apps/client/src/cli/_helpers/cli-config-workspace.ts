@@ -32,6 +32,7 @@ import {
   unsupportedConfigSetting,
   configSource,
 } from "./cli-config-values.js";
+import { DEFAULT_CONTEXT_WINDOW } from "@machdoch/fleet-protocol/context-window";
 const BOOLEAN_CHOICES = ["on", "off"] as const;
 
 export const WORKSPACE_CONFIG_DEFINITIONS: readonly CliConfigSettingDefinition[] =
@@ -368,7 +369,7 @@ const resolveEntry = (
       );
       break;
     case "workspace.context-window":
-      value = snapshot.runtime.contextWindow ?? "highest";
+      value = snapshot.runtime.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
       source = configSource(
         snapshot.workspaceConfig.contextWindow,
         snapshot.env.MACHDOCH_CONTEXT_WINDOW,

@@ -4,10 +4,12 @@ import type {
 } from "./runtime-contract.generated.js";
 import { isContextWindow } from "./runtime-contract.generated.js";
 import {
+  getDiscoveredLongContextWindowTokens,
   getDiscoveredModelCapabilities,
   getModelContextWindowTokens,
 } from "@machdoch/model-runtime/model-capabilities";
 import {
+  autoCompactTokens,
   contextWindowCapabilities,
   resolveProviderContextWindow,
 } from "@machdoch/fleet-protocol/context-window";
@@ -49,12 +51,23 @@ export const resolveClaudeCliModelForContextWindow = (
   model: string,
   contextWindow: ContextWindow,
 ): string => {
-  const resolved = resolveContextWindowForProviderModel(
-    contextWindow,
-    "claude-cli",
-    model,
-  );
   const baseModel = model.replace(/\[1m\]$/iu, "");
-  if (resolved === "long") return `${baseModel}[1m]`;
+  if (
+    contextWindow === "highest" &&
+    (getDiscoveredLongContextWindowTokens("claude-cli", model) ?? 0) > 0
+  )
+    return `${baseModel}[1m]`;
   return contextWindow === "lowest" ? baseModel : model;
+};
+
+export const resolveAutoCompactionForProviderModel = (
+  value: ContextWindow,
+  provider: ModelProvider,
+  model: string,
+): { tokens: number; windowShare: number } | undefined => {
+  const supported = getContextWindowCapabilities(provider, model);
+  const tokens = autoCompactTokens(value, supported);
+  return tokens === null || supported.defaultTokens === null
+    ? undefined
+    : { tokens, windowShare: tokens / supported.defaultTokens };
 };

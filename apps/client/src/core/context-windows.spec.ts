@@ -1,5 +1,6 @@
 import {
   parseContextWindow,
+  resolveAutoCompactionForProviderModel,
   resolveClaudeCliModelForContextWindow,
   resolveContextWindowForProviderModel,
 } from "./context-windows.js";
@@ -55,7 +56,7 @@ describe("provider context presets", () => {
     ).toBe("default");
     expect(
       resolveContextWindowForProviderModel("lowest", "codex-cli", "small"),
-    ).toBe(64_000);
+    ).toBe("default");
     expect(
       resolveContextWindowForProviderModel("default", "codex-cli", "large"),
     ).toBe("default");
@@ -121,5 +122,38 @@ describe("provider context presets", () => {
     expect(resolveClaudeCliModelForContextWindow("haiku", "highest")).toBe(
       "haiku",
     );
+  });
+
+  it("compacts every agent CLI early below Highest when its window is large", () => {
+    replaceDiscoveredModelCapabilities("codex-cli", [
+      {
+        id: "large",
+        capabilities: {
+          contextWindowTokens: 1_000_000,
+          longContextWindowTokens: 1_000_000,
+        },
+      },
+    ]);
+    replaceDiscoveredModelCapabilities("copilot-cli", [
+      { id: "large", capabilities: { contextWindowTokens: 1_000_000 } },
+    ]);
+    for (const [provider, model] of [
+      ["claude-cli", "opus"],
+      ["codex-cli", "large"],
+      ["copilot-cli", "large"],
+    ] as const) {
+      expect(
+        resolveAutoCompactionForProviderModel("lowest", provider, model),
+      ).toEqual({ tokens: 200_000, windowShare: 0.2 });
+      expect(
+        resolveAutoCompactionForProviderModel("default", provider, model),
+      ).toEqual({ tokens: 400_000, windowShare: 0.4 });
+      expect(
+        resolveAutoCompactionForProviderModel("highest", provider, model),
+      ).toBeUndefined();
+    }
+    expect(
+      resolveAutoCompactionForProviderModel("default", "openai", "gpt-6-astra"),
+    ).toBeUndefined();
   });
 });

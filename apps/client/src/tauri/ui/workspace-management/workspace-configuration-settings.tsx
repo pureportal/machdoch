@@ -22,6 +22,7 @@ import type {
   SettingsStatusMessage,
   WorkspaceSettingsControls,
 } from "../chat-session/components/settings-dialog-panels/types";
+import { DEFAULT_CONTEXT_WINDOW } from "@machdoch/fleet-protocol/context-window";
 
 export interface WorkspaceConfigurationSettingsProps {
   workspaceRoot: string;
@@ -53,7 +54,7 @@ const createWorkspaceConfigurationValues = (
   snapshot: RuntimeSnapshot,
 ): WorkspaceConfigurationValues => {
   const effectiveReasoningMode = snapshot.reasoningMode ?? "standard";
-  const effectiveContextWindow = snapshot.contextWindow ?? "highest";
+  const effectiveContextWindow = snapshot.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
 
   return {
     defaultMode: snapshot.defaultMode ?? snapshot.mode,

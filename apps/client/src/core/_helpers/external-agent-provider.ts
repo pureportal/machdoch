@@ -76,6 +76,7 @@ import {
 import { canonicalDigest } from "../instruction-system/normalization.js";
 import {
   resolveContextWindowForProviderModel,
+  resolveAutoCompactionForProviderModel,
   resolveClaudeCliModelForContextWindow,
 } from "../context-windows.js";
 import {
@@ -1726,6 +1727,44 @@ const getTurnLimitContinuations = (config: RuntimeConfig): number | null => {
     : 0;
 };
 
+const createCodexContextConfig = (config: RuntimeConfig) => {
+  const contextWindow = resolveContextWindowForProviderModel(
+    config.contextWindow,
+    config.provider,
+    config.model,
+  );
+  const autoCompaction = resolveAutoCompactionForProviderModel(
+    config.contextWindow,
+    config.provider,
+    config.model,
+  );
+  return {
+    args: [
+      ...(typeof contextWindow === "number"
+        ? ["--config", `model_context_window=${contextWindow}`]
+        : []),
+      ...(autoCompaction
+        ? [
+            "--config",
+            `model_auto_compact_token_limit=${autoCompaction.tokens}`,
+          ]
+        : []),
+    ],
+    commandLines: [
+      ...(typeof contextWindow === "number"
+        ? [`context window: ${contextWindow}`]
+        : []),
+      ...(autoCompaction
+        ? [`auto-compact window: ${autoCompaction.tokens} tokens`]
+        : []),
+    ],
+    metadata: {
+      contextWindow,
+      ...(autoCompaction ? { autoCompactTokens: autoCompaction.tokens } : {}),
+    },
+  };
+};
+
 const createCodexArgs = (
   config: RuntimeConfig,
   imageInputs: ModelDrivenExecutionParams["imageInputs"],
@@ -1733,11 +1772,7 @@ const createCodexArgs = (
   nativeSubagents: boolean,
   scopedWorker: boolean,
 ): ExternalAgentCommand => {
-  const contextWindow = resolveContextWindowForProviderModel(
-    config.contextWindow ?? "highest",
-    config.provider,
-    config.model,
-  );
+  const codexContext = createCodexContextConfig(config);
   const reasoningEffort = mapReasoningToCodexCliEffort(
     config.model,
     config.reasoning,
@@ -1785,9 +1820,7 @@ const createCodexArgs = (
     args.push("--config", `model_reasoning_effort="${reasoningEffort}"`);
   }
 
-  if (typeof contextWindow === "number") {
-    args.push("--config", `model_context_window=${contextWindow}`);
-  }
+  args.push(...codexContext.args);
 
   if (delegationMode === "read-only-artifact") {
     args.push("--config", 'model_verbosity="low"');
@@ -1830,9 +1863,7 @@ const createCodexArgs = (
       "git repo check: skipped",
       "execpolicy rules: ignored",
       ...(reasoningEffort ? [`reasoning effort: ${reasoningEffort}`] : []),
-      ...(typeof contextWindow === "number"
-        ? [`context window: ${contextWindow}`]
-        : []),
+      ...codexContext.commandLines,
       ...(delegationMode === "read-only-artifact"
         ? ["model verbosity: low"]
         : []),
@@ -1854,7 +1885,7 @@ const createCodexArgs = (
       hookTrust: "not-bypassed",
       requestedReasoning: config.reasoning,
       effectiveReasoning: reasoningEffort ?? "default",
-      contextWindow,
+      ...codexContext.metadata,
       ...(delegationMode === "read-only-artifact"
         ? { modelVerbosity: "low" }
         : {}),
@@ -1884,11 +1915,7 @@ const createCodexAppServerCommand = ({
   | "agentFeatures"
   | "providerSession"
 >): ExternalAgentCommand => {
-  const contextWindow = resolveContextWindowForProviderModel(
-    config.contextWindow ?? "highest",
-    config.provider,
-    config.model,
-  );
+  const codexContext = createCodexContextConfig(config);
   const effort = mapReasoningToCodexCliEffort(config.model, config.reasoning);
   const fastMode =
     agentFeatures?.fastMode === true &&
@@ -1912,9 +1939,7 @@ const createCodexAppServerCommand = ({
       ...(effort
         ? ["--config", `model_reasoning_effort=${JSON.stringify(effort)}`]
         : []),
-      ...(typeof contextWindow === "number"
-        ? ["--config", `model_context_window=${contextWindow}`]
-        : []),
+      ...codexContext.args,
       ...enrollmentArgs,
     ],
     interactive: {
@@ -1948,9 +1973,7 @@ const createCodexAppServerCommand = ({
       "Codex home: isolated per run",
       "live session: steering, questions, plan and diff",
       ...(effort ? [`reasoning effort: ${effort}`] : []),
-      ...(typeof contextWindow === "number"
-        ? [`context window: ${contextWindow}`]
-        : []),
+      ...codexContext.commandLines,
       ...(fastMode ? ["service tier: fast"] : []),
     ],
     metadata: {
@@ -1962,7 +1985,7 @@ const createCodexAppServerCommand = ({
       bundledSkills: false,
       requestedReasoning: config.reasoning,
       effectiveReasoning: effort ?? "default",
-      contextWindow,
+      ...codexContext.metadata,
       fastMode,
     },
   };
@@ -1984,11 +2007,7 @@ const createCodexCommand = ({
   if (nativeGoal) {
     if (scopedWorker || delegationMode !== "full-access")
       throw new Error("Native goals require an agent execution.");
-    const contextWindow = resolveContextWindowForProviderModel(
-      config.contextWindow ?? "highest",
-      config.provider,
-      config.model,
-    );
+    const codexContext = createCodexContextConfig(config);
     const effort = mapReasoningToCodexCliEffort(config.model, config.reasoning);
     return {
       args: [
@@ -2008,9 +2027,7 @@ const createCodexCommand = ({
         ...(effort
           ? ["--config", `model_reasoning_effort=${JSON.stringify(effort)}`]
           : []),
-        ...(typeof contextWindow === "number"
-          ? ["--config", `model_context_window=${contextWindow}`]
-          : []),
+        ...codexContext.args,
         ...enrollmentArgs,
       ],
       interactive: {
@@ -2033,7 +2050,7 @@ const createCodexCommand = ({
         codexHome: "isolated",
         requestedReasoning: config.reasoning,
         effectiveReasoning: effort ?? "default",
-        contextWindow,
+        ...codexContext.metadata,
       },
     };
   }
@@ -2096,15 +2113,15 @@ const createClaudeCommand = ({
       );
     }
   }
-  const contextWindow = resolveContextWindowForProviderModel(
-    config.contextWindow ?? "highest",
-    config.provider,
-    config.model,
-  );
   const model = resolveClaudeCliModelForContextWindow(
     config.model,
-    config.contextWindow ?? "highest",
+    config.contextWindow,
   );
+  const autoCompactTokens = resolveAutoCompactionForProviderModel(
+    config.contextWindow,
+    config.provider,
+    config.model,
+  )?.tokens;
   const effort = mapReasoningToClaudeCliEffort(config.model, config.reasoning);
   if (
     !providerFeatures.includes("--output-format") ||
@@ -2182,6 +2199,16 @@ const createClaudeCommand = ({
     args.push("--effort", effort);
   }
 
+  if (autoCompactTokens !== undefined) {
+    if (!providerFeatures.includes("--autocompact")) {
+      throw new Error(
+        "The selected Claude CLI does not expose --autocompact. Upgrade Claude Code or choose the Highest context size.",
+      );
+    }
+
+    args.push("--autocompact", String(autoCompactTokens));
+  }
+
   if (maxTurns !== undefined) {
     args.push("--max-turns", String(maxTurns));
   }
@@ -2224,7 +2251,9 @@ const createClaudeCommand = ({
         ? "access: scoped Machdoch tools"
         : "access: dangerously skip permissions",
       ...(effort ? [`effort: ${effort}`] : []),
-      ...(contextWindow === "long" ? ["context window: long"] : []),
+      ...(autoCompactTokens !== undefined
+        ? [`auto-compact window: ${autoCompactTokens} tokens`]
+        : []),
       ...(maxTurns !== undefined ? [`max turns: ${maxTurns}`] : []),
       ...(turnLimitContinuations !== 0
         ? [
@@ -2240,7 +2269,8 @@ const createClaudeCommand = ({
     metadata: {
       access: "dangerously-skip-permissions",
       reasoning: config.reasoning,
-      contextWindow,
+      contextWindow: config.contextWindow,
+      ...(autoCompactTokens !== undefined ? { autoCompactTokens } : {}),
       effectiveModel: model,
       ...(effort ? { effort } : {}),
       ...(maxTurns !== undefined ? { maxTurns } : {}),
@@ -2317,6 +2347,11 @@ const createCopilotServerCommand = ({
     ExternalAgentCommandFactoryParams["copilotServerSession"]
   >;
 }): ExternalAgentCommand => {
+  const autoCompaction = resolveAutoCompactionForProviderModel(
+    config.contextWindow,
+    config.provider,
+    config.model,
+  );
   const mcpServers = isRecord(session.mcpConfig.mcpServers)
     ? session.mcpConfig.mcpServers
     : {};
@@ -2370,6 +2405,14 @@ const createCopilotServerCommand = ({
             }),
         ...(effort ? { reasoningEffort: effort } : {}),
         ...(contextWindow === "long" ? { contextTier: "long_context" } : {}),
+        ...(autoCompaction
+          ? {
+              infiniteSessions: {
+                enabled: true,
+                backgroundCompactionThreshold: autoCompaction.windowShare,
+              },
+            }
+          : {}),
       },
     },
     runDetail:
@@ -2383,11 +2426,15 @@ const createCopilotServerCommand = ({
       `model argument: ${config.model}`,
       ...(effort ? [`effort: ${effort}`] : []),
       ...(contextWindow === "long" ? ["context window: long"] : []),
+      ...(autoCompaction
+        ? [`auto-compact window: ${autoCompaction.tokens} tokens`]
+        : []),
     ],
     metadata: {
       access: "allow-all",
       transport: "sdk-server",
       liveSession: true,
+      ...(autoCompaction ? { autoCompactTokens: autoCompaction.tokens } : {}),
       secretEnvRedaction: secretEnvKeys.join(","),
       reasoning: config.reasoning,
       modelArgument: config.model,
@@ -2411,7 +2458,7 @@ const createCopilotCommand = ({
   providerSession,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   const contextWindow = resolveContextWindowForProviderModel(
-    config.contextWindow ?? "highest",
+    config.contextWindow,
     config.provider,
     config.model,
   );
@@ -2638,6 +2685,7 @@ const executeExternalAgentCliTask = async (
   const sessionPlan = sessionTarget
     ? await planProviderSessionRun(sessionTarget, {
         provider,
+        model: executionConfig.model,
         instructionDigest: canonicalDigest({
           instructions: params.taskContext.instructionResolution?.canonicalDigest,
           mode: executionConfig.mode,

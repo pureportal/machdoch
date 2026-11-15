@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadFleetManagedProfile } from "./fleet-settings.js";
 import { isManagedSettingEnforced } from "@machdoch/fleet-protocol/managed-settings";
+import { DEFAULT_CONTEXT_WINDOW } from "@machdoch/fleet-protocol/context-window";
 import { loadChatDefaults } from "./chat-defaults.js";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import { parseContextWindow } from "./context-windows.js";
@@ -651,7 +652,7 @@ export const loadRuntimeConfig = async (
     overrideContextWindow ??
     contextWindowFromEnv ??
     configuredContextWindow ??
-    "highest";
+    DEFAULT_CONTEXT_WINDOW;
   const enforcedProvider = managedEnforced("model")
     ? (managedDefaults?.provider ?? undefined)
     : undefined;

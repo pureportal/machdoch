@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  autoCompactTokens,
   contextWindowCapabilities,
   contextWindowSchema,
   contextWindowTokens,
+  isContextWindowAdjustable,
   resolveProviderContextWindow,
 } from "./context-window.ts";
 
@@ -20,10 +22,13 @@ test("resolves Codex presets from advertised model capacities", () => {
     longContextWindowTokens: 872_000,
   });
   assert.equal(supported.kind, "numeric");
-  assert.equal(contextWindowTokens("lowest", supported), 272_000);
+  assert.equal(contextWindowTokens("lowest", supported), 200_000);
   assert.equal(contextWindowTokens("default", supported), 272_000);
   assert.equal(contextWindowTokens("highest", supported), 872_000);
-  assert.equal(resolveProviderContextWindow("lowest", supported), 272_000);
+  assert.equal(autoCompactTokens("lowest", supported), 200_000);
+  assert.equal(autoCompactTokens("default", supported), null);
+  assert.equal(autoCompactTokens("highest", supported), null);
+  assert.equal(resolveProviderContextWindow("lowest", supported), "default");
   assert.equal(resolveProviderContextWindow("default", supported), "default");
   assert.equal(resolveProviderContextWindow("highest", supported), 872_000);
 });
@@ -38,8 +43,6 @@ test("resolves the same highest preset after switching models or providers", () 
     ],
     // Without the CLI's model report Codex keeps its own default window.
     ["codex-cli", "gpt-6-astra", undefined, "default"],
-    ["claude-cli", "sonnet", undefined, "default"],
-    ["claude-cli", "opus", { longContextWindowTokens: 1_000_000 }, "long"],
     [
       "copilot-cli",
       "tiered",
@@ -58,16 +61,58 @@ test("resolves the same highest preset after switching models or providers", () 
   }
 });
 
-test("single-size and unsupported models are fixed for every preset", () => {
-  for (const provider of ["codex-cli", "copilot-cli", "claude-cli", "openai"]) {
+test("compacts native 1M Claude models early below Highest", () => {
+  const supported = contextWindowCapabilities("claude-cli", "opus");
+  assert.equal(supported.kind, "fixed");
+  assert.equal(isContextWindowAdjustable(supported), true);
+  assert.equal(contextWindowTokens("lowest", supported), 200_000);
+  assert.equal(contextWindowTokens("default", supported), 400_000);
+  assert.equal(contextWindowTokens("highest", supported), 1_000_000);
+  assert.equal(autoCompactTokens("default", supported), 400_000);
+});
+
+test("keeps Claude models with a [1m] tier at their 200K window below Highest", () => {
+  const supported = contextWindowCapabilities("claude-cli", "sonnet", {
+    longContextWindowTokens: 1_000_000,
+  });
+  assert.equal(supported.kind, "tiered");
+  assert.equal(contextWindowTokens("lowest", supported), 200_000);
+  assert.equal(contextWindowTokens("default", supported), 200_000);
+  assert.equal(contextWindowTokens("highest", supported), 1_000_000);
+  for (const mode of contextWindowSchema.options)
+    assert.equal(autoCompactTokens(mode, supported), null);
+  assert.equal(resolveProviderContextWindow("highest", supported), "long");
+});
+
+test("single-size agent CLI models keep one window and compact early below Highest", () => {
+  for (const provider of ["codex-cli", "copilot-cli"]) {
     const supported = contextWindowCapabilities(provider, "sonnet", {
       contextWindowTokens: 1_000_000,
       longContextWindowTokens: 1_000_000,
     });
     assert.equal(supported.kind, "fixed");
-    for (const mode of contextWindowSchema.options) {
-      assert.equal(contextWindowTokens(mode, supported), 1_000_000);
+    assert.equal(isContextWindowAdjustable(supported), true);
+    assert.equal(contextWindowTokens("lowest", supported), 200_000);
+    assert.equal(contextWindowTokens("default", supported), 400_000);
+    assert.equal(contextWindowTokens("highest", supported), 1_000_000);
+    for (const mode of contextWindowSchema.options)
       assert.equal(resolveProviderContextWindow(mode, supported), "default");
+  }
+});
+
+test("small windows and API providers offer no context choice", () => {
+  for (const [provider, tokens] of [
+    ["codex-cli", 200_000],
+    ["copilot-cli", 128_000],
+    ["openai", 1_000_000],
+  ] as const) {
+    const supported = contextWindowCapabilities(provider, "model", {
+      contextWindowTokens: tokens,
+    });
+    assert.equal(isContextWindowAdjustable(supported), false);
+    for (const mode of contextWindowSchema.options) {
+      assert.equal(contextWindowTokens(mode, supported), tokens);
+      assert.equal(autoCompactTokens(mode, supported), null);
     }
   }
 });

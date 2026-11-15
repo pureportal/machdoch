@@ -116,7 +116,7 @@ export const planAdaptiveExecution = (
     profileScore >= 5 ? "deep" : profileScore >= 2 ? "standard" : "simple";
   const profile = PROFILES[level];
   const selectedContextTokens = contextWindowTokens(
-    config.contextWindow ?? "highest",
+    config.contextWindow,
     getContextWindowCapabilities(config.provider, config.model),
   );
   const totalContextCharacters =

@@ -158,6 +158,7 @@ vi.mock("node:child_process", async (importOriginal) => ({
           "--json",
           "--append-system-prompt-file",
           "--append-subagent-system-prompt-file",
+          "--autocompact",
           "--mcp-config",
           "--setting-sources",
           "--strict-mcp-config",
@@ -383,6 +384,7 @@ const createExternalInstructionPlan = (
               ...(subagentInstructionFile
                 ? ["--append-subagent-system-prompt-file"]
                 : []),
+              "--autocompact",
               "--effort",
               "--mcp-config",
               "--output-format",
@@ -2555,6 +2557,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("--config");
     expect(call?.args).toContain('model_reasoning_effort="ultra"');
     expect(call?.args).toContain("model_context_window=872000");
+    expect(
+      call?.args.some((arg) => arg.startsWith("model_auto_compact_token_limit=")),
+    ).toBe(false);
 
     writeStructuredAnswer(call!, "Codex Ultra answer.");
     call?.child.emit("close", 0, null);
@@ -2564,6 +2569,44 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       response: { markdown: "Codex Ultra answer." },
     });
   });
+
+  it.each([
+    ["lowest", "model_auto_compact_token_limit=200000"],
+    ["default", "model_auto_compact_token_limit=400000"],
+  ] as const)(
+    "compacts a large-window Codex conversation early on the %s context size",
+    async (contextWindow, autoCompactSetting) => {
+      const workspaceRoot = await createWorkspace();
+      replaceDiscoveredModelCapabilities("codex-cli", [
+        {
+          id: "gpt-6-astra",
+          capabilities: {
+            contextWindowTokens: 1_050_000,
+            longContextWindowTokens: 1_050_000,
+          },
+        },
+      ]);
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot, {
+          provider: "codex-cli",
+          model: "gpt-6-astra",
+          contextWindow,
+        }),
+      );
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      expect(call.args).toContain(autoCompactSetting);
+      expect(
+        call.args.some((arg) => arg.startsWith("model_context_window=")),
+      ).toBe(false);
+      writeStructuredAnswer(call, "Codex answer.");
+      call.child.emit("close", 0, null);
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+      });
+    },
+  );
 
   it("passes GPT-6 Astra Aeon through as persistent Codex reasoning", async () => {
     const workspaceRoot = await createWorkspace();
@@ -3318,6 +3361,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         "7",
       ]),
     );
+    expect(call?.args).not.toContain("--autocompact");
     expect(call?.args).not.toContain(
       "Follow the Machdoch delegated task prompt supplied on stdin.",
     );
@@ -3342,6 +3386,37 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.status).toBe("executed");
     expect(result?.response?.markdown).toBe("Claude delegated answer.");
   });
+
+  it.each([
+    ["default", "400000"],
+    ["lowest", "200000"],
+  ] as const)(
+    "compacts a Claude conversation early on the %s context size",
+    async (contextWindow, autoCompactTokens) => {
+      const workspaceRoot = await createWorkspace();
+      process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot, {
+          provider: "claude-cli",
+          model: "opus",
+          contextWindow,
+        }),
+      );
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      const flagIndex = call.args.indexOf("--autocompact");
+      expect(call.args.slice(flagIndex, flagIndex + 2)).toEqual([
+        "--autocompact",
+        autoCompactTokens,
+      ]);
+      expect(call.args).toEqual(expect.arrayContaining(["--model", "opus"]));
+      writeStructuredAnswer(call, "Claude delegated answer.");
+      call.child.emit("close", 0, null);
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+      });
+    },
+  );
 
   it("ends a Claude run that used every allowed turn as unfinished, not failed", async () => {
     const workspaceRoot = await createWorkspace();

@@ -174,6 +174,7 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
         ? [
             "--append-system-prompt-file",
             "--append-subagent-system-prompt-file",
+            "--autocompact",
             "--effort",
             "--input-format",
             "--mcp-config",

@@ -386,7 +386,7 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         .as_ref()
         .map(normalize_context_window)
         .transpose()?
-        .unwrap_or_else(|| ContextWindow::Mode("highest".to_string()));
+        .unwrap_or_else(|| ContextWindow::Mode("default".to_string()));
     let default_reasoning_mode = config
         .reasoning_mode
         .clone()

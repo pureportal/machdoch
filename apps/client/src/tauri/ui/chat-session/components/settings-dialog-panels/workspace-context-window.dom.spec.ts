@@ -43,7 +43,7 @@ it.each(["openai", "codex-cli", null] as const)(
     );
     expect(
       group.getAllByRole("button").map((button) => button.textContent),
-    ).toEqual(["Lowest", "Provider Default", "Highest"]);
+    ).toEqual(["Lowest", "Standard", "Highest"]);
     expect(
       group
         .getByRole("button", { name: "Highest" })

@@ -4,6 +4,7 @@ import {
   contextWindowTokens,
   CONTEXT_WINDOW_LABELS,
   DEFAULT_CONTEXT_WINDOW,
+  isContextWindowAdjustable,
   type ContextWindow,
   type ContextWindowModelCapabilities,
 } from "@machdoch/fleet-protocol/context-window";
@@ -39,7 +40,7 @@ export function ContextWindowPicker({
 }): React.ReactElement {
   const supported = contextWindowCapabilities(provider, model, capabilities);
   const [open, setOpen] = useState(false);
-  const disabled = supported.kind === "fixed";
+  const disabled = !isContextWindowAdjustable(supported);
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
@@ -82,7 +83,7 @@ export function ContextWindowPicker({
           )}
         </Button>
       </DialogTrigger>
-      {supported.kind !== "fixed" && (
+      {!disabled && (
         <DialogContent
           className="app-context-window-dialog"
           aria-describedby={undefined}
