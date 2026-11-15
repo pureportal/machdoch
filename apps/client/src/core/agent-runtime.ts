@@ -2490,6 +2490,7 @@ export const maybeExecuteModelDrivenTask = async (
             workspaceRoot: executionConfig.workspaceRoot,
           },
           executionConfig.provider,
+          executionConfig.model,
           params.conversationContext.history ?? [],
         ))
         ? "skip"

@@ -24,6 +24,7 @@ export interface ProviderSessionTarget {
 /** Which provider conversation holds a chat, and what it has already seen. */
 export interface ProviderSessionBinding {
   provider: AgentCliProvider;
+  model: string;
   sessionId: string;
   instructionDigest: string;
   historyLength: number;
@@ -72,6 +73,7 @@ const readBinding = async (
       await readFile(join(directory, BINDING_FILE), "utf8"),
     ) as Partial<ProviderSessionBinding>;
     return typeof value.provider === "string" &&
+      typeof value.model === "string" &&
       typeof value.sessionId === "string" &&
       value.sessionId.length > 0 &&
       typeof value.instructionDigest === "string" &&
@@ -93,7 +95,8 @@ const readBinding = async (
  * A stored conversation only continues a chat when it saw everything before
  * this message. Another provider's turn, an edited or retried message, or a
  * changed instruction set means it did not, so the chat starts a new one and
- * gets its history in the prompt.
+ * gets its history in the prompt. A model switch also starts a new one, so the
+ * new model never re-caches the whole old transcript.
  */
 const isHistoryAligned = (
   binding: ProviderSessionBinding,
@@ -112,11 +115,13 @@ const isHistoryAligned = (
 export const hasAlignedProviderSession = async (
   target: ProviderSessionTarget,
   provider: AgentCliProvider,
+  model: string,
   rawHistory: readonly ConversationHistoryEntry[],
 ): Promise<boolean> => {
   const binding = await readBinding(getSessionDirectory(target));
   return (
     binding?.provider === provider &&
+    binding.model === model &&
     isHistoryAligned(binding, visibleHistory(rawHistory))
   );
 };
@@ -125,11 +130,13 @@ export const planProviderSessionRun = async (
   target: ProviderSessionTarget,
   {
     provider,
+    model,
     instructionDigest,
     history: rawHistory,
     continuing,
   }: {
     provider: AgentCliProvider;
+    model: string;
     instructionDigest: string;
     history: readonly ConversationHistoryEntry[];
     /** A later turn of one run, whose history the session already has. */
@@ -142,6 +149,7 @@ export const planProviderSessionRun = async (
   const binding = await readBinding(directory);
   const resumeId =
     binding?.provider === provider &&
+    binding.model === model &&
     binding.instructionDigest === instructionDigest &&
     (continuing || isHistoryAligned(binding, history))
       ? binding.sessionId
@@ -161,6 +169,7 @@ export const planProviderSessionRun = async (
         join(directory, BINDING_FILE),
         {
           provider,
+          model,
           sessionId,
           instructionDigest,
           historyLength,

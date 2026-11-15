@@ -30,6 +30,7 @@ const plan = (
 ) =>
   planProviderSessionRun(target(), {
     provider: "claude-cli",
+    model: "opus",
     instructionDigest: "instructions",
     history: firstMessages,
     continuing: false,
@@ -56,7 +57,12 @@ describe("provider session continuity", () => {
     const next = await plan({ history: nextMessages });
     expect(next.resumeId).toBe("session-1");
     expect(
-      await hasAlignedProviderSession(target(), "claude-cli", nextMessages),
+      await hasAlignedProviderSession(
+        target(),
+        "claude-cli",
+        "opus",
+        nextMessages,
+      ),
     ).toBe(true);
   });
 
@@ -71,7 +77,12 @@ describe("provider session continuity", () => {
     expect(switched.resumeId).toBeUndefined();
     expect(await readdir(switched.storePath)).toEqual([]);
     expect(
-      await hasAlignedProviderSession(target(), "codex-cli", nextMessages),
+      await hasAlignedProviderSession(
+        target(),
+        "codex-cli",
+        "opus",
+        nextMessages,
+      ),
     ).toBe(false);
   });
 
@@ -115,6 +126,20 @@ describe("provider session continuity", () => {
     expect((await plan()).resumeId).toBeUndefined();
   });
 
+  it("starts over after switching model so the new model never re-caches the old transcript", async () => {
+    await (await plan()).save("session-1");
+    const switched = await plan({ model: "fable", history: nextMessages });
+    expect(switched.resumeId).toBeUndefined();
+    expect(
+      await hasAlignedProviderSession(
+        target(),
+        "claude-cli",
+        "fable",
+        nextMessages,
+      ),
+    ).toBe(false);
+  });
+
   it("starts over when the instructions changed", async () => {
     await (await plan()).save("session-1");
     const next = await plan({
@@ -130,6 +155,7 @@ describe("provider session continuity", () => {
       { chatSessionId: "chat", workspaceRoot: join(directory, "other") },
       {
         provider: "claude-cli",
+        model: "opus",
         instructionDigest: "instructions",
         history: nextMessages,
         continuing: false,
