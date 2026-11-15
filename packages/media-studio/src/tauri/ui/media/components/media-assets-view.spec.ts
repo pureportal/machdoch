@@ -227,20 +227,23 @@ describe("MediaAssetsView discovery", () => {
     expect(screen.queryByText("Copied XL")).toBeNull();
   });
 
-  it("opens setup for the PDMD variant selected in the library", () => {
+  it("opens setup for a requested PDMD variant", async () => {
     importDialog.mockClear();
     const props = createProps();
     const model = createOpenMediaModels("test").find(
       (model) => model.architecture === "minimax-h3-pdmd-2step",
     )!;
+    const onOpenResourceHandled = vi.fn();
     render(
       createElement(MediaAssetsView, {
         ...props,
         catalog: { ...props.catalog, models: [model] },
+        openResourceId: model.id,
+        onOpenResourceHandled,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Models" }));
-    fireEvent.click(screen.getByRole("button", { name: "Import model" }));
+    await waitFor(() => expect(onOpenResourceHandled).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("button", { name: "Import model" })).toBeNull();
     expect(importDialog).toHaveBeenCalledWith(
       expect.objectContaining({ initialArchitecture: "minimax-h3-pdmd-2step" }),
       undefined,
@@ -920,16 +923,19 @@ describe("asset copy actions", () => {
   });
 });
 
-it("shows uninstalled models and download actions in Models", () => {
+it("lists only installed models in Models", () => {
   const catalog = createMediaModelCatalogSnapshot({
     isOpenAiConfigured: false,
+    isLocalFluxInstalled: true,
   });
   render(createElement(MediaAssetsView, createProps({ catalog })));
   fireEvent.click(screen.getByRole("button", { name: "Models" }));
-  expect(screen.getByText("Z-Image-Turbo")).toBeTruthy();
+  expect(screen.queryByText("Z-Image-Turbo")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Download model" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Import model" })).toBeNull();
   expect(
-    screen.getAllByRole("button", { name: "Download model" }).length,
-  ).toBeGreaterThan(10);
+    screen.getByRole("button", { name: "View FLUX.2 klein 4B" }),
+  ).toBeTruthy();
 });
 
 it("opens the filtered slideshow from the library toolbar and supports keyboard navigation", () => {

@@ -349,7 +349,7 @@ export const MediaAssetsView = ({
       ? catalog.models.filter(
           (model) =>
             model.lifecycle !== "removed" &&
-            (model.target === "local" || model.configured),
+            (model.target === "local" ? model.installed : model.configured),
         )
       : listMediaLibraryModels(catalog.models);
   const selectedResourceModel =
@@ -955,35 +955,7 @@ export const MediaAssetsView = ({
                             model.family}
                         </p>
                       </div>
-                      {!model.installed &&
-                      model.management.acquisition === "managed-install" ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={!importSupported}
-                          onClick={() => setInstallModel(model)}
-                        >
-                          Download model
-                        </Button>
-                      ) : !model.installed &&
-                        model.management.acquisition === "file-import" ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={!importSupported}
-                          onClick={() => {
-                            setImportPath(undefined);
-                            setImportArchitecture(
-                              model.architecture ?? undefined,
-                            );
-                            setImportOpen(true);
-                          }}
-                        >
-                          Import model
-                        </Button>
-                      ) : ready ? (
+                      {ready ? (
                         <Button
                           type="button"
                           variant="outline"
