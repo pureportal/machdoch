@@ -10,6 +10,7 @@ import {
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSession } from "../../chat-session.model";
+import { DEFAULT_SESSION_PROJECT_FILTER } from "../_helpers/session-project-filter";
 import { type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { SessionsSidebar, type SessionsSidebarProps } from "./sessions-sidebar";
@@ -20,6 +21,7 @@ import {
 
 const writeText = vi.fn();
 const activate = vi.fn();
+const share = vi.fn();
 const noop = () => {};
 
 beforeEach(() => {
@@ -32,6 +34,7 @@ beforeEach(() => {
     },
   );
   activate.mockReset();
+  share.mockReset();
   writeText.mockReset().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -49,13 +52,17 @@ const renderSessions = () => {
     activeSessionId: "selected",
     filteredSessions: [
       createSession({ id: "selected", manualTitle: "Selected" }),
-      createSession({ id: "target-id", manualTitle: "Complete target title" }),
+      createSession({
+        id: "target-id",
+        manualTitle: "Complete target title",
+        messages: [{ id: "answer", role: "agent", content: "Done." }],
+      }),
     ],
     queuedSessionMessages: [],
     sessionScopeFilter: "all",
     sessionStatusFilters: ["any"],
     sessionSearchQuery: "",
-    sessionProjectFilter: "all",
+    sessionProjectFilter: DEFAULT_SESSION_PROJECT_FILTER,
     inactiveSessionArchiveDays: 7,
     archivedSessionRetentionDays: 7,
     sessionProjectFacets: [],
@@ -72,6 +79,7 @@ const renderSessions = () => {
     onDeleteSession: noop,
     onTogglePinnedSession: noop,
     onDuplicateSession: noop,
+    onShareSessionMessage: share,
     onExportSessions: noop,
     onImportSessions: noop,
   };
@@ -103,6 +111,27 @@ describe("session and attachment copy menus", () => {
       await screen.findByRole("menuitem", { name: "Copy title" }),
     );
     expect(writeText).toHaveBeenLastCalledWith("Complete target title");
+  });
+
+  it("sends a message of the right-clicked session to another chat", async () => {
+    renderSessions();
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: "Open session Selected" }),
+    );
+    expect(
+      screen.queryByRole("menuitem", { name: "Send to chat…" }),
+    ).toBeNull();
+    fireEvent.keyDown(await screen.findByRole("menu"), { key: "Escape" });
+    fireEvent.contextMenu(
+      screen.getByRole("button", {
+        name: "Open session Complete target title",
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Send to chat…" }),
+    );
+    expect(share).toHaveBeenCalledWith("target-id");
+    expect(activate).not.toHaveBeenCalled();
   });
 
   it("supports keyboard navigation and restores session focus", async () => {

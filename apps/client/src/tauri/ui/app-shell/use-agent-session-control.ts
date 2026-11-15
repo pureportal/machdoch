@@ -6,6 +6,7 @@ import {
   canArchiveSession,
   canRenameSession,
   getSessionOverviewStatus,
+  type ChatSessionMessageReference,
   type ChatSessionRecord,
   type ShellPersistedState,
 } from "../chat-session.model";
@@ -13,6 +14,7 @@ import {
   createAgentSession,
   describeAgentSession,
   findAgentSession,
+  findOriginMessageReference,
 } from "../chat-session/_helpers/agent-session-requests";
 import { findPendingAgentQuestion } from "../chat-session/_helpers/session-needs-input";
 import type { ProviderChooserState } from "../chat-session/_helpers/session-shell-view-model";
@@ -22,16 +24,22 @@ const BUSY_ACTIONS = ["queue", "steer", "stop-and-send"] as const;
 const sessionIdInput = { type: "string", minLength: 1 } as const;
 const promptInput = { type: "string", minLength: 1, maxLength: 100_000 } as const;
 const titleInput = { type: "string", minLength: 1, maxLength: 200 } as const;
+const sourceSessionIdInput = { type: "string", minLength: 1 } as const;
 
 export interface AgentSessionControlOptions {
   enabled: boolean;
   shellState: ShellPersistedState;
   providerChooserState: ProviderChooserState;
-  onStartSession: (session: ChatSessionRecord, prompt: string) => string | null;
+  onStartSession: (
+    session: ChatSessionRecord,
+    prompt: string,
+    reference: ChatSessionMessageReference | undefined,
+  ) => string | null;
   onSendMessage: (input: {
     sessionId: string;
     prompt: string;
     runningAction: RunningTaskMessageAction;
+    reference: ChatSessionMessageReference | undefined;
   }) => boolean;
   onCancelSession: (session: ChatSessionRecord) => void;
   onRenameSession: (sessionId: string, title: string) => void;
@@ -48,6 +56,11 @@ export function useAgentSessionControl({
   onRenameSession,
   onArchiveSession,
 }: AgentSessionControlOptions): void {
+  const findReference = (sourceSessionId: unknown) =>
+    typeof sourceSessionId === "string"
+      ? findOriginMessageReference(shellState.sessions, sourceSessionId)
+      : undefined;
+
   useAppControlView(
     "agents",
     APP_CONTROL_LEVEL.app,
@@ -69,6 +82,7 @@ export function useAgentSessionControl({
                   provider: { type: "string", minLength: 1 },
                   model: { type: "string", minLength: 1, maxLength: 200 },
                   mode: { type: "string", enum: ["ask", "machdoch"] },
+                  sourceSessionId: sourceSessionIdInput,
                 },
                 required: ["workspace", "prompt"],
               },
@@ -92,7 +106,11 @@ export function useAgentSessionControl({
                       : {}),
                   },
                 );
-                const taskId = onStartSession(session, String(input.prompt));
+                const taskId = onStartSession(
+                  session,
+                  String(input.prompt),
+                  findReference(input.sourceSessionId),
+                );
                 if (!taskId) throw new Error("The chat could not start.");
                 return { ...describeAgentSession(session), taskId };
               },
@@ -108,6 +126,7 @@ export function useAgentSessionControl({
                   sessionId: sessionIdInput,
                   prompt: promptInput,
                   whenBusy: { type: "string", enum: BUSY_ACTIONS },
+                  sourceSessionId: sourceSessionIdInput,
                 },
                 required: ["sessionId", "prompt"],
               },
@@ -129,6 +148,7 @@ export function useAgentSessionControl({
                     sessionId: session.id,
                     prompt: String(input.prompt),
                     runningAction,
+                    reference: findReference(input.sourceSessionId),
                   })
                 )
                   throw new Error("The message could not be sent.");

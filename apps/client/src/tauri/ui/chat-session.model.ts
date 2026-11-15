@@ -154,6 +154,11 @@ export interface ChatSessionMessageSettings {
   interviewEnabled: boolean;
 }
 
+export interface ChatSessionMessageReference {
+  sessionId: string;
+  messageId: string;
+}
+
 export interface ChatSessionMessage {
   executionAttempt?: ExecutionAttempt;
   promptEnhancementAttempt?: PromptEnhancementAttempt;
@@ -166,6 +171,7 @@ export interface ChatSessionMessage {
   iteration?: ChatSessionRequestIteration;
   contextAttachments?: ChatSessionContextAttachment[];
   viewLocation?: string[];
+  reference?: ChatSessionMessageReference;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   settings?: ChatSessionMessageSettings;
   source?: ChatSessionMessageSource;
@@ -305,6 +311,7 @@ export interface ChatSessionQueuedMessage {
   goalObjective?: string;
   visibleMessageContent?: string;
   promptHistoryContent?: string;
+  reference?: ChatSessionMessageReference;
   iteration?: ChatSessionRequestIteration;
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
@@ -2145,6 +2152,15 @@ const normalizeMessageTaskAction = (
   return objective ? { kind: value.kind, objective } : undefined;
 };
 
+const normalizeMessageReference = (
+  value: unknown,
+): ChatSessionMessageReference | undefined => {
+  if (!isRecord(value)) return undefined;
+  const sessionId = normalizeString(value.sessionId).trim();
+  const messageId = normalizeString(value.messageId).trim();
+  return sessionId && messageId ? { sessionId, messageId } : undefined;
+};
+
 const normalizeRequestIteration = (
   value: unknown,
 ): ChatSessionRequestIteration | undefined => {
@@ -2514,6 +2530,10 @@ const normalizeSessionMessages = (
       entry.role === "user"
         ? normalizeStringArray(entry.viewLocation).filter(Boolean)
         : [];
+    const reference =
+      entry.role === "user"
+        ? normalizeMessageReference(entry.reference)
+        : undefined;
     const lifecycle = normalizeMessageLifecycle(
       entry.lifecycle,
       entry.role,
@@ -2549,6 +2569,7 @@ const normalizeSessionMessages = (
       ...(iteration ? { iteration } : {}),
       ...(contextAttachments.length > 0 ? { contextAttachments } : {}),
       ...(viewLocation.length > 0 ? { viewLocation } : {}),
+      ...(reference ? { reference } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
       ...(settings ? { settings } : {}),
       ...(source ? { source } : {}),
@@ -2777,6 +2798,7 @@ const normalizeQueuedSessionMessages = (
       ? normalizePromptEnhancementAttempt(entry.promptEnhancementAttempt)
       : undefined;
     const iteration = normalizeRequestIteration(entry.iteration);
+    const reference = normalizeMessageReference(entry.reference);
     const blockedByTaskId = normalizeString(entry.blockedByTaskId).trim();
     const createdAt = normalizeFiniteNumber(entry.createdAt, index);
     const updatedAt = Math.max(
@@ -2842,6 +2864,7 @@ const normalizeQueuedSessionMessages = (
         : {}),
       ...(visibleMessageContent ? { visibleMessageContent } : {}),
       ...(promptHistoryContent ? { promptHistoryContent } : {}),
+      ...(reference ? { reference } : {}),
       ...(iteration ? { iteration } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
       ...(promptEnhancementRequest ? { promptEnhancementRequest } : {}),

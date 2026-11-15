@@ -2,6 +2,8 @@ import type { RunMode } from "../../../../core/runtime-contract.generated.js";
 import {
   createSession,
   getSessionTitle,
+  isTransientChatOperationMessage,
+  type ChatSessionMessageReference,
   type ChatSessionRecord,
   type ShellPersistedState,
 } from "../../chat-session.model";
@@ -74,6 +76,22 @@ export const findAgentSession = (
       "No chat has that id. Find chat ids with list_chat_sessions.",
     );
   return session;
+};
+
+export const findOriginMessageReference = (
+  sessions: readonly ChatSessionRecord[],
+  sourceSessionId: string,
+): ChatSessionMessageReference | undefined => {
+  const origin = sessions
+    .find((session) => session.id === sourceSessionId)
+    ?.messages.filter(
+      (message) =>
+        message.role === "user" && !isTransientChatOperationMessage(message),
+    )
+    .at(-1);
+  return origin
+    ? { sessionId: sourceSessionId, messageId: origin.id }
+    : undefined;
 };
 
 export const describeAgentSession = (session: ChatSessionRecord) => ({

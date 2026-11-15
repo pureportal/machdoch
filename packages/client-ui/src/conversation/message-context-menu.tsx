@@ -2,6 +2,7 @@ import {
   Code,
   Copy,
   Download,
+  Forward,
   Image,
   Save,
   Text,
@@ -34,6 +35,7 @@ interface MessageContextMenuProps<Message extends MessageExportSource> {
   target: MessageContextMenuTarget<Message>;
   onClose: () => void;
   onSaveAsContextPack?: (message: Message) => void | Promise<void>;
+  onShare?: (message: Message) => void;
 }
 
 interface MessageAction {
@@ -46,6 +48,7 @@ export const MessageContextMenu = <Message extends MessageExportSource>({
   target,
   onClose,
   onSaveAsContextPack,
+  onShare,
 }: MessageContextMenuProps<Message>): JSX.Element => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({
@@ -137,6 +140,15 @@ export const MessageContextMenu = <Message extends MessageExportSource>({
             label: "Save as pack",
             icon: Save,
             execute: () => onSaveAsContextPack(target.message),
+          },
+        ]
+      : []),
+    ...(onShare
+      ? [
+          {
+            label: "Send to chat…",
+            icon: Forward,
+            execute: () => onShare(target.message),
           },
         ]
       : []),

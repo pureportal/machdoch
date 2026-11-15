@@ -71,6 +71,7 @@ import {
   withSessionGitBranch,
   type ChatSessionMessage,
   type ChatSessionMessagePromptEnhancement,
+  type ChatSessionMessageReference,
   type ChatSessionMessageSettings,
   type ChatSessionQueuedMessage,
   type ChatSessionQueuedPromptEnhancementRequest,
@@ -286,6 +287,7 @@ import {
   type SessionOperationConflictSubmission,
 } from "./use-session-task-submission";
 import { useSessionWindowControls } from "./use-session-window-controls";
+import { useMessageSharing } from "./use-message-sharing";
 import { useSpeechInputDevices } from "./use-speech-input-devices";
 import { appControl } from "@machdoch/media-studio/tauri/ui/app-control/app-control-registry.js";
 
@@ -304,6 +306,7 @@ type ChatInputNeededSubmission =
       promptEnhancementOriginalContent?: string;
       interviewEnabled: boolean;
       conversationCutoffMessageId?: string;
+      reference?: ChatSessionMessageReference;
     }
   | {
       kind: "quick-task";
@@ -763,6 +766,7 @@ export const useChatSessionController = (
       runningAction?: RunningTaskMessageAction;
       contextAttachments?: ChatSessionContextAttachment[];
       preserveDraft?: boolean;
+      reference?: ChatSessionMessageReference;
     }) => boolean
   >(() => false);
   const inactiveDesktopTaskObservationsRef = useRef<
@@ -5636,6 +5640,7 @@ export const useChatSessionController = (
         goalObjective?: string;
         visibleMessageContent?: string;
         promptHistoryContent?: string;
+        reference?: ChatSessionMessageReference;
         promptEnhancement?: ChatSessionMessagePromptEnhancement;
         promptEnhancementRequest?: ChatSessionQueuedPromptEnhancementRequest;
         blockedByTaskId?: string;
@@ -5697,6 +5702,7 @@ export const useChatSessionController = (
         ...(input?.promptHistoryContent?.trim()
           ? { promptHistoryContent: input.promptHistoryContent.trim() }
           : {}),
+        ...(input?.reference ? { reference: input.reference } : {}),
         ...(input?.promptEnhancement ? { promptEnhancement: input.promptEnhancement } : {}),
         ...(input?.promptEnhancementRequest
           ? { promptEnhancementRequest: input.promptEnhancementRequest }
@@ -6078,6 +6084,9 @@ export const useChatSessionController = (
               activateSession: shouldActivateSubmittedSession(latestSession.id),
               visibleMessageContent: dispatchPrompt.visibleMessageContent,
               promptHistoryContent: dispatchPrompt.promptHistoryContent,
+              ...(queuedMessageToSubmit.reference
+                ? { reference: queuedMessageToSubmit.reference }
+                : {}),
               ...(queuedMessageToSubmit.iteration
                 ? { iteration: queuedMessageToSubmit.iteration }
                 : {}),
@@ -7361,11 +7370,27 @@ export const useChatSessionController = (
     },
   });
 
+  const messageSharing = useMessageSharing({
+    sessions: state.shellState.sessions,
+    activeSessionId: state.activeSession.id,
+    onActivateSession: state.setActiveSessionId,
+    onSubmitMessage: ({ sessionId, prompt, reference }) =>
+      remoteSessionMessageSubmitRef.current({
+        sessionId,
+        prompt,
+        promptEnhancementMode: "off",
+        interviewEnabled: false,
+        contextAttachments: [],
+        preserveDraft: true,
+        reference,
+      }),
+  });
+
   useAgentSessionControl({
     enabled: state.hasHydrated,
     shellState: state.shellState,
     providerChooserState,
-    onStartSession: (session, prompt) => {
+    onStartSession: (session, prompt, reference) => {
       let startedTaskId: string | null = null;
       const submitted = taskSubmission.submitTaskToSession({
         sessionSnapshot: session,
@@ -7374,13 +7399,14 @@ export const useChatSessionController = (
         clearDraft: false,
         createSessionIfMissing: true,
         activateSession: false,
+        ...(reference ? { reference } : {}),
         onTaskStarted: (taskId) => {
           startedTaskId = taskId;
         },
       });
       return submitted ? startedTaskId : null;
     },
-    onSendMessage: ({ sessionId, prompt, runningAction }) =>
+    onSendMessage: ({ sessionId, prompt, runningAction, reference }) =>
       remoteSessionMessageSubmitRef.current({
         sessionId,
         prompt,
@@ -7389,6 +7415,7 @@ export const useChatSessionController = (
         runningAction,
         contextAttachments: [],
         preserveDraft: true,
+        ...(reference ? { reference } : {}),
       }),
     onCancelSession: requestTaskCancellation,
     onRenameSession: handleRemoteRenameSession,
@@ -8297,6 +8324,7 @@ export const useChatSessionController = (
                 messageSettings: submission.messageSettings,
                 visibleMessageContent: task,
                 promptHistoryContent,
+                ...(submission.reference ? { reference: submission.reference } : {}),
                 contextAttachments: submission.contextAttachments,
               };
               // Attachments and enhanced prompts need a turn of their own.
@@ -8338,6 +8366,7 @@ export const useChatSessionController = (
                   : {}),
                 visibleMessageContent: task,
                 promptHistoryContent,
+                ...(submission.reference ? { reference: submission.reference } : {}),
                 ...(promptEnhancement ? { promptEnhancement } : {}),
                 ...(promptEnhancementRequest
                   ? { promptEnhancementRequest }
@@ -8361,6 +8390,7 @@ export const useChatSessionController = (
                   : {}),
                 visibleMessageContent: task,
                 promptHistoryContent,
+                ...(submission.reference ? { reference: submission.reference } : {}),
                 ...(promptEnhancement ? { promptEnhancement } : {}),
                 ...(promptEnhancementRequest
                   ? { promptEnhancementRequest }
@@ -8429,6 +8459,7 @@ export const useChatSessionController = (
           ),
           visibleMessageContent: task,
           promptHistoryContent,
+          ...(submission.reference ? { reference: submission.reference } : {}),
           ...(promptEnhancement ? { promptEnhancement } : {}),
           ...(promptEnhancementRequestOnConflict
             ? { promptEnhancementRequestOnConflict }
@@ -8531,6 +8562,7 @@ export const useChatSessionController = (
       runningAction?: RunningTaskMessageAction;
       contextAttachments?: ChatSessionContextAttachment[];
       preserveDraft?: boolean;
+      reference?: ChatSessionMessageReference;
     }): boolean => {
       const prompt = input.prompt.trim();
       const session = state.getSessionById(input.sessionId);
@@ -8565,6 +8597,7 @@ export const useChatSessionController = (
           iterationCount: input.iterationCount ?? 1,
           iterationMode: input.iterationMode ?? DEFAULT_REQUEST_ITERATION_MODE,
           interviewEnabled: input.interviewEnabled,
+          ...(input.reference ? { reference: input.reference } : {}),
         },
         prompt,
       );
@@ -8847,6 +8880,7 @@ export const useChatSessionController = (
       onTogglePinnedSession: lifecycleActions.togglePinnedSession,
       onDuplicateSession: (sessionId: string) =>
         lifecycleActions.cloneSession(sessionId, "duplicate"),
+      onShareSessionMessage: messageSharing.shareSessionMessage,
       onResetSessionTime: lifecycleActions.resetSessionTime,
       onMoveSessionToTop: lifecycleActions.moveSessionToTop,
       onExportSessions: lifecycleActions.exportSessions,
@@ -8928,6 +8962,11 @@ export const useChatSessionController = (
       },
       onSendSuggestion: (suggestion: string) => handleSend(suggestion),
       onSaveMessageAsContextPack: handleSaveMessageAsContextPack,
+      onShareMessage: messageSharing.shareMessage,
+      getMessageReferenceTitle: messageSharing.getReferenceTitle,
+      onOpenMessageReference: messageSharing.openReference,
+      navigationRequestMessageId: messageSharing.navigationRequestMessageId,
+      onNavigationRequestHandled: messageSharing.clearNavigationRequest,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
       onOpenLocalFile: handleOpenLocalFile,
       onOpenAttachment: handleOpenAttachment,
@@ -8941,6 +8980,7 @@ export const useChatSessionController = (
         onStopSpeaking: voice.stopSpeaking,
       },
     },
+    shareMessageDialog: messageSharing.dialog,
     attachmentImagePreview: {
       preview: attachmentImagePreview,
       onOpenChange: (open: boolean) => {

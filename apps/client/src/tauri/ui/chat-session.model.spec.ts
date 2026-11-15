@@ -1313,6 +1313,51 @@ describe("normalizeShellState", () => {
     expect(reply).not.toHaveProperty("viewLocation");
   });
 
+  it("preserves the message a user message references", () => {
+    const normalized = normalizeShellState({
+      version: 2,
+      activeSessionId: "reference-session",
+      sessions: [
+        {
+          id: "reference-session",
+          provider: "openai",
+          model: "gpt-5.5",
+          workspace: null,
+          createdAt: 1,
+          updatedAt: 2,
+          messages: [
+            {
+              id: "forwarded",
+              role: "user",
+              content: "Important information",
+              reference: { sessionId: " origin ", messageId: "origin-user" },
+            },
+            {
+              id: "broken",
+              role: "user",
+              content: "No message",
+              reference: { sessionId: "origin" },
+            },
+            {
+              id: "reply",
+              role: "agent",
+              content: "Done.",
+              reference: { sessionId: "origin", messageId: "origin-user" },
+            },
+          ],
+        },
+      ],
+    });
+
+    const [forwarded, broken, reply] = normalized.sessions[0]?.messages ?? [];
+    expect(forwarded?.reference).toEqual({
+      sessionId: "origin",
+      messageId: "origin-user",
+    });
+    expect(broken).not.toHaveProperty("reference");
+    expect(reply).not.toHaveProperty("reference");
+  });
+
   it("preserves the composer settings used by a sent message", () => {
     const normalized = normalizeShellState({
       version: 2,

@@ -82,6 +82,7 @@ const createProps = (
     onDeleteSession: noop,
     onTogglePinnedSession: noop,
     onDuplicateSession: noop,
+    onShareSessionMessage: noop,
     onExportSessions: noop,
     onImportSessions: noop,
     ...overrides,

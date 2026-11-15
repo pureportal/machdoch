@@ -5,6 +5,7 @@ import {
   Copy,
   Download,
   Ellipsis,
+  Forward,
   Pin,
   Plus,
   Search,
@@ -96,6 +97,7 @@ import {
 } from "../_helpers/session-shell.ts";
 import { AgentQuestionIcon } from "@machdoch/client-ui/conversation/agent-live-icons";
 import { sessionNeedsInput } from "../_helpers/session-needs-input";
+import { hasShareableMessages } from "../_helpers/message-sharing";
 import { SessionProjectFilterSelect } from "./session-project-filter-select";
 
 interface SessionActionItem {
@@ -223,6 +225,7 @@ export interface SessionsSidebarProps {
   onDeleteSession: (sessionId: string) => void;
   onTogglePinnedSession: (sessionId: string) => void;
   onDuplicateSession: (sessionId: string) => void;
+  onShareSessionMessage: (sessionId: string) => void;
   onResetSessionTime?: (sessionId: string) => void;
   onMoveSessionToTop?: (sessionId: string) => void;
   onExportSessions: () => void;
@@ -256,6 +259,7 @@ export const SessionsSidebar = ({
   onDeleteSession,
   onTogglePinnedSession,
   onDuplicateSession,
+  onShareSessionMessage,
   onResetSessionTime,
   onMoveSessionToTop,
   onExportSessions,
@@ -692,6 +696,16 @@ export const SessionsSidebar = ({
                           icon: Copy,
                           onSelect: () => copyText(session.id),
                         },
+                        ...(!isQuickSession && hasShareableMessages(session)
+                          ? [
+                              {
+                                label: "Send to chat…",
+                                icon: Forward,
+                                onSelect: () =>
+                                  onShareSessionMessage(session.id),
+                              },
+                            ]
+                          : []),
                         ...sessionActionItems.map((action) => ({
                           label: action.label,
                           icon: action.icon,

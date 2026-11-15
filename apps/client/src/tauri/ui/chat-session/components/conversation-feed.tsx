@@ -40,6 +40,7 @@ import { getRetryableAgentMessageIds } from "@machdoch/client-ui/conversation/re
 import {
   isPromptEnhancementPlaceholderMessage,
   type ChatSessionMessage,
+  type ChatSessionMessageReference,
 } from "../../chat-session.model";
 import { type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import { Avatar } from "../../components/ui/avatar";
@@ -75,6 +76,7 @@ import {
 } from "../_helpers/markdown-image-source";
 import { MessageAttachmentsList } from "@machdoch/client-ui/composer/context-attachments";
 import { MessageViewLocation } from "@machdoch/client-ui/conversation/message-view-location";
+import { MessageReferenceLink } from "@machdoch/client-ui/conversation/message-reference-link";
 import { ExecutionInsightRow } from "@machdoch/client-ui/conversation/execution-insight-row";
 import { FollowUpSuggestions } from "@machdoch/client-ui/conversation/follow-up-suggestions";
 import {
@@ -124,6 +126,13 @@ export interface ConversationFeedProps {
   /** Sends a suggested follow-up as the next message. */
   onSendSuggestion?: (suggestion: string) => void;
   onSaveMessageAsContextPack?: (message: ChatSessionMessage) => void;
+  onShareMessage?: (message: ChatSessionMessage) => void;
+  getMessageReferenceTitle?: (
+    reference: ChatSessionMessageReference,
+  ) => string | null;
+  onOpenMessageReference?: (reference: ChatSessionMessageReference) => void;
+  navigationRequestMessageId?: string | null;
+  onNavigationRequestHandled?: () => void;
   onOpenWorkspaceFile: (
     relativePath: string,
     line?: number,
@@ -167,6 +176,8 @@ interface ConversationMessageRowProps {
   isOriginalPromptExpanded: boolean;
   isSpeakingMessage: boolean;
   message: ChatSessionMessage;
+  referenceTitle: string | null;
+  onOpenReference: (reference: ChatSessionMessageReference) => void;
   onContinueTask: (message: ChatSessionMessage) => void;
   onCancelEditing: () => void;
   onCancelPromptEnhancement?: () => void;
@@ -225,6 +236,8 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   isPromptEnhancing,
   isSpeakingMessage,
   message,
+  referenceTitle,
+  onOpenReference,
   onCancelEditing,
   onCancelPromptEnhancement,
   onContinueTask,
@@ -280,6 +293,8 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   const showCrashRecoveryActions = isRecoveredTaskCrashMessage(message);
   const messageAttachments =
     message.role === "user" ? (message.contextAttachments ?? []) : [];
+  const messageReference =
+    message.role === "user" ? message.reference : undefined;
   const canSaveMessageAsContextPack =
     message.role === "user" && Boolean(onSaveMessageAsContextPack);
   const showInlineRetry =
@@ -579,6 +594,13 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
               <MessageViewLocation location={message.viewLocation} />
             ) : null}
 
+            {messageReference && referenceTitle ? (
+              <MessageReferenceLink
+                title={referenceTitle}
+                onOpen={() => onOpenReference(messageReference)}
+              />
+            ) : null}
+
             {message.role === "user" &&
             !message.taskAction &&
             onEditMessage &&
@@ -687,6 +709,11 @@ export const ConversationFeed = ({
   onPickSuggestion,
   onSendSuggestion,
   onSaveMessageAsContextPack,
+  onShareMessage,
+  getMessageReferenceTitle,
+  onOpenMessageReference,
+  navigationRequestMessageId = null,
+  onNavigationRequestHandled,
   onOpenWorkspaceFile,
   onOpenLocalFile,
   onOpenAttachment,
@@ -718,14 +745,22 @@ export const ConversationFeed = ({
     onOpenWorkspaceFile,
     onOpenLocalFile,
     onOpenAttachment,
+    onOpenMessageReference,
   });
   useLayoutEffect(() => {
     openCallbacksRef.current = {
       onOpenWorkspaceFile,
       onOpenLocalFile,
       onOpenAttachment,
+      onOpenMessageReference,
     };
-  }, [onOpenWorkspaceFile, onOpenLocalFile, onOpenAttachment]);
+  }, [onOpenWorkspaceFile, onOpenLocalFile, onOpenAttachment, onOpenMessageReference]);
+  const openMessageReference = useCallback(
+    (reference: ChatSessionMessageReference) => {
+      openCallbacksRef.current.onOpenMessageReference?.(reference);
+    },
+    [],
+  );
   const openLocalFile = useCallback(
     (path: string, line?: number, external?: boolean) => {
       openCallbacksRef.current.onOpenLocalFile?.(path, line, external);
@@ -822,6 +857,19 @@ export const ConversationFeed = ({
     },
     [visibleMessages],
   );
+  useEffect(() => {
+    if (!navigationRequestMessageId) return;
+    const target = visibleMessages.find(
+      (message) => message.id === navigationRequestMessageId,
+    );
+    if (target) navigateToMessage(target);
+    onNavigationRequestHandled?.();
+  }, [
+    navigateToMessage,
+    navigationRequestMessageId,
+    onNavigationRequestHandled,
+    visibleMessages,
+  ]);
   const retryConversationMessage = useCallback(
     (message: ChatSessionMessage): void => {
       void onRetryMessage?.(message);
@@ -1286,6 +1334,12 @@ export const ConversationFeed = ({
             isNavigationTarget={activeNavigationMessageId === message.id}
             isOriginalPromptExpanded={expandedOriginalPromptIds.has(message.id)}
             isSpeakingMessage={voicePlayback.speakingMessageId === message.id}
+            referenceTitle={
+              message.reference && getMessageReferenceTitle
+                ? getMessageReferenceTitle(message.reference)
+                : null
+            }
+            onOpenReference={openMessageReference}
             voicePlaybackSupported={voicePlayback.supported}
             workspaceRoot={messageWorkspaceRoot}
             onRetryTask={onRetryTask}
@@ -1427,6 +1481,7 @@ export const ConversationFeed = ({
           target={messageContextMenu}
           onClose={closeMessageContextMenu}
           onSaveAsContextPack={onSaveMessageAsContextPack}
+          onShare={onShareMessage}
         />
       ) : null}
       {poseScenePreview}

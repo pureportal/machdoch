@@ -31,6 +31,13 @@ const rejectCurrentChat = (
     throw new Error("This is the current chat. Choose another chat.");
 };
 
+const sourceSessionInput = (
+  context: AgentToolExecutionContext,
+): { sourceSessionId?: string } =>
+  context.memory.sourceSessionId
+    ? { sourceSessionId: context.memory.sourceSessionId }
+    : {};
+
 const runAgentAction = async (
   actionId: string,
   input: Record<string, unknown>,
@@ -208,6 +215,7 @@ export const createMachdochSessionToolDefinitions =
                 : { provider: args.provider }),
               ...(args.model === undefined ? {} : { model: args.model }),
               ...(args.mode === undefined ? {} : { mode: args.mode }),
+              ...sourceSessionInput(context),
             },
             context,
           ),
@@ -235,6 +243,7 @@ export const createMachdochSessionToolDefinitions =
               ...(args.whenBusy === undefined
                 ? {}
                 : { whenBusy: args.whenBusy }),
+              ...sourceSessionInput(context),
             },
             context,
           );

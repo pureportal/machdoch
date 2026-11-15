@@ -8,6 +8,7 @@ import {
   createAgentSession,
   describeAgentSession,
   findAgentSession,
+  findOriginMessageReference,
   resolveKnownWorkspace,
 } from "./agent-session-requests";
 import type { ProviderChooserState } from "./session-shell-view-model";
@@ -106,5 +107,22 @@ describe("agent session requests", () => {
     expect(() => findAgentSession([session], "chat-2")).toThrow(
       "No chat has that id.",
     );
+  });
+
+  it("references the latest request of the chat that started an agent", () => {
+    const session = createSession({
+      id: "origin",
+      messages: [
+        { id: "first", role: "user", content: "Plan it." },
+        { id: "answer", role: "agent", content: "Planned." },
+        { id: "latest", role: "user", content: "Delegate the tests." },
+        { id: "working", role: "agent", content: "" },
+      ],
+    });
+    expect(findOriginMessageReference([session], "origin")).toEqual({
+      sessionId: "origin",
+      messageId: "latest",
+    });
+    expect(findOriginMessageReference([session], "missing")).toBeUndefined();
   });
 });

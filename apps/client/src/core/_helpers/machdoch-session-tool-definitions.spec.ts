@@ -111,7 +111,7 @@ describe("Machdoch agent session tools", () => {
       expect(unavailable).not.toContain(name);
   });
 
-  it("starts a background chat in this workspace through app control", async () => {
+  it("starts a background chat in this workspace that references the current chat", async () => {
     respond = () => ({
       ok: true,
       result: {
@@ -142,6 +142,7 @@ describe("Machdoch agent session tools", () => {
             prompt: "Run the tests.",
             title: "Tests",
             mode: "ask",
+            sourceSessionId: "current-chat",
           },
           mode: "machdoch",
         },
@@ -156,7 +157,12 @@ describe("Machdoch agent session tools", () => {
         "send_chat_message",
         { sessionId: "other-chat", message: "Continue.", whenBusy: "steer" },
         "agents.send_message",
-        { sessionId: "other-chat", prompt: "Continue.", whenBusy: "steer" },
+        {
+          sessionId: "other-chat",
+          prompt: "Continue.",
+          whenBusy: "steer",
+          sourceSessionId: "current-chat",
+        },
       ],
       [
         "cancel_agent_task",

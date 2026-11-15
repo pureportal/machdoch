@@ -56,6 +56,7 @@
     "./conversation/message-editor": "./src/conversation/message-editor.tsx",
     "./conversation/markdown-content": "./src/conversation/markdown-content.tsx",
     "./conversation/message-view-location": "./src/conversation/message-view-location.tsx",
+    "./conversation/message-reference-link": "./src/conversation/message-reference-link.tsx",
     "./conversation/workspace-markdown-links": "./src/conversation/workspace-markdown-links.ts",
     "./conversation/remote-conversation-host": "./src/conversation/remote-conversation-host.tsx",
     "./composer/attachment-reference": "./src/composer/attachment-reference.ts",

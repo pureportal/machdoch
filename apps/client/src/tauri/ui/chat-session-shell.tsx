@@ -27,6 +27,7 @@ import { useUnsavedChangesGuard } from "./chat-session/_helpers/use-unsaved-chan
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import { ZoomableChatContent } from "./chat-session/components/zoomable-chat-content";
 import { AttachmentImagePreviewDialog } from "./chat-session/components/attachment-image-preview-dialog";
+import { ShareMessageDialog } from "./chat-session/components/share-message-dialog";
 import { ChatInterviewDialog } from "./chat-session/components/chat-interview-dialog";
 import { ChatInputNeededDialog } from "@machdoch/client-ui/composer/chat-input-needed-dialog";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
@@ -1548,6 +1549,7 @@ export const ChatSession = (): JSX.Element => {
         </Dialog>
       ) : null}
 
+      <ShareMessageDialog {...controller.shareMessageDialog} />
       <AttachmentImagePreviewDialog
         preview={controller.attachmentImagePreview.preview}
         onOpenChange={controller.attachmentImagePreview.onOpenChange}
