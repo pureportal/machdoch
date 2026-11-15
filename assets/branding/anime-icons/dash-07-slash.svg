@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0" y1="32" x2="0" y2="480" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3AD4EA"/><stop offset="1" stop-color="#1A78E0"/></linearGradient>
+    <clipPath id="above"><path d="M0 0H512V196L0 292Z"/></clipPath>
+    <clipPath id="below"><path d="M0 320L512 224V512H0Z"/></clipPath>
+    <g id="dash" fill="none" stroke="url(#g)" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M216 112l168 144-168 144" stroke-width="100"/>
+      <path d="M40 192h96M40 320h96" stroke-width="30"/>
+    </g>
+  </defs>
+  <use href="#dash" clip-path="url(#above)" transform="translate(10 -6)"/>
+  <use href="#dash" clip-path="url(#below)" transform="translate(-14 8)"/>
+  <path d="M24 302L488 214" stroke="url(#g)" stroke-width="8" stroke-linecap="round"/>
+</svg>
