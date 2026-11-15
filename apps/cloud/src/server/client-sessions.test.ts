@@ -16,7 +16,7 @@ let runtime: FleetRuntime;
 let snapshot: ProductSnapshot;
 let instanceId: string;
 const access = {
-  authorize: vi.fn(async () => undefined),
+  authorize: vi.fn(async () => ({ userId: "00000000-0000-4000-8000-000000000001", manager: true, startsTasks: true })),
   signal: new AbortController().signal,
 };
 
@@ -46,6 +46,11 @@ beforeEach(async () => {
       nowSeconds(),
     )
   ).instanceId;
+  await runtime.fleetStore.setAgentAccess(
+    instanceId,
+    { agentAccess: "admins", agentUsers: [] },
+    nowSeconds(),
+  );
   snapshot = productFixture();
   vi.mocked(runtime.gateways.relay).mockImplementation(
     async (_, input): Promise<HostResponse> => {

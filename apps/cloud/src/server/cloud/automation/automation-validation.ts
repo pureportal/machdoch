@@ -5,6 +5,7 @@ import type { CloudSql } from "../database";
 import { readProfile } from "../execution/records";
 import { readInferenceProvider } from "../ai/budgets";
 import { readAutomation } from "./automation-records";
+import { requireClientUse } from "../clients/clients";
 
 async function requireStatuses(
   sql: CloudSql,
@@ -222,7 +223,7 @@ export async function validateAutomation(
         await requireMembership(sql, actor, "settings.manage");
         break;
       case "start_client_session":
-        await requireMembership(sql, actor, "clients.manage");
+        await requireClientUse(sql, actor, action.instanceId);
         break;
     }
   }

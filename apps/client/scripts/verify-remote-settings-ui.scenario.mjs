@@ -100,7 +100,7 @@ export async function run({ state, openPanel, capture, passed, calls }) {
     ["dark", 375],
   ]) {
     const { context, page } = await openPanel({ theme, width, height: 900 });
-    await page.getByRole("tab", { name: "Remote access" }).click();
+    await page.getByRole("tab", { name: "Account" }).click();
     const layers = page.getByRole("list", { name: "Assigned profiles" });
     await layers.waitFor();
     assert.deepEqual(
@@ -120,6 +120,7 @@ export async function run({ state, openPanel, capture, passed, calls }) {
     await page.getByRole("button", { name: "Re-upload device settings" }).click();
     await page.getByRole("status").filter({ hasText: "Device settings uploaded." }).waitFor();
 
+    await page.getByText("Show more", { exact: true }).click();
     await page.getByRole("button", { name: "Choose a setting to propose" }).click();
     const type = page.getByLabel("Setting type");
     await type.waitFor();
@@ -166,7 +167,7 @@ export async function run({ state, openPanel, capture, passed, calls }) {
     }),
   );
   const { context, page } = await openPanel({ theme: "light", width: 1280 });
-  await page.getByRole("tab", { name: "Remote access" }).click();
+  await page.getByRole("tab", { name: "Account" }).click();
   await page.getByRole("alert").filter({ hasText: "combined settings limits" }).waitFor();
   await page.getByText("Not uploaded yet").waitFor();
   await page.getByRole("button", { name: "Retry sync" }).waitFor();

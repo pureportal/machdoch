@@ -7,13 +7,14 @@ export interface ClientDevice {
   instanceId: string;
   displayName: string;
   status: "online" | "offline" | "revoked";
+  usable: boolean;
 }
 
 const refreshMs = 30_000;
 
 export function sortDevices(devices: ClientDevice[]): ClientDevice[] {
   return devices
-    .filter((device) => device.status !== "revoked")
+    .filter((device) => device.usable)
     .sort(
       (left, right) =>
         Number(right.status === "online") - Number(left.status === "online") ||

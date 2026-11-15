@@ -1,5 +1,7 @@
 import type { HostRequest, HostResponse } from "@machdoch/fleet-protocol";
+import { canUseClient, type ClientUser } from "../lib/client-access";
 import { validateId } from "./crypto";
+import type { FleetInstance } from "./fleet-store";
 import { HttpError } from "./errors";
 import { GatewayError } from "./gateway";
 import type { FleetRuntime } from "./runtime";
@@ -41,10 +43,27 @@ export function throwHostError(
 export async function requireManagedInstance(
   runtime: FleetRuntime,
   instanceId: string,
-): Promise<void> {
+): Promise<FleetInstance> {
   if (!validateId(instanceId, "instance"))
     throw new HttpError(404, "Instance was not found.");
   const instance = await runtime.fleetStore.getInstance(instanceId);
   if (!instance || instance.revokedAt !== null)
     throw new HttpError(404, "Instance was not found.");
+  return instance;
+}
+
+export async function requireUsableInstance(
+  runtime: FleetRuntime,
+  user: ClientUser,
+  instanceId: string,
+): Promise<FleetInstance> {
+  const instance = await requireManagedInstance(runtime, instanceId);
+  if (!canUseClient(user, instance))
+    throw new HttpError(
+      403,
+      instance.ownerUserId
+        ? "Only the person who signed in on this client can use it."
+        : "Agent tasks are turned off for this client.",
+    );
+  return instance;
 }

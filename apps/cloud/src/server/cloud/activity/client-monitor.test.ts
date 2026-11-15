@@ -96,6 +96,10 @@ beforeEach(async () => {
     enrolledAt: 0,
     lastSeenAt: clock / 1000,
     revokedAt: null,
+    ownerUserId: null,
+    ownerName: null,
+    agentAccess: "admins",
+    agentUsers: [],
   };
   relay.mockReset();
   relay.mockImplementation(

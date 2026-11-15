@@ -21,6 +21,9 @@ import { RemoteAccessPanel } from "./remote-access-panel";
 const runtime = vi.hoisted(() => ({
   getFleetConnectionStatus: vi.fn(),
   enrollCloudServer: vi.fn(),
+  signInCloudServer: vi.fn(),
+  cancelCloudSignIn: vi.fn(),
+  defaultCloudClientName: vi.fn(async () => "Studio workstation"),
   resetCloudServerConnection: vi.fn(),
   reconnectCloudServer: vi.fn(),
   proposeFleetSetting: vi.fn(),
@@ -115,7 +118,49 @@ describe("machdoch.cloud dialog", () => {
     ).toBe(false);
   });
 
-  it("enrolls from the dedicated machdoch.cloud dialog", async () => {
+  it("signs in through the browser with the suggested client name", async () => {
+    runtime.getFleetConnectionStatus.mockResolvedValue({
+      enabled: false,
+      phase: "disabled",
+    });
+    let finish: (status: unknown) => void = () => undefined;
+    runtime.signInCloudServer.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+
+    renderDialog(createElement(RemoteAccessPanel), "cloud");
+
+    fireEvent.change(await screen.findByLabelText("Cloud URL"), {
+      target: { value: "https://fleet.example.com" },
+    });
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("Client name") as HTMLInputElement).value,
+      ).toBe("Studio workstation"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(
+      await screen.findByText("Finish signing in in your browser."),
+    ).toBeTruthy();
+    expect(runtime.signInCloudServer).toHaveBeenCalledWith(
+      "https://fleet.example.com",
+      "Studio workstation",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(runtime.cancelCloudSignIn).toHaveBeenCalledOnce();
+    finish({
+      enabled: true,
+      phase: "connected",
+      managerUrl: "https://fleet.example.com",
+      displayName: "Studio workstation",
+    });
+    expect(await screen.findByText("Studio workstation")).toBeTruthy();
+  });
+
+  it("enrolls with a key from the dedicated machdoch.cloud dialog", async () => {
     runtime.getFleetConnectionStatus.mockResolvedValue({
       enabled: false,
       phase: "disabled",
@@ -141,10 +186,10 @@ describe("machdoch.cloud dialog", () => {
     fireEvent.change(screen.getByLabelText("Enrollment key"), {
       target: { value: "fleet_enrollment_key" },
     });
-    fireEvent.change(screen.getByLabelText("Instance name"), {
+    fireEvent.change(screen.getByLabelText("Client name"), {
       target: { value: "Studio workstation" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect with key" }));
 
     await waitFor(() =>
       expect(runtime.enrollCloudServer).toHaveBeenCalledWith(
@@ -197,7 +242,7 @@ describe("machdoch.cloud dialog", () => {
     });
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderDialog(createElement(RemoteAccessPanel), "cloud");
-    fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     expect(confirm).toHaveBeenCalledWith(
       expect.stringContaining("your own versions come back"),
     );

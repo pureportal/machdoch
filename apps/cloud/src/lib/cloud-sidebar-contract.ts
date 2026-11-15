@@ -216,19 +216,16 @@ export const sidebarItems = [
     href: "/instances",
     group: "workspace",
     placement: "show",
-    permission: ["clients.manage", "ai.manage"],
     tabs: [
       {
         href: "/instances",
         label: "Devices",
-        permission: "clients.manage",
         description:
-          "Computers running the Machdoch app that are linked to this organization. Check their status, control them remotely or revoke them.",
+          "Computers running the Machdoch app. Sign in from the app to add yours. Open a client to work on it remotely.",
       },
       {
         href: "/workspaces",
         label: "Workspaces",
-        permission: "clients.manage",
         description:
           "Projects open on linked clients. Open one to chat, run tasks or use its files and terminal remotely.",
       },

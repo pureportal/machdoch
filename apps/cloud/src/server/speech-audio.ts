@@ -4,9 +4,9 @@ import {
   speechResponseSchema,
 } from "@machdoch/fleet-protocol/speech";
 import { z } from "zod";
-import { requireOwner } from "./request-auth";
+import { requireMember } from "./request-auth";
 import {
-  requireManagedInstance,
+  requireUsableInstance,
   relayInstanceRequest,
   throwHostError,
 } from "./instance-relay";
@@ -20,8 +20,11 @@ export async function streamSpeechAudio(
   instanceId: string,
   assetId: string,
 ): Promise<Response> {
-  await requireOwner(runtime, request);
-  await requireManagedInstance(runtime, instanceId);
+  await requireUsableInstance(
+    runtime,
+    await requireMember(runtime, request),
+    instanceId,
+  );
   const url = new URL(request.url);
   const client = z.string().uuid().safeParse(url.searchParams.get("client"));
   const policy = z
@@ -35,8 +38,8 @@ export async function streamSpeechAudio(
     throw new HttpError(400, "Choose a valid speech session and audio asset.");
   const speech = createRemoteSpeechRuntime(
     async (operation) => {
-      const session = await requireOwner(runtime, request);
-      await requireManagedInstance(runtime, instanceId);
+      const session = await requireMember(runtime, request);
+      await requireUsableInstance(runtime, session, instanceId);
       const response = await relayInstanceRequest(
         runtime,
         instanceId,
@@ -50,8 +53,11 @@ export async function streamSpeechAudio(
         },
         request.signal,
       );
-      await requireOwner(runtime, request);
-      await requireManagedInstance(runtime, instanceId);
+      await requireUsableInstance(
+        runtime,
+        await requireMember(runtime, request),
+        instanceId,
+      );
       if (response.type === "error") throwHostError(response);
       if (response.type !== "speech")
         throw new HttpError(

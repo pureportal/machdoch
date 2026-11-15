@@ -96,6 +96,11 @@ async function enrollDevice(displayName = "Device"): Promise<string> {
     },
     nowSeconds(),
   );
+  await runtime.fleetStore.setAgentAccess(
+    device.instanceId,
+    { agentAccess: "admins", agentUsers: [] },
+    nowSeconds(),
+  );
   snapshots.set(device.instanceId, productFixture());
   return device.instanceId;
 }

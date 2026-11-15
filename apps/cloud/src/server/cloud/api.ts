@@ -61,6 +61,7 @@ import {
 import { handleOAuthApi } from "./oauth/api";
 import { handleCloudMcp } from "./mcp/server";
 import { cloudConsentSchema } from "../../lib/cloud-oauth-contract";
+import { clientSignInDecisionSchema } from "../../lib/client-sign-in-contract";
 import { handleExecutionApi, handleRunnerApi } from "./execution/api";
 import { handleAiProviderApi } from "./ai/api";
 import { handleChatApi } from "./ai/chat-api";
@@ -457,6 +458,17 @@ async function route(
   ) {
     await runtime.authorization.disconnect(actor, cloudId.parse(path[1]));
     return Response.json({ ok: true });
+  }
+  if (method === "POST" && path[0] === "client-sign-ins" && path.length === 2) {
+    const input = await readBody(request, clientSignInDecisionSchema);
+    return Response.json({
+      redirect: await runtime.clientSignIn.decide(
+        actor,
+        cloudId.parse(path[1]),
+        input.approve,
+        input.shared,
+      ),
+    });
   }
   if (method === "POST" && path[0] === "authorizations" && path.length === 2) {
     const input = await readBody(request, cloudConsentSchema);

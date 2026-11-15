@@ -9,6 +9,11 @@ import {
   type FleetDeviceStatus,
   type FleetStatus,
 } from "../lib/fleet-status";
+import {
+  canSeeClient,
+  canUseClient,
+  type ClientUser,
+} from "../lib/client-access";
 import { productVersionStatus } from "../lib/product-version";
 import { GatewayError } from "./gateway";
 import type { FleetRuntime } from "./runtime";
@@ -16,17 +21,20 @@ import type { FleetRuntime } from "./runtime";
 export async function collectFleetStatus(
   runtime: FleetRuntime,
   requestSignal: AbortSignal,
+  user: ClientUser,
   instanceIds?: ReadonlySet<string>,
 ): Promise<FleetStatus> {
   const signal = AbortSignal.any([requestSignal, AbortSignal.timeout(8_000)]);
   const instances = (await runtime.fleetStore.listInstances()).filter(
     (instance) =>
       instance.revokedAt === null &&
+      canSeeClient(user, instance) &&
       (!instanceIds || instanceIds.has(instance.instanceId)),
   );
   const devices: FleetDeviceStatus[] = instances.map((instance) => ({
     instanceId: instance.instanceId,
     displayName: instance.displayName,
+    usable: canUseClient(user, instance),
     online: runtime.gateways.isOnline(instance.instanceId),
     productVersion: instance.productVersion,
     versionStatus: productVersionStatus(

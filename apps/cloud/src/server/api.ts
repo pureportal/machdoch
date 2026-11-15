@@ -65,12 +65,18 @@ import {
 } from "./settings-proposals";
 import packageJson from "../../package.json";
 import { productVersionStatus } from "../lib/product-version";
+import {
+  agentAccessSchema,
+  canSeeClient,
+  canUseClient,
+} from "../lib/client-access";
 import { collectFleetStatus } from "./fleet-status";
 import { fleetSessionRequestSchema } from "../lib/fleet-session-routing";
 import { openFleetSession } from "./fleet-sessions";
 import {
   relayInstanceRequest as relay,
   requireManagedInstance,
+  requireUsableInstance,
   throwHostError,
 } from "./instance-relay";
 import { getPreviewHub, previewOpenSchema } from "./previews";
@@ -89,8 +95,10 @@ import {
   cookieValue,
   sessionCookieName,
   requestAccess,
+  requireMember,
+  requireMemberMutation,
   requireMutation,
-  requireOwner,
+  requireManager,
 } from "./request-auth";
 import { getRuntime, type FleetRuntime } from "./runtime";
 import {
@@ -160,6 +168,7 @@ const productOperationCapabilities: Partial<
 };
 const maximumSettingsSyncReportBodyBytes = 16 * 1024;
 const enrollmentSchema = z.strictObject({
+  codeVerifier: z.string().optional(),
   displayName: z.string(),
   instanceSecret: z.string(),
   productVersion: z.string(),
@@ -325,7 +334,7 @@ async function routeApi(
     return await createEnrollmentKey(runtime, request);
   }
   if (method === "GET" && matches(path, "enrollment-keys")) {
-    await requireOwner(runtime, request);
+    await requireManager(runtime, request);
     return Response.json({
       grants: await runtime.fleetStore.listEnrollmentGrants(nowSeconds()),
     });
@@ -350,13 +359,16 @@ async function routeApi(
   if (method === "GET" && matches(path, "instances"))
     return await listInstances(runtime, request);
   if (method === "GET" && matches(path, "fleet", "status")) {
-    await requireOwner(runtime, request);
-    const status = await collectFleetStatus(runtime, request.signal);
-    await requireOwner(runtime, request);
+    const status = await collectFleetStatus(
+      runtime,
+      request.signal,
+      await requireMember(runtime, request),
+    );
+    await requireMember(runtime, request);
     return Response.json(status);
   }
   if (method === "POST" && matches(path, "fleet", "sessions")) {
-    await requireMutation(runtime, request);
+    await requireMemberMutation(runtime, request);
     const input = await parseJson(
       request,
       fleetSessionRequestSchema,
@@ -373,6 +385,24 @@ async function routeApi(
   }
   if (method === "DELETE" && path[0] === "instances" && path.length === 2) {
     return await revokeInstance(runtime, request, path[1] ?? "");
+  }
+  if (
+    method === "PUT" &&
+    path[0] === "instances" &&
+    path[1] &&
+    path[2] === "agent-access" &&
+    path.length === 3
+  ) {
+    const input = await parseJson(request, agentAccessSchema);
+    await requireMutation(runtime, request);
+    if (
+      !(await runtime.fleetStore.setAgentAccess(path[1], input, nowSeconds()))
+    )
+      throw new HttpError(
+        409,
+        "Only organization clients have agent access settings.",
+      );
+    return Response.json({ ok: true });
   }
   if (
     method === "POST" &&
@@ -409,8 +439,11 @@ async function routeApi(
       path[3] &&
       Object.hasOwn(productOperationSchemas, path[3])
     ) {
-      await requireMutation(runtime, request);
-      await requireManagedInstance(runtime, path[1]);
+      await requireUsableInstance(
+        runtime,
+        await requireMemberMutation(runtime, request),
+        path[1],
+      );
       const operation = path[3] as keyof typeof productOperationSchemas;
       const input = await parseJson(
         request,
@@ -423,8 +456,11 @@ async function routeApi(
             ? maximumDeviceSettingsRequestBodyBytes
             : maximumMediaRequestBodyBytes,
       );
-      await requireMutation(runtime, request);
-      await requireManagedInstance(runtime, path[1]);
+      await requireUsableInstance(
+        runtime,
+        await requireMemberMutation(runtime, request),
+        path[1],
+      );
       const capability = productOperationCapabilities[operation];
       if (
         capability &&
@@ -447,15 +483,18 @@ async function routeApi(
             operation === "speech"
               ? scopeSpeechRequest(
                   speechRequestSchema.parse(input),
-                  (await requireOwner(runtime, request)).sessionHash,
+                  (await requireMember(runtime, request)).sessionHash,
                   path[1],
                 )
               : input,
         }),
         request.signal,
       );
-      await requireOwner(runtime, request);
-      await requireManagedInstance(runtime, path[1]);
+      await requireUsableInstance(
+        runtime,
+        await requireMember(runtime, request),
+        path[1],
+      );
       if (response.type === "error") throwHostError(response);
       if (response.type !== operation || !("response" in response))
         throw new HttpError(
@@ -477,8 +516,8 @@ async function routeApi(
     path[4] === "launch" &&
     path.length === 5
   ) {
-    const session = await requireOwner(runtime, request);
-    await requireManagedInstance(runtime, path[1]);
+    const session = await requireMember(runtime, request);
+    await requireUsableInstance(runtime, session, path[1]);
     return getPreviewHub(runtime).launchPage(
       path[3],
       session.sessionHash,
@@ -494,14 +533,14 @@ async function routeApi(
     const instanceId = path[1];
     const session =
       method === "GET"
-        ? await requireOwner(runtime, request)
-        : await requireMutation(runtime, request);
-    await requireManagedInstance(runtime, instanceId);
+        ? await requireMember(runtime, request)
+        : await requireMemberMutation(runtime, request);
+    await requireUsableInstance(runtime, session, instanceId);
     const previews = getPreviewHub(runtime);
     if (path[2] === "previews") {
       if (method === "POST") {
         const input = await parseJson(request, previewOpenSchema);
-        await requireMutation(runtime, request);
+        await requireMemberMutation(runtime, request);
         const launch = await previews.create(
           instanceId,
           session,
@@ -540,8 +579,11 @@ async function routeApi(
           },
           request.signal,
         );
-        await requireOwner(runtime, request);
-        await requireManagedInstance(runtime, instanceId);
+        await requireUsableInstance(
+          runtime,
+          await requireMember(runtime, request),
+          instanceId,
+        );
         if (result.type === "error") throwHostError(result);
         if (result.type !== "workspaceRuns")
           throw new HttpError(502, "Invalid service status.");
@@ -553,7 +595,11 @@ async function routeApi(
       }
       if (method === "POST") {
         const command = await parseJson(request, runCommandSchema);
-        await requireMutation(runtime, request);
+        await requireUsableInstance(
+          runtime,
+          await requireMemberMutation(runtime, request),
+          instanceId,
+        );
         const result = await relay(
           runtime,
           instanceId,
@@ -720,6 +766,11 @@ async function enroll(
   const enrollmentKey = bearerToken(request);
   const input = await parseJson(request, enrollmentSchema);
   if (
+    input.codeVerifier !== undefined &&
+    !/^[A-Za-z0-9._~-]{43,128}$/.test(input.codeVerifier)
+  )
+    throw new HttpError(401, "Enrollment credentials are invalid.");
+  if (
     !enrollmentKey ||
     !validateSecret(enrollmentKey, "mch_enroll") ||
     !validateSecret(input.instanceSecret, "mch_instance")
@@ -754,6 +805,7 @@ async function enroll(
       await runtime.fleetStore.enrollInstance(
         {
           enrollmentKey,
+          codeVerifier: input.codeVerifier,
           instanceSecret: input.instanceSecret,
           displayName,
           productVersion,
@@ -769,7 +821,7 @@ async function enroll(
     ) {
       throw new HttpError(
         401,
-        "Enrollment key is invalid, expired, or already used.",
+        "Sign-in expired or the enrollment key was already used. Try again.",
       );
     }
     throw error;
@@ -785,30 +837,33 @@ async function listInstances(
   runtime: FleetRuntime,
   request: Request,
 ): Promise<Response> {
-  await requireOwner(runtime, request);
+  const session = await requireMember(runtime, request);
+  const instances = (await runtime.fleetStore.listInstances()).filter(
+    (instance) => canSeeClient(session, instance),
+  );
   return Response.json({
-    instances: (await runtime.fleetStore.listInstances()).map(
-      ({ revokedAt, ...instance }) => ({
-        ...instance,
-        managerVersion: packageJson.version,
-        versionStatus: productVersionStatus(
-          instance.productVersion,
-          packageJson.version,
-          instance.protocolVersion,
-          gatewayProtocolVersion,
-        ),
-        status:
-          revokedAt !== null
-            ? "revoked"
-            : runtime.gateways.isOnline(instance.instanceId)
-              ? "online"
-              : "offline",
-        remoteUpdate: runtime.gateways.supportsCapability(
-          instance.instanceId,
-          appUpdateCapability,
-        ),
-      }),
-    ),
+    instances: instances.map(({ revokedAt, ...instance }) => ({
+      ...instance,
+      mine: instance.ownerUserId === session.userId,
+      usable: revokedAt === null && canUseClient(session, instance),
+      managerVersion: packageJson.version,
+      versionStatus: productVersionStatus(
+        instance.productVersion,
+        packageJson.version,
+        instance.protocolVersion,
+        gatewayProtocolVersion,
+      ),
+      status:
+        revokedAt !== null
+          ? "revoked"
+          : runtime.gateways.isOnline(instance.instanceId)
+            ? "online"
+            : "offline",
+      remoteUpdate: runtime.gateways.supportsCapability(
+        instance.instanceId,
+        appUpdateCapability,
+      ),
+    })),
   });
 }
 
@@ -817,7 +872,10 @@ async function revokeInstance(
   request: Request,
   instanceId: string,
 ): Promise<Response> {
-  await requireMutation(runtime, request);
+  const session = await requireMemberMutation(runtime, request);
+  const instance = await requireManagedInstance(runtime, instanceId);
+  if (!session.manager && instance.ownerUserId !== session.userId)
+    throw new HttpError(403, "You do not have access to these clients.");
   if (!(await runtime.fleetStore.revokeInstance(instanceId, nowSeconds()))) {
     throw new HttpError(404, "Instance was not found.");
   }
@@ -857,8 +915,11 @@ async function instanceProductSnapshot(
   request: Request,
   instanceId: string,
 ): Promise<Response> {
-  await requireOwner(runtime, request);
-  await requireManagedInstance(runtime, instanceId);
+  await requireUsableInstance(
+    runtime,
+    await requireMember(runtime, request),
+    instanceId,
+  );
   const response = await relay(
     runtime,
     instanceId,
@@ -867,8 +928,11 @@ async function instanceProductSnapshot(
     },
     request.signal,
   );
-  await requireOwner(runtime, request);
-  await requireManagedInstance(runtime, instanceId);
+  await requireUsableInstance(
+    runtime,
+    await requireMember(runtime, request),
+    instanceId,
+  );
   if (response.type === "error") throwHostError(response);
   if (response.type !== "productSnapshot") {
     throw new HttpError(502, "Instance returned an invalid product response.");
@@ -881,15 +945,21 @@ async function executeInstanceProductCommand(
   request: Request,
   instanceId: string,
 ): Promise<Response> {
-  await requireMutation(runtime, request);
-  await requireManagedInstance(runtime, instanceId);
+  await requireUsableInstance(
+    runtime,
+    await requireMemberMutation(runtime, request),
+    instanceId,
+  );
   const input = await parseJson(request, productCommandSchema);
   const command = {
     ...input,
     commandId: input.commandId ?? createId("command"),
   };
-  await requireMutation(runtime, request);
-  await requireManagedInstance(runtime, instanceId);
+  await requireUsableInstance(
+    runtime,
+    await requireMemberMutation(runtime, request),
+    instanceId,
+  );
   const response = await relay(
     runtime,
     instanceId,
@@ -899,8 +969,11 @@ async function executeInstanceProductCommand(
     },
     request.signal,
   );
-  await requireOwner(runtime, request);
-  await requireManagedInstance(runtime, instanceId);
+  await requireUsableInstance(
+    runtime,
+    await requireMember(runtime, request),
+    instanceId,
+  );
   if (response.type === "error") throwHostError(response);
   if (
     response.type !== "commandAccepted" ||
@@ -929,7 +1002,7 @@ async function settingsApi(
   requireSettings(runtime);
   try {
     if (request.method === "GET" && matches(path, "enrollment")) {
-      await requireOwner(runtime, request);
+      await requireManager(runtime, request);
       return Response.json({
         devices: await listEnrollmentSettings(runtime.database),
       });
@@ -941,7 +1014,7 @@ async function settingsApi(
       path[2] === "enrollment" &&
       path.length === 3
     ) {
-      await requireOwner(runtime, request);
+      await requireManager(runtime, request);
       await requireManagedInstance(runtime, path[1]);
       const document = await readEnrollmentSettings(
         runtime.database,
@@ -970,7 +1043,7 @@ async function settingsApi(
       return Response.json({ ok: true });
     }
     if (request.method === "GET" && matches(path, "proposals")) {
-      await requireOwner(runtime, request);
+      await requireManager(runtime, request);
       return Response.json({
         proposals: await listProposals(
           runtime.database,
@@ -993,7 +1066,7 @@ async function settingsApi(
         : await acceptSettingsProposal(runtime, request, path[1]);
     }
     if (request.method === "GET" && matches(path, "catalog")) {
-      await requireOwner(runtime, request);
+      await requireManager(runtime, request);
       const limits = runtime.config.settingsManager.limits;
       return Response.json({
         secrets: secretDescriptors,
@@ -1012,7 +1085,7 @@ async function settingsApi(
       });
     }
     if (request.method === "GET" && matches(path, "profiles")) {
-      await requireOwner(runtime, request);
+      await requireManager(runtime, request);
       return Response.json({
         profiles: await runtime.settingsStore.listProfiles(),
       });
@@ -1042,7 +1115,7 @@ async function settingsApi(
     if (path[0] === "profiles" && profileId) {
       validateProfileId(profileId);
       if (request.method === "GET" && path.length === 2) {
-        await requireOwner(runtime, request);
+        await requireManager(runtime, request);
         return Response.json({
           profile: await runtime.settingsStore.getProfile(profileId),
         });
@@ -1083,7 +1156,7 @@ async function settingsApi(
         path[2] === "versions" &&
         path.length === 3
       ) {
-        await requireOwner(runtime, request);
+        await requireManager(runtime, request);
         return Response.json({
           versions: await runtime.settingsStore.listVersions(profileId),
         });
@@ -1160,7 +1233,7 @@ async function settingsApi(
       }
     }
     if (request.method === "GET" && matches(path, "assignments")) {
-      await requireOwner(runtime, request);
+      await requireManager(runtime, request);
       return Response.json({
         assignments: (await runtime.settingsStore.listAssignments()).map(
           (assignment) => ({

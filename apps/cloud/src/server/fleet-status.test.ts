@@ -76,6 +76,7 @@ describe("fleet status collection", () => {
     const result = await collectFleetStatus(
       runtime,
       new AbortController().signal,
+      { userId: "00000000-0000-4000-8000-000000000001", manager: true, startsTasks: true },
     );
     expect(maximum).toBe(4);
     expect(relay).toHaveBeenCalledTimes(10);
@@ -107,7 +108,7 @@ describe("fleet status collection", () => {
       gateways: { isOnline: () => true, supportsCapability: () => true, relay },
     } as unknown as FleetRuntime;
     await expect(
-      collectFleetStatus(runtime, controller.signal),
+      collectFleetStatus(runtime, controller.signal, { userId: "00000000-0000-4000-8000-000000000001", manager: true, startsTasks: true }),
     ).rejects.toThrow();
     expect(relay).not.toHaveBeenCalled();
   });

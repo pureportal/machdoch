@@ -62,6 +62,18 @@ export async function handleOAuthApi(
         },
       });
     }
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/v1/oauth/client-sign-in"
+    ) {
+      const id = await runtime.clientSignIn.begin(url.searchParams);
+      return new Response(null, {
+        status: 303,
+        headers: {
+          Location: `${runtime.origin}/cloud/authorize?requestId=${id}`,
+        },
+      });
+    }
     if (request.method === "POST" && url.pathname === "/api/v1/oauth/token") {
       const input = tokenSchema.safeParse(await readForm(request));
       if (!input.success)

@@ -26,16 +26,16 @@ export function CloudPanel({
           machdoch.cloud
         </DialogTitle>
       </DialogHeader>
-      <Tabs.Root defaultValue="workspaces" className="flex min-h-0 flex-col">
+      <Tabs.Root defaultValue="account" className="flex min-h-0 flex-col">
         <Tabs.List
           aria-label="Cloud connection settings"
           className="flex shrink-0 border-b border-slate-800 px-2"
         >
+          <Tabs.Trigger className={tabClass} value="account">
+            Account
+          </Tabs.Trigger>
           <Tabs.Trigger className={tabClass} value="workspaces">
             Workspaces
-          </Tabs.Trigger>
-          <Tabs.Trigger className={tabClass} value="remote">
-            Remote access
           </Tabs.Trigger>
         </Tabs.List>
         <Tabs.Content
@@ -45,7 +45,7 @@ export function CloudPanel({
           <CloudWorkspacesPanel workspaceRoot={workspaceRoot ?? ""} />
         </Tabs.Content>
         <Tabs.Content
-          value="remote"
+          value="account"
           className="min-h-0 overflow-y-auto outline-none"
         >
           <RemoteAccessPanel />

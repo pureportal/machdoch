@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { formatRelativeTime, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { versionWarning } from "@/lib/product-version";
-import type { FleetInstance } from "./fleet-overview";
+import { clientAccessSummary, type FleetInstance } from "./fleet-overview";
 
 export function DeviceList({
   devices,
@@ -50,6 +50,9 @@ export function DeviceList({
                 >
                   {device.displayName}
                 </button>
+                <p className="text-xs text-muted-foreground">
+                  {clientAccessSummary(device)}
+                </p>
                 {versionWarning(device.versionStatus, device.managerVersion) ? (
                   <p className="text-xs text-destructive">
                     {versionWarning(
@@ -84,7 +87,7 @@ export function DeviceList({
               </span>
             </div>
             <div className="col-start-2 row-start-1 flex items-center justify-end gap-2 xl:col-auto xl:row-auto">
-              {device.status === "online" ? (
+              {device.status === "online" && device.usable ? (
                 <Button asChild variant="outline" size="sm">
                   <a
                     href={`/instances/${encodeURIComponent(device.instanceId)}`}

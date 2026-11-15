@@ -4,6 +4,7 @@ import type { VersionStatus } from "./product-version";
 export interface FleetDeviceStatus {
   instanceId: string;
   displayName: string;
+  usable: boolean;
   online: boolean;
   productVersion: string;
   versionStatus: VersionStatus;

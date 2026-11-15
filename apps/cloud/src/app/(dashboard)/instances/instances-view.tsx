@@ -3,7 +3,7 @@
 import { LoadingState } from "@machdoch/product-ui";
 import { Monitor, RefreshCw, Search, X } from "lucide-react";
 import { useRef, useState } from "react";
-import { EnrollDevice } from "@/components/enrollment/enroll-device";
+import { AddClient } from "@/components/enrollment/add-client";
 import { PageHeader } from "@/components/page-header";
 import { ShowMore } from "@/components/show-more";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import { formatRelativeTime, formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DeviceList } from "./device-list";
+import type { ClientMember } from "./agent-access-field";
 import { DeviceDetails } from "./device-details";
 import {
   selectDevices,
@@ -23,7 +24,15 @@ import {
 import { FleetSummary } from "./fleet-summary";
 import { useFleetInstances } from "./use-fleet-instances";
 
-export function InstancesView(): React.ReactElement {
+export function InstancesView({
+  cloudUrl,
+  manager,
+  members,
+}: {
+  cloudUrl: string;
+  manager: boolean;
+  members: ClientMember[];
+}): React.ReactElement {
   const { instances, loading, error, updatedAt, load } = useFleetInstances();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<DeviceFilter>("active");
@@ -55,7 +64,11 @@ export function InstancesView(): React.ReactElement {
           <span className="hidden sm:inline">Refresh</span>
         </Button>
         {Boolean(instances?.length) && (
-          <EnrollDevice onClose={() => void load()} />
+          <AddClient
+            cloudUrl={cloudUrl}
+            manager={manager}
+            onClose={() => void load()}
+          />
         )}
       </PageHeader>
       {error ? (
@@ -187,8 +200,12 @@ export function InstancesView(): React.ReactElement {
             <span className="grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary">
               <Monitor aria-hidden="true" />
             </span>
-            <p className="font-medium">No devices yet</p>
-            <EnrollDevice onClose={() => void load()} />
+            <p className="font-medium">No clients yet</p>
+            <AddClient
+              cloudUrl={cloudUrl}
+              manager={manager}
+              onClose={() => void load()}
+            />
           </div>
         ) : devices.length === 0 ? (
           <div
@@ -217,6 +234,9 @@ export function InstancesView(): React.ReactElement {
       {selectedDevice ? (
         <DeviceDetails
           device={selectedDevice}
+          manager={manager}
+          members={members}
+          onChanged={load}
           onClose={() => setSelectedId(null)}
           onCloseAutoFocus={(event) => {
             event.preventDefault();

@@ -162,6 +162,7 @@ await page.exposeFunction("cloudFixtureInvoke", async (command, args) => {
     return remoteStatus;
   }
   if (command === "reconnect_cloud_server") return remoteStatus;
+  if (command === "default_cloud_client_name") return "Desktop";
   if (command === "plugin:event|listen") return 1;
   if (command === "plugin:event|unlisten") return null;
   unexpectedNativeCalls.push(command);
@@ -223,9 +224,6 @@ try {
     "-m",
     "Base",
   ]);
-  const baseCommit = (
-    await workspaceGit(workspace, ["rev-parse", "HEAD"])
-  ).trim();
   const team = await api("teams", "POST", {
     name: "Desktop",
     key: "DESK",
@@ -245,7 +243,8 @@ try {
     name: "Development",
     target: "client",
     repository: "https://github.com/example/project",
-    baseCommit,
+    autopilot: false,
+    checkPullRequests: false,
     agent: "codex-cli",
     maxDurationSeconds: 300,
     maxTokens: 10000,
@@ -269,6 +268,7 @@ try {
   await page
     .getByRole("heading", { name: "machdoch.cloud", exact: true })
     .waitFor();
+  await page.getByRole("tab", { name: "Workspaces", exact: true }).click();
   await assertEventually(
     async () => Boolean(releaseInitial),
     () => "Initial connection snapshot was not captured",
@@ -442,18 +442,21 @@ try {
       .evaluate((element) => document.activeElement === element),
     true,
   );
-  await page.getByRole("tab", { name: "Remote access", exact: true }).click();
+  await page.getByRole("tab", { name: "Account", exact: true }).click();
   await page.getByLabel("Cloud URL", { exact: true }).fill(fixture.origin);
+  await page.getByText("Show more", { exact: true }).click();
   await page
     .getByLabel("Enrollment key", { exact: true })
     .fill("verification-enrollment-key");
   await page
-    .getByLabel("Instance name", { exact: true })
+    .getByLabel("Client name", { exact: true })
     .fill("Desktop remote access");
-  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Connect with key", exact: true })
+    .click();
   await page.getByText("Desktop remote access", { exact: true }).waitFor();
-  await page.getByRole("tab", { name: "Remote access", exact: true }).focus();
-  await page.keyboard.press("ArrowLeft");
+  await page.getByRole("tab", { name: "Account", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
   await page.getByText("Linked", { exact: true }).waitFor();
   assert.equal(await page.locator('input[type="password"]').count(), 0);
   assert.deepEqual(fixture.pageErrors, []);

@@ -53,7 +53,7 @@ export function useAutomationOptions(
     error: "",
   });
   const teamIds = workspace.teams.map((team) => team.id).join(",");
-  const administrator = holderCan(workspace.actor, "clients.manage");
+  const administrator = holderCan(workspace.actor, "ai.tasks");
   const releases = holderCan(workspace.actor, "releases.view");
   const git = workspace.gitProviders.length > 0;
   useEffect(() => {

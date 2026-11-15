@@ -8,12 +8,13 @@ import {
   type FleetSessionRequest,
   type FleetSessionRoute,
 } from "../lib/fleet-session-routing";
+import type { ClientUser } from "../lib/client-access";
 import { nowSeconds, requiredString } from "./database";
 import { HttpError } from "./errors";
 import { collectFleetStatus } from "./fleet-status";
 import {
   relayInstanceRequest,
-  requireManagedInstance,
+  requireUsableInstance,
   throwHostError,
 } from "./instance-relay";
 import type { FleetRuntime } from "./runtime";
@@ -24,8 +25,16 @@ const activeRequests = new WeakMap<
 >();
 
 export interface FleetSessionAccess {
-  authorize: () => Promise<void>;
+  authorize: () => Promise<ClientUser>;
   signal: AbortSignal;
+}
+
+async function authorizeOn(
+  runtime: FleetRuntime,
+  access: FleetSessionAccess,
+  instanceId: string,
+): Promise<void> {
+  await requireUsableInstance(runtime, await access.authorize(), instanceId);
 }
 
 export async function openFleetSession(
@@ -46,8 +55,7 @@ export async function openFleetSession(
   const existing = pending.get(key);
   if (existing) {
     const route = await existing;
-    await access.authorize();
-    await requireManagedInstance(runtime, route.instanceId);
+    await authorizeOn(runtime, access, route.instanceId);
     access.signal.throwIfAborted();
     return route;
   }
@@ -75,12 +83,13 @@ async function dispatchFleetSession(
   let row = await readRoute();
   let claimed = false;
   if (!row) {
-    const status = await collectFleetStatus(
-      runtime,
-      signal,
-      new Set(input.targets.map((target) => target.instanceId)),
+    const user = await access.authorize();
+    const instanceIds = new Set(
+      input.targets.map((target) => target.instanceId),
     );
-    await access.authorize();
+    for (const instanceId of instanceIds)
+      await requireUsableInstance(runtime, user, instanceId);
+    const status = await collectFleetStatus(runtime, signal, user, instanceIds);
     signal.throwIfAborted();
     const target = selectFleetSessionTarget(status.devices, input.targets);
     if (!target)
@@ -88,7 +97,7 @@ async function dispatchFleetSession(
         503,
         "No selected workspace is online. Refresh and choose a connected workspace.",
       );
-    await requireManagedInstance(runtime, target.instanceId);
+    await authorizeOn(runtime, access, target.instanceId);
     claimed =
       (await runtime.database.run(
         "INSERT INTO fleet_session_routes (command_id, request_digest, instance_id, workspace, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT(command_id) DO NOTHING",
@@ -107,8 +116,7 @@ async function dispatchFleetSession(
     );
   const instanceId = requiredString(row, "instance_id");
   const workspace = requiredString(row, "workspace");
-  await access.authorize();
-  await requireManagedInstance(runtime, instanceId);
+  await authorizeOn(runtime, access, instanceId);
   signal.throwIfAborted();
   const requestCreation = async (): Promise<void> => {
     const response = await relayInstanceRequest(
@@ -124,8 +132,7 @@ async function dispatchFleetSession(
       },
       signal,
     );
-    await access.authorize();
-    await requireManagedInstance(runtime, instanceId);
+    await authorizeOn(runtime, access, instanceId);
     signal.throwIfAborted();
     if (response.type === "error") throwHostError(response);
     if (
@@ -142,8 +149,7 @@ async function dispatchFleetSession(
   const confirmationDeadline = Date.now() + 8_000;
   let creationRequested = claimed;
   do {
-    await access.authorize();
-    await requireManagedInstance(runtime, instanceId);
+    await authorizeOn(runtime, access, instanceId);
     signal.throwIfAborted();
     const response = await relayInstanceRequest(
       runtime,
@@ -151,8 +157,7 @@ async function dispatchFleetSession(
       { type: "getProductSnapshot" },
       signal,
     );
-    await access.authorize();
-    await requireManagedInstance(runtime, instanceId);
+    await authorizeOn(runtime, access, instanceId);
     signal.throwIfAborted();
     if (response.type === "error") throwHostError(response);
     if (response.type !== "productSnapshot")

@@ -55,8 +55,8 @@ export function AutomationGallery({
         : template.requires.includes("product") && !options.products.length
           ? "Needs a product"
           : template.requires.includes("client") &&
-              !holderCan(workspace.actor, "clients.manage")
-            ? "Only owners and administrators"
+              !holderCan(workspace.actor, "ai.tasks")
+            ? "Needs permission to start AI tasks"
             : template.requires.includes("client") && !options.clients.length
               ? "Needs a connected client"
               : (template.trigger === "pull_request_changed" ||

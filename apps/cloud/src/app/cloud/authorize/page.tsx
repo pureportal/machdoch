@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { CloudAuthorizationForm } from "@/components/cloud/authorization";
+import { ClientSignInForm } from "@/components/cloud/client-sign-in";
 import { cloudId } from "@/lib/cloud-contract";
 import { cloudSessionCookie } from "@/server/cloud/identity";
 import { isCloudError } from "@/server/cloud/access";
@@ -32,6 +33,8 @@ export default async function Authorize({
         : `/cloud/login?authorize=${id.data}`,
     );
   try {
+    const signIn = await runtime.clientSignIn.consent(actor, id.data);
+    if (signIn) return <ClientSignInForm consent={signIn} />;
     return (
       <CloudAuthorizationForm
         consent={await runtime.authorization.consent(actor, id.data)}

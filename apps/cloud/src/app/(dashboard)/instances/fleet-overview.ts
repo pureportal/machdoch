@@ -1,3 +1,4 @@
+import type { AgentAccess } from "@/lib/client-access";
 import type { VersionStatus } from "@/lib/product-version";
 
 export interface FleetInstance {
@@ -11,6 +12,35 @@ export interface FleetInstance {
   remoteUpdate: boolean;
   versionStatus?: VersionStatus;
   managerVersion?: string;
+  ownerUserId: string | null;
+  ownerName: string | null;
+  agentAccess: AgentAccess;
+  agentUsers: string[];
+  mine: boolean;
+  usable: boolean;
+}
+
+export const agentAccessLabels: Record<AgentAccess, string> = {
+  off: "Nobody",
+  admins: "Admins",
+  everyone: "Everyone",
+  people: "Selected people",
+};
+
+export function clientOwner(device: FleetInstance): string {
+  if (device.mine) return "You";
+  if (device.ownerUserId) return device.ownerName ?? "Former member";
+  return "Organization";
+}
+
+export function clientAccessSummary(device: FleetInstance): string {
+  if (device.ownerUserId) return clientOwner(device);
+  if (device.agentAccess === "off") return "Organization · Agent tasks off";
+  const access =
+    device.agentAccess === "people"
+      ? `${device.agentUsers.length} ${device.agentUsers.length === 1 ? "person" : "people"}`
+      : agentAccessLabels[device.agentAccess];
+  return `Organization · Agent tasks: ${access}`;
 }
 
 export type DeviceFilter = "active" | FleetInstance["status"];
@@ -44,7 +74,7 @@ export function selectDevices(
         (status === "active"
           ? instance.status !== "revoked"
           : instance.status === status) &&
-        `${instance.displayName} ${instance.instanceId} ${instance.productVersion}`
+        `${instance.displayName} ${instance.instanceId} ${instance.productVersion} ${clientOwner(instance)}`
           .toLocaleLowerCase()
           .includes(normalizedQuery),
     )

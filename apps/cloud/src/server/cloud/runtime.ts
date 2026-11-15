@@ -1,4 +1,5 @@
 import { CloudAuthorization } from "./oauth/authorization";
+import { CloudClientSignIn } from "./oauth/client-sign-in";
 import { CloudOAuthTokens } from "./oauth/tokens";
 import type { CloudDatabase } from "./database";
 import { CloudIdentity } from "./identity";
@@ -152,6 +153,7 @@ export interface CloudRuntime {
     mailWorker: CloudMailDispatcher;
   };
   authorization: CloudAuthorization;
+  clientSignIn: CloudClientSignIn;
   oauthTokens: CloudOAuthTokens;
   planning: CloudPlanning;
   issueChanges: CloudIssueChanges;
@@ -542,6 +544,7 @@ export function createCloudRuntime(
       mailWorker: new CloudMailDispatcher(mailStore, options.mailSender),
     },
     authorization: new CloudAuthorization(database, origin),
+    clientSignIn: new CloudClientSignIn(database, origin),
     oauthTokens: new CloudOAuthTokens(database, origin),
     planning,
     issueChanges,

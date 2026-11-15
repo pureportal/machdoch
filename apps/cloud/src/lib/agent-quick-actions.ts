@@ -61,6 +61,6 @@ export const issueAgentActions: AgentQuickAction[] = [
 export function availableIssueAgentActions(
   holder: PermissionHolder,
 ): AgentQuickAction[] {
-  const clients = holderCan(holder, "clients.manage");
+  const clients = holderCan(holder, "ai.tasks");
   return issueAgentActions.filter((action) => clients || !action.clients);
 }

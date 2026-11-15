@@ -1,11 +1,16 @@
 import { expect, it } from "vitest";
 import { sortDevices, type ClientDevice } from "./use-client-devices";
 
-it("lists online clients first by name and hides revoked ones", () => {
+it("lists usable clients online first by name", () => {
   const device = (
     displayName: string,
     status: ClientDevice["status"],
-  ): ClientDevice => ({ instanceId: displayName, displayName, status });
+  ): ClientDevice => ({
+    instanceId: displayName,
+    displayName,
+    status,
+    usable: status !== "revoked",
+  });
   expect(
     sortDevices([
       device("Laptop 10", "offline"),

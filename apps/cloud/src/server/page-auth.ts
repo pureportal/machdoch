@@ -32,3 +32,9 @@ export async function requirePageSession(): Promise<AuthenticatedSession> {
   }
   return session;
 }
+
+export async function requireManagerPage(): Promise<AuthenticatedSession> {
+  const session = await requirePageSession();
+  if (!session.manager) redirect("/instances");
+  return session;
+}

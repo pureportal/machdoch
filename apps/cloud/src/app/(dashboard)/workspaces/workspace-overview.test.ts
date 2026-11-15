@@ -17,6 +17,7 @@ function device(
   return {
     instanceId: `instance_${displayName}`,
     displayName,
+    usable: true,
     online,
     productVersion: "42.1.0",
     versionStatus: "current",

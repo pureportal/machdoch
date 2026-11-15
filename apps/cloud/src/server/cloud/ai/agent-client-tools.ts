@@ -29,7 +29,7 @@ export const clientTools: AgentTool[] = [
   agentTool({
     name: "list_clients",
     description:
-      "List the connected Machdoch desktop clients that can run a session now, with their workspaces. Clients run their own agent with local files, tools, Git and the media studio for images and videos. Only owners and administrators can use clients.",
+      "List the connected Machdoch desktop clients that can run a session now, with their workspaces. Clients run their own agent with local files, tools, Git and the media studio for images and videos. Lists only the clients you may use.",
     schema: z.strictObject({}),
     async run(session) {
       const clients = await clientsFor(session);

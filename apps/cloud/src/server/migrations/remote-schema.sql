@@ -5,11 +5,16 @@ CREATE TABLE IF NOT EXISTS remote.enrollment_grants (
   expires_at double precision NOT NULL, used_at double precision
 );
 CREATE INDEX IF NOT EXISTS enrollment_grants_available ON remote.enrollment_grants (used_at,expires_at);
+ALTER TABLE remote.enrollment_grants ADD COLUMN IF NOT EXISTS challenge text;
+ALTER TABLE remote.enrollment_grants ADD COLUMN IF NOT EXISTS owner_user_id uuid;
 CREATE TABLE IF NOT EXISTS remote.instances (
   instance_id text PRIMARY KEY, display_name text NOT NULL, secret_hash text NOT NULL,
   product_version text NOT NULL, protocol_version integer NOT NULL,
   enrolled_at double precision NOT NULL, last_seen_at double precision, revoked_at double precision
 );
+ALTER TABLE remote.instances ADD COLUMN IF NOT EXISTS owner_user_id uuid;
+ALTER TABLE remote.instances ADD COLUMN IF NOT EXISTS agent_access text NOT NULL DEFAULT 'off' CHECK (agent_access IN ('off','admins','everyone','people'));
+ALTER TABLE remote.instances ADD COLUMN IF NOT EXISTS agent_users uuid[] NOT NULL DEFAULT '{}';
 CREATE TABLE IF NOT EXISTS remote.audit_log (
   id serial PRIMARY KEY, occurred_at double precision NOT NULL, action text NOT NULL,
   subject_id text, outcome text NOT NULL

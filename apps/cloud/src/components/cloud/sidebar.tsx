@@ -1,6 +1,5 @@
 "use client";
 
-import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -55,10 +54,9 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const sections = useCollapsed();
-  const admin = holderCan(workspace.actor, "clients.manage");
   const access = sidebarAccess(workspace);
   const sidebar = resolveSidebar(preferences, access);
-  const devices = useClientDevices(admin && sidebar.sections.devices);
+  const devices = useClientDevices(sidebar.sections.devices);
   const teams = workspace.teams.filter(
     (team) => !sidebar.hiddenTeamIds.has(team.id),
   );

@@ -190,7 +190,7 @@ export function AutomationEditor({
       (entry.kind !== "send_webhook" ||
         holderCan(workspace.actor, "settings.manage")) &&
       (entry.kind !== "start_client_session" ||
-        holderCan(workspace.actor, "clients.manage")) &&
+        holderCan(workspace.actor, "ai.tasks")) &&
       (entry.kind !== "ask_agent" || options.models.length > 0) &&
       (entry.kind !== "write_project_updates" ||
         (options.models.length > 0 && holderCan(workspace.actor, "ai.chat"))) &&

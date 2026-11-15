@@ -80,9 +80,9 @@ export class CloudAuthorization {
       );
       const request = (
         await sql.query<AuthorizationRequest>(
-          `UPDATE cloud_oauth_requests SET organization_id=$2,user_id=$3 WHERE id=$1 AND decided_at IS NULL
+          `UPDATE cloud_oauth_requests SET organization_id=$2,user_id=$3 WHERE id=$1 AND client_id=$4 AND decided_at IS NULL
          AND expires_at>clock_timestamp() AND (user_id IS NULL OR (user_id=$3 AND organization_id=$2)) RETURNING *`,
-          [id, actor.organizationId, actor.userId],
+          [id, actor.organizationId, actor.userId, nativeCloudClient.id],
         )
       ).rows[0];
       if (!request)
@@ -121,9 +121,9 @@ export class CloudAuthorization {
       );
       const request = (
         await sql.query<AuthorizationRequest>(
-          `SELECT * FROM cloud_oauth_requests WHERE id=$1 AND organization_id=$2 AND user_id=$3
+          `SELECT * FROM cloud_oauth_requests WHERE id=$1 AND client_id=$4 AND organization_id=$2 AND user_id=$3
          AND decided_at IS NULL AND expires_at>clock_timestamp() FOR UPDATE`,
-          [id, actor.organizationId, actor.userId],
+          [id, actor.organizationId, actor.userId, nativeCloudClient.id],
         )
       ).rows[0];
       if (!request)

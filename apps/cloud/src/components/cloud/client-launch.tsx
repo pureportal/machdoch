@@ -260,7 +260,10 @@ export function ClientLaunch({
                   <p className="cloud-menu-empty">Loading…</p>
                 </Command.Loading>
               ) : listed.length === 0 ? (
-                <p className="cloud-menu-empty">No client is online.</p>
+                <div className="cloud-menu-empty">
+                  <p>No client available.</p>
+                  <a href="/instances">Add a client</a>
+                </div>
               ) : (
                 listed.map((device) => (
                   <Command.Group

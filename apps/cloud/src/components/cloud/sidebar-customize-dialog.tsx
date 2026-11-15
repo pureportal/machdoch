@@ -1,6 +1,5 @@
 "use client";
 
-import { holderCan } from "@/lib/cloud-permissions";
 import { useRef, useState } from "react";
 import { GripVertical } from "lucide-react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
@@ -43,7 +42,6 @@ export function SidebarCustomizeDialog({
   preferences: SidebarPreferences;
   onSaved: (preferences: SidebarPreferences) => void;
 }) {
-  const admin = holderCan(workspace.actor, "clients.manage");
   const access = sidebarAccess(workspace);
   const [entries, setEntries] = useState<SidebarEntry[]>(() =>
     sidebarEntries(preferences, access),
@@ -65,7 +63,7 @@ export function SidebarCustomizeDialog({
   };
   const sections: { section: SidebarSection; label: string }[] = [
     { section: "favorites", label: "Favorites" },
-    ...(admin ? [{ section: "devices" as const, label: "Clients" }] : []),
+    { section: "devices", label: "Clients" },
     { section: "teams", label: "Your teams" },
   ];
   const toggle = <T,>(values: T[], value: T) =>

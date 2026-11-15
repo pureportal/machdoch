@@ -16,19 +16,27 @@ import {
 } from "@/components/ui/dialog";
 import { formatTime } from "@/lib/format";
 import { versionWarning } from "@/lib/product-version";
-import type { FleetInstance } from "./fleet-overview";
+import { AgentAccessField, type ClientMember } from "./agent-access-field";
+import { clientOwner, type FleetInstance } from "./fleet-overview";
 
 export function DeviceDetails({
   device,
+  manager,
+  members,
   onClose,
+  onChanged,
   onRevoked,
   onCloseAutoFocus,
 }: {
   device: FleetInstance;
+  manager: boolean;
+  members: ClientMember[];
   onClose: () => void;
+  onChanged: () => Promise<void>;
   onRevoked: () => Promise<void>;
   onCloseAutoFocus: (event: Event) => void;
 }): React.ReactElement {
+  const signOut = device.mine && !manager;
   const warning = versionWarning(device.versionStatus, device.managerVersion);
   const [update, setUpdate] = useState<{
     status: "current" | "installing";
@@ -50,6 +58,8 @@ export function DeviceDetails({
           <Badge variant={device.status}>{device.status}</Badge>
         </div>
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-3 text-sm">
+          <dt className="text-muted-foreground">Owner</dt>
+          <dd>{clientOwner(device)}</dd>
           <dt className="text-muted-foreground">Version</dt>
           <dd>v{device.productVersion}</dd>
           <dt className="text-muted-foreground">Enrolled</dt>
@@ -74,21 +84,32 @@ export function DeviceDetails({
             {warning}
           </p>
         ) : null}
+        {manager && !device.ownerUserId && device.status !== "revoked" ? (
+          <AgentAccessField
+            device={device}
+            members={members}
+            onSaved={onChanged}
+          />
+        ) : null}
         <ShowMore>
           <CopyField label="Device ID" value={device.instanceId} monospace />
         </ShowMore>
         <DialogFooter>
-          {device.status !== "revoked" ? (
+          {device.status !== "revoked" && (manager || device.mine) ? (
             <ConfirmButton
               trigger={
                 <Button variant="ghost" className="mr-auto text-destructive">
                   <Trash2 />
-                  Revoke device
+                  {signOut ? "Sign out" : "Revoke device"}
                 </Button>
               }
-              title={`Revoke ${device.displayName}?`}
-              description="The device will disconnect and lose machdoch.cloud access. Enroll it again to reconnect."
-              actionLabel="Revoke device"
+              title={
+                signOut
+                  ? `Sign out ${device.displayName}?`
+                  : `Revoke ${device.displayName}?`
+              }
+              description="The device disconnects from machdoch.cloud. Sign in again on the device to reconnect."
+              actionLabel={signOut ? "Sign out" : "Revoke device"}
               onConfirm={async () => {
                 await api(
                   `/api/instances/${encodeURIComponent(device.instanceId)}`,
@@ -98,7 +119,7 @@ export function DeviceDetails({
               }}
             />
           ) : null}
-          {device.status === "online" && device.remoteUpdate ? (
+          {manager && device.status === "online" && device.remoteUpdate ? (
             <ConfirmButton
               trigger={
                 <Button
@@ -126,15 +147,17 @@ export function DeviceDetails({
               }}
             />
           ) : null}
-          <Button variant="outline" asChild>
-            <a
-              href={`/cloud/activity?client=${encodeURIComponent(device.instanceId)}`}
-            >
-              <BrainCircuit />
-              Activity
-            </a>
-          </Button>
-          {device.status === "online" ? (
+          {manager ? (
+            <Button variant="outline" asChild>
+              <a
+                href={`/cloud/activity?client=${encodeURIComponent(device.instanceId)}`}
+              >
+                <BrainCircuit />
+                Activity
+              </a>
+            </Button>
+          ) : null}
+          {device.status === "online" && device.usable ? (
             <Button asChild>
               <a href={`/instances/${encodeURIComponent(device.instanceId)}`}>
                 <ExternalLink />

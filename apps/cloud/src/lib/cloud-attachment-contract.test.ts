@@ -47,17 +47,17 @@ describe("attachment contract", () => {
     expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
   });
 
-  it("offers client work only to people who manage clients", () => {
+  it("offers client work only to people who can start AI tasks", () => {
     expect(
       availableIssueAgentActions({
         owner: false,
-        permissions: builtinRoles.member.permissions,
+        permissions: builtinRoles.viewer.permissions,
       }).map((action) => action.id),
     ).not.toContain("client");
     expect(
       availableIssueAgentActions({
         owner: false,
-        permissions: builtinRoles.admin.permissions,
+        permissions: builtinRoles.member.permissions,
       }).map((action) => action.id),
     ).toContain("client");
   });

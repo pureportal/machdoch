@@ -21,7 +21,7 @@ const access = {
 const ids = (items: { id: string }[]) => items.map((item) => item.id);
 
 describe("sidebar preferences", () => {
-  it("shows Clients directly to administrators by default", () => {
+  it("shows Clients directly to everyone by default", () => {
     const admin = resolveSidebar(defaultSidebarPreferences, {
       ...access.admin,
       git: false,
@@ -48,7 +48,7 @@ describe("sidebar preferences", () => {
       ...access.member,
       git: false,
     });
-    expect(ids(member.workspace)).not.toContain("clients");
+    expect(ids(member.workspace)).toContain("clients");
     expect(ids(member.more)).not.toContain("settings");
     expect(member.sections).toEqual({
       favorites: true,
@@ -115,6 +115,7 @@ describe("sidebar preferences", () => {
       git: false,
     });
     expect(ids(member.workspace)).toEqual([
+      "clients",
       "issues",
       "teams",
       "initiatives",
@@ -186,13 +187,18 @@ describe("sidebar preferences", () => {
       "/settings",
     ]);
     const profilesOnly = { owner: false, permissions: ["ai.manage"] as const };
-    expect(hrefs("clients", profilesOnly)).toEqual(["/settings"]);
-    expect(
-      canSeeSidebarItem(item("clients"), { ...profilesOnly, git: false }),
-    ).toBe(true);
+    expect(hrefs("clients", profilesOnly)).toEqual([
+      "/instances",
+      "/workspaces",
+      "/settings",
+    ]);
+    expect(hrefs("clients", access.member)).toEqual([
+      "/instances",
+      "/workspaces",
+    ]);
     expect(
       canSeeSidebarItem(item("clients"), { ...access.member, git: false }),
-    ).toBe(false);
+    ).toBe(true);
     expect(hrefs("automations", access.member)).toEqual([
       "/cloud/automations",
       "/cloud/schedules",

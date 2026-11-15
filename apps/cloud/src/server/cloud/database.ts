@@ -62,6 +62,7 @@ export const cloudMigrations = [
   "059-branch-profiles.sql",
   "060-ai-assignment.sql",
   "061-pull-request-checks.sql",
+  "062-client-sign-in.sql",
 ];
 
 export interface CloudSql {

@@ -64,10 +64,9 @@ try {
     await page.getByText("Fleet Manager", { exact: true }).count(),
     0,
   );
-  await page
-    .getByRole("button", { name: "Enroll device", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add client", exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await dialog.getByText("Show more", { exact: true }).click();
   await dialog
     .getByRole("button", { name: "Create enrollment key", exact: true })
     .click();

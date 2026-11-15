@@ -243,6 +243,8 @@ async function fixture() {
       sessionHash: "hash",
       userId: "user",
       organizationId: "organization",
+      manager: true,
+      startsTasks: true,
     },
     {
       target: { workspace: "/project", configurationId: "web", port: appPort },
@@ -474,6 +476,8 @@ describe("private preview relay", () => {
           sessionHash: "hash",
           userId: "user",
           organizationId: "organization",
+          manager: true,
+          startsTasks: true,
         },
         {
           target: { workspace: "/project", configurationId: "web", port: 2375 },

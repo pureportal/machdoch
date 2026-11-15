@@ -204,13 +204,12 @@ export async function verifyMobileFleetForms(page, fixture, artifactRoot) {
   );
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.goto(`${fixture.origin}/instances`);
-  await page
-    .getByRole("button", { name: "Enroll device", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Add client", exact: true }).click();
   const enrollment = page.getByRole("dialog", {
-    name: "Enroll device",
+    name: "Add a client",
     exact: true,
   });
+  await enrollment.getByText("Show more", { exact: true }).click();
   await enrollment
     .getByRole("button", { name: "Create enrollment key", exact: true })
     .click();

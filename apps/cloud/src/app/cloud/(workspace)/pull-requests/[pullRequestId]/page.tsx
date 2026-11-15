@@ -23,7 +23,7 @@ export default async function PullRequestRoute({
         key={id.data}
         initial={await runtime.git.pullRequests.get(actor, id.data)}
         initialTab={typeof tab === "string" ? tab : null}
-        launch={holderCan(workspace.actor, "clients.manage")}
+        launch={holderCan(workspace.actor, "ai.tasks")}
       />
     );
   } catch (error) {

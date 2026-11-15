@@ -247,7 +247,7 @@ export function IssueHeader({
           </span>
         )}
         {delegate}
-        {holderCan(workspace.actor, "clients.manage") && (
+        {holderCan(workspace.actor, "ai.tasks") && (
           <ClientLaunch
             label="Open in client"
             icon={<Laptop />}

@@ -10,6 +10,7 @@ mod http;
 mod managed_prompts;
 pub(crate) mod preview;
 mod settings;
+mod sign_in;
 
 pub use machdoch_fleet_protocol::FleetManagedSettingsDelivery;
 
@@ -22,6 +23,7 @@ use config::{
 pub struct FleetConnectionState {
     inner: Arc<Mutex<FleetConnectionInner>>,
     monitor_stop: CancellationToken,
+    sign_in: Arc<Mutex<Option<(u64, CancellationToken)>>>,
 }
 
 impl FleetConnectionState {
@@ -111,6 +113,7 @@ struct EnrollmentResponse {
 }
 
 const MAX_ENROLLMENT_RESPONSE_BYTES: usize = 64 * 1024;
+const SIGN_IN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
 struct FleetConnectionUpdate {
     gateway_config: Option<FleetConnectionConfig>,
@@ -325,15 +328,140 @@ pub async fn enroll_cloud_server(
     display_name: String,
 ) -> Result<FleetConnectionStatus, String> {
     ensure_unbound(&state)?;
-    if manager_url.len() > 2_048 {
-        return Err("machdoch.cloud URL is too long.".to_string());
-    }
-    let manager_url = validate_cloud_server_url(&manager_url)?;
+    let manager_url = requested_manager_url(&manager_url)?;
     let enrollment_key = enrollment_key.trim();
     if !valid_prefixed_secret(enrollment_key, "mch_enroll") {
         return Err("Enrollment key is invalid.".to_string());
     }
     let display_name = validate_display_name(&display_name)?;
+    enroll(&app_handle, &state, &manager_url, enrollment_key, None, display_name).await
+}
+
+#[tauri::command]
+pub async fn sign_in_cloud_server(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, FleetConnectionState>,
+    manager_url: String,
+    display_name: String,
+) -> Result<FleetConnectionStatus, String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    ensure_unbound(&state)?;
+    let manager_url = requested_manager_url(&manager_url)?;
+    let display_name = validate_display_name(&display_name)?;
+    let secrets = sign_in::SignInSecrets::new()?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|error| format!("Sign-in could not start: {error}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|error| format!("Sign-in could not start: {error}"))?
+        .port();
+    let mut start = manager_url
+        .join("/api/v1/oauth/client-sign-in")
+        .map_err(|error| format!("machdoch.cloud sign-in URL is invalid: {error}"))?;
+    start
+        .query_pairs_mut()
+        .append_pair("redirect_uri", &format!("http://127.0.0.1:{port}/callback"))
+        .append_pair("state", &secrets.state)
+        .append_pair("code_challenge", &secrets.challenge)
+        .append_pair("name", &display_name);
+    static SIGN_IN_ATTEMPTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let attempt = SIGN_IN_ATTEMPTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let cancel = CancellationToken::new();
+    if let Some((_, previous)) = state
+        .sign_in
+        .lock()
+        .map_err(|_| "Sign-in state is unavailable.".to_string())?
+        .replace((attempt, cancel.clone()))
+    {
+        previous.cancel();
+    }
+    let result = async {
+        app_handle
+            .opener()
+            .open_url(start.as_str(), None::<&str>)
+            .map_err(|error| format!("The browser could not open: {error}"))?;
+        let (stream, callback) = tokio::select! {
+            _ = cancel.cancelled() => return Err("Sign-in was canceled.".to_string()),
+            _ = tokio::time::sleep(SIGN_IN_TIMEOUT) => return Err("Sign-in timed out. Try again.".to_string()),
+            callback = sign_in::await_callback(&listener, &secrets.state) => callback?,
+        };
+        let landing = |result: &str| {
+            manager_url
+                .join(&format!("/cloud/signed-in?result={result}"))
+                .map(|url| url.to_string())
+                .unwrap_or_default()
+        };
+        let sign_in::CallbackResult::Code(code) = callback else {
+            sign_in::redirect_browser(stream, &landing("canceled")).await;
+            return Err("Sign-in was canceled.".to_string());
+        };
+        let enrolled = if valid_prefixed_secret(&code, "mch_enroll") {
+            enroll(
+                &app_handle,
+                &state,
+                &manager_url,
+                &code,
+                Some(&secrets.verifier),
+                display_name,
+            )
+            .await
+        } else {
+            Err("machdoch.cloud returned an invalid sign-in response.".to_string())
+        };
+        sign_in::redirect_browser(
+            stream,
+            &landing(if enrolled.is_ok() { "signed-in" } else { "failed" }),
+        )
+        .await;
+        enrolled
+    }
+    .await;
+    if let Ok(mut current) = state.sign_in.lock() {
+        if current.as_ref().is_some_and(|(current_attempt, _)| *current_attempt == attempt) {
+            current.take();
+        }
+    }
+    result
+}
+
+#[tauri::command]
+pub fn cancel_cloud_sign_in(state: tauri::State<'_, FleetConnectionState>) -> Result<(), String> {
+    if let Some((_, cancel)) = state
+        .sign_in
+        .lock()
+        .map_err(|_| "Sign-in state is unavailable.".to_string())?
+        .take()
+    {
+        cancel.cancel();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn default_cloud_client_name() -> String {
+    sysinfo::System::host_name()
+        .map(|name| name.trim().chars().take(80).collect::<String>())
+        .filter(|name| !name.is_empty() && !name.chars().any(http::is_unsafe_text_character))
+        .unwrap_or_else(|| "Machdoch".to_string())
+}
+
+fn requested_manager_url(manager_url: &str) -> Result<url::Url, String> {
+    if manager_url.len() > 2_048 {
+        return Err("machdoch.cloud URL is too long.".to_string());
+    }
+    validate_cloud_server_url(manager_url)
+}
+
+async fn enroll(
+    app_handle: &tauri::AppHandle,
+    state: &FleetConnectionState,
+    manager_url: &url::Url,
+    enrollment_key: &str,
+    code_verifier: Option<&str>,
+    display_name: String,
+) -> Result<FleetConnectionStatus, String> {
     let instance_secret = create_secret("mch_instance")?;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -344,15 +472,19 @@ pub async fn enroll_cloud_server(
     let endpoint = manager_url
         .join("/api/enroll")
         .map_err(|error| format!("machdoch.cloud enrollment URL is invalid: {error}"))?;
+    let mut body = serde_json::json!({
+        "displayName": display_name,
+        "instanceSecret": instance_secret,
+        "productVersion": app_handle.package_info().version.to_string(),
+        "protocolVersion": machdoch_fleet_protocol::GATEWAY_PROTOCOL_VERSION,
+    });
+    if let Some(code_verifier) = code_verifier {
+        body["codeVerifier"] = serde_json::Value::String(code_verifier.to_string());
+    }
     let response = client
         .post(endpoint)
         .bearer_auth(enrollment_key)
-        .json(&serde_json::json!({
-            "displayName": display_name,
-            "instanceSecret": instance_secret,
-            "productVersion": app_handle.package_info().version.to_string(),
-            "protocolVersion": machdoch_fleet_protocol::GATEWAY_PROTOCOL_VERSION,
-        }))
+        .json(&body)
         .send()
         .await
         .map_err(|error| format!("machdoch.cloud enrollment failed: {error}"))?;
@@ -376,7 +508,7 @@ pub async fn enroll_cloud_server(
             format!("machdoch.cloud returned an invalid enrollment response: {error}")
         })?;
     let returned_url = validate_cloud_server_url(&enrollment.manager_url)?;
-    let enrolled_manager_url = enrolled_manager_url(&manager_url, returned_url)?;
+    let enrolled_manager_url = enrolled_manager_url(manager_url, returned_url)?;
     if !valid_identifier(&enrollment.manager_id, "manager")
         || !valid_identifier(&enrollment.instance_id, "instance")
     {
@@ -407,8 +539,8 @@ pub async fn enroll_cloud_server(
         inner.generation = inner.generation.saturating_add(1);
         inner.generation
     };
-    spawn_gateway(app_handle, state.inner.clone(), config, generation);
-    status(&state)
+    spawn_gateway(app_handle.clone(), state.inner.clone(), config, generation);
+    status(state)
 }
 
 #[tauri::command]

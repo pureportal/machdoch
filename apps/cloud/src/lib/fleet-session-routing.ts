@@ -42,6 +42,7 @@ export type FleetSessionRoute = z.infer<typeof fleetSessionRouteSchema>;
 
 export function canOpenSessions(device: FleetDeviceStatus): boolean {
   return (
+    device.usable &&
     device.online &&
     device.error === null &&
     device.canCreateSession &&

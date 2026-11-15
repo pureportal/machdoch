@@ -15,6 +15,7 @@ function device(): FleetDeviceStatus {
   return {
     instanceId: createId("instance"),
     displayName: "Device",
+    usable: true,
     online: true,
     productVersion: "29.0.0",
     versionStatus: "current",

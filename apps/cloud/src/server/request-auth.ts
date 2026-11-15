@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import type { ClientUser } from "../lib/client-access";
 import { hashSecret } from "./crypto";
 import { HttpError } from "./errors";
 import type { FleetRuntime } from "./runtime";
@@ -9,7 +10,7 @@ import {
   cloudCsrfHeader,
 } from "./cloud/identity";
 
-export interface AuthenticatedSession {
+export interface AuthenticatedSession extends ClientUser {
   username: string;
   sessionId: string;
   sessionHash: string;
@@ -33,11 +34,16 @@ export async function authenticateRequest(
   const user = await cloud.database.transaction(
     async (sql) =>
       (
-        await sql.query<{ name: string }>(
-          `SELECT u.name FROM cloud_memberships m
+        await sql.query<{
+          name: string;
+          manager: boolean;
+          starts_tasks: boolean;
+        }>(
+          `SELECT u.name,cloud_member_can(m.organization_id,m.user_id,'clients.manage') AS manager,
+      cloud_member_can(m.organization_id,m.user_id,'ai.tasks') AS starts_tasks FROM cloud_memberships m
       JOIN cloud_users u ON u.id=m.user_id
       JOIN cloud_installation i ON i.organization_id=m.organization_id AND i.id=1
-      WHERE m.organization_id=$1 AND m.user_id=$2 AND cloud_member_can(m.organization_id,m.user_id,'clients.manage') AND m.active AND NOT u.disabled`,
+      WHERE m.organization_id=$1 AND m.user_id=$2 AND m.active AND NOT u.disabled`,
           [actor.organizationId, actor.userId],
         )
       ).rows[0],
@@ -45,10 +51,17 @@ export async function authenticateRequest(
   if (!user)
     throw new HttpError(403, "You do not have access to these clients.");
   const sessionHash = hashSecret(token);
-  return { ...actor, username: user.name, sessionId: sessionHash, sessionHash };
+  return {
+    ...actor,
+    username: user.name,
+    manager: user.manager,
+    startsTasks: user.starts_tasks,
+    sessionId: sessionHash,
+    sessionHash,
+  };
 }
 
-export async function requireOwner(
+export async function requireMember(
   runtime: FleetRuntime,
   request: Request,
 ): Promise<AuthenticatedSession> {
@@ -57,11 +70,31 @@ export async function requireOwner(
   return session;
 }
 
+export async function requireManager(
+  runtime: FleetRuntime,
+  request: Request,
+): Promise<AuthenticatedSession> {
+  const session = await requireMember(runtime, request);
+  if (!session.manager)
+    throw new HttpError(403, "You do not have access to these clients.");
+  return session;
+}
+
 export async function requireMutation(
   runtime: FleetRuntime,
   request: Request,
 ): Promise<AuthenticatedSession> {
-  const session = await requireOwner(runtime, request);
+  const session = await requireMemberMutation(runtime, request);
+  if (!session.manager)
+    throw new HttpError(403, "You do not have access to these clients.");
+  return session;
+}
+
+export async function requireMemberMutation(
+  runtime: FleetRuntime,
+  request: Request,
+): Promise<AuthenticatedSession> {
+  const session = await requireMember(runtime, request);
   const cookie = cookieValue(request, csrfCookieName);
   const header = request.headers.get(csrfHeaderName);
   if (
@@ -120,7 +153,7 @@ export async function isRemoteSessionActive(
           `SELECT 1 FROM cloud_sessions s
     JOIN cloud_memberships m ON m.organization_id=s.organization_id AND m.user_id=s.user_id
     JOIN cloud_installation i ON i.organization_id=s.organization_id AND i.id=1
-    WHERE s.token_hash=$1 AND cloud_session_active(s) AND cloud_member_can(m.organization_id,m.user_id,'clients.manage')`,
+    WHERE s.token_hash=$1 AND cloud_session_active(s) AND m.active`,
           [sessionHash],
         )
       ).rows.length,
@@ -161,11 +194,9 @@ function constantTimeTextEqual(left: string, right: string): boolean {
 export function requestAccess(
   runtime: FleetRuntime,
   request: Request,
-): { authorize: () => Promise<void>; signal: AbortSignal } {
+): { authorize: () => Promise<ClientUser>; signal: AbortSignal } {
   return {
-    authorize: async () => {
-      await requireMutation(runtime, request);
-    },
+    authorize: () => requireMemberMutation(runtime, request),
     signal: request.signal,
   };
 }

@@ -1539,6 +1539,11 @@ async function enrollTestInstance(runtime: FleetRuntime) {
     },
     nowSeconds(),
   );
+  await runtime.fleetStore.setAgentAccess(
+    instance.instanceId,
+    { agentAccess: "admins", agentUsers: [] },
+    nowSeconds(),
+  );
   return { ...instance, instanceSecret };
 }
 

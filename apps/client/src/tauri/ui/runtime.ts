@@ -4576,6 +4576,37 @@ export const enrollCloudServer = async (
   return status;
 };
 
+export const signInCloudServer = async (
+  managerUrl: string,
+  displayName: string,
+): Promise<FleetConnectionStatus> => {
+  if (!canInvokeTauriCommands()) {
+    throw new Error(
+      "machdoch.cloud sign-in is only available in the desktop app.",
+    );
+  }
+  const status = normalizeFleetConnectionStatus(
+    await analyticsInvoke<unknown>("sign_in_cloud_server", {
+      managerUrl,
+      displayName,
+    }),
+  );
+  if (!status) {
+    throw new Error("The machdoch.cloud sign-in payload was invalid.");
+  }
+  return status;
+};
+
+export const cancelCloudSignIn = async (): Promise<void> => {
+  if (!canInvokeTauriCommands()) return;
+  await analyticsInvoke("cancel_cloud_sign_in");
+};
+
+export const defaultCloudClientName = async (): Promise<string> =>
+  canInvokeTauriCommands()
+    ? analyticsInvoke<string>("default_cloud_client_name")
+    : "";
+
 export const reconnectCloudServer =
   async (): Promise<FleetConnectionStatus> => {
     if (!canInvokeTauriCommands()) {

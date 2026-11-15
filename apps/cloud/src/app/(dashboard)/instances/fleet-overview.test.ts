@@ -5,8 +5,19 @@ import {
   type FleetInstance,
 } from "./fleet-overview";
 
+const access = {
+  ownerUserId: null,
+  ownerName: null,
+  agentAccess: "off",
+  agentUsers: [],
+  mine: false,
+  usable: false,
+} as const;
+
 const devices: FleetInstance[] = [
   {
+    ...access,
+    agentUsers: [],
     instanceId: "device-online",
     displayName: "Studio 10",
     productVersion: "24.0.0",
@@ -17,6 +28,8 @@ const devices: FleetInstance[] = [
     lastSeenAt: 100,
   },
   {
+    ...access,
+    agentUsers: [],
     instanceId: "device-offline",
     displayName: "Studio 2",
     productVersion: "23.0.0",
@@ -27,6 +40,8 @@ const devices: FleetInstance[] = [
     lastSeenAt: 50,
   },
   {
+    ...access,
+    agentUsers: [],
     instanceId: "device-new",
     displayName: "New host",
     productVersion: "24.0.0",
@@ -37,6 +52,8 @@ const devices: FleetInstance[] = [
     lastSeenAt: null,
   },
   {
+    ...access,
+    agentUsers: [],
     instanceId: "device-revoked",
     displayName: "Retired",
     productVersion: "22.0.0",
