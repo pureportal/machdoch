@@ -82,7 +82,6 @@ beforeEach(async () => {
       target: "cloud",
       repository: "https://github.com/owner/repository",
       autopilot: false,
-      checkPullRequests: false,
       providerId: provider.id,
       model: "fixture",
       maxDurationSeconds: 600,

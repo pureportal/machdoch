@@ -24,6 +24,7 @@ import { derivedCommandId } from "../command-ids";
 import type { CloudDatabase, CloudSql } from "../database";
 import type { CloudIssueChanges } from "../issue-changes";
 import { queueAutomationEvents } from "../automation/automation-events";
+import { notifyPullRequestStage } from "../notifications";
 import { gitClient, type GitPullRequestRecord } from "./git-client";
 import {
   currentHookVersion,
@@ -33,7 +34,7 @@ import {
 import { gitEvent, queueGitEvents, type StoredRepository } from "./events";
 
 const syncIntervalMinutes = 5;
-const pendingChecksIntervalMinutes = 2;
+const openPullRequestRefreshMinutes = 2;
 const deliveryRetentionDays = 7;
 
 export const repositoryColumns = `r.id,r.provider,r.full_name AS "fullName",r.default_branch AS "defaultBranch",r.web_url AS "webUrl"`;
@@ -82,12 +83,14 @@ interface AutomationStep {
   issueId: string;
   status: { id: string; revision: number };
   key: string;
+  reference: string;
 }
 
 async function automationSteps(
   sql: CloudSql,
   organizationId: string,
   pullRequestId: string,
+  reference: string,
   event: GitStatusEvent | null,
   issues: (LinkedIssue & { completes: boolean })[],
 ): Promise<AutomationStep[]> {
@@ -125,6 +128,7 @@ async function automationSteps(
               `${pullRequestId}:${event}`,
               `git-status:${issue.id}`,
             ),
+            reference,
           },
         ]
       : [];
@@ -255,13 +259,13 @@ export class CloudGitSync {
           : (previous?.signals_synced_at ?? null);
       await sql.query(
         `INSERT INTO cloud_git_pull_requests (organization_id,id,repository_id,number,title,url,state,draft,author,head_ref,head_sha,base_ref,
-          mergeable_state,additions,deletions,changed_files,checks,review,stage,merged_at,updated_at,signals_synced_at,requested_reviewers)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14::integer,0),COALESCE($15::integer,0),COALESCE($16::integer,0),$17,$18,$19,$20,$21,$22,COALESCE($23::text[],'{}'))
+          mergeable_state,additions,deletions,changed_files,checks,review,stage,merged_at,updated_at,signals_synced_at,requested_reviewers,opened_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14::integer,0),COALESCE($15::integer,0),COALESCE($16::integer,0),$17,$18,$19,$20,$21,$22,COALESCE($23::text[],'{}'),$24)
         ON CONFLICT (organization_id,repository_id,number) DO UPDATE SET title=$5,url=$6,state=$7,draft=$8,author=COALESCE($9,cloud_git_pull_requests.author),
         head_ref=$10,head_sha=$11,base_ref=$12,mergeable_state=$13,additions=COALESCE($14::integer,cloud_git_pull_requests.additions),
         deletions=COALESCE($15::integer,cloud_git_pull_requests.deletions),changed_files=COALESCE($16::integer,cloud_git_pull_requests.changed_files),
         checks=$17,review=$18,stage=$19,merged_at=$20,updated_at=$21,signals_synced_at=$22,
-        requested_reviewers=COALESCE($23::text[],cloud_git_pull_requests.requested_reviewers),synced_at=clock_timestamp()`,
+        requested_reviewers=COALESCE($23::text[],cloud_git_pull_requests.requested_reviewers),opened_at=COALESCE($24,cloud_git_pull_requests.opened_at),synced_at=clock_timestamp()`,
         [
           organizationId,
           id,
@@ -288,6 +292,7 @@ export class CloudGitSync {
           pullRequest.requestedReviewers
             ?.slice(0, 50)
             .map((login) => login.slice(0, 100)) ?? null,
+          pullRequest.openedAt,
         ],
       );
       const keys = (
@@ -331,7 +336,16 @@ export class CloudGitSync {
           [organizationId, id, issue.id, issue.closes],
         );
       if (emit && previous?.stage !== stage)
-        for (const issue of issues)
+        for (const issue of issues) {
+          await notifyPullRequestStage(sql, {
+            organizationId,
+            actorId: connection.actorId,
+            issueId: issue.id,
+            teamId: issue.team_id,
+            reference: `${repository.fullName}#${pullRequest.number}`,
+            title: pullRequest.title,
+            stage,
+          });
           await queueAutomationEvents(sql, {
             organizationId,
             teamId: issue.team_id,
@@ -347,6 +361,7 @@ export class CloudGitSync {
               },
             ],
           });
+        }
       if (emit) {
         const kinds = pullRequestLifecycleEvents(
           previous
@@ -355,9 +370,19 @@ export class CloudGitSync {
                 draft: previous.draft,
                 headSha: previous.head_sha,
                 checks: previous.checks,
+                mergeable:
+                  previous.mergeable_state === null
+                    ? null
+                    : previous.mergeable_state !== "dirty",
               }
             : null,
-          { state, draft, headSha: pullRequest.headSha, checks },
+          {
+            state,
+            draft,
+            headSha: pullRequest.headSha,
+            checks,
+            mergeable: pullRequest.mergeable,
+          },
         );
         const event = eventPullRequest(id, pullRequest);
         const issueIds = issues.map((issue) => issue.id);
@@ -397,6 +422,7 @@ export class CloudGitSync {
                 sql,
                 organizationId,
                 id,
+                `${repository.fullName}#${pullRequest.number}`,
                 statusEvent,
                 issues,
               )
@@ -409,6 +435,7 @@ export class CloudGitSync {
           {
             organizationId: connection.organizationId,
             userId: connection.actorId,
+            automation: step.reference,
           },
           step.key,
           { issues: [{ id: step.issueId }], changes: { status: step.status } },
@@ -545,8 +572,8 @@ export class CloudGitSync {
         >(
           `SELECT p.organization_id AS "organizationId",p.id AS "pullRequestId",p.number,${repositoryColumns} FROM cloud_git_pull_requests p
           JOIN cloud_git_repositories r ON r.organization_id=p.organization_id AND r.id=p.repository_id
-          WHERE p.state='open' AND (p.signals_synced_at IS NULL OR (p.checks='pending' AND r.hook_id IS NULL
-            AND p.signals_synced_at < clock_timestamp() - interval '${pendingChecksIntervalMinutes} minutes'))
+          WHERE p.state='open' AND (p.signals_synced_at IS NULL OR ((r.hook_id IS NULL OR p.mergeable_state='unknown')
+            AND p.signals_synced_at < clock_timestamp() - interval '${openPullRequestRefreshMinutes} minutes'))
           ORDER BY p.signals_synced_at NULLS FIRST LIMIT 1 FOR UPDATE OF p SKIP LOCKED`,
         )
       ).rows[0];

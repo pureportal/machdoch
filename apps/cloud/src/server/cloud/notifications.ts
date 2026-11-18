@@ -6,6 +6,7 @@ import type {
   InboxUpdate,
 } from "../../lib/cloud-inbox-contract";
 import { requireMembership, teamVisibility } from "./access";
+import type { PullRequestStage } from "../../lib/git-automation";
 import type { CloudDatabase, CloudSql } from "./database";
 import { issueSubscribedClause } from "./subscription-records";
 
@@ -18,6 +19,7 @@ const issueAudience = `SELECT u.id,u.name,${issueSubscribedClause} AS subscribed
   WHERE i.organization_id=$1 AND i.id=$2 AND u.id<>$3
   AND cloud_team_visible(t.organization_id,t.id,t.visibility,m.user_id)`;
 const pageSize = 100;
+const nobody = "00000000-0000-0000-0000-000000000000";
 
 function excerpt(text: string): string {
   const compact = text.replace(/\s+/g, " ").trim();
@@ -36,12 +38,13 @@ async function insertNotification(
     issueId: string | null;
     runId: string | null;
     actorId: string;
+    automation?: string;
     detail: string;
   },
 ): Promise<void> {
   await sql.query(
-    `INSERT INTO cloud_notifications (organization_id,id,user_id,team_id,kind,issue_id,run_id,actor_id,detail)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`,
+    `INSERT INTO cloud_notifications (organization_id,id,user_id,team_id,kind,issue_id,run_id,actor_id,automation,detail)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING`,
     [
       entry.organizationId,
       randomUUID(),
@@ -51,6 +54,7 @@ async function insertNotification(
       entry.issueId,
       entry.runId,
       entry.actorId,
+      entry.automation ?? null,
       excerpt(entry.detail),
     ],
   );
@@ -64,7 +68,7 @@ export async function notifyAssignment(
 ): Promise<void> {
   if (
     !issue.assigneeId ||
-    issue.assigneeId === actor.userId ||
+    (issue.assigneeId === actor.userId && !actor.automation) ||
     issue.assigneeId === previousAssigneeId
   )
     return;
@@ -76,6 +80,7 @@ export async function notifyAssignment(
     issueId: issue.id,
     runId: null,
     actorId: actor.userId,
+    automation: actor.automation,
     detail: "",
   });
 }
@@ -131,7 +136,7 @@ export async function notifyStatusChange(
     await sql.query<{ id: string; subscribed: boolean }>(issueAudience, [
       actor.organizationId,
       after.id,
-      actor.userId,
+      actor.automation ? nobody : actor.userId,
     ])
   ).rows;
   for (const member of audience) {
@@ -144,7 +149,52 @@ export async function notifyStatusChange(
       issueId: after.id,
       runId: null,
       actorId: actor.userId,
+      automation: actor.automation,
       detail: after.statusName,
+    });
+  }
+}
+
+const pullRequestStageDetails: Partial<Record<PullRequestStage, string>> = {
+  attention: "needs attention",
+  ready: "is ready to merge",
+  review: "is waiting for review",
+  merged: "was merged",
+  closed: "was closed",
+};
+
+export async function notifyPullRequestStage(
+  sql: CloudSql,
+  change: {
+    organizationId: string;
+    actorId: string;
+    issueId: string;
+    teamId: string;
+    reference: string;
+    title: string;
+    stage: PullRequestStage;
+  },
+): Promise<void> {
+  const detail = pullRequestStageDetails[change.stage];
+  if (!detail) return;
+  const audience = (
+    await sql.query<{ id: string; subscribed: boolean }>(issueAudience, [
+      change.organizationId,
+      change.issueId,
+      nobody,
+    ])
+  ).rows;
+  for (const member of audience) {
+    if (!member.subscribed) continue;
+    await insertNotification(sql, {
+      organizationId: change.organizationId,
+      userId: member.id,
+      teamId: change.teamId,
+      kind: "pull_request",
+      issueId: change.issueId,
+      runId: null,
+      actorId: change.actorId,
+      detail: `${change.reference} ${detail}: ${change.title}`,
     });
   }
 }
@@ -182,7 +232,7 @@ export class CloudInbox {
         await sql.query<InboxEntry & Record<string, unknown>>(
           `SELECT n.id,n.kind,n.detail,n.read_at IS NOT NULL AS read,
              to_char(n.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
-             author.name AS actor,n.issue_id AS "issueId",i.identifier AS "issueIdentifier",i.title AS "issueTitle",i.state AS "issueState",
+             COALESCE(n.automation,author.name) AS actor,n.issue_id AS "issueId",i.identifier AS "issueIdentifier",i.title AS "issueTitle",i.state AS "issueState",
              n.run_id AS "runId",r.title AS "runTitle",r.state AS "runState"
            FROM cloud_notifications n
            JOIN cloud_teams t ON t.organization_id=n.organization_id AND t.id=n.team_id

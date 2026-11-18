@@ -65,7 +65,6 @@ async function setup() {
       target: "client",
       repository,
       autopilot: false,
-      checkPullRequests: false,
       agent: "codex-cli",
       maxDurationSeconds: 300,
       maxTokens: 10000,

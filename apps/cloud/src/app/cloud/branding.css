@@ -549,7 +549,7 @@
 }
 @media (max-width: 800px) {
   .cloud-brand-savebar {
-    bottom: 64px;
+    bottom: max(12px, env(safe-area-inset-bottom));
   }
   .cloud-brand-editor {
     padding-bottom: 72px;

@@ -24,9 +24,14 @@ import {
 } from "./cli-process";
 
 const maximumStreamBytes = 16 * 1024 * 1024;
+const defaultSilenceLimitMs = 120_000;
+const maximumStalledAttempts = 2;
 const toolCallFence = "```tool_calls";
 
-function toolInstructions(tools: AgentModelToolSpec[]): string {
+function toolInstructions(
+  tools: AgentModelToolSpec[],
+  toolChoice: AgentModelStartParams["toolChoice"],
+): string {
   if (!tools.length) return "";
   const catalog = tools
     .map(
@@ -42,7 +47,9 @@ function toolInstructions(tools: AgentModelToolSpec[]): string {
     '[{"name":"search_issues","arguments":{"query":"login"}}]',
     "```",
     "Use only this block format. Do not use XML tags, function-call syntax or any other tool format.",
-    'Tool results arrive as entries with role "tool" in the next message. When you can answer, reply normally without a tool_calls block.',
+    toolChoice === "required"
+      ? 'Tool results arrive as entries with role "tool" in the next message. Every reply must be such a block; plain-text replies are not accepted.'
+      : 'Tool results arrive as entries with role "tool" in the next message. When you can answer, reply normally without a tool_calls block.',
     "",
     catalog,
   ].join("\n");
@@ -63,7 +70,7 @@ function responseFormatInstructions(
 function instructions(parameters: AgentModelStartParams): string {
   return (
     parameters.systemPrompt +
-    toolInstructions(parameters.tools) +
+    toolInstructions(parameters.tools, parameters.toolChoice) +
     responseFormatInstructions(parameters.structuredOutput)
   );
 }
@@ -77,7 +84,7 @@ function cliToolCall(name: string, args: unknown): AgentModelToolCall {
   return { id: `cli_${randomUUID()}`, name, arguments: record(args) };
 }
 
-function jsonObjectEnd(text: string, start: number): number {
+function jsonValueEnd(text: string, start: number): number {
   let depth = 0;
   let quoted = false;
   for (let index = start; index < text.length; index++) {
@@ -86,8 +93,9 @@ function jsonObjectEnd(text: string, start: number): number {
       if (character === "\\") index++;
       else if (character === '"') quoted = false;
     } else if (character === '"') quoted = true;
-    else if (character === "{") depth++;
-    else if (character === "}" && --depth === 0) return index + 1;
+    else if (character === "{" || character === "[") depth++;
+    else if ((character === "}" || character === "]") && --depth === 0)
+      return index + 1;
   }
   return -1;
 }
@@ -116,18 +124,16 @@ function fencedToolCalls(text: string) {
     : null;
 }
 
-function withoutFences(text: string): string {
-  return text
-    .trim()
-    .replace(/^```[\w-]*[ \t]*\n?/, "")
-    .replace(/\n?```$/, "")
-    .trim();
-}
+const strayMarkup = /^(?:\s|```[\w-]*|<\/?[\w:-]+[^>]*>)*$/;
 
 function bareToolCalls(text: string, toolNames: string[]) {
+  const start = text.search(/[[{]/);
+  if (start === -1 || !strayMarkup.test(text.slice(0, start))) return null;
+  const end = jsonValueEnd(text, start);
+  if (end === -1 || !strayMarkup.test(text.slice(end))) return null;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(withoutFences(text));
+    parsed = JSON.parse(text.slice(start, end));
   } catch {
     return null;
   }
@@ -150,7 +156,7 @@ function expressionToolCalls(text: string, toolNames: string[]) {
   const pattern = new RegExp(`\\b(${toolNames.join("|")})\\(\\s*\\{`, "g");
   for (const match of text.matchAll(pattern)) {
     const objectStart = match.index + match[0].length - 1;
-    const objectEnd = jsonObjectEnd(text, objectStart);
+    const objectEnd = jsonValueEnd(text, objectStart);
     if (objectEnd === -1) continue;
     const close = /^\s*\)/.exec(text.slice(objectEnd));
     if (!close) continue;
@@ -177,15 +183,58 @@ function expressionToolCalls(text: string, toolNames: string[]) {
   };
 }
 
+function invokeArgument(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function invokeToolCalls(text: string, toolNames: string[]) {
+  const toolCalls: AgentModelToolCall[] = [];
+  const invocation = /<invoke\s+name="([\w-]+)"\s*>([\s\S]*?)<\/invoke>/g;
+  const parameter = /<parameter\s+name="([\w-]+)"\s*>([\s\S]*?)<\/parameter>/g;
+  for (const match of text.matchAll(invocation)) {
+    if (!toolNames.includes(match[1]!)) return null;
+    const parameters: Record<string, unknown> = {};
+    for (const entry of match[2]!.matchAll(parameter))
+      parameters[entry[1]!] = invokeArgument(entry[2]!);
+    toolCalls.push(cliToolCall(match[1]!, parameters));
+  }
+  if (!toolCalls.length) return null;
+  return {
+    text: text
+      .replace(invocation, "")
+      .split("\n")
+      .filter(
+        (line) =>
+          !/^\s*(```[\w-]*|<\/?(function_calls|tool_calls)>)\s*$/.test(line),
+      )
+      .join("\n")
+      .trim(),
+    toolCalls,
+  };
+}
+
 export function parseCliToolCalls(
   text: string,
   toolNames: string[],
 ): { text: string; toolCalls: AgentModelToolCall[] } {
-  return (
-    fencedToolCalls(text) ??
+  const parsed = fencedToolCalls(text) ??
     bareToolCalls(text, toolNames) ??
-    expressionToolCalls(text, toolNames) ?? { text, toolCalls: [] }
-  );
+    invokeToolCalls(text, toolNames) ??
+    expressionToolCalls(text, toolNames) ?? { text, toolCalls: [] };
+  const seen = new Set<string>();
+  return {
+    text: parsed.text,
+    toolCalls: parsed.toolCalls.filter((call) => {
+      const identity = JSON.stringify([call.name, call.arguments]);
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    }),
+  };
 }
 
 function visibleLength(text: string): number {
@@ -208,7 +257,11 @@ export interface CliModelConnection {
 
 export class CliModelFailure extends Error {
   constructor(
-    readonly code: "cli_unavailable" | "cli_authentication" | "cli_failed",
+    readonly code:
+      | "cli_unavailable"
+      | "cli_authentication"
+      | "cli_failed"
+      | "cli_stalled",
     message: string,
   ) {
     super(message);
@@ -509,29 +562,40 @@ async function cliInvocation(
 export function createCliModelAdapter(
   connection: CliModelConnection,
   command: CliCommand = defaultCliCommand(connection.provider),
+  silenceLimitMs = defaultSilenceLimitMs,
 ): AgentModelAdapter {
+  const run = async (parameters: AgentModelStartParams) => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await runCliTurn(connection, command, parameters, silenceLimitMs);
+      } catch (error) {
+        if (
+          !(error instanceof CliModelFailure) ||
+          error.code !== "cli_stalled" ||
+          attempt === maximumStalledAttempts
+        )
+          throw error;
+      }
+    }
+  };
   return {
     async startTurn(parameters): Promise<AgentModelTurn> {
       parameters.signal?.throwIfAborted();
       await prepareCliHome(connection.home);
-      const directory = await mkdtemp(join(tmpdir(), "machdoch-cloud-cli-"));
-      try {
-        const { args, input } = await cliInvocation(
-          connection,
-          parameters,
-          directory,
-        );
-        return await runCli(
-          connection,
-          command,
-          args,
-          input,
-          directory,
-          parameters,
-        );
-      } finally {
-        await rm(directory, { recursive: true, force: true, maxRetries: 3 });
-      }
+      const turn = await run(parameters);
+      if (
+        parameters.toolChoice !== "required" ||
+        !parameters.tools.length ||
+        turn.toolCalls.length
+      )
+        return turn;
+      const retry = await run({
+        ...parameters,
+        userPrompt: `${parameters.userPrompt}
+
+Your previous reply contained no tool call. Reply with only one ${toolCallFence} block.`,
+      });
+      return { ...retry, usage: combinedUsage(turn.usage, retry.usage) };
     },
     async continueTurn(): Promise<never> {
       throw new Error(
@@ -541,6 +605,57 @@ export function createCliModelAdapter(
   };
 }
 
+async function runCliTurn(
+  connection: CliModelConnection,
+  command: CliCommand,
+  parameters: AgentModelStartParams,
+  silenceLimitMs: number,
+): Promise<AgentModelTurn> {
+  const directory = await mkdtemp(join(tmpdir(), "machdoch-cloud-cli-"));
+  try {
+    const { args, input } = await cliInvocation(
+      connection,
+      parameters,
+      directory,
+    );
+    return await runCli(
+      connection,
+      command,
+      args,
+      input,
+      directory,
+      parameters,
+      silenceLimitMs,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true, maxRetries: 3 });
+  }
+}
+
+const countedUsage = [
+  "inputTokens",
+  "outputTokens",
+  "totalTokens",
+  "cachedInputTokens",
+  "cacheReadInputTokens",
+  "cacheWriteInputTokens",
+  "toolUseInputTokens",
+  "reasoningTokens",
+] as const;
+
+function combinedUsage(
+  first: AgentModelStreamUsage | undefined,
+  second: AgentModelStreamUsage | undefined,
+): AgentModelStreamUsage | undefined {
+  if (!first || !second) return second ?? first;
+  const combined: AgentModelStreamUsage = { ...second };
+  for (const key of countedUsage) {
+    const total = (first[key] ?? 0) + (second[key] ?? 0);
+    if (total) combined[key] = total;
+  }
+  return combined;
+}
+
 function runCli(
   connection: CliModelConnection,
   command: CliCommand,
@@ -548,6 +663,7 @@ function runCli(
   input: string,
   directory: string,
   parameters: AgentModelStartParams,
+  silenceLimitMs: number,
 ): Promise<AgentModelTurn> {
   const onLine = lineHandlers[connection.provider];
   return new Promise<AgentModelTurn>((resolve, reject) => {
@@ -575,11 +691,24 @@ function runCli(
     let emitted = 0;
     let stderr = "";
     let settled = false;
+    let silence: NodeJS.Timeout | undefined;
     const finish = (outcome: () => void) => {
       if (settled) return;
       settled = true;
+      clearTimeout(silence);
       parameters.signal?.removeEventListener("abort", abort);
       outcome();
+    };
+    const watchSilence = () => {
+      clearTimeout(silence);
+      silence = setTimeout(() => {
+        stopProcessTree(child.pid);
+        finish(() =>
+          reject(
+            new CliModelFailure("cli_stalled", "The CLI stopped responding."),
+          ),
+        );
+      }, silenceLimitMs);
     };
     const abort = () => {
       stopProcessTree(child.pid);
@@ -613,6 +742,7 @@ function runCli(
       });
     };
     child.stdout.on("data", (chunk: Buffer) => {
+      watchSilence();
       streamed += chunk.length;
       if (streamed > maximumStreamBytes) {
         stopProcessTree(child.pid);
@@ -680,6 +810,7 @@ function runCli(
         });
       }),
     );
+    watchSilence();
     child.stdin.end(input);
   });
 }

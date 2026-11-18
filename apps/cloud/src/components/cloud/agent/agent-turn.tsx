@@ -174,6 +174,7 @@ function actionVerb(action: AgentAction): string {
   if (action.kind === "automation")
     return action.automationId ? "Save automation" : "Create automation";
   if (action.kind === "client_session") return "Start session";
+  if (action.kind === "issue_task") return "Start task";
   if (action.kind === "pull_request_comment") return "Post comment";
   if (action.kind === "pull_request_review")
     return action.decision === "approve"
@@ -199,6 +200,7 @@ function appliedLabel(action: AgentAction): string {
   if (action.kind === "automation")
     return action.automationId ? "Saved" : "Created";
   if (action.kind === "client_session") return "Started on";
+  if (action.kind === "issue_task") return "Started";
   if (action.kind === "pull_request_comment") return "Commented on";
   if (action.kind === "pull_request_review") return "Reviewed";
   if (action.kind === "release_notes" || action.kind === "release_post")

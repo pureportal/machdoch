@@ -14,6 +14,7 @@ export interface CandidatePush {
   authorization: string | null;
   bundle: Buffer;
   baseCommit: string;
+  mergeParent?: string;
   candidateCommit: string;
   branch: string;
   allowFileRemote?: boolean;
@@ -85,7 +86,11 @@ async function exists(path: string): Promise<boolean> {
 }
 
 export async function pushCandidate(input: CandidatePush): Promise<void> {
-  if (!commit.test(input.baseCommit) || !commit.test(input.candidateCommit))
+  if (
+    !commit.test(input.baseCommit) ||
+    !commit.test(input.candidateCommit) ||
+    (input.mergeParent !== undefined && !commit.test(input.mergeParent))
+  )
     throw new Error("Use full commit identities.");
   const key = createHash("sha256")
     .update(`${input.organizationId}\n${input.remote.toLowerCase()}`)
@@ -107,28 +112,33 @@ export async function pushCandidate(input: CandidatePush): Promise<void> {
     ]);
     await git(mirror, ["config", "extensions.partialclone", "origin"]);
   }
-  const hasBase = await git(mirror, [
-    "cat-file",
-    "-e",
-    `${input.baseCommit}^{commit}`,
-  ]).then(
-    () => true,
-    () => false,
-  );
-  if (!hasBase)
-    await git(
-      mirror,
-      [
-        "fetch",
-        "--no-tags",
-        "--no-write-fetch-head",
-        "--filter=blob:none",
-        "--depth=1",
-        "origin",
-        `${input.baseCommit}:refs/machdoch/base/${input.baseCommit}`,
-      ],
-      options,
+  for (const parent of [
+    input.baseCommit,
+    ...(input.mergeParent ? [input.mergeParent] : []),
+  ]) {
+    const present = await git(mirror, [
+      "cat-file",
+      "-e",
+      `${parent}^{commit}`,
+    ]).then(
+      () => true,
+      () => false,
     );
+    if (!present)
+      await git(
+        mirror,
+        [
+          "fetch",
+          "--no-tags",
+          "--no-write-fetch-head",
+          "--filter=blob:none",
+          "--depth=1",
+          "origin",
+          `${parent}:refs/machdoch/base/${parent}`,
+        ],
+        options,
+      );
+  }
   const bundlePath = join(mirror, `incoming-${randomUUID()}.bundle`);
   const candidateRef = `refs/machdoch/candidates/${input.candidateCommit}`;
   try {

@@ -280,7 +280,14 @@ export async function handleGitApi(
                 cloudId.parse(path[1]),
               ),
             })
-          : null;
+          : path[0] === "issues" &&
+              path[2] === "delivery" &&
+              path.length === 3 &&
+              request.method === "GET"
+            ? Response.json(
+                await runtime.git.delivery.read(actor, cloudId.parse(path[1])),
+              )
+            : null;
   if (response) return response;
   throw new CloudError(
     404,

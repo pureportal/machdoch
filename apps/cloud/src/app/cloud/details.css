@@ -1,55 +1,3 @@
-.cloud-editor {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 28px;
-  max-width: 1280px;
-}
-.cloud-editor-body,
-.cloud-editor-properties {
-  display: grid;
-  align-content: start;
-  gap: 22px;
-  min-width: 0;
-}
-.cloud-editor-body {
-  padding: 28px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--card);
-}
-.cloud-editor-body textarea[name="title"] {
-  field-sizing: content;
-  height: auto;
-  min-height: 44px;
-  max-height: 240px;
-  padding: 8px 0;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-  font-size: 21px;
-  font-weight: 550;
-  letter-spacing: -0.5px;
-  line-height: 1.5;
-  resize: none;
-}
-.cloud-editor-body textarea:not([name="title"]) {
-  min-height: 150px;
-  background: var(--cloud-subtle);
-}
-.cloud-editor-properties {
-  padding: 22px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--cloud-subtle);
-}
-.cloud-editor-properties label {
-  font-size: 11px;
-  color: var(--muted-foreground);
-}
-.cloud-editor-properties select {
-  font-size: 12px;
-}
 .cloud-poker,
 .cloud-issue-tasks,
 .cloud-comments {
@@ -297,30 +245,7 @@
   height: 18px;
   flex-shrink: 0;
 }
-@media (max-width: 1000px) {
-  .cloud-editor {
-    grid-template-columns: minmax(0, 1fr) 220px;
-    gap: 18px;
-  }
-  .cloud-editor-body {
-    padding: 22px;
-  }
-  .cloud-editor-properties {
-    padding: 18px;
-  }
-}
 @media (max-width: 800px) {
-  .cloud-editor {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
-  }
-  .cloud-editor-body {
-    padding: 18px;
-  }
-  .cloud-editor-properties {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 20px 12px;
-  }
   .cloud-settings-section,
   .cloud-connection-setup,
   .cloud-connections article {

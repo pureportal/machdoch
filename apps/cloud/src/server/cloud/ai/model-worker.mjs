@@ -49,15 +49,19 @@ try {
     500,
   );
   if (workerData.kind === "validate") {
-    const valid = workerData.calls.every((call) => {
+    let problem = null;
+    for (const call of workerData.calls) {
       const tool = workerData.tools.find((tool) => tool.name === call.name);
-      return (
-        !!tool &&
-        !call.argumentError &&
-        !validateToolArguments(tool.inputSchema, call.arguments)
-      );
-    });
-    parentPort.postMessage({ kind: "result", result: valid });
+      const error = !tool
+        ? "is not an available tool"
+        : (call.argumentError ??
+          validateToolArguments(tool.inputSchema, call.arguments));
+      if (error) {
+        problem = `${call.name}: ${error}`.slice(0, 1000);
+        break;
+      }
+    }
+    parentPort.postMessage({ kind: "result", result: problem });
   } else if (workerData.kind === "model") {
     const adapter = await createModelAdapter(
       workerData.connection,

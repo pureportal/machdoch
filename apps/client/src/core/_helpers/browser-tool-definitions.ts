@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import {
   coerceBoolean,
@@ -125,6 +126,8 @@ const isBrowserWaitStrategy = (
   );
 };
 
+const SYSTEM_CHROMIUM_PATHS = ["/usr/bin/chromium", "/usr/bin/chromium-browser"];
+
 const getDefaultBrowserChannels = (): BrowserChannel[] => {
   if (process.platform === "win32") {
     return ["msedge", "chrome"];
@@ -251,20 +254,30 @@ const launchInstalledChromium = async (
   const channels = requestedChannel
     ? [requestedChannel]
     : getDefaultBrowserChannels();
+  const systemChromium =
+    process.platform === "linux" && !requestedChannel
+      ? SYSTEM_CHROMIUM_PATHS.filter((path) => existsSync(path)).slice(0, 1)
+      : [];
+  const candidates: { channel: BrowserChannel; executablePath?: string }[] = [
+    ...channels.map((channel) => ({ channel })),
+    ...systemChromium.map((executablePath) => ({
+      channel: "chromium" as const,
+      executablePath,
+    })),
+  ];
   const errors: string[] = [];
   const playwrightModuleName: string = "playwright-core";
   const { chromium } = (await import(
     /* @vite-ignore */ playwrightModuleName
   )) as typeof import("playwright-core");
 
-  for (const channel of channels) {
+  for (const { channel, executablePath } of candidates) {
     let browser: Browser | undefined;
 
     try {
-      browser = await chromium.launch({
-        channel,
-        headless,
-      });
+      browser = await chromium.launch(
+        executablePath ? { executablePath, headless } : { channel, headless },
+      );
       const context = await browser.newContext({
         viewport,
       });
@@ -282,7 +295,7 @@ const launchInstalledChromium = async (
       }
 
       errors.push(
-        `${channel}: ${error instanceof Error ? error.message : String(error)}`,
+        `${executablePath ?? channel}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }

@@ -114,7 +114,7 @@ export async function recordIssue(
   issue: CloudIssue,
 ): Promise<void> {
   await sql.query(
-    "INSERT INTO cloud_issue_history (organization_id, issue_id, revision, actor_id, snapshot, status_name) VALUES ($1,$2,$3,$4,$5,$6)",
+    "INSERT INTO cloud_issue_history (organization_id, issue_id, revision, actor_id, snapshot, status_name, automation) VALUES ($1,$2,$3,$4,$5,$6,$7)",
     [
       actor.organizationId,
       issue.id,
@@ -122,6 +122,7 @@ export async function recordIssue(
       actor.userId,
       JSON.stringify(issue),
       issue.statusName,
+      actor.automation ?? null,
     ],
   );
   await recordEvent(sql, actor, "issue.changed", issue.id, issue.revision, {
@@ -522,6 +523,7 @@ export class CloudPlanning {
     {
       revision: number;
       actor: string;
+      automated: boolean;
       snapshot: IssueSnapshot;
       statusName: string;
       createdAt: string;
@@ -533,11 +535,12 @@ export class CloudPlanning {
         await sql.query<{
           revision: number;
           actor: string;
+          automated: boolean;
           snapshot: IssueSnapshot;
           statusName: string;
           createdAt: string;
         }>(
-          `SELECT h.revision,u.name AS actor,h.snapshot,h.status_name AS "statusName",to_char(h.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt"
+          `SELECT h.revision,COALESCE(h.automation,u.name) AS actor,h.automation IS NOT NULL AS automated,h.snapshot,h.status_name AS "statusName",to_char(h.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt"
         FROM cloud_issue_history h JOIN cloud_users u ON u.id=h.actor_id WHERE h.organization_id=$1 AND h.issue_id=$2 ORDER BY h.revision DESC LIMIT 100`,
           [actor.organizationId, id],
         )

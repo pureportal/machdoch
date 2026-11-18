@@ -180,7 +180,7 @@ export class CloudExecutionProfiles {
             input.autopilot,
           );
           await sql.query(
-            "INSERT INTO cloud_execution_profiles (organization_id,id,project_id,team_id,name,definition,check_actor_id) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+            "INSERT INTO cloud_execution_profiles (organization_id,id,project_id,team_id,name,definition) VALUES ($1,$2,$3,$4,$5,$6)",
             [
               actor.organizationId,
               id,
@@ -188,7 +188,6 @@ export class CloudExecutionProfiles {
               project.team_id,
               input.name,
               JSON.stringify(input),
-              input.checkPullRequests ? actor.userId : null,
             ],
           );
           await recordEvent(sql, actor, "execution_profile.created", id, 1, {});
@@ -243,14 +242,13 @@ export class CloudExecutionProfiles {
             input.autopilot,
           );
           await sql.query(
-            "UPDATE cloud_execution_profiles SET name=$3,definition=$4,enabled=$5,check_actor_id=$6,revision=revision+1 WHERE organization_id=$1 AND id=$2",
+            "UPDATE cloud_execution_profiles SET name=$3,definition=$4,enabled=$5,revision=revision+1 WHERE organization_id=$1 AND id=$2",
             [
               actor.organizationId,
               id,
               input.name,
               JSON.stringify({ ...definition, projectId: profile.projectId }),
               enabled,
-              input.checkPullRequests ? actor.userId : null,
             ],
           );
           await sql.query(

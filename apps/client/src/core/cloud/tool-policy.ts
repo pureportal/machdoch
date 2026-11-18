@@ -33,6 +33,8 @@ export function cloudTaskToolPolicy(definition: AgentToolDefinition): boolean {
       return definition.effect === "read";
     case "utilities":
       return utilities.has(definition.spec.name);
+    case "browser":
+      return true;
     default:
       return false;
   }

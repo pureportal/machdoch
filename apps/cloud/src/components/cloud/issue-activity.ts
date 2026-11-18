@@ -4,6 +4,7 @@ import type { CloudIssueRelation } from "@/lib/cloud-relation-contract";
 export interface IssueHistoryEntry {
   revision: number;
   actor: string;
+  automated: boolean;
   snapshot: IssueSnapshot;
   statusName: string;
   createdAt: string;
@@ -12,6 +13,7 @@ export interface IssueHistoryEntry {
 export interface IssueChangeEntry {
   id: string;
   actor: string;
+  automated: boolean;
   createdAt: string;
   description: string;
 }
@@ -79,6 +81,7 @@ export function issueChangeEntries(
       entries.push({
         id: `change-${entry.revision}`,
         actor: entry.actor,
+        automated: entry.automated,
         createdAt: entry.createdAt,
         description: parts.join(", "),
       });
@@ -147,6 +150,7 @@ export function relationChangeEntries(
   return relations.map((relation) => ({
     id: `relation-${relation.id}`,
     actor: relation.actor,
+    automated: false,
     createdAt: relation.createdAt,
     description: `${relationPhrases[relation.kind]} ${relation.issue.identifier} ${relation.issue.title}`,
   }));

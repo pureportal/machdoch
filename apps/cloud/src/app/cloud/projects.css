@@ -444,38 +444,6 @@
   gap: 6px;
   padding-left: 16px;
 }
-.cloud-aside-runs {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 2px;
-}
-.cloud-aside-runs li {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  min-height: 28px;
-  padding: 0 7px;
-  border-radius: 6px;
-  font-size: 12.5px;
-}
-.cloud-aside-runs li:hover {
-  background: var(--cloud-hover);
-}
-.cloud-aside-runs li > :is(svg, .cloud-task-state) {
-  flex-shrink: 0;
-}
-.cloud-aside-runs li > svg {
-  color: var(--cloud-success);
-}
-.cloud-aside-runs li a {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .cloud-initiative-table .cloud-project-row {
   grid-template-columns:
     minmax(220px, 2.4fr) minmax(120px, 1fr) 56px 72px 110px 96px

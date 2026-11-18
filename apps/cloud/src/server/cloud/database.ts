@@ -64,6 +64,11 @@ export const cloudMigrations = [
   "061-pull-request-checks.sql",
   "062-client-sign-in.sql",
   "063-machdoch-brand-mark.sql",
+  "064-delivery-problems.sql",
+  "065-hosted-runners.sql",
+  "066-pull-request-opened.sql",
+  "067-pull-request-notifications.sql",
+  "068-automated-changes.sql",
 ];
 
 export interface CloudSql {

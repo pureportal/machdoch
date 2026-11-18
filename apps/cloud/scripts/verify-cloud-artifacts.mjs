@@ -105,7 +105,6 @@ try {
     name: "Files",
     repository: "https://github.com/example/project",
     autopilot: false,
-    checkPullRequests: false,
     target: "cloud",
     providerId: provider.id,
     model: "fixture",

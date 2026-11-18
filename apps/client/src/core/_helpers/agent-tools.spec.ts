@@ -268,15 +268,13 @@ describe("agent tool scopes", () => {
         granted.some((tool) => tool.spec.name === "run_shell_command"),
       ).toBe(true);
       expect(
+        granted.some((tool) => tool.spec.name === "start_browser_session"),
+      ).toBe(true);
+      expect(
         granted.some((tool) =>
-          [
-            "scheduler",
-            "workflows",
-            "mcp",
-            "network",
-            "run",
-            "browser",
-          ].includes(tool.backingTool),
+          ["scheduler", "workflows", "mcp", "network", "run"].includes(
+            tool.backingTool,
+          ),
         ),
       ).toBe(false);
       const denied = await executeToolCall(

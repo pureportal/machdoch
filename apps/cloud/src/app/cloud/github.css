@@ -228,8 +228,7 @@
   color: var(--cloud-warning);
 }
 .cloud-pull-request-checks a,
-.cloud-pull-request-checks span,
-.cloud-pull-request-issues a {
+.cloud-pull-request-checks span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -243,6 +242,13 @@
   display: flex;
   flex: 1;
   gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.cloud-pull-request-issues a > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cloud-pull-request-muted {
   flex-shrink: 0;
@@ -336,8 +342,9 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.cloud-pull-request-merge select {
+.cloud-pull-request-merge .cloud-select {
   width: auto;
+  min-width: 140px;
   height: 32px;
 }
 
@@ -398,8 +405,9 @@
 }
 .cloud-pull-request-row-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 2px 10px;
   min-width: 0;
   overflow: hidden;
   color: var(--muted-foreground);
@@ -505,6 +513,16 @@
 .cloud-git-oauth summary {
   cursor: pointer;
   font-weight: 500;
+}
+.cloud-git-token-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  font-size: 13px;
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 @media (max-width: 800px) {

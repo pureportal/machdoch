@@ -1423,8 +1423,11 @@ body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface) .m-loading-state {
   .cloud-issue-row > .cloud-issue-cell-assignee {
     grid-area: 1 / 5;
   }
+  .cloud-issue-row > .cloud-pull-request-indicator {
+    grid-area: 2 / 4;
+  }
   .cloud-issue-row > .cloud-issue-cell-meta {
-    grid-area: 2 / 3 / 3 / 5;
+    grid-area: 2 / 3;
     flex-wrap: wrap;
     justify-content: flex-start;
     row-gap: 4px;

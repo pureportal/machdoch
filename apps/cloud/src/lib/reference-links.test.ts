@@ -1,21 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
-  issueIdentifierPattern,
-  linkIssueIdentifiers,
+  issueReferenceRule,
+  linkReferences,
+  pullRequestReferenceRule,
   type MarkdownNode,
-} from "./issue-links";
+} from "./reference-links";
 
 function paragraph(...children: MarkdownNode[]): MarkdownNode {
   return { type: "root", children: [{ type: "paragraph", children }] };
 }
 
-describe("issue identifier links", () => {
+describe("reference links", () => {
   it("links identifiers of known teams in text", () => {
     const tree = paragraph({
       type: "text",
       value: "PRD-12 blocks ENG-3, but ISO-8601 and prd-4 stay text.",
     });
-    linkIssueIdentifiers(tree, issueIdentifierPattern(["PRD", "ENG"])!);
+    linkReferences(tree, issueReferenceRule(["PRD", "ENG"])!);
     expect(tree.children![0]!.children).toEqual([
       {
         type: "link",
@@ -42,7 +43,7 @@ describe("issue identifier links", () => {
       },
       { type: "text", value: "XPRD-3 PRD-4a /PRD-5 PRD-6." },
     );
-    linkIssueIdentifiers(tree, issueIdentifierPattern(["PRD"])!);
+    linkReferences(tree, issueReferenceRule(["PRD"])!);
     const children = tree.children![0]!.children!;
     expect(children[0]).toEqual({ type: "inlineCode", value: "PRD-1" });
     expect(children[1]!.children).toEqual([{ type: "text", value: "PRD-2" }]);
@@ -58,7 +59,34 @@ describe("issue identifier links", () => {
   });
 
   it("does nothing without valid team keys", () => {
-    expect(issueIdentifierPattern([])).toBeNull();
-    expect(issueIdentifierPattern(["bad key"])).toBeNull();
+    expect(issueReferenceRule([])).toBeNull();
+    expect(issueReferenceRule(["bad key"])).toBeNull();
+  });
+
+  it("links pull request references to their Machdoch page", () => {
+    const tree = paragraph({
+      type: "text",
+      value:
+        "Fixed in machdoch/landing#12 and acme/api.v2#3, not in https://x.test/a/b#4 or a/b#5c.",
+    });
+    linkReferences(tree, pullRequestReferenceRule);
+    expect(tree.children![0]!.children).toEqual([
+      { type: "text", value: "Fixed in " },
+      {
+        type: "link",
+        url: "/cloud/pull-requests/reference/machdoch/landing/12",
+        children: [{ type: "text", value: "machdoch/landing#12" }],
+      },
+      { type: "text", value: " and " },
+      {
+        type: "link",
+        url: "/cloud/pull-requests/reference/acme/api.v2/3",
+        children: [{ type: "text", value: "acme/api.v2#3" }],
+      },
+      {
+        type: "text",
+        value: ", not in https://x.test/a/b#4 or a/b#5c.",
+      },
+    ]);
   });
 });

@@ -194,6 +194,7 @@ export type PokerCommand = z.infer<typeof pokerCommandSchema>;
 export interface CloudActor {
   userId: string;
   organizationId: string;
+  automation?: string;
   delegation?: {
     tokenHash: string;
     scope: "cloud:read" | "cloud:write" | "cloud:execute";

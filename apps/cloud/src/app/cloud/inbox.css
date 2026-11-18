@@ -1,9 +1,11 @@
 .cloud-inbox-layout {
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
-  height: calc(100dvh - 116px);
+  height: calc(100dvh - 59px);
   min-height: 480px;
-  margin: -20px calc(-1 * clamp(16px, 2.2vw, 32px)) -40px;
+  margin: calc(-1 * var(--cloud-content-block-start))
+    calc(-1 * var(--cloud-content-inline))
+    calc(-1 * var(--cloud-content-block-end));
 }
 .cloud-inbox-pane {
   display: flex;

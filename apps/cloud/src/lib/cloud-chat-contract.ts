@@ -136,7 +136,8 @@ export interface AgentActionResult {
     | "release"
     | "automation"
     | "client_session"
-    | "pull_request";
+    | "pull_request"
+    | "task";
   id: string;
   label: string;
   href?: string;
@@ -235,6 +236,13 @@ export type AgentAction = AgentActionBase &
         identifier: string | null;
       }
     | {
+        kind: "issue_task";
+        issueId: string;
+        identifier: string;
+        profileId: string;
+        repository: string;
+      }
+    | {
         kind: "pull_request_comment";
         pullRequestId: string;
         reference: string;
@@ -331,4 +339,5 @@ export const chatErrorMessages: Record<string, string> = {
     "The CLI is not signed in. Ask an administrator to sign in under AI providers.",
   cli_failed:
     "The CLI could not complete the response. Retry when you are ready.",
+  cli_stalled: "The CLI stopped responding. Retry when you are ready.",
 };

@@ -18,6 +18,7 @@ import type {
   RunAttempt,
   RunDetail,
   PullRequestRunSubject,
+  PullRequestTask,
   RunInput,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import {
@@ -56,6 +57,24 @@ export class CloudRuns {
     input: { profileId: string; subject: PullRequestRunSubject },
   ): Promise<{ id: string }> {
     return this.database.transaction((sql) => admitRun(sql, actor, key, input));
+  }
+
+  countForPullRequest(
+    actor: CloudActor,
+    pullRequestId: string,
+    purpose: PullRequestTask,
+  ): Promise<number> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor);
+      return (
+        await sql.query<{ count: number }>(
+          `SELECT count(*)::integer AS count FROM cloud_runs
+          WHERE organization_id=$1 AND manifest->'subject'->>'kind'='pull_request'
+          AND manifest->'subject'->>'id'=$2 AND manifest->'subject'->>'purpose'=$3`,
+          [actor.organizationId, pullRequestId, purpose],
+        )
+      ).rows[0]!.count;
+    });
   }
 
   list(actor: CloudActor, issueId?: string): Promise<CloudRun[]> {

@@ -7,6 +7,8 @@ import type {
   ProjectClient,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import { createSecret, hashSecret, validateSecret } from "../../crypto";
+import type { SettingsCipher } from "../../settings-crypto";
+import { requireCredentialStorage } from "../credential-storage";
 import {
   CloudError,
   command,
@@ -16,6 +18,8 @@ import {
 } from "../access";
 import type { CloudDatabase, CloudSql } from "../database";
 import { fenceRun, lockExecution, readProfile, readRun } from "./records";
+import { hostedTokenContext, type CloudHostedRunners } from "./hosted-runners";
+import { requireInstallationAdministrator } from "./sandbox-runtime";
 
 export interface WorkerIdentity {
   organizationId: string;
@@ -88,21 +92,34 @@ export async function requireWorker(
 }
 
 export class CloudWorkers {
-  constructor(private readonly database: CloudDatabase) {}
+  constructor(
+    private readonly database: CloudDatabase,
+    private readonly cipher: SettingsCipher | null,
+    private readonly hostedRunners: CloudHostedRunners,
+  ) {}
 
   list(actor: CloudActor, profileId: string): Promise<ExecutionWorker[]> {
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "ai.manage");
       await readProfile(sql, actor, profileId);
-      return (
-        await sql.query<ExecutionWorker & Record<string, unknown>>(
-          `SELECT id,profile_id AS "profileId",name,enabled,workspace_binding AS "workspaceBinding",
+      const rows = (
+        await sql.query<
+          Omit<ExecutionWorker, "hosted"> & { hosted: boolean } & Record<
+              string,
+              unknown
+            >
+        >(
+          `SELECT id,profile_id AS "profileId",name,enabled,workspace_binding AS "workspaceBinding",hosted_token IS NOT NULL AS hosted,
         to_char(last_seen_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "lastSeenAt",
         to_char(expires_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "expiresAt"
         FROM cloud_execution_workers WHERE organization_id=$1 AND profile_id=$2 ORDER BY name,id`,
           [actor.organizationId, profileId],
         )
       ).rows;
+      return rows.map((row) => ({
+        ...row,
+        hosted: row.hosted ? this.hostedRunners.status(row.id) : null,
+      }));
     });
   }
 
@@ -153,10 +170,59 @@ export class CloudWorkers {
     });
   }
 
+  private async sealHostedToken(
+    sql: CloudSql,
+    actor: CloudActor,
+    id: string,
+    target: ExecutionProfile["target"],
+    token: string,
+  ): Promise<Buffer> {
+    await requireInstallationAdministrator(sql, actor);
+    if (target !== "cloud")
+      throw new CloudError(
+        409,
+        "hosted_target",
+        "Only cloud profiles can run on this server.",
+      );
+    if (
+      !(await sql.query("SELECT 1 FROM cloud_sandbox_runtime WHERE id=1")).rows
+        .length
+    )
+      throw new CloudError(
+        409,
+        "sandbox_required",
+        "Set up the sandbox on this server first.",
+      );
+    const cipher = await requireCredentialStorage(sql, this.cipher);
+    return cipher.encrypt(
+      Buffer.from(token),
+      hostedTokenContext(actor.organizationId, id),
+    );
+  }
+
   register(
     actor: CloudActor,
     profileId: string,
     name: string,
+  ): Promise<{ id: string; token: string }> {
+    return this.enroll(actor, profileId, name, false);
+  }
+
+  async host(
+    actor: CloudActor,
+    profileId: string,
+    name: string,
+  ): Promise<{ id: string }> {
+    const { id } = await this.enroll(actor, profileId, name, true);
+    this.hostedRunners.wake();
+    return { id };
+  }
+
+  private enroll(
+    actor: CloudActor,
+    profileId: string,
+    name: string,
+    hosted: boolean,
   ): Promise<{ id: string; token: string }> {
     const token = createSecret("mch_cloud_worker");
     return this.database.transaction(async (sql) => {
@@ -170,8 +236,11 @@ export class CloudWorkers {
           "Enable the execution profile before enrolling a runner.",
         );
       const id = randomUUID();
+      const sealed = hosted
+        ? await this.sealHostedToken(sql, actor, id, profile.target, token)
+        : null;
       await sql.query(
-        "INSERT INTO cloud_execution_workers (organization_id,id,profile_id,profile_revision,name,token_hash) VALUES ($1,$2,$3,$4,$5,$6)",
+        "INSERT INTO cloud_execution_workers (organization_id,id,profile_id,profile_revision,name,token_hash,hosted_token) VALUES ($1,$2,$3,$4,$5,$6,$7)",
         [
           actor.organizationId,
           id,
@@ -179,15 +248,23 @@ export class CloudWorkers {
           profile.revision,
           name,
           hashSecret(token),
+          sealed,
         ],
       );
-      await recordEvent(sql, actor, "runner.enrolled", id, 1, { profileId });
+      await recordEvent(sql, actor, "runner.enrolled", id, 1, {
+        profileId,
+        hosted,
+      });
       return { id, token };
     });
   }
 
-  revoke(actor: CloudActor, key: string, id: string): Promise<{ id: string }> {
-    return this.database.transaction(async (sql) => {
+  async revoke(
+    actor: CloudActor,
+    key: string,
+    id: string,
+  ): Promise<{ id: string }> {
+    const result = await this.database.transaction(async (sql) => {
       await lockExecution(sql, actor.organizationId);
       await requireMembership(sql, actor, "ai.manage");
       const worker = (
@@ -226,6 +303,8 @@ export class CloudWorkers {
         },
       );
     });
+    this.hostedRunners.wake();
+    return result;
   }
 
   rotate(
@@ -237,13 +316,19 @@ export class CloudWorkers {
       await lockExecution(sql, actor.organizationId);
       await requireMembership(sql, actor, "ai.manage");
       const worker = (
-        await sql.query<{ profile_id: string }>(
-          "SELECT profile_id FROM cloud_execution_workers WHERE organization_id=$1 AND id=$2",
+        await sql.query<{ profile_id: string; hosted: boolean }>(
+          "SELECT profile_id,hosted_token IS NOT NULL AS hosted FROM cloud_execution_workers WHERE organization_id=$1 AND id=$2",
           [actor.organizationId, id],
         )
       ).rows[0];
       if (!worker)
         throw new CloudError(404, "not_found", "Runner is unavailable.");
+      if (worker.hosted)
+        throw new CloudError(
+          409,
+          "hosted_runner",
+          "Runners on this server renew their credentials automatically.",
+        );
       const profile = await readProfile(sql, actor, worker.profile_id);
       if (!profile.enabled)
         throw new CloudError(

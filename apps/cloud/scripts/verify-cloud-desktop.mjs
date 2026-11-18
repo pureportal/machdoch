@@ -244,7 +244,6 @@ try {
     target: "client",
     repository: "https://github.com/example/project",
     autopilot: false,
-    checkPullRequests: false,
     agent: "codex-cli",
     maxDurationSeconds: 300,
     maxTokens: 10000,

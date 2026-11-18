@@ -87,9 +87,12 @@ async function main(): Promise<void> {
   );
 }
 
-void main().catch((error: unknown) => {
-  process.stderr.write(
-    `${error instanceof Error ? error.message : "Cloud agent failed."}\n`,
-  );
-  process.exitCode = 1;
-});
+void main().then(
+  () => process.exit(0),
+  (error: unknown) => {
+    process.stderr.write(
+      `${error instanceof Error ? error.message : "Cloud agent failed."}\n`,
+    );
+    process.exit(1);
+  },
+);

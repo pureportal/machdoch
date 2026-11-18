@@ -64,7 +64,6 @@ export async function createScheduleFixture(
       target: "cloud",
       repository: "https://github.com/example/project",
       autopilot: false,
-      checkPullRequests: false,
       providerId,
       model: "fixture",
       maxTokens: 10000,

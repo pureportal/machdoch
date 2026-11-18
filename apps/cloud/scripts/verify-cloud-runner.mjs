@@ -1,7 +1,11 @@
-import { startRunnerProcess, runnerHistory } from "./cloud-runner-process.mjs";
+import {
+  installedSandbox,
+  startRunnerProcess,
+  runnerHistory,
+} from "./cloud-runner-process.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   cloudApi,
@@ -10,13 +14,7 @@ import {
   assertEventually,
 } from "./cloud-browser-fixture.mjs";
 
-assert.ok(
-  process.env.MACHDOCH_SANDBOX_CONFIG,
-  "Select a trusted sandbox artifact manifest",
-);
-const sandbox = JSON.parse(
-  await readFile(process.env.MACHDOCH_SANDBOX_CONFIG, "utf8"),
-);
+const sandbox = await installedSandbox();
 const fixture = await cloudBrowserFixture({
   serverEntry: "scripts/cloud-runner-fixture.ts",
 });
@@ -66,30 +64,21 @@ try {
     fixture.ownerContext,
     { dailyTokenBudget: 500000 },
   );
-  await page.goto(`${fixture.origin}/cloud/execution`);
-  await page.getByRole("button", { name: "New profile", exact: true }).click();
   const form = page.getByRole("dialog");
-  await form
-    .getByRole("textbox", { name: "Name", exact: true })
-    .fill("Autonomous runner");
-  await form
-    .getByLabel("Repository URL", { exact: true })
-    .fill("https://github.com/octocat/Hello-World");
-  await form.getByLabel("Provider", { exact: true }).selectOption(provider.id);
-  await form.getByLabel("Model", { exact: true }).selectOption("fixture");
-  await form.getByLabel("Time limit (minutes)").fill("5");
-  await form.getByLabel("Check name 1", { exact: true }).fill("README");
-  await form
-    .getByLabel("Check command 1", { exact: true })
-    .fill(protectedCheck);
-  await form.getByLabel("Check timeout 1", { exact: true }).fill("15");
-  await form.getByRole("button", { name: "Add check", exact: true }).click();
-  await form.getByLabel("Check name 2", { exact: true }).fill("Temporary");
-  await form
-    .getByRole("button", { name: "Remove check 2", exact: true })
-    .click();
-  await form.getByRole("button", { name: "Save profile", exact: true }).click();
-  await form.waitFor({ state: "hidden" });
+  await api("execution-profiles", "POST", {
+    projectId: project.id,
+    name: "Autonomous runner",
+    target: "cloud",
+    repository: "https://github.com/octocat/Hello-World",
+    autopilot: false,
+    providerId: provider.id,
+    model: "fixture",
+    maxDurationSeconds: 300,
+    maxTokens: 200000,
+    requiredChecks: [
+      { name: "README", command: protectedCheck, timeoutSeconds: 15 },
+    ],
+  });
   const profile = (await api("execution-profiles")).profiles[0];
   assert.deepEqual(profile.requiredChecks, [
     { name: "README", command: protectedCheck, timeoutSeconds: 15 },
@@ -98,9 +87,7 @@ try {
     profileId: profile.id,
     name: "Autonomous worker",
   });
-  passed(
-    "Execution profiles retain explicit check commands and deadlines from the editor",
-  );
+  passed("Execution profiles retain explicit check commands and deadlines");
   const issue = await api("issues", "POST", {
     teamId: team.id,
     projectId: project.id,
@@ -109,15 +96,35 @@ try {
     acceptanceCriteria:
       "README contains the marker and protected validation passes.",
   });
-  await page.goto(`${fixture.origin}/cloud/issues/${issue.id}`);
-  await page.getByRole("tab", { name: "AI tasks", exact: true }).click();
-  await page.getByRole("button", { name: "New task", exact: true }).click();
-  await form.getByLabel("Execution profile").selectOption(profile.id);
-  await form.getByRole("button", { name: "Queue task", exact: true }).click();
-  await page.waitForURL(/\/cloud\/tasks\/[a-f0-9-]+$/);
-  const runId = new URL(page.url()).pathname.split("/").at(-1);
+  const queued = await api("runs", "POST", {
+    profileId: profile.id,
+    subject: {
+      kind: "issue",
+      id: issue.id,
+      revision: (await api(`issues/${issue.id}`)).revision,
+    },
+  });
+  const runId = queued.id;
+  await page.goto(`${fixture.origin}/cloud/tasks/${runId}`);
   const workerProcess = await runProcess(worker, "repair");
-  assert.equal((await workerProcess.finished)[0], 0, workerProcess.logs());
+  const [workerExit] = await workerProcess.finished;
+  await writeFile(
+    join(fixture.directory, "runner-transcript.json"),
+    JSON.stringify(
+      {
+        result: await api(`runs/${runId}`),
+        calls: (
+          await fixture.database.query(
+            "SELECT state,error_code,substr(response::text,1,800) AS response,substr(user_prompt,1,300) AS prompt FROM cloud_inference_calls WHERE run_id=$1 ORDER BY created_at,id",
+            [runId],
+          )
+        ).rows,
+      },
+      null,
+      2,
+    ),
+  );
+  assert.equal(workerExit, 0, workerProcess.logs());
   await page.getByRole("status").filter({ hasText: "succeeded" }).waitFor();
   const result = await api(`runs/${runId}`);
   assert.equal(result.state, "succeeded");
@@ -126,6 +133,7 @@ try {
     result.artifacts.filter((file) => file.kind === "candidate").length,
     2,
   );
+  await page.getByRole("tab", { name: "Files", exact: true }).click();
   assert.equal(
     await page
       .getByRole("link", { name: "Download candidate.bundle", exact: true })

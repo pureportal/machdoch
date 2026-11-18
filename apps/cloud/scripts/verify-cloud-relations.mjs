@@ -282,7 +282,6 @@ try {
     target: "cloud",
     repository: "https://github.com/example/project",
     autopilot: false,
-    checkPullRequests: false,
     providerId: provider.id,
     model: "fixture",
     maxDurationSeconds: 300,

@@ -32,6 +32,10 @@ import type { CloudGitPullRequests } from "../git/pull-requests";
 import type { CloudPulse } from "../pulse/pulse";
 import type { CloudAutomations } from "./automations";
 import { executeGitAction } from "./automation-git-actions";
+import {
+  pullRequestTaskDefaults,
+  sandboxStatusContext,
+} from "../execution/pull-request-tasks";
 import { automationScope, queueFinishedEvent } from "./automation-events";
 import { automationChainActions } from "./automation-chain-actions";
 import { changesSinceLastPost } from "./release-automations";
@@ -96,18 +100,14 @@ const accessErrors = new Set([
   "delegation_denied",
 ]);
 const webhookTimeoutMs = 10_000;
+const maximumAutomatedPullRequestTasks = 3;
 const pullRequestTriggers = new Set<string>([
   ...gitEventKinds,
   "pull_request_changed",
 ]);
-const defaultPullRequestInstructions =
-  "Fix the failing checks and address the review comments on this pull request.";
-const defaultPullRequestCriteria =
-  "The checks pass and every review comment is addressed.";
 
 export type StepOutcome =
-  | (Omit<AutomationStep, "kind"> & { halt?: true })
-  | "waiting";
+  (Omit<AutomationStep, "kind"> & { halt?: true }) | "waiting";
 
 export function succeeded(
   detail: string,
@@ -122,6 +122,28 @@ export function skipped(detail: string): StepOutcome {
 
 export class CloudAutomationExecutor {
   constructor(private readonly services: AutomationServices) {}
+
+  private async pullRequestProfile(
+    organizationId: string,
+    chosenId: string,
+    pullRequestId: string,
+  ): Promise<string | null> {
+    return this.services.database.transaction(
+      async (sql) =>
+        (
+          await sql.query<{ id: string }>(
+            `SELECT p.id FROM cloud_execution_profiles p
+            JOIN cloud_execution_profiles chosen ON chosen.organization_id=p.organization_id AND chosen.id=$2
+            JOIN cloud_git_pull_requests pr ON pr.organization_id=p.organization_id AND pr.id=$3
+            JOIN cloud_git_repositories r ON r.organization_id=pr.organization_id AND r.id=pr.repository_id
+            WHERE p.organization_id=$1 AND p.team_id=chosen.team_id AND p.enabled
+            AND lower(regexp_replace(p.definition->>'repository','[.]git$',''))=lower(regexp_replace(r.web_url,'[.]git$',''))
+            ORDER BY p.id=chosen.id DESC,p.project_id=chosen.project_id DESC,p.name LIMIT 1`,
+            [organizationId, chosenId, pullRequestId],
+          )
+        ).rows[0]?.id ?? null,
+    );
+  }
 
   async advance(run: ActiveRun): Promise<void> {
     const automation = (
@@ -139,6 +161,7 @@ export class CloudAutomationExecutor {
     const owner = {
       organizationId: run.organizationId,
       userId: automation.ownerId,
+      automation: automation.name,
     };
     await this.save(run, { state: run.turnId ? "waiting" : "running" });
     await automationScope.run(
@@ -349,9 +372,7 @@ export class CloudAutomationExecutor {
         return this.askAgent(run, automation, owner, action, variables, key);
       case "delegate": {
         const pullRequest = variables.pullRequest as
-          | { id?: unknown; headSha?: unknown }
-          | null
-          | undefined;
+          { id?: unknown; headSha?: unknown } | null | undefined;
         if (
           typeof pullRequest?.id === "string" &&
           (pullRequestTriggers.has(run.trigger) || !run.issueId)
@@ -360,36 +381,78 @@ export class CloudAutomationExecutor {
             owner,
             pullRequest.id,
           );
+          const headSha =
+            typeof pullRequest.headSha === "string"
+              ? pullRequest.headSha
+              : current.headSha;
+          const profileId = await this.pullRequestProfile(
+            run.organizationId,
+            action.profileId,
+            current.id,
+          );
+          if (!profileId)
+            return skipped(
+              `No AI setup in this team works on ${current.repository}.`,
+            );
+          const defaults = pullRequestTaskDefaults[action.task];
+          if (
+            action.task !== "check" &&
+            (await this.services.runs.countForPullRequest(
+              owner,
+              current.id,
+              action.task,
+            )) >= maximumAutomatedPullRequestTasks
+          )
+            return skipped(
+              `${maximumAutomatedPullRequestTasks} ${action.task} tasks already ran on #${current.number}.`,
+            );
           const created = await this.services.runs.createForPullRequest(
             owner,
             key("task"),
             {
-              profileId: action.profileId,
+              profileId,
               subject: {
                 kind: "pull_request",
-                purpose: "fix",
+                purpose: action.task,
                 id: current.id,
-                headSha:
-                  typeof pullRequest.headSha === "string"
-                    ? pullRequest.headSha
-                    : current.headSha,
+                headSha,
+                ...(action.task === "resolve"
+                  ? {
+                      base: await this.services.pullRequests.mergeBase(
+                        owner,
+                        current.id,
+                      ),
+                    }
+                  : {}),
                 objective:
                   renderAutomationText(
                     action.instructions,
                     variables,
                     20_000,
-                  ).trim() || defaultPullRequestInstructions,
+                  ).trim() || defaults.objective,
                 acceptanceCriteria:
                   renderAutomationText(
                     action.acceptanceCriteria,
                     variables,
                     20_000,
-                  ).trim() || defaultPullRequestCriteria,
+                  ).trim() || defaults.acceptanceCriteria,
               },
             },
           );
+          if (action.task === "check")
+            await this.services.pullRequests.commitStatus(
+              owner,
+              current.id,
+              headSha,
+              {
+                state: "pending",
+                context: sandboxStatusContext,
+                description: "Checking in a sandbox",
+                targetUrl: `${this.services.origin}/cloud/tasks/${created.id}`,
+              },
+            );
           return succeeded(
-            `AI task started on #${current.number}`,
+            `${action.task === "check" ? "Sandbox check" : "AI task"} started on #${current.number}`,
             `/cloud/tasks/${created.id}`,
           );
         }

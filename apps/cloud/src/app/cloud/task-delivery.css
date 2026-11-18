@@ -94,6 +94,7 @@
 .cloud-task-stage-icon {
   position: relative;
   z-index: 1;
+  grid-area: 1 / 1;
   display: grid;
   place-items: center;
   width: 22px;
@@ -105,8 +106,10 @@
 .cloud-task-stage-label {
   position: relative;
   z-index: 1;
-  align-self: center;
+  grid-area: 1 / 2;
+  align-self: start;
   justify-self: start;
+  line-height: 22px;
   padding-right: 8px;
   background: var(--background);
   color: var(--foreground);
@@ -114,7 +117,7 @@
   font-weight: 500;
 }
 .cloud-task-stage-detail {
-  grid-column: 2;
+  grid-area: 2 / 2;
   margin-top: 3px;
   font-size: 11px;
   line-height: 1.45;

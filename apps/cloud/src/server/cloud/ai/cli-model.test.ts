@@ -273,6 +273,72 @@ describe("cloud CLI model adapter", () => {
     ]);
   });
 
+  it("asks once more for a tool call when one is required", async () => {
+    const fence = "`".repeat(3);
+    const command = await fixture(
+      "claude-required.mjs",
+      `import { readFileSync } from "node:fs";
+      const args = process.argv.slice(2);
+      const prompt = readFileSync(0, "utf8");
+      const system = readFileSync(args[args.indexOf("--system-prompt-file") + 1], "utf8");
+      const write = (value) => console.log(JSON.stringify(value));
+      const call = "${fence}tool_calls\\n" + JSON.stringify([{ name: "submit_final_response", arguments: {} }]) + "\\n${fence}";
+      const text = !system.includes("plain-text replies are not accepted") ? "missing rule" : prompt.includes("contained no tool call") ? call : "Done.";
+      write({ type: "result", subtype: "success", is_error: false, result: text, usage: { input_tokens: 4, output_tokens: 1 } });`,
+    );
+    const turn = await createCliModelAdapter(
+      { provider: "claude-code-cli", model: "sonnet", apiKey: "", home },
+      command,
+    ).startTurn({
+      ...parameters,
+      toolChoice: "required",
+      tools: [
+        {
+          name: "submit_final_response",
+          description: "Finish.",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+    });
+    expect(turn.toolCalls.map((call) => call.name)).toEqual([
+      "submit_final_response",
+    ]);
+    expect(turn.usage).toMatchObject({
+      inputTokens: 8,
+      outputTokens: 2,
+      totalTokens: 10,
+    });
+  });
+
+  it("restarts a CLI that stops producing output, then gives up after the second stall", async () => {
+    const marker = join(directory, "stalled-once");
+    const command = await fixture(
+      "claude-stalled.mjs",
+      `import { existsSync, writeFileSync } from "node:fs";
+      if (!existsSync(${JSON.stringify(marker)})) {
+        writeFileSync(${JSON.stringify(marker)}, "");
+        setInterval(() => {}, 1000);
+      } else console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "Recovered." }));`,
+    );
+    const adapter = createCliModelAdapter(
+      { provider: "claude-code-cli", model: "sonnet", apiKey: "", home },
+      command,
+      500,
+    );
+    expect((await adapter.startTurn(parameters)).text).toBe("Recovered.");
+    const hanging = await fixture(
+      "claude-hanging.mjs",
+      "setInterval(() => {}, 1000);",
+    );
+    await expect(
+      createCliModelAdapter(
+        { provider: "claude-code-cli", model: "sonnet", apiKey: "", home },
+        hanging,
+        500,
+      ).startTurn(parameters),
+    ).rejects.toMatchObject({ code: "cli_stalled" });
+  });
+
   it("requests structured output in the instructions and returns the bare JSON answer", async () => {
     const fence = "`".repeat(3);
     const command = await fixture(
@@ -327,12 +393,51 @@ describe("cloud CLI model adapter", () => {
       '[{"name":"list_clients","arguments":{}}]\n```',
       '```\n[{"name":"list_clients","arguments":{}}]',
       '```json\n[{"name":"list_clients","arguments":{}}]\n```',
+      '<tool_calls>\n[{"name":"list_clients","arguments":{}}]\n</tool_calls>\n```',
+      '[{"name":"list_clients","arguments":{}}]\n```\n\n\n<br>',
     ])
       expect(
         parseCliToolCalls(text, ["list_clients"]).toolCalls.map(
           (call) => call.name,
         ),
       ).toEqual(["list_clients"]);
+  });
+
+  it("drops repeated identical tool calls", () => {
+    const call = { name: "report_decision", arguments: { decision: "done" } };
+    expect(
+      parseCliToolCalls(JSON.stringify([call, call]), ["report_decision"])
+        .toolCalls,
+    ).toEqual([
+      {
+        id: expect.stringMatching(/^cli_/),
+        name: "report_decision",
+        arguments: { decision: "done" },
+      },
+    ]);
+  });
+
+  it("accepts invoke blocks with typed parameters and a stray fence", () => {
+    expect(
+      parseCliToolCalls(
+        '<invoke name="read_file">\n<parameter name="path">README</parameter>\n<parameter name="startLine">1</parameter>\n<parameter name="replaceAll">false</parameter>\n</invoke>\n```',
+        ["read_file"],
+      ),
+    ).toEqual({
+      text: "",
+      toolCalls: [
+        {
+          id: expect.stringMatching(/^cli_/),
+          name: "read_file",
+          arguments: { path: "README", startLine: 1, replaceAll: false },
+        },
+      ],
+    });
+    expect(
+      parseCliToolCalls('<invoke name="delete_everything"></invoke>', [
+        "read_file",
+      ]).toolCalls,
+    ).toEqual([]);
   });
 
   it("accepts unfenced tool call arrays but keeps other JSON as text", () => {

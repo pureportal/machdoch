@@ -109,7 +109,7 @@ export async function executeGitAction(
       const result = await pullRequests.review(
         owner,
         target.id,
-        { decision: action.decision, body: body ? marked(body) : "" },
+        { decision: action.decision, body },
         mode,
       );
       return {
@@ -124,6 +124,12 @@ export async function executeGitAction(
         return {
           state: "skipped",
           detail: "New commits arrived after the trigger. Nothing was merged.",
+          link: current.url,
+        };
+      if (current.mergeableState === "dirty")
+        return {
+          state: "skipped",
+          detail: "The pull request has merge conflicts. Nothing was merged.",
           link: current.url,
         };
       const merged = await pullRequests.merge(

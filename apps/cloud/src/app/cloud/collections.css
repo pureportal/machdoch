@@ -10,10 +10,15 @@
   min-width: 160px;
   max-width: 360px;
 }
-.cloud-toolbar select {
+.cloud-toolbar .cloud-select {
+  flex: 0 0 auto;
   width: auto;
-  max-width: 200px;
-  font-size: 12px;
+  min-width: 150px;
+  max-width: 220px;
+  height: 32px;
+}
+.cloud-toolbar .cloud-select-trigger {
+  font-size: 12.5px;
 }
 .cloud-issue-search {
   display: flex;
@@ -79,11 +84,16 @@
   color: var(--muted-foreground);
 }
 .cloud-display-row select {
+  width: 136px;
   height: 28px;
-  padding: 0 8px;
+  padding: 0 26px 0 9px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 fill=%27none%27 stroke=%27%238b8d98%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 viewBox=%270 0 24 24%27%3E%3Cpath d=%27m6 9 6 6 6-6%27/%3E%3C/svg%3E");
+  background-position: right 8px center;
+  background-repeat: no-repeat;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--cloud-subtle);
+  background-color: var(--cloud-subtle);
   color: var(--foreground);
   font-size: 12.5px;
   cursor: pointer;
@@ -444,8 +454,8 @@
   .cloud-issue-search > svg {
     top: 14px;
   }
-  .cloud-toolbar select {
-    flex: 1;
+  .cloud-toolbar .cloud-select {
+    flex: 1 1 140px;
     max-width: 100%;
     min-width: 0;
   }

@@ -1,30 +1,54 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
-import { cloudApi, cloudBrowserFixture } from "./cloud-browser-fixture.mjs";
-import { startRunnerProcess, runnerHistory } from "./cloud-runner-process.mjs";
+import { parseArgs } from "node:util";
+import {
+  assertEventually,
+  cloudApi,
+  cloudBrowserFixture,
+} from "./cloud-browser-fixture.mjs";
+import { runnerHistory } from "./cloud-runner-process.mjs";
 
-assert.ok(
-  process.env.OPENAI_API_KEY,
-  "Configure OPENAI_API_KEY for live execution verification",
-);
-assert.ok(
-  process.env.MACHDOCH_VERIFY_MODEL,
-  "Select MACHDOCH_VERIFY_MODEL for live execution verification",
-);
-assert.ok(
-  process.env.MACHDOCH_SANDBOX_CONFIG,
-  "Select a trusted sandbox artifact manifest",
-);
-const sandbox = JSON.parse(
-  await readFile(process.env.MACHDOCH_SANDBOX_CONFIG, "utf8"),
-);
+const { values } = parseArgs({
+  options: {
+    model: { type: "string", default: "sonnet" },
+    "claude-config": { type: "string", default: join(homedir(), ".claude") },
+  },
+});
+const model = values.model;
+const cliHomes = new Set();
 const fixture = await cloudBrowserFixture();
+
+async function signInClaude(provider) {
+  const { organizationId } = (
+    await fixture.database.query(
+      'SELECT organization_id AS "organizationId" FROM cloud_ai_providers WHERE id=$1',
+      [provider.id],
+    )
+  ).rows[0];
+  const home = join(
+    homedir(),
+    ".machdoch-cloud",
+    "cli",
+    organizationId,
+    provider.id,
+  );
+  cliHomes.add(join(homedir(), ".machdoch-cloud", "cli", organizationId));
+  await mkdir(home, { recursive: true, mode: 0o700 });
+  await copyFile(
+    join(values["claude-config"], ".credentials.json"),
+    join(home, ".credentials.json"),
+  );
+  const login = await api(`ai-providers/${provider.id}/login`);
+  assert.equal(login.state, "signed-in", JSON.stringify(login));
+  return login.account;
+}
 const page = await fixture.ownerContext.newPage();
 const api = (path, method, body) =>
   cloudApi(fixture, fixture.ownerContext, path, method, body);
-let runner;
+let worker;
 try {
   await api("auth/login", "POST", {
     email: "owner@example.test",
@@ -46,13 +70,20 @@ try {
   });
   const provider = await api("ai-providers", "POST", {
     name: "Live runner",
-    provider: "openai",
+    provider: "claude-code-cli",
     region: null,
-    models: [process.env.MACHDOCH_VERIFY_MODEL],
-    apiKey: process.env.OPENAI_API_KEY,
-    maxOutputTokens: 1024,
-    dailyTokenBudget: 200000,
+    models: [model],
+    apiKey: "",
+    maxOutputTokens: 4096,
+    dailyTokenBudget: 400000,
     maxConcurrentRequests: 1,
+  });
+  const account = await signInClaude(provider);
+  const detected = await api("execution-sandbox");
+  assert.ok(detected.sandbox, "The fixture organization runs this server");
+  await api("execution-sandbox", "POST", {
+    cgroupRoot: null,
+    artifacts: detected.sandbox.artifacts,
   });
   const command = `node -e "const fs=require('node:fs'),a=require('node:assert/strict'),text=fs.readFileSync('README','utf8');a.equal(process.getuid(),1000);a.ok(text.startsWith('Hello World!'));a.equal((text.match(/MACHDOCH_LIVE_RUNNER_OK/g)||[]).length,1);console.log('README verified')"`;
   const profile = await api("execution-profiles", "POST", {
@@ -61,17 +92,13 @@ try {
     target: "cloud",
     repository: "https://github.com/octocat/Hello-World",
     autopilot: false,
-    checkPullRequests: false,
     providerId: provider.id,
-    model: process.env.MACHDOCH_VERIFY_MODEL,
-    maxDurationSeconds: 180,
-    maxTokens: 200000,
+    model,
+    maxDurationSeconds: 600,
+    maxTokens: 400000,
     requiredChecks: [{ name: "README marker", command, timeoutSeconds: 15 }],
   });
-  const worker = await api("execution-workers", "POST", {
-    profileId: profile.id,
-    name: "Live worker",
-  });
+  const runnerName = "Live worker";
   const issue = await api("issues", "POST", {
     teamId: team.id,
     projectId: project.id,
@@ -81,16 +108,33 @@ try {
     acceptanceCriteria:
       "README preserves the original text and contains the marker exactly once.",
   });
-  await page.goto(`${fixture.origin}/cloud/issues/${issue.id}`);
-  await page.getByRole("tab", { name: "AI tasks", exact: true }).click();
-  await page.getByRole("button", { name: "New task", exact: true }).click();
-  const form = page.getByRole("dialog");
-  await form.getByLabel("Execution profile").selectOption(profile.id);
-  await form.getByRole("button", { name: "Queue task", exact: true }).click();
-  await page.waitForURL(/\/cloud\/tasks\/[a-f0-9-]+$/);
-  const runId = new URL(page.url()).pathname.split("/").at(-1);
-  runner = await startRunnerProcess(fixture, worker, sandbox, "live");
-  const [exitCode] = await runner.finished;
+  const queued = await api("runs", "POST", {
+    profileId: profile.id,
+    subject: {
+      kind: "issue",
+      id: issue.id,
+      revision: (await api(`issues/${issue.id}`)).revision,
+    },
+  });
+  const runId = queued.id;
+  await page.goto(`${fixture.origin}/cloud/execution`);
+  await page.getByRole("button", { name: "Runners" }).click();
+  await page.getByRole("button", { name: "Add runner" }).click();
+  await page.getByLabel("Name").fill(runnerName);
+  await page.getByLabel("Runs on").selectOption("server");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Add runner" })
+    .click();
+  await page.getByText("This server · Running").waitFor({ timeout: 60000 });
+  worker = (
+    await api(`execution-workers?profileId=${profile.id}`)
+  ).workers.find((entry) => entry.name === runnerName);
+  await page.goto(`${fixture.origin}/cloud/tasks/${runId}`);
+  await page
+    .getByRole("status")
+    .filter({ hasText: /succeeded|failed/ })
+    .waitFor({ timeout: 600000 });
   const calls = (
     await fixture.database.query(
       "SELECT user_prompt,response,state,error_code,actual_tokens,reserved_tokens FROM cloud_inference_calls WHERE run_id=$1 ORDER BY created_at,id",
@@ -101,8 +145,6 @@ try {
     join(fixture.directory, "live-runner-transcript.json"),
     JSON.stringify({ result: await api(`runs/${runId}`), calls }, null, 2),
   );
-  assert.equal(exitCode, 0, runner.logs());
-  await page.getByRole("status").filter({ hasText: "succeeded" }).waitFor();
   const result = await api(`runs/${runId}`);
   assert.equal(result.state, "succeeded");
   assert.ok(
@@ -129,7 +171,23 @@ try {
       .filter((line) => line.startsWith("diff --git ")),
     ["diff --git a/README b/README"],
   );
-  const state = runnerHistory(runner);
+  await api(`execution-workers/${worker.id}/revoke`, "POST", {});
+  let state;
+  await assertEventually(
+    async () => {
+      state = runnerHistory({
+        stateDirectory: join(
+          homedir(),
+          ".machdoch-cloud",
+          "runners",
+          worker.id,
+        ),
+      });
+      return true;
+    },
+    () => "The runner on this server did not stop.",
+    60000,
+  );
   assert.ok(state.environments.length >= 2);
   assert.ok(
     state.environments.every(
@@ -146,12 +204,16 @@ try {
     join(fixture.directory, "live-runner-results.json"),
     JSON.stringify(
       {
-        model: process.env.MACHDOCH_VERIFY_MODEL,
+        provider: "claude-code-cli",
+        account,
+        model,
         runId,
         candidateCommit: result.candidateCommit,
         usage: result.usage,
         environments: state.environments,
         checks: [
+          "Sandbox picked and pinned through the cloud",
+          "Runner added on this server through the UI",
           "Task queued through the UI",
           "Live inference through the cloud broker",
           "Automatic repository preparation and editing",
@@ -169,13 +231,14 @@ try {
     `PASS Live autonomous runner completed ${result.usage.requests} model requests.\nEvidence: ${fixture.directory}\n`,
   );
 } catch (error) {
-  process.stderr.write(
-    `${error instanceof Error ? error.stack : error}\n${runner?.logs() ?? ""}\n`,
-  );
+  process.stderr.write(`${error instanceof Error ? error.stack : error}\n`);
   process.exitCode = 1;
 } finally {
-  if (runner && runner.exitCode === null && runner.signalCode === null)
-    runner.kill();
-  await runner?.finished;
   await fixture.close();
+  for (const home of cliHomes) await rm(home, { recursive: true, force: true });
+  if (worker)
+    await rm(join(homedir(), ".machdoch-cloud", "runners", worker.id), {
+      recursive: true,
+      force: true,
+    });
 }

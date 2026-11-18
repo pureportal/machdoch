@@ -247,6 +247,7 @@ function checks(pull) {
 }
 
 export async function startGitFixture() {
+  const statuses = new Map();
   const server = createServer((request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
     const path = url.pathname;
@@ -285,6 +286,30 @@ export async function startGitFixture() {
     ).exec(path);
     if (run)
       return json(checks(pulls.find((pull) => sha(pull.number) === run[1])));
+    const combined = new RegExp(
+      `^/repos/${repository}/commits/([0-9a-f]{40})/status$`,
+      "u",
+    ).exec(path);
+    if (combined) return json({ statuses: statuses.get(combined[1]) ?? [] });
+    const status = new RegExp(
+      `^/repos/${repository}/statuses/([0-9a-f]{40})$`,
+      "u",
+    ).exec(path);
+    if (status && request.method === "POST") {
+      let body = "";
+      request.on("data", (chunk) => (body += chunk));
+      request.on("end", () => {
+        const posted = JSON.parse(body);
+        statuses.set(status[1], [
+          ...(statuses.get(status[1]) ?? []).filter(
+            (entry) => entry.context !== posted.context,
+          ),
+          posted,
+        ]);
+        json({ id: 1 }, 201);
+      });
+      return;
+    }
     const issueComments = new RegExp(
       `^/repos/${repository}/issues/(\\d+)/comments$`,
       "u",

@@ -46,6 +46,7 @@ import {
   type CloudProduct,
 } from "@/lib/cloud-release-contract";
 import type { GitEventKind } from "@/lib/git-events";
+import type { PullRequestTask } from "@machdoch/fleet-protocol/cloud-execution";
 import { pullRequestStageLabels } from "./pull-request-state";
 import { priorityNames } from "./issue-properties";
 
@@ -287,6 +288,12 @@ export const automationOutcomeLabels: Record<AutomationOutcome, string> = {
   skipped: "Is skipped",
 };
 
+export const pullRequestTaskLabels: Record<PullRequestTask, string> = {
+  fix: "Fix",
+  check: "Check in a sandbox",
+  resolve: "Resolve merge conflicts",
+};
+
 export const gitEventLabels: Record<GitEventKind, string> = {
   push: "Commits pushed",
   branch_created: "Branch created",
@@ -306,6 +313,9 @@ export const gitEventLabels: Record<GitEventKind, string> = {
   comment_created: "Comment added",
   checks_passed: "Checks passed",
   checks_failed: "Checks failed",
+  sandbox_check_passed: "Sandbox check passed",
+  sandbox_check_failed: "Sandbox check found problems",
+  merge_conflict: "Merge conflict",
   stack_base_merged: "Stacked base merged",
 };
 
@@ -478,7 +488,11 @@ export function describeAction(
     case "ask_agent":
       return action.applyProposals ? "Agent acts" : "Ask Agent";
     case "delegate":
-      return "Start AI task";
+      return action.task === "check"
+        ? "Check in a sandbox"
+        : action.task === "resolve"
+          ? "Resolve merge conflicts"
+          : "Start AI task";
     case "git_comment":
       return "Comment on pull request";
     case "git_review":

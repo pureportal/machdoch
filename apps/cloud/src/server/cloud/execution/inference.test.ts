@@ -136,7 +136,6 @@ beforeEach(async () => {
       target: "cloud",
       repository: "https://github.com/example/project",
       autopilot: false,
-      checkPullRequests: false,
       providerId,
       model: "test-model",
       maxDurationSeconds: 3600,
@@ -612,6 +611,7 @@ it.each([
       toolCalls: [{ id: "1", name: "publish", arguments: {} }],
     },
     code: "unexpected_tools",
+    chargedTokens: 64,
   },
   {
     name: "invalid arguments",
@@ -626,6 +626,7 @@ it.each([
       ],
     },
     code: "invalid_tools",
+    chargedTokens: 64,
   },
   {
     name: "duplicate IDs",
@@ -634,15 +635,17 @@ it.each([
       toolCalls: [output.toolCalls[0]!, output.toolCalls[0]!],
     },
     code: "invalid_tools",
+    chargedTokens: 32,
   },
   {
     name: "incomplete responses",
     response: { ...output, stopReason: "incomplete" },
     code: "response_incomplete",
+    chargedTokens: 32,
   },
 ])(
   "rejects $name without delivering executable output",
-  async ({ response, code }) => {
+  async ({ response, code, chargedTokens }) => {
     start.mockResolvedValue(response);
     await runtime.execution.inference.submit(worker.token, input);
     await runtime.inference.worker.runOne(
@@ -653,10 +656,29 @@ it.each([
       state: "failed",
       response: null,
       errorCode: code,
-      chargedTokens: 32,
+      chargedTokens,
     });
   },
 );
+
+it("asks the model once more with the validation problem when a tool call is invalid", async () => {
+  start
+    .mockResolvedValueOnce({
+      ...output,
+      toolCalls: [{ id: "1", name: "read_file", arguments: {} }],
+    })
+    .mockResolvedValueOnce(output);
+  await runtime.execution.inference.submit(worker.token, input);
+  await runtime.inference.worker.runOne(actor.organizationId, input.requestId);
+  expect(start).toHaveBeenCalledTimes(2);
+  expect(start.mock.calls[1]![0].userPrompt).toContain(
+    "(read_file: Tool arguments do not match the input schema: / must have required property 'path')",
+  );
+  expect(await read()).toMatchObject({
+    state: "complete",
+    chargedTokens: 64,
+  });
+});
 
 it("enforces the task budget using provider usage even when the worker underreports tokens", async () => {
   start.mockResolvedValue({ ...output, usage: { totalTokens: 20001 } });
@@ -738,7 +760,6 @@ it("answers sandbox task inference with the cloud's signed-in CLI provider", asy
       target: "cloud",
       repository: "https://github.com/example/project",
       autopilot: false,
-      checkPullRequests: false,
       providerId: cliProviderId,
       model: "sonnet",
       maxDurationSeconds: 3600,

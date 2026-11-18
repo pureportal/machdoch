@@ -64,3 +64,9 @@ export function issuePrompt(
     .filter(Boolean)
     .join("\n\n");
 }
+
+export function completeTaskList(markdown: string): string {
+  return markdown.replace(new RegExp(taskMarker.source, "gm"), (marker) =>
+    marker.endsWith("[ ]") ? `${marker.slice(0, -2)}x]` : marker,
+  );
+}

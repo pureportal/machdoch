@@ -31,6 +31,8 @@ export class ModelWorkerFailure extends Error {
   }
 }
 
+const workerStartLimitMs = 60_000;
+
 function runWorker<T>(
   data: Record<string, unknown>,
   timeoutMs: number,
@@ -63,10 +65,9 @@ function runWorker<T>(
     worker.stderr.resume();
     let settled = false;
     let processing: ReturnType<typeof setTimeout> | undefined;
-    const timer = setTimeout(
-      () => finish(undefined, new ModelWorkerFailure("worker_timeout")),
-      timeoutMs,
-    );
+    const expire = () =>
+      finish(undefined, new ModelWorkerFailure("worker_timeout"));
+    let timer = setTimeout(expire, workerStartLimitMs);
     const aborted = () =>
       finish(
         undefined,
@@ -105,11 +106,12 @@ function runWorker<T>(
           ),
         );
       else if (frame.kind === "ready" || frame.kind === "heartbeat") {
+        if (frame.kind === "ready") {
+          clearTimeout(timer);
+          timer = setTimeout(expire, timeoutMs);
+        }
         clearTimeout(processing);
-        processing = setTimeout(
-          () => finish(undefined, new ModelWorkerFailure("worker_timeout")),
-          2000,
-        );
+        processing = setTimeout(expire, 2000);
       } else if (frame.kind === "event") {
         try {
           onStreamEvent?.(frame.event as AgentModelStreamEvent);
@@ -165,18 +167,18 @@ export async function createIsolatedModelAdapter(
   };
 }
 
-export async function validateInferenceTools(
+export async function findInvalidToolCall(
   tools: AgentModelToolSpec[],
   calls: AgentModelToolCall[],
   signal: AbortSignal,
-): Promise<boolean> {
-  if (!calls.length) return true;
+): Promise<string | null> {
+  if (!calls.length) return null;
   const result = await runWorker<unknown>(
     { kind: "validate", tools, calls },
     10000,
     signal,
   );
-  if (typeof result !== "boolean")
+  if (result !== null && typeof result !== "string")
     throw new ModelWorkerFailure("worker_failed");
   return result;
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { createContext, useContext, useMemo, type ComponentProps } from "react";
 import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
-import { issueLinkRemarkPlugin } from "@/lib/issue-links";
+import { referenceLinkRemarkPlugin } from "@/lib/reference-links";
 
 type MarkdownComponents = NonNullable<
   ComponentProps<typeof MarkdownContent>["components"]
@@ -51,7 +51,7 @@ export function CloudMarkdown({
   components?: MarkdownComponents;
 }) {
   const keys = useContext(TeamKeysContext);
-  const remarkPlugins = useMemo(() => [issueLinkRemarkPlugin(keys)], [keys]);
+  const remarkPlugins = useMemo(() => [referenceLinkRemarkPlugin(keys)], [keys]);
   const merged = useMemo(
     () => ({ ...linkComponents, ...components }),
     [components],

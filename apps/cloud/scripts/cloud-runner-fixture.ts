@@ -23,6 +23,16 @@ setCloudRuntimeForTests(
     ),
     modelAdapterFactory: async () => ({
       async startTurn(parameters) {
+        if (parameters.structuredOutput?.name === "review_verdict")
+          return {
+            text: JSON.stringify({
+              decision: "approve",
+              summary: "The candidate satisfies the objective.",
+              findings: [],
+            }),
+            toolCalls: [],
+            usage: { totalTokens: 32 },
+          };
         const boundary = parameters.userPrompt.indexOf("\n\n");
         const input = JSON.parse(parameters.userPrompt.slice(0, boundary)) as {
           task: { title: string };
@@ -170,4 +180,5 @@ setCloudRuntimeForTests(
     }),
   }),
 );
+await new FleetDatabase(database).initialize();
 await import("../src/server");

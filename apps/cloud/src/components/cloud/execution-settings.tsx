@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Cpu,
@@ -8,16 +8,18 @@ import {
   GitBranch,
   ListChecks,
   Plus,
-  ShieldCheck,
   Sparkles,
   Workflow,
 } from "lucide-react";
 import type { CloudAiProvider } from "@machdoch/fleet-protocol/cloud-providers";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { ExecutionProfile } from "@machdoch/fleet-protocol/cloud-execution";
+import type { ExecutionSandbox } from "@machdoch/fleet-protocol/cloud-sandbox";
 import { Button } from "@/components/ui/button";
 import { ExecutionProfileForm } from "./execution-profile-form";
 import { ExecutionRunners } from "./execution-runners";
+import { ExecutionSandboxSettings } from "./execution-sandbox";
+import { cloudRequest } from "./api-client";
 import { executionTargetLabels, profileAgentLabel } from "./execution-labels";
 
 function repositoryName(url: string): string {
@@ -47,6 +49,13 @@ export function ExecutionSettings({
       : null,
   );
   const [selected, setSelected] = useState<ExecutionProfile | null>(null);
+  const [sandbox, setSandbox] = useState<ExecutionSandbox | null>(null);
+  const [sandboxError, setSandboxError] = useState("");
+  useEffect(() => {
+    cloudRequest<{ sandbox: ExecutionSandbox | null }>("execution-sandbox")
+      .then((result) => setSandbox(result.sandbox))
+      .catch((reason: Error) => setSandboxError(reason.message));
+  }, []);
   return (
     <>
       <header className="cloud-page-header">
@@ -81,11 +90,6 @@ export function ExecutionSettings({
                 {entry.autopilot && entry.enabled && (
                   <span className="cloud-task-state" data-state="running">
                     <Sparkles size={12} aria-hidden="true" /> Autopilot
-                  </span>
-                )}
-                {entry.checkPullRequests && entry.enabled && (
-                  <span className="cloud-task-state" data-state="validating">
-                    <ShieldCheck size={12} aria-hidden="true" /> PR checks
                   </span>
                 )}
                 {!entry.enabled && (
@@ -139,7 +143,15 @@ export function ExecutionSettings({
           ))}
         </div>
       )}
-      {selected && <ExecutionRunners profile={selected} />}
+      {selected && <ExecutionRunners profile={selected} sandbox={sandbox} />}
+      {sandboxError && (
+        <p role="alert" className="cloud-error mt-8">
+          {sandboxError}
+        </p>
+      )}
+      {sandbox && (
+        <ExecutionSandboxSettings sandbox={sandbox} onSaved={setSandbox} />
+      )}
       <ExecutionProfileForm
         open={editing !== null}
         profile={editing && editing !== "new" ? editing : null}

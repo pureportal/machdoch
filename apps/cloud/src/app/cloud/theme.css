@@ -42,10 +42,40 @@ html[data-theme="light"]
   --cloud-warning: #96630b;
   --cloud-danger: #bc304b;
 }
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface),
+.cloud-shell {
+  --app-sky-100: var(--primary);
+  --app-sky-200: var(--primary);
+  --app-sky-300: var(--primary);
+  --app-sky-400: var(--primary);
+  --app-sky-500: color-mix(in srgb, var(--primary) 70%, var(--foreground));
+}
 body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
   :where(button, a, input, select, textarea, summary):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
+  :where(
+    textarea,
+    input:not(
+      [type="checkbox"],
+      [type="radio"],
+      [type="range"],
+      [type="color"],
+      [type="file"]
+    )
+  ):focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: -1px;
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
+  :is(
+    .cloud-menu-search,
+    [cmdk-input],
+    .cloud-markdown-input > textarea
+  ):focus-visible {
+  outline: none;
 }
 body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
   :where(input, select, textarea) {

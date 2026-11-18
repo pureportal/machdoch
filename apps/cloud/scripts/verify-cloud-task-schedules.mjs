@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   cloudBrowserFixture,
@@ -9,17 +9,15 @@ import {
   createPasswordInvitation,
   acceptPasswordInvitation,
 } from "./cloud-browser-fixture.mjs";
-import { startRunnerProcess, runnerHistory } from "./cloud-runner-process.mjs";
+import {
+  installedSandbox,
+  startRunnerProcess,
+  runnerHistory,
+} from "./cloud-runner-process.mjs";
 import { PostgresCloudDatabase } from "../src/server/cloud/database.ts";
 import { createCloudRuntime } from "../src/server/cloud/runtime.ts";
 
-assert.ok(
-  process.env.MACHDOCH_SANDBOX_CONFIG,
-  "Select the verified sandbox artifact manifest using MACHDOCH_SANDBOX_CONFIG.",
-);
-const sandbox = JSON.parse(
-  await readFile(process.env.MACHDOCH_SANDBOX_CONFIG, "utf8"),
-);
+const sandbox = await installedSandbox();
 let dropStatePath = null;
 const fixture = await cloudBrowserFixture({
   serverEntry: "scripts/cloud-runner-fixture.ts",
@@ -69,7 +67,6 @@ try {
     target: "cloud",
     repository: "https://github.com/octocat/Hello-World",
     autopilot: false,
-    checkPullRequests: false,
     providerId: provider.id,
     model: "fixture",
     maxDurationSeconds: 300,

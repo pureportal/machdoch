@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Bot,
   CheckCheck,
+  GitPullRequest,
   Inbox as InboxIcon,
   X,
 } from "lucide-react";
@@ -34,6 +35,7 @@ function describe(entry: InboxEntry): string {
   if (entry.kind === "commented") return `${actor} commented: ${entry.detail}`;
   if (entry.kind === "status_changed")
     return `${actor} changed the status to ${entry.detail}`;
+  if (entry.kind === "pull_request") return entry.detail;
   return `AI task ${(entry.runState ?? "finished").replaceAll("_", " ")}${entry.detail ? `: ${entry.detail}` : ""}`;
 }
 
@@ -268,6 +270,10 @@ export function Inbox({ initial }: { initial: InboxEntry[] }) {
                   {entry.kind === "task_finished" ? (
                     <span className="cloud-icon-tile cloud-inbox-icon">
                       <Bot size={14} aria-hidden="true" />
+                    </span>
+                  ) : entry.kind === "pull_request" ? (
+                    <span className="cloud-icon-tile cloud-inbox-icon">
+                      <GitPullRequest size={14} aria-hidden="true" />
                     </span>
                   ) : (
                     <PersonAvatar name={entry.actor ?? "?"} />

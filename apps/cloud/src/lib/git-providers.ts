@@ -14,3 +14,20 @@ export const defaultGitApiUrls: Record<GitProvider, string> = {
 export function isGitProvider(value: string): value is GitProvider {
   return (gitProviders as readonly string[]).includes(value);
 }
+
+export function gitTokenUrl(
+  provider: GitProvider,
+  apiUrl: string,
+): string | null {
+  let origin: string;
+  try {
+    const parsed = new URL(apiUrl);
+    origin =
+      parsed.host === "api.github.com" ? "https://github.com" : parsed.origin;
+  } catch {
+    return null;
+  }
+  return provider === "github"
+    ? `${origin}/settings/tokens/new?description=Machdoch&scopes=repo,admin:repo_hook`
+    : `${origin}/-/user_settings/personal_access_tokens?name=Machdoch&scopes=api`;
+}

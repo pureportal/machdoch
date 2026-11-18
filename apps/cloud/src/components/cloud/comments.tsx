@@ -3,7 +3,7 @@
 import { holderCan } from "@/lib/cloud-permissions";
 import { LoadingState } from "@machdoch/product-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, ChevronsUpDown } from "lucide-react";
+import { ArrowUp, ChevronsUpDown, Zap } from "lucide-react";
 import { CloudMarkdown } from "./cloud-markdown";
 import type { CloudComment } from "@/lib/cloud-comment-contract";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
@@ -208,10 +208,19 @@ export function IssueComments({
             </li>
           ) : row.kind === "change" ? (
             <li key={row.change.id} className="cloud-activity-change">
-              <PersonAvatar
-                name={row.change.actor}
-                className="cloud-avatar-tiny"
-              />
+              {row.change.automated ? (
+                <span
+                  aria-hidden="true"
+                  className="cloud-avatar cloud-avatar-tiny"
+                >
+                  <Zap size={9} />
+                </span>
+              ) : (
+                <PersonAvatar
+                  name={row.change.actor}
+                  className="cloud-avatar-tiny"
+                />
+              )}
               <span>
                 <strong>{row.change.actor}</strong> {row.change.description}
               </span>

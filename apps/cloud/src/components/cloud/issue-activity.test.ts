@@ -11,6 +11,7 @@ const change = (index: number): ActivityEntry<string> => ({
   change: {
     id: `change-${index}`,
     actor: "Dana",
+    automated: false,
     createdAt: `2026-11-0${index}T00:00:00.000Z`,
     description: `change ${index}`,
   },
@@ -89,12 +90,14 @@ describe("relationChangeEntries", () => {
       {
         id: "relation-a",
         actor: "Dana",
+        automated: false,
         createdAt: "2026-11-01T00:00:00.000Z",
         description: "marked this as blocking TM-2 Remove MariaDB",
       },
       {
         id: "relation-b",
         actor: "Malte",
+        automated: false,
         createdAt: "2026-11-02T00:00:00.000Z",
         description: "added the sub-issue TM-2 Remove MariaDB",
       },

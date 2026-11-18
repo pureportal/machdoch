@@ -188,7 +188,7 @@ export function taskStages(run: RunDetail): TaskStage[] {
         delivery?.state === "merged"
           ? `Merged into ${delivery.baseBranch}`
           : delivery?.state === "merging"
-            ? "Waiting for repository checks"
+            ? (delivery.reason ?? "Waiting for repository checks")
             : delivery?.state === "closed"
               ? "Closed"
               : delivery?.pullRequestNumber
@@ -225,9 +225,7 @@ export function taskOutcome(run: RunDetail): TaskOutcome {
   const review = latestReview(run);
   if (delivery?.kind === "check" && delivery.state === "reported")
     return {
-      tone: delivery.reason?.startsWith("No problems")
-        ? "success"
-        : "attention",
+      tone: delivery.problems ? "attention" : "success",
       title: (delivery.reason ?? "Checked").replace(/\.$/, ""),
       detail: `The result was posted to pull request #${delivery.pullRequestNumber}.`,
       actions: [],
@@ -253,8 +251,8 @@ export function taskOutcome(run: RunDetail): TaskOutcome {
   if (delivery?.state === "merging")
     return {
       tone: "progress",
-      title: "Merging when repository checks pass",
-      detail: null,
+      title: "Merging when the checks pass",
+      detail: delivery.reason,
       actions: [],
     };
   if (delivery?.state === "publishing")

@@ -123,7 +123,6 @@ try {
     target: "client",
     repository: "https://github.com/example/native-agent",
     autopilot: false,
-    checkPullRequests: false,
     agent,
     ...(process.env.CLOUD_NATIVE_MODEL
       ? { model: process.env.CLOUD_NATIVE_MODEL }

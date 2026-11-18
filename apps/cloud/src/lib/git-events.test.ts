@@ -32,6 +32,7 @@ const event: GitEvent = {
   },
   review: null,
   comment: null,
+  check: null,
   tag: null,
   parent: null,
   issueIds: [],
@@ -162,6 +163,7 @@ describe("pullRequestLifecycleEvents", () => {
     draft: false,
     headSha: "a".repeat(40),
     checks: null,
+    mergeable: null,
   };
 
   it("reports new, merged, closed and reopened pull requests", () => {
@@ -190,18 +192,22 @@ describe("pullRequestLifecycleEvents", () => {
       pullRequestLifecycleEvents(open, { ...open, headSha: "b".repeat(40) }),
     ).toEqual(["pull_request_updated"]);
     expect(
-      pullRequestLifecycleEvents(open, { ...open, checks: "failure" }),
+      pullRequestLifecycleEvents(open, {
+        ...open,
+        checks: "failure",
+        mergeable: null,
+      }),
     ).toEqual(["checks_failed"]);
     expect(
       pullRequestLifecycleEvents(
-        { ...open, checks: "success" },
-        { ...open, checks: "success" },
+        { ...open, checks: "success", mergeable: null },
+        { ...open, checks: "success", mergeable: null },
       ),
     ).toEqual([]);
     expect(
       pullRequestLifecycleEvents(
-        { ...open, checks: "pending" },
-        { ...open, checks: "success" },
+        { ...open, checks: "pending", mergeable: null },
+        { ...open, checks: "success", mergeable: null },
       ),
     ).toEqual(["checks_passed"]);
   });

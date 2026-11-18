@@ -89,8 +89,14 @@ export async function admitRun(
         "git_head_changed",
         "The pull request has new commits. Start the task again.",
       );
+    const prefix =
+      input.subject.purpose === "check"
+        ? "Check "
+        : input.subject.purpose === "resolve"
+          ? "Resolve conflicts in "
+          : "";
     title =
-      `${input.subject.purpose === "check" ? "Check " : ""}${pullRequest.repository}#${pullRequest.number} ${pullRequest.title}`.slice(
+      `${prefix}${pullRequest.repository}#${pullRequest.number} ${pullRequest.title}`.slice(
         0,
         300,
       );

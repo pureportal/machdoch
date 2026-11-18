@@ -59,7 +59,6 @@ export function ExecutionProfileForm({
   const [checks, setChecks] = useState<CheckDraft[]>([]);
   const [detecting, setDetecting] = useState(false);
   const [autopilot, setAutopilot] = useState(false);
-  const [checkPullRequests, setCheckPullRequests] = useState(false);
   const [error, setError] = useState("");
   const detection = useRef(0);
   const models = providers
@@ -88,7 +87,6 @@ export function ExecutionProfileForm({
     );
     setChecks(drafts(profile?.requiredChecks ?? []));
     setAutopilot(profile?.autopilot ?? false);
-    setCheckPullRequests(profile?.checkPullRequests ?? false);
     const controller = new AbortController();
     void cloudRequest<{ repositories: ExecutionRepository[] }>(
       "execution-repositories",
@@ -143,7 +141,6 @@ export function ExecutionProfileForm({
           target,
           repository,
           autopilot,
-          checkPullRequests,
           ...(formText(form, "branch")
             ? { branch: formText(form, "branch") }
             : {}),
@@ -264,25 +261,6 @@ export function ExecutionProfileForm({
           onClick={() => setAutopilot((value) => !value)}
         />
       </div>
-      {target !== "client" && (
-        <div className="cloud-setup-toggle">
-          <div>
-            <span id="profile-checks-label">Check pull requests</span>
-            <p>
-              Builds, tests and reviews every new pull request in a sandbox and
-              comments the result.
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            className="cloud-automation-switch"
-            aria-checked={checkPullRequests}
-            aria-labelledby="profile-checks-label"
-            onClick={() => setCheckPullRequests((value) => !value)}
-          />
-        </div>
-      )}
       {detecting ? (
         <LoadingState label="Finding checks…" />
       ) : (
@@ -388,7 +366,7 @@ export function ExecutionProfileForm({
               <Select
                 id="profile-tokens"
                 name="maxTokens"
-                defaultValue={String(profile?.maxTokens ?? 300_000)}
+                defaultValue={String(profile?.maxTokens ?? 1_000_000)}
               >
                 {withCurrent(tokenPresets, profile?.maxTokens).map((tokens) => (
                   <option key={tokens} value={tokens}>

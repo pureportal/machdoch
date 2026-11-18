@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Lock, Trash2 } from "lucide-react";
+import { ExternalLink, Lock, Trash2 } from "lucide-react";
 import type {
   GitAdministration,
   GitConnection,
@@ -10,6 +10,7 @@ import {
   defaultGitApiUrls,
   gitProviderLabels,
   gitProviders,
+  gitTokenUrl,
   type GitProvider,
 } from "@/lib/git-providers";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -30,9 +31,9 @@ import { RelativeTime } from "./relative-time";
 
 const tokenHints: Record<GitProvider, string> = {
   github:
-    "Grant Pull requests, Issues and Checks read, Contents write for merging, and Webhooks write for instant updates.",
+    "A classic token needs the repo and admin:repo_hook scopes; a fine-grained token needs Contents, Commit statuses and Webhooks write and Pull requests, Issues and Checks read.",
   gitlab:
-    "Use a token with the api scope. Maintainer access lets machdoch add webhooks.",
+    "The token needs the api scope; maintainer access lets Machdoch add webhooks.",
 };
 
 const webhookEvents: Record<GitProvider, string> = {
@@ -59,6 +60,12 @@ function ProviderSection({
   const [editing, setEditing] = useState<GitConnection | null | undefined>(
     undefined,
   );
+  const [apiUrl, setApiUrl] = useState(defaultGitApiUrls[provider]);
+  useEffect(() => {
+    if (editing !== undefined)
+      setApiUrl(editing?.apiUrl ?? defaultGitApiUrls[provider]);
+  }, [editing, provider]);
+  const tokenUrl = gitTokenUrl(provider, apiUrl);
   const [adding, setAdding] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
@@ -279,16 +286,6 @@ function ProviderSection({
           await onChanged();
         }}
       >
-        <Field label="API address" htmlFor={`${provider}-api-url`}>
-          <Input
-            id={`${provider}-api-url`}
-            name="apiUrl"
-            type="url"
-            required
-            maxLength={300}
-            defaultValue={editing?.apiUrl ?? defaultGitApiUrls[provider]}
-          />
-        </Field>
         <Field
           label="Access token"
           htmlFor={`${provider}-token`}
@@ -308,6 +305,17 @@ function ProviderSection({
             autoComplete="off"
             spellCheck={false}
           />
+          {tokenUrl && (
+            <a
+              className="cloud-git-token-link"
+              href={tokenUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Create a token on {label}
+              <ExternalLink size={12} aria-hidden="true" />
+            </a>
+          )}
         </Field>
         <label className="flex items-center gap-2">
           <input
@@ -317,6 +325,25 @@ function ProviderSection({
           />
           Update issue status from pull requests
         </label>
+        <details
+          className="cloud-git-oauth"
+          open={Boolean(
+            editing && editing.apiUrl !== defaultGitApiUrls[provider],
+          )}
+        >
+          <summary>Self-hosted {label}</summary>
+          <Field label="API address" htmlFor={`${provider}-api-url`}>
+            <Input
+              id={`${provider}-api-url`}
+              name="apiUrl"
+              type="url"
+              required
+              maxLength={300}
+              value={apiUrl}
+              onChange={(event) => setApiUrl(event.target.value)}
+            />
+          </Field>
+        </details>
         <details
           className="cloud-git-oauth"
           open={Boolean(editing?.oauthClientId)}

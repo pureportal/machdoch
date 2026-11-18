@@ -6,20 +6,25 @@ import type {
   RunDelivery,
 } from "@machdoch/fleet-protocol/cloud-delivery";
 import type { RunManifest } from "@machdoch/fleet-protocol/cloud-execution";
-import type { issueStates } from "../../../lib/cloud-contract";
+import type { GitEventPullRequest } from "../../../lib/git-events";
 
 import type { SettingsCipher } from "../../settings-crypto";
 import { CloudError, isCloudError } from "../access";
 import type { CloudDatabase, CloudSql } from "../database";
 import type { CloudIssueChanges } from "../issue-changes";
-import { gitClient, type GitPullRequestRecord } from "../git/git-client";
+import type { IssueChangeSet } from "../../../lib/cloud-issue-changes-contract";
+import { completeTaskList } from "../../../lib/issue-text";
+import {
+  gitClient,
+  type GitCommitStatusState,
+  type GitPullRequestRecord,
+} from "../git/git-client";
 import { gitConnection, type GitConnectionRecord } from "../git/connections";
-import type { StoredRepository } from "../git/events";
+import { gitEvent, queueGitEvents, type StoredRepository } from "../git/events";
 import { repositoryAuthorization } from "../git/repository-access";
 import type { CloudGitSync } from "../git/sync";
 import { pushCandidate } from "./candidate-push";
-
-type IssueState = (typeof issueStates)[number];
+import { sandboxStatusContext } from "./pull-request-tasks";
 
 const batchSize = 5;
 const maximumAttempts = 6;
@@ -44,16 +49,29 @@ interface StoredDelivery extends Record<string, unknown> {
 interface RunSource extends Record<string, unknown> {
   title: string;
   summary: string | null;
+  state: string;
   manifest: RunManifest;
   baseCommit: string;
   actorId: string;
   identifier: string | null;
 }
 
+interface CheckEvidence {
+  summary: string | null;
+  review: {
+    summary: string;
+    findings: ReviewFinding[];
+    gates: DeliveryGate[];
+  } | null;
+  checks: { name: string; passed: boolean }[];
+}
+
 const deliveryColumns = `kind,state,branch,base_branch AS "baseBranch",head_sha AS "headSha",pull_request_id AS "pullRequestId",
-  pull_request_number AS "pullRequestNumber",pull_request_url AS "pullRequestUrl",auto_merge AS "autoMerge",reason,
+  pull_request_number AS "pullRequestNumber",pull_request_url AS "pullRequestUrl",auto_merge AS "autoMerge",problems,reason,
   to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt",
   to_char(merged_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "mergedAt"`;
+
+const storedColumns = `kind,organization_id,run_id,issue_id,repository,state,branch,base_branch,head_sha,pull_request_id,pull_request_number,auto_merge,attempts`;
 
 export async function readRunDelivery(
   sql: CloudSql,
@@ -91,6 +109,88 @@ function gateLine(gate: DeliveryGate): string {
   return `- ${gate.passed ? "✅" : "⚠️"} **${names[gate.id]}:** ${gate.detail}`;
 }
 
+function findingLine(finding: ReviewFinding): string {
+  const location = finding.file
+    ? ` \`${finding.file}${finding.line ? `:${finding.line}` : ""}\``
+    : "";
+  return `- ⚠️ **${finding.title}**${location}: ${finding.detail}`;
+}
+
+function checkLines(evidence: CheckEvidence): string[] {
+  return [
+    evidence.checks.length
+      ? `**Checks:** ${evidence.checks.map((check) => `${check.passed ? "✅" : "❌"} ${check.name}`).join(" · ")}`
+      : "",
+    evidence.review ? `**AI review:** ${evidence.review.summary}` : "",
+    evidence.review?.findings
+      .filter((finding) => finding.severity === "blocking")
+      .map(findingLine)
+      .join("\n") ?? "",
+    ...(evidence.review?.gates.filter((gate) => !gate.passed).map(gateLine) ??
+      []),
+  ];
+}
+
+function problemCount(evidence: CheckEvidence): number {
+  const blocking =
+    evidence.review?.findings.filter(
+      (finding) => finding.severity === "blocking",
+    ).length ?? 0;
+  return blocking + evidence.checks.filter((check) => !check.passed).length;
+}
+
+function problemsLabel(problems: number): string {
+  return `${problems} ${problems === 1 ? "problem" : "problems"}`;
+}
+
+async function readCheckEvidence(
+  sql: CloudSql,
+  organizationId: string,
+  runId: string,
+): Promise<CheckEvidence> {
+  const run = (
+    await sql.query<{
+      summary: string | null;
+      checks: { name: string; passed: boolean }[];
+    }>(
+      "SELECT summary,COALESCE(result->'checks','[]'::jsonb) AS checks FROM cloud_runs WHERE organization_id=$1 AND id=$2",
+      [organizationId, runId],
+    )
+  ).rows[0]!;
+  const review =
+    (
+      await sql.query<NonNullable<CheckEvidence["review"]>>(
+        "SELECT summary,findings,gates FROM cloud_run_reviews WHERE organization_id=$1 AND run_id=$2 ORDER BY created_at DESC LIMIT 1",
+        [organizationId, runId],
+      )
+    ).rows[0] ?? null;
+  return { summary: run.summary, review, checks: run.checks };
+}
+
+async function approvedCandidate(
+  sql: CloudSql,
+  organizationId: string,
+  runId: string,
+  candidate: string,
+): Promise<{ approved: boolean; reason: string | null }> {
+  const review = (
+    await sql.query<{ decision: string; gates: DeliveryGate[] }>(
+      "SELECT decision,gates FROM cloud_run_reviews WHERE organization_id=$1 AND run_id=$2 AND candidate_commit=$3 ORDER BY created_at DESC LIMIT 1",
+      [organizationId, runId, candidate],
+    )
+  ).rows[0];
+  if (!review) return { approved: false, reason: null };
+  if (review.decision !== "approve")
+    return {
+      approved: false,
+      reason: "The AI review did not approve the change after all rounds.",
+    };
+  const failed = review.gates.filter((gate) => !gate.passed);
+  return failed.length
+    ? { approved: false, reason: failed.map((gate) => gate.detail).join(" ") }
+    : { approved: true, reason: null };
+}
+
 export class CloudDeliveries {
   constructor(
     private readonly database: CloudDatabase,
@@ -107,8 +207,7 @@ export class CloudDeliveries {
     let processed = (await this.begin()) + (await this.cleanup());
     const due = await this.database.transaction((sql) =>
       sql.query<StoredDelivery>(
-        `SELECT kind,organization_id,run_id,issue_id,repository,state,branch,base_branch,head_sha,pull_request_id,pull_request_number,auto_merge,attempts
-        FROM cloud_run_deliveries WHERE state IN ('publishing','open','merging') AND next_attempt_at<=clock_timestamp()
+        `SELECT ${storedColumns} FROM cloud_run_deliveries WHERE state IN ('publishing','open','merging') AND next_attempt_at<=clock_timestamp()
         ORDER BY next_attempt_at LIMIT ${batchSize}`,
       ),
     );
@@ -131,38 +230,27 @@ export class CloudDeliveries {
           candidate: string | null;
         }>(
           `SELECT r.organization_id,r.id,r.issue_id,r.manifest,r.base_commit,r.result->>'candidateCommit' AS candidate FROM cloud_runs r
-          WHERE r.state='succeeded' AND r.created_at>clock_timestamp()-interval '7 days'
-          AND (r.manifest->'subject'->>'kind' IN ('issue','project') OR r.manifest->'subject'->>'purpose'='check')
+          WHERE r.created_at>clock_timestamp()-interval '7 days'
+          AND ((r.state='succeeded' AND (r.manifest->'subject'->>'kind' IN ('issue','project') OR r.manifest->'subject'->>'purpose' IN ('fix','resolve')))
+            OR (r.state IN ('succeeded','failed','timed_out','canceled') AND r.manifest->'subject'->>'purpose'='check'))
           AND NOT EXISTS (SELECT 1 FROM cloud_run_deliveries d WHERE d.organization_id=r.organization_id AND d.run_id=r.id)
           ORDER BY r.created_at LIMIT ${batchSize} FOR UPDATE OF r SKIP LOCKED`,
         )
       ).rows;
       for (const run of runs) {
-        if (!run.candidate || !run.base_commit) continue;
         if (run.manifest.subject.kind === "pull_request") {
-          await sql.query(
-            `INSERT INTO cloud_run_deliveries (organization_id,run_id,kind,repository,state,branch,base_branch,head_sha,pull_request_id,pull_request_number,pull_request_url,auto_merge)
-            SELECT $1,$2,'check',$3,'publishing',p.head_ref,p.base_ref,$4,p.id,p.number,p.url,false
-            FROM cloud_git_pull_requests p WHERE p.organization_id=$1 AND p.id=$5`,
-            [
-              run.organization_id,
-              run.id,
-              run.manifest.profile.repository,
-              run.candidate,
-              run.manifest.subject.id,
-            ],
-          );
+          if (run.manifest.subject.purpose === "check")
+            await this.beginCheck(sql, run);
+          else if (run.candidate) await this.beginFix(sql, run);
           continue;
         }
-        const review = (
-          await sql.query<{ decision: string; gates: DeliveryGate[] }>(
-            "SELECT decision,gates FROM cloud_run_reviews WHERE organization_id=$1 AND run_id=$2 AND candidate_commit=$3 ORDER BY created_at DESC LIMIT 1",
-            [run.organization_id, run.id, run.candidate],
-          )
-        ).rows[0];
-        const approved =
-          review?.decision === "approve" &&
-          review.gates.every((gate) => gate.passed);
+        if (!run.candidate || !run.base_commit) continue;
+        const { approved, reason: reviewReason } = await approvedCandidate(
+          sql,
+          run.organization_id,
+          run.id,
+          run.candidate,
+        );
         const connected = (
           await sql.query<{ default_branch: string }>(
             "SELECT default_branch FROM cloud_git_repositories WHERE organization_id=$1 AND lower(web_url)=lower(regexp_replace($2,'\\.git$',''))",
@@ -177,18 +265,6 @@ export class CloudDeliveries {
               )
             ).rows[0]?.identifier ?? null)
           : null;
-        const reason = !connected
-          ? "Add this repository under Settings → Git to publish changes."
-          : !review
-            ? null
-            : review.decision !== "approve"
-              ? "The AI review did not approve the change after all rounds."
-              : approved
-                ? null
-                : review.gates
-                    .filter((gate) => !gate.passed)
-                    .map((gate) => gate.detail)
-                    .join(" ");
         await sql.query(
           `INSERT INTO cloud_run_deliveries (organization_id,run_id,issue_id,repository,state,branch,base_branch,head_sha,auto_merge,reason)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
@@ -202,13 +278,80 @@ export class CloudDeliveries {
             run.manifest.branch ?? connected?.default_branch ?? "main",
             run.candidate,
             approved && run.manifest.profile.autopilot,
-            reason,
+            connected
+              ? reviewReason
+              : "Add this repository under Settings → Git to publish changes.",
           ],
         );
         if (run.issue_id) await this.supersede(sql, run.organization_id, run);
       }
       return runs.length;
     });
+  }
+
+  private async beginCheck(
+    sql: CloudSql,
+    run: { organization_id: string; id: string; manifest: RunManifest },
+  ): Promise<void> {
+    if (run.manifest.subject.kind !== "pull_request") return;
+    await sql.query(
+      `INSERT INTO cloud_run_deliveries (organization_id,run_id,kind,repository,state,branch,base_branch,head_sha,pull_request_id,pull_request_number,pull_request_url,auto_merge)
+      SELECT $1,$2,'check',$3,'publishing',p.head_ref,p.base_ref,$4,p.id,p.number,p.url,false
+      FROM cloud_git_pull_requests p WHERE p.organization_id=$1 AND p.id=$5`,
+      [
+        run.organization_id,
+        run.id,
+        run.manifest.profile.repository,
+        run.manifest.subject.headSha,
+        run.manifest.subject.id,
+      ],
+    );
+  }
+
+  private async beginFix(
+    sql: CloudSql,
+    run: {
+      organization_id: string;
+      id: string;
+      manifest: RunManifest;
+      candidate: string | null;
+    },
+  ): Promise<void> {
+    if (run.manifest.subject.kind !== "pull_request" || !run.candidate) return;
+    const pullRequestId = run.manifest.subject.id;
+    const { approved, reason } = await approvedCandidate(
+      sql,
+      run.organization_id,
+      run.id,
+      run.candidate,
+    );
+    const previous = (
+      await sql.query<{ issue_id: string | null }>(
+        `SELECT issue_id FROM cloud_run_deliveries WHERE organization_id=$1 AND pull_request_id=$2 AND kind='change' AND issue_id IS NOT NULL
+        ORDER BY updated_at DESC LIMIT 1`,
+        [run.organization_id, pullRequestId],
+      )
+    ).rows[0];
+    await sql.query(
+      `INSERT INTO cloud_run_deliveries (organization_id,run_id,issue_id,kind,repository,state,branch,base_branch,head_sha,pull_request_id,pull_request_number,pull_request_url,auto_merge,reason)
+      SELECT $1,$2,$3,'change',$4,'publishing',p.head_ref,p.base_ref,$5,p.id,p.number,p.url,$6,$7
+      FROM cloud_git_pull_requests p WHERE p.organization_id=$1 AND p.id=$8`,
+      [
+        run.organization_id,
+        run.id,
+        previous?.issue_id ?? null,
+        run.manifest.profile.repository,
+        run.candidate,
+        approved && run.manifest.profile.autopilot,
+        reason,
+        pullRequestId,
+      ],
+    );
+    await sql.query(
+      `UPDATE cloud_run_deliveries SET state='closed',reason='A newer task replaced this change.',updated_at=clock_timestamp(),next_attempt_at=clock_timestamp()
+      WHERE organization_id=$1 AND pull_request_id=$2 AND kind='change' AND run_id<>$3 AND state IN ('publishing','open','merging','needs_person','failed')`,
+      [run.organization_id, pullRequestId, run.id],
+    );
   }
 
   private async supersede(
@@ -246,7 +389,7 @@ export class CloudDeliveries {
       );
       const run = (
         await sql.query<RunSource>(
-          `SELECT r.title,r.summary,r.manifest,r.base_commit AS "baseCommit",r.actor_id AS "actorId",i.identifier
+          `SELECT r.title,r.summary,r.state,r.manifest,r.base_commit AS "baseCommit",r.actor_id AS "actorId",i.identifier
           FROM cloud_runs r LEFT JOIN cloud_issues i ON i.organization_id=r.organization_id AND i.id=r.issue_id
           WHERE r.organization_id=$1 AND r.id=$2`,
           [delivery.organization_id, delivery.run_id],
@@ -265,13 +408,14 @@ export class CloudDeliveries {
       pullRequest?: { id: string; record: GitPullRequestRecord };
       merged?: boolean;
       attempts?: number;
+      problems?: number;
     } = {},
   ): Promise<void> {
     await this.database.transaction((sql) =>
       sql.query(
         `UPDATE cloud_run_deliveries SET state=$3,reason=CASE WHEN $11 THEN $4 ELSE reason END,attempts=$5,next_attempt_at=clock_timestamp()+$6*interval '1 second',updated_at=clock_timestamp(),
         pull_request_id=COALESCE($7,pull_request_id),pull_request_number=COALESCE($8,pull_request_number),pull_request_url=COALESCE($9,pull_request_url),
-        merged_at=CASE WHEN $10 THEN clock_timestamp() ELSE merged_at END
+        merged_at=CASE WHEN $10 THEN clock_timestamp() ELSE merged_at END,problems=COALESCE($12,problems)
         WHERE organization_id=$1 AND run_id=$2`,
         [
           delivery.organization_id,
@@ -285,31 +429,72 @@ export class CloudDeliveries {
           fields.pullRequest?.record.url ?? null,
           fields.merged ?? false,
           fields.reason !== undefined,
+          fields.problems ?? null,
         ],
       ),
     );
     delivery.state = state;
   }
 
-  private async moveIssue(
+  private async changeIssue(
     delivery: StoredDelivery,
     actorId: string,
-    category: IssueState,
+    changes: IssueChangeSet,
+    revision?: number,
   ): Promise<void> {
     if (!delivery.issue_id) return;
     try {
       await this.issueChanges.apply(
-        { organizationId: delivery.organization_id, userId: actorId },
-        randomUUID(),
         {
-          issues: [{ id: delivery.issue_id }],
-          changes: { statusCategory: category },
+          organizationId: delivery.organization_id,
+          userId: actorId,
+          automation: "Machdoch AI",
         },
+        randomUUID(),
+        { issues: [{ id: delivery.issue_id, revision }], changes },
       );
     } catch (error) {
       if (!isCloudError(error) || ![404, 409, 422].includes(error.status))
         throw error;
     }
+  }
+
+  private async confirmCriteria(
+    delivery: StoredDelivery,
+    run: RunSource,
+  ): Promise<void> {
+    if (!delivery.issue_id || !delivery.pull_request_id) return;
+    const issue = (
+      await this.database.transaction((sql) =>
+        sql.query<{
+          criteria: string;
+          revision: number;
+          reviewed: string;
+        }>(
+          `SELECT i.acceptance_criteria AS criteria,i.revision,r.manifest->>'acceptanceCriteria' AS reviewed
+          FROM cloud_issues i
+          JOIN cloud_run_deliveries d ON d.organization_id=i.organization_id AND d.issue_id=i.id AND d.pull_request_id=$3
+          JOIN cloud_runs r ON r.organization_id=d.organization_id AND r.id=d.run_id AND r.manifest->'subject'->>'kind'='issue'
+          WHERE i.organization_id=$1 AND i.id=$2
+          AND (SELECT v.decision FROM cloud_run_reviews v WHERE v.organization_id=r.organization_id AND v.run_id=r.id ORDER BY v.round DESC LIMIT 1)='approve'
+          ORDER BY r.created_at DESC LIMIT 1`,
+          [
+            delivery.organization_id,
+            delivery.issue_id,
+            delivery.pull_request_id,
+          ],
+        ),
+      )
+    ).rows[0];
+    if (!issue || issue.criteria.trim() !== issue.reviewed.trim()) return;
+    const confirmed = completeTaskList(issue.criteria);
+    if (confirmed !== issue.criteria)
+      await this.changeIssue(
+        delivery,
+        run.actorId,
+        { acceptanceCriteria: confirmed },
+        issue.revision,
+      );
   }
 
   private async advance(delivery: StoredDelivery): Promise<void> {
@@ -340,6 +525,13 @@ export class CloudDeliveries {
         return await this.update(delivery, "needs_person", {
           reason: `The change conflicts with ${delivery.base_branch}.`,
         });
+      const pending = await this.pendingWork(delivery);
+      if (pending)
+        return await this.update(delivery, "merging", {
+          reason: pending,
+          attempts: delivery.attempts + 1,
+          retryInSeconds: 15,
+        });
       const checks = await client.checks(
         repository.fullName,
         fresh.number,
@@ -355,6 +547,7 @@ export class CloudDeliveries {
             reason: "Repository checks did not finish within four hours.",
           });
         return await this.update(delivery, "merging", {
+          reason: "Waiting for repository checks.",
           attempts: delivery.attempts + 1,
           retryInSeconds: 60,
         });
@@ -428,20 +621,26 @@ export class CloudDeliveries {
       authorization: prepared.authorization,
       bundle: prepared.bundle,
       baseCommit: run.baseCommit,
+      ...(run.manifest.subject.kind === "pull_request" &&
+      run.manifest.subject.base
+        ? { mergeParent: run.manifest.subject.base.sha }
+        : {}),
       candidateCommit: delivery.head_sha,
       branch: delivery.branch,
     });
     const client = gitClient(connection, this.transport);
     const title =
       `${run.identifier ? `${run.identifier} ` : ""}${run.title}`.slice(0, 250);
+    const review = prepared.review
+      ? `**AI review:** approved in round ${prepared.review.round}. ${prepared.review.summary}`
+      : "";
+    const taskLink = `[Open the task](${this.origin}/cloud/tasks/${delivery.run_id})`;
     const body = [
       run.summary?.trim() ?? "",
       "---",
-      prepared.review
-        ? `**AI review:** approved in round ${prepared.review.round}. ${prepared.review.summary}`
-        : "",
+      review,
       ...(prepared.review?.gates.map(gateLine) ?? []),
-      `[Open the task](${this.origin}/cloud/tasks/${delivery.run_id})`,
+      taskLink,
       run.identifier ? `Closes ${run.identifier}` : "",
     ]
       .filter(Boolean)
@@ -456,11 +655,24 @@ export class CloudDeliveries {
           base: delivery.base_branch,
         });
     const id = await this.sync.store(connection, repository, record);
+    if (prepared.existing && run.manifest.subject.kind === "pull_request")
+      await client.comment(
+        repository.fullName,
+        record.number,
+        [
+          `**Machdoch ${run.manifest.subject.purpose === "resolve" ? "conflict resolution" : "fix"}:** ${run.summary?.trim() || "Pushed a change."}`,
+          review,
+          taskLink,
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+          .slice(0, 60_000),
+      );
     await this.update(delivery, delivery.auto_merge ? "merging" : "open", {
       pullRequest: { id, record },
       retryInSeconds: delivery.auto_merge ? 15 : 120,
     });
-    await this.moveIssue(delivery, run.actorId, "review");
+    await this.changeIssue(delivery, run.actorId, { statusCategory: "review" });
   }
 
   private async report(
@@ -469,59 +681,101 @@ export class CloudDeliveries {
     connection: GitConnectionRecord,
     run: RunSource,
   ): Promise<void> {
-    const evidence = await this.database.transaction(async (sql) => ({
-      review: (
-        await sql.query<{
-          summary: string;
-          findings: ReviewFinding[];
-          gates: DeliveryGate[];
-        }>(
-          "SELECT summary,findings,gates FROM cloud_run_reviews WHERE organization_id=$1 AND run_id=$2 ORDER BY created_at DESC LIMIT 1",
-          [delivery.organization_id, delivery.run_id],
-        )
-      ).rows[0],
-      checks: (
-        await sql.query<{ checks: { name: string; passed: boolean }[] }>(
-          "SELECT COALESCE(result->'checks','[]'::jsonb) AS checks FROM cloud_runs WHERE organization_id=$1 AND id=$2",
-          [delivery.organization_id, delivery.run_id],
-        )
-      ).rows[0]!.checks,
-    }));
-    const blocking =
-      evidence.review?.findings.filter(
-        (finding) => finding.severity === "blocking",
-      ) ?? [];
-    const failedChecks = evidence.checks.filter((check) => !check.passed);
-    const problems = blocking.length + failedChecks.length;
+    const client = gitClient(connection, this.transport);
+    const link = `${this.origin}/cloud/tasks/${delivery.run_id}`;
+    const status = (state: GitCommitStatusState, description: string) =>
+      client.commitStatus(repository.fullName, delivery.head_sha, {
+        state,
+        context: sandboxStatusContext,
+        description,
+        targetUrl: link,
+      });
+    if (run.state !== "succeeded") {
+      const reason =
+        run.state === "timed_out"
+          ? "The sandbox check ran out of time."
+          : `The sandbox check ${run.state}.`;
+      await status("error", reason);
+      return this.update(delivery, "failed", { reason });
+    }
+    const evidence = await this.database.transaction((sql) =>
+      readCheckEvidence(sql, delivery.organization_id, delivery.run_id),
+    );
+    const problems = problemCount(evidence);
     const verdict = problems
-      ? `${problems} ${problems === 1 ? "problem" : "problems"} found`
+      ? `${problemsLabel(problems)} found`
       : "No problems found";
-    const body = [
+    const report = [
       `**Machdoch check: ${verdict}**`,
       run.summary?.trim() ?? "",
-      evidence.checks.length
-        ? `**Checks:** ${evidence.checks.map((check) => `${check.passed ? "✅" : "❌"} ${check.name}`).join(" · ")}`
-        : "",
-      evidence.review ? `**AI review:** ${evidence.review.summary}` : "",
-      blocking
-        .map(
-          (finding) =>
-            `- ⚠️ **${finding.title}**${finding.file ? ` \`${finding.file}${finding.line ? `:${finding.line}` : ""}\`` : ""}: ${finding.detail}`,
-        )
-        .join("\n"),
-      ...(evidence.review?.gates.filter((gate) => !gate.passed).map(gateLine) ??
-        []),
-      `[Open the check](${this.origin}/cloud/tasks/${delivery.run_id})`,
+      ...checkLines(evidence),
+      `[Open the check](${link})`,
     ]
       .filter(Boolean)
       .join("\n\n")
       .slice(0, 60_000);
-    await gitClient(connection, this.transport).review(
-      repository.fullName,
-      delivery.pull_request_number!,
-      { decision: "comment", body, headSha: delivery.head_sha },
-    );
-    await this.update(delivery, "reported", { reason: `${verdict}.` });
+    await client.review(repository.fullName, delivery.pull_request_number!, {
+      decision: "comment",
+      body: report,
+      headSha: delivery.head_sha,
+    });
+    await status(problems ? "failure" : "success", verdict);
+    await this.update(delivery, "reported", {
+      reason: `${verdict}.`,
+      problems,
+    });
+    await this.database.transaction(async (sql) => {
+      const pullRequest = (
+        await sql.query<GitEventPullRequest & Record<string, unknown>>(
+          `SELECT id,number,title,url,author,head_ref AS "headRef",base_ref AS "baseRef",head_sha AS "headSha",draft
+          FROM cloud_git_pull_requests WHERE organization_id=$1 AND id=$2`,
+          [delivery.organization_id, delivery.pull_request_id],
+        )
+      ).rows[0];
+      if (!pullRequest) return;
+      const issueIds = (
+        await sql.query<{ issue_id: string }>(
+          "SELECT issue_id FROM cloud_git_pull_request_issues WHERE organization_id=$1 AND pull_request_id=$2",
+          [delivery.organization_id, pullRequest.id],
+        )
+      ).rows.map((row) => row.issue_id);
+      await queueGitEvents(sql, connection, [
+        gitEvent(
+          repository,
+          problems ? "sandbox_check_failed" : "sandbox_check_passed",
+          {
+            branch: pullRequest.baseRef,
+            pullRequest: { ...pullRequest, headSha: delivery.head_sha },
+            check: {
+              runId: delivery.run_id,
+              problems,
+              summary: evidence.review?.summary ?? verdict,
+              report,
+            },
+            issueIds,
+          },
+        ),
+      ]);
+    });
+  }
+
+  private async pendingWork(delivery: StoredDelivery): Promise<string | null> {
+    return this.database.transaction(async (sql) => {
+      const automations = await sql.query(
+        `SELECT 1 FROM cloud_automation_events WHERE organization_id=$1 AND event->'git'->'pullRequest'->>'id'=$2
+        UNION ALL
+        SELECT 1 FROM cloud_automation_runs WHERE organization_id=$1 AND state IN ('queued','running','waiting') AND variables->'pullRequest'->>'id'=$2
+        LIMIT 1`,
+        [delivery.organization_id, delivery.pull_request_id],
+      );
+      if (automations.rows.length) return "Waiting for automations.";
+      const tasks = await sql.query(
+        `SELECT 1 FROM cloud_runs WHERE organization_id=$1 AND id<>$3 AND state NOT IN ('succeeded','failed','canceled','timed_out')
+        AND manifest->'subject'->>'kind'='pull_request' AND manifest->'subject'->>'id'=$2 AND manifest->'subject'->>'purpose' IN ('fix','resolve') LIMIT 1`,
+        [delivery.organization_id, delivery.pull_request_id, delivery.run_id],
+      );
+      return tasks.rows.length ? "Waiting for the fix task." : null;
+    });
   }
 
   private async bundle(
@@ -578,7 +832,10 @@ export class CloudDeliveries {
     run: RunSource,
   ): Promise<void> {
     await this.update(delivery, "merged", { merged: true });
-    await this.moveIssue(delivery, run.actorId, "complete");
+    await this.changeIssue(delivery, run.actorId, {
+      statusCategory: "complete",
+    });
+    await this.confirmCriteria(delivery, run);
   }
 
   private async cleanup(): Promise<number> {

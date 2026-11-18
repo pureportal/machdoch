@@ -443,7 +443,9 @@ async function route(
   if (
     path[0] === "git" ||
     path[0] === "pull-requests" ||
-    (path[0] === "issues" && path[2] === "pull-requests" && path.length === 3)
+    (path[0] === "issues" &&
+      (path[2] === "pull-requests" || path[2] === "delivery") &&
+      path.length === 3)
   )
     return handleGitApi(runtime, request, actor);
   if (routeKey === "GET connections")
@@ -492,6 +494,7 @@ async function route(
       "execution-workers",
       "execution-repositories",
       "execution-checks",
+      "execution-sandbox",
       "runs",
     ].includes(path[0] ?? "")
   )

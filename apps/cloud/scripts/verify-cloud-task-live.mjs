@@ -1,7 +1,7 @@
 import { taskAgentTools } from "@machdoch/fleet-protocol/cloud-agent-tools";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { VirtualMachineSandbox } from "../../../packages/cloud-client/src/worker/sandbox/virtual-machine.ts";
 import {
@@ -13,6 +13,7 @@ import {
   cloudApi,
   cloudBrowserFixture,
 } from "./cloud-browser-fixture.mjs";
+import { installedSandbox } from "./cloud-runner-process.mjs";
 
 assert.ok(
   process.env.OPENAI_API_KEY,
@@ -22,13 +23,7 @@ assert.ok(
   process.env.MACHDOCH_VERIFY_MODEL,
   "Select MACHDOCH_VERIFY_MODEL for live sandbox verification.",
 );
-assert.ok(
-  process.env.MACHDOCH_SANDBOX_CONFIG,
-  "Select a trusted WHPX artifact manifest with MACHDOCH_SANDBOX_CONFIG.",
-);
-const configuration = JSON.parse(
-  await readFile(process.env.MACHDOCH_SANDBOX_CONFIG, "utf8"),
-);
+const configuration = await installedSandbox();
 const fixture = await cloudBrowserFixture();
 const page = await fixture.ownerContext.newPage();
 const runnerContext = await fixture.createContext();
@@ -156,7 +151,6 @@ try {
     target: "cloud",
     repository: "https://github.com/example/sandbox-fixture",
     autopilot: false,
-    checkPullRequests: false,
     providerId: provider.id,
     model: process.env.MACHDOCH_VERIFY_MODEL,
     maxDurationSeconds: 600,

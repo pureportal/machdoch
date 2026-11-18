@@ -55,6 +55,8 @@ import { CloudComments } from "./comments";
 import { CloudExecutionProfiles } from "./execution/profiles";
 import { CloudRuns } from "./execution/runs";
 import { CloudWorkers } from "./execution/workers";
+import { CloudHostedRunners } from "./execution/hosted-runners";
+import { CloudSandboxRuntime } from "./execution/sandbox-runtime";
 import { CloudClientWorkspaces } from "./execution/client-workspaces";
 import { CloudExecutionLeases } from "./execution/leases";
 import { CloudExecutionEffects } from "./execution/effects";
@@ -71,6 +73,7 @@ import { CloudRoles } from "./roles";
 import { CloudGitStatusRules } from "./git/automations";
 import { CloudGitConnections } from "./git/connections";
 import { CloudGitPullRequests } from "./git/pull-requests";
+import { CloudIssueDelivery } from "./git/issue-delivery";
 import { CloudGitSync } from "./git/sync";
 import { CloudGitWebhooks } from "./git/webhooks";
 import { GitIdentities } from "./git/identity";
@@ -194,12 +197,15 @@ export interface CloudRuntime {
     webhooks: CloudGitWebhooks;
     oauth: CloudGitOAuth;
     pullRequests: CloudGitPullRequests;
+    delivery: CloudIssueDelivery;
     syncLoop: CloudPeriodicLoop;
   };
   execution: {
     profiles: CloudExecutionProfiles;
     runs: CloudRuns;
     workers: CloudWorkers;
+    sandbox: CloudSandboxRuntime;
+    hostedRunners: CloudHostedRunners;
     clientWorkspaces: CloudClientWorkspaces;
     leases: CloudExecutionLeases;
     effects: CloudExecutionEffects;
@@ -358,6 +364,7 @@ export function createCloudRuntime(
     releases,
     studio,
     pullRequests,
+    runs,
   });
   let wakePulse = () => {};
   const pulse = new CloudPulse(database, chatStore, agentActions, () =>
@@ -413,6 +420,12 @@ export function createCloudRuntime(
     }),
   );
   const autopilot = new CloudAutopilot(database, issueChanges);
+  const sandboxRuntime = new CloudSandboxRuntime(database);
+  const hostedRunners = new CloudHostedRunners(
+    database,
+    options.credentialsCipher ?? null,
+    sandboxRuntime,
+  );
   const deliveries = new CloudDeliveries(
     database,
     options.credentialsCipher ?? null,
@@ -605,12 +618,24 @@ export function createCloudRuntime(
         gitCallbackUrl,
       ),
       pullRequests,
+      delivery: new CloudIssueDelivery(
+        database,
+        options.credentialsCipher ?? null,
+        pullRequests,
+        gitFetch,
+      ),
       syncLoop: new CloudPeriodicLoop("Git sync", () => gitSync.tick(), 1),
     },
     execution: {
       profiles: executionProfiles,
       runs,
-      workers: new CloudWorkers(database),
+      workers: new CloudWorkers(
+        database,
+        options.credentialsCipher ?? null,
+        hostedRunners,
+      ),
+      sandbox: sandboxRuntime,
+      hostedRunners,
       clientWorkspaces: new CloudClientWorkspaces(database),
       leases: new CloudExecutionLeases(database),
       effects: new CloudExecutionEffects(database),
@@ -635,6 +660,8 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   const installation = await initializeInstallation(runtime.database);
   const origin = installation.origin ?? "";
   if (runtime.origin === origin) return;
+  const hostedOrigin = runtime.execution.hostedRunners.localOrigin;
+  await runtime.execution.hostedRunners.close();
   runtime.cliLogins.close();
   await runtime.scheduleLoop.close();
   await runtime.automations.loop.close();
@@ -660,6 +687,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.pulse.loop.start();
   runtime.activity.exportLoop.start();
   runtime.git.syncLoop.start();
+  if (hostedOrigin) runtime.execution.hostedRunners.start(hostedOrigin);
 }
 
 export function setCloudRuntimeForTests(
@@ -676,6 +704,7 @@ export async function closeCloudRuntime(): Promise<void> {
   delete globalRuntime[runtimeSymbol];
   if (runtime) {
     const current = await runtime;
+    await current.execution.hostedRunners.close();
     current.cliLogins.close();
     await current.scheduleLoop.close();
     await current.automations.loop.close();

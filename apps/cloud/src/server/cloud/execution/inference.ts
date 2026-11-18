@@ -123,7 +123,7 @@ export async function queueRunInference(
   requireInferenceCapacity(budget, reservation);
   await sql.query(
     `INSERT INTO cloud_inference_calls (organization_id,id,run_id,attempt_id,run_epoch,request_digest,actor_id,provider_id,provider_revision,model,user_prompt,system_prompt,tools,reserved_tokens,max_output_tokens,budget_day,state,deadline_at,model_options,purpose)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::date,'queued',LEAST($17::timestamptz,clock_timestamp()+interval '120 seconds'),$18,$19)`,
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::date,'queued',LEAST($17::timestamptz,clock_timestamp()+interval '300 seconds'),$18,$19)`,
     [
       organizationId,
       call.requestId,

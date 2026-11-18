@@ -6,9 +6,14 @@ import {
   type CloudActor,
 } from "../../../lib/cloud-contract";
 import type {
+  PullRequestTask,
+  RunManifest,
   WorkerClaim,
   WorkerFinish,
 } from "@machdoch/fleet-protocol/cloud-execution";
+import { automationInputSchema } from "../../../lib/cloud-automation-contract";
+import type { GitEventKind } from "../../../lib/git-events";
+import { sandboxStatusContext } from "./pull-request-tasks";
 import type { ReviewVerdict } from "@machdoch/fleet-protocol/cloud-delivery";
 import { SettingsCipher } from "../../settings-crypto";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
@@ -72,6 +77,12 @@ beforeEach(async () => {
     candidatePush: async (push) => {
       pushes.push(push);
       server.branches.set(push.branch, push.candidateCommit);
+      for (const change of server.github.values())
+        if (change.headRef === push.branch)
+          server.update(change, {
+            headSha: push.candidateCommit,
+            mergeable: true,
+          });
     },
   });
   teamId = (
@@ -113,7 +124,6 @@ beforeEach(async () => {
       target: "cloud",
       repository: "https://github.test/acme/app",
       autopilot: true,
-      checkPullRequests: false,
       providerId: provider.id,
       model: "fixture",
       maxDurationSeconds: 600,
@@ -133,18 +143,21 @@ async function aiIssue(title: string) {
       teamId,
       projectId,
       title,
-      acceptanceCriteria: "The German greeting reads Guten Tag.",
+      acceptanceCriteria: "- [ ] The German greeting reads Guten Tag.",
       aiAssigned: true,
     }),
   );
   return issue;
 }
 
-async function claimTask(): Promise<{ claim: WorkerClaim; worker: string }> {
+async function claimTask(
+  commits: { base: string; candidate: string } = { base, candidate },
+  checkPassed = true,
+): Promise<{ claim: WorkerClaim; worker: string }> {
   const worker = await runtime.execution.workers.register(
     owner,
     profileId,
-    "Runner",
+    `Runner ${randomUUID().slice(0, 8)}`,
   );
   const { claim } = await runtime.execution.leases.claim(
     worker.token,
@@ -156,7 +169,7 @@ async function claimTask(): Promise<{ claim: WorkerClaim; worker: string }> {
     attemptId: claim.attemptId,
     epoch: claim.epoch,
     environmentId: randomUUID(),
-    baseCommit: base,
+    baseCommit: commits.base,
     isolation: "microvm",
   });
   await runtime.execution.leases.progress(worker.token, {
@@ -165,14 +178,14 @@ async function claimTask(): Promise<{ claim: WorkerClaim; worker: string }> {
     epoch: claim.epoch,
     state: "validating",
   });
+  const evidence = verificationFixture(
+    commits.candidate,
+    checkPassed ? {} : { exitCode: 1, stdout: "1 test failed" },
+  );
   for (const [kind, bytes, name] of [
     ["candidate", Buffer.from("bundle"), "candidate.bundle"],
     ["diff", Buffer.from(patch), "changes.patch"],
-    [
-      "verification",
-      Buffer.from(JSON.stringify(verificationFixture(candidate))),
-      "check-1.json",
-    ],
+    ["verification", Buffer.from(JSON.stringify(evidence)), "check-1.json"],
   ] as const)
     await storeTestArtifact(
       runtime,
@@ -180,7 +193,7 @@ async function claimTask(): Promise<{ claim: WorkerClaim; worker: string }> {
       claim,
       kind,
       bytes,
-      candidate,
+      commits.candidate,
       name,
     );
   return { claim, worker: worker.token };
@@ -191,13 +204,14 @@ async function review(
   claim: WorkerClaim,
   round: number,
   verdict: ReviewVerdict,
+  candidateCommit = candidate,
 ) {
   const request = {
     requestId: randomUUID(),
     runId: claim.runId,
     attemptId: claim.attemptId,
     epoch: claim.epoch,
-    candidateCommit: candidate,
+    candidateCommit,
     round,
   };
   await runtime.execution.reviews.submit(worker, request);
@@ -219,7 +233,15 @@ async function review(
   return runtime.execution.reviews.result(worker, request);
 }
 
-function finish(claim: WorkerClaim): WorkerFinish {
+function finish(
+  claim: WorkerClaim,
+  candidateCommit = candidate,
+  checkPassed = true,
+): WorkerFinish {
+  const evidence = verificationFixture(
+    candidateCommit,
+    checkPassed ? {} : { exitCode: 1, stdout: "1 test failed" },
+  );
   return {
     runId: claim.runId,
     attemptId: claim.attemptId,
@@ -227,20 +249,81 @@ function finish(claim: WorkerClaim): WorkerFinish {
     inputDigest: claim.inputDigest,
     outcome: "succeeded",
     stopped: true,
-    summary: "## What changed\nThe greeting now reads Guten Tag.",
-    candidateCommit: candidate,
+    summary: checkPassed
+      ? "## What changed\nThe greeting now reads Guten Tag."
+      : "## Verdict\nNot ready.\n\n## Problems\n- The unit test fails.",
+    candidateCommit,
     tokensUsed: 300,
     checks: [
       {
         name: "unit",
-        passed: true,
-        candidateCommit: candidate,
+        passed: checkPassed,
+        candidateCommit,
         evidenceDigest: createHash("sha256")
-          .update(JSON.stringify(verificationFixture(candidate)))
+          .update(JSON.stringify(evidence))
           .digest("hex"),
       },
     ],
   };
+}
+
+async function automate(events: GitEventKind[], task: PullRequestTask) {
+  return runtime.automations.service.create(
+    owner,
+    randomUUID(),
+    automationInputSchema.parse({
+      name: `${task} automation`,
+      teamId,
+      trigger: { kind: "git_event", events },
+      actions: [
+        {
+          kind: "delegate",
+          profileId,
+          task,
+          instructions:
+            task === "fix" ? "Fix these problems:\n\n{{check.report}}" : "",
+        },
+      ],
+    }),
+  );
+}
+
+async function sandboxAutomations() {
+  return {
+    check: await automate(
+      ["pull_request_opened", "pull_request_updated"],
+      "check",
+    ),
+    fix: await automate(["sandbox_check_failed"], "fix"),
+  };
+}
+
+async function sync() {
+  await runtime.git.connections.requestSync(owner, "github");
+  for (let round = 0; round < 50 && (await runtime.git.sync.tick()); round++);
+}
+
+async function dispatch() {
+  for (
+    let round = 0;
+    round < 20 && (await runtime.automations.dispatcher.tick());
+    round++
+  );
+}
+
+function sandboxStatus(commit: string) {
+  return server.statuses
+    .get(commit)
+    ?.find((status) => status.context === sandboxStatusContext);
+}
+
+async function pullRequestRuns(purpose: PullRequestTask) {
+  return (
+    await database.engine.query<{ id: string; manifest: RunManifest }>(
+      `SELECT id,manifest FROM cloud_runs WHERE organization_id=$1 AND manifest->'subject'->>'purpose'=$2 ORDER BY created_at`,
+      [owner.organizationId, purpose],
+    )
+  ).rows;
 }
 
 async function deliver() {
@@ -328,9 +411,14 @@ it("takes an issue assigned to AI through review, pull request and merge", async
     autoMerge: true,
     pullRequestNumber: 1,
   });
-  expect((await runtime.planning.getIssue(owner, issue.id)).state).toBe(
-    "complete",
-  );
+  expect(await runtime.planning.getIssue(owner, issue.id)).toMatchObject({
+    state: "complete",
+    acceptanceCriteria: "- [x] The German greeting reads Guten Tag.",
+  });
+  expect((await runtime.planning.history(owner, issue.id))[0]).toMatchObject({
+    actor: "Machdoch AI",
+    automated: true,
+  });
   const diff = await runtime.execution.runs.changes(owner, claim.runId);
   expect(diff.files[0]!.hunks[0]!.lines).toEqual(
     expect.arrayContaining([
@@ -432,8 +520,10 @@ it("starts only issues assigned to AI and keeps one assignee", async () => {
   ).rejects.toMatchObject({ code: "ai_unavailable" });
 }, 60_000);
 
-it("checks new pull requests in a sandbox and comments the verdict", async () => {
+it("checks pull requests in a sandbox when an automation asks for it", async () => {
   const head = sha(70);
+  const automations = await sandboxAutomations();
+  await sync();
   server.add(server.github, 7, {
     title: "Add login form",
     headRef: "feature/login",
@@ -449,28 +539,20 @@ it("checks new pull requests in a sandbox and comments the verdict", async () =>
         "@@ -1,1 +1,1 @@\n-<button>Login</button>\n+<button disabled>Login</button>",
     },
   ]);
-  await runtime.git.connections.requestSync(owner, "github");
-  for (let round = 0; round < 50 && (await runtime.git.sync.tick()); round++);
-  const [profile] = await runtime.execution.profiles.list(owner);
-  if (!profile || profile.target === "client") throw new Error("Profile");
-  const {
-    id: _,
-    teamId: __,
-    projectId: ___,
-    revision,
-    ...definition
-  } = profile;
-  await runtime.execution.profiles.update(owner, randomUUID(), profile.id, {
-    ...definition,
-    revision,
-    checkPullRequests: true,
-  });
-
-  expect(await runtime.autopilot.autopilot.tick()).toBe(1);
+  await sync();
   expect(await runtime.autopilot.autopilot.tick()).toBe(0);
+  await dispatch();
+  const [checkRun] = await runtime.automations.service.runs(owner, {
+    automationId: automations.check.id,
+  });
+  expect(checkRun).toMatchObject({ state: "succeeded", error: null });
+  expect(sandboxStatus(head)).toMatchObject({
+    state: "pending",
+    description: "Checking in a sandbox",
+  });
   const worker = await runtime.execution.workers.register(
     owner,
-    profile.id,
+    profileId,
     "Runner",
   );
   const { claim } = await runtime.execution.leases.claim(
@@ -577,15 +659,336 @@ it("checks new pull requests in a sandbox and comments the verdict", async () =>
     state: "reported",
     pullRequestNumber: 7,
     reason: "2 problems found.",
+    problems: 2,
   });
   const review = server.callsTo("/repos/acme/app/pulls/7/reviews", "POST")[0]!;
   expect(review.body).toMatchObject({ event: "COMMENT" });
   expect(JSON.stringify(review.body)).toContain("2 problems found");
   expect(JSON.stringify(review.body)).toContain("Login is disabled");
+  expect(sandboxStatus(head)).toMatchObject({
+    state: "failure",
+    description: "2 problems found",
+  });
   expect(
     (await runtime.execution.runs.changes(owner, claim.runId)).files.map(
       (file) => file.path,
     ),
   ).toEqual(["src/login.tsx"]);
+
+  await dispatch();
+  const [fixRun] = await runtime.automations.service.runs(owner, {
+    automationId: automations.fix.id,
+  });
+  expect(fixRun).toMatchObject({
+    state: "succeeded",
+    trigger: "sandbox_check_failed",
+  });
+  expect(fixRun!.steps[0]!.detail).toBe("AI task started on #7");
+  const [fix] = await pullRequestRuns("fix");
+  expect(fix!.manifest.subject).toMatchObject({
+    kind: "pull_request",
+    purpose: "fix",
+    headSha: head,
+  });
+  expect(fix!.manifest.objective).toContain("Fix these problems:");
+  expect(fix!.manifest.objective).toContain("Login is disabled");
+  expect(fix!.manifest.objective).toContain("❌ unit");
+}, 60_000);
+
+it("fixes what the sandbox check finds on its own pull request before merging", async () => {
+  await sandboxAutomations();
+  const fixed = sha(300);
+  const issue = await aiIssue("Use a formal German greeting");
+  expect(await runtime.autopilot.autopilot.tick()).toBe(1);
+  const change = await claimTask();
+  await review(change.worker, change.claim, 1, {
+    decision: "approve",
+    summary: "Only the German value changed.",
+    findings: [],
+  });
+  await runtime.execution.leases.finish(change.worker, finish(change.claim));
+  await deliver();
+  const pullRequest = server.github.get(1)!;
+  expect(pullRequest).toMatchObject({ state: "open", headSha: candidate });
+  server.pullFiles.set(1, [
+    {
+      filename: "locales/de.json",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: `@@ -2,1 +2,1 @@\n-  "greeting": "Hallo"\n+  "greeting": "Guten Tag"`,
+    },
+  ]);
+  expect(
+    (await runtime.execution.runs.get(owner, change.claim.runId)).delivery,
+  ).toMatchObject({
+    state: "merging",
+    autoMerge: true,
+    pullRequestNumber: 1,
+    reason: "Waiting for automations.",
+  });
+
+  await dispatch();
+  expect(sandboxStatus(candidate)).toMatchObject({ state: "pending" });
+  await deliver();
+  expect(
+    (await runtime.execution.runs.get(owner, change.claim.runId)).delivery,
+  ).toMatchObject({
+    state: "merging",
+    reason: "Waiting for repository checks.",
+  });
+  const check = await claimTask({ base: candidate, candidate }, false);
+  expect(check.claim.manifest.subject).toMatchObject({
+    kind: "pull_request",
+    purpose: "check",
+    headSha: candidate,
+  });
+  await review(check.worker, check.claim, 1, {
+    decision: "request_changes",
+    summary: "The unit test fails.",
+    findings: [
+      {
+        severity: "blocking",
+        file: "locales/de.json",
+        line: 2,
+        title: "Broken JSON",
+        detail: "Add the missing comma.",
+      },
+    ],
+  });
+  await runtime.execution.leases.finish(
+    check.worker,
+    finish(check.claim, candidate, false),
+  );
+  await deliver();
+  expect(
+    (await runtime.execution.runs.get(owner, check.claim.runId)).delivery,
+  ).toMatchObject({ kind: "check", state: "reported", problems: 2 });
+  expect(sandboxStatus(candidate)).toMatchObject({ state: "failure" });
+  expect(
+    (await runtime.execution.runs.get(owner, change.claim.runId)).delivery,
+  ).toMatchObject({ state: "merging", reason: "Waiting for automations." });
+  expect(pullRequest.state).toBe("open");
+
+  await dispatch();
+  await deliver();
+  expect(
+    (await runtime.execution.runs.get(owner, change.claim.runId)).delivery,
+  ).toMatchObject({ state: "merging", reason: "Waiting for the fix task." });
+  const fix = await claimTask({ base: candidate, candidate: fixed });
+  expect(fix.claim.manifest.subject).toMatchObject({
+    kind: "pull_request",
+    purpose: "fix",
+    headSha: candidate,
+  });
+  expect(fix.claim.manifest.objective).toContain("Broken JSON");
+  expect(fix.claim.manifest.objective).toContain("❌ unit");
+  await review(
+    fix.worker,
+    fix.claim,
+    1,
+    { decision: "approve", summary: "The comma is back.", findings: [] },
+    fixed,
+  );
+  await runtime.execution.leases.finish(fix.worker, finish(fix.claim, fixed));
+  await deliver();
+  expect(pushes.at(-1)).toMatchObject({
+    branch: pullRequest.headRef,
+    baseCommit: candidate,
+    candidateCommit: fixed,
+  });
+  expect(pullRequest).toMatchObject({ state: "open", headSha: fixed });
+  expect(
+    server.callsTo("/repos/acme/app/issues/1/comments", "POST"),
+  ).toHaveLength(1);
+  expect(
+    (await runtime.execution.runs.get(owner, change.claim.runId)).delivery,
+  ).toMatchObject({
+    state: "closed",
+    reason: "A newer task replaced this change.",
+  });
+  expect(
+    (await runtime.execution.runs.get(owner, fix.claim.runId)).delivery,
+  ).toMatchObject({
+    state: "merging",
+    pullRequestNumber: 1,
+    reason: "Waiting for automations.",
+  });
+  expect((await runtime.planning.getIssue(owner, issue.id)).state).toBe(
+    "review",
+  );
+
+  await dispatch();
+  expect(sandboxStatus(fixed)).toMatchObject({ state: "pending" });
+  const recheck = await claimTask({ base: fixed, candidate: fixed });
+  expect(recheck.claim.manifest.subject).toMatchObject({
+    purpose: "check",
+    headSha: fixed,
+  });
+  await review(
+    recheck.worker,
+    recheck.claim,
+    1,
+    { decision: "approve", summary: "Clean.", findings: [] },
+    fixed,
+  );
+  await runtime.execution.leases.finish(
+    recheck.worker,
+    finish(recheck.claim, fixed),
+  );
+  await deliver();
+  expect(sandboxStatus(fixed)).toMatchObject({
+    state: "success",
+    description: "No problems found",
+  });
+  await dispatch();
+  await deliver();
+  expect(pullRequest.state).toBe("merged");
+  expect(server.branches.has(pullRequest.headRef)).toBe(false);
+  expect(
+    (await runtime.execution.runs.get(owner, fix.claim.runId)).delivery,
+  ).toMatchObject({ state: "merged" });
+  expect(await runtime.planning.getIssue(owner, issue.id)).toMatchObject({
+    state: "complete",
+    acceptanceCriteria: "- [x] The German greeting reads Guten Tag.",
+  });
   expect(await runtime.autopilot.autopilot.tick()).toBe(0);
+}, 60_000);
+
+it("resolves merge conflicts in a sandbox that knows the base branch", async () => {
+  const head = sha(80);
+  const resolved = sha(81);
+  await automate(["merge_conflict"], "resolve");
+  await sync();
+  server.branches.set("main", sha(90));
+  const change = server.add(server.github, 8, {
+    title: "Rename the greeting",
+    headRef: "feature/greeting",
+    headSha: head,
+  });
+  await sync();
+  server.update(change, { mergeable: false });
+  await sync();
+  await dispatch();
+  const { claim, worker } = await claimTask({
+    base: head,
+    candidate: resolved,
+  });
+  expect(claim.manifest.title).toBe(
+    "Resolve conflicts in acme/app#8 Rename the greeting",
+  );
+  expect(claim.manifest.subject).toMatchObject({
+    kind: "pull_request",
+    purpose: "resolve",
+    headSha: head,
+    base: { ref: "main", sha: sha(90), mergeBase: sha(2) },
+  });
+  expect(claim.manifest.objective).toContain("Resolve every conflict");
+  await review(
+    worker,
+    claim,
+    1,
+    { decision: "approve", summary: "Both sides kept.", findings: [] },
+    resolved,
+  );
+  await runtime.execution.leases.finish(worker, finish(claim, resolved));
+  await deliver();
+  expect(pushes.at(-1)).toMatchObject({
+    branch: "feature/greeting",
+    baseCommit: head,
+    mergeParent: sha(90),
+    candidateCommit: resolved,
+  });
+  expect(change.headSha).toBe(resolved);
+  const comment = server.callsTo("/repos/acme/app/issues/8/comments", "POST");
+  expect(JSON.stringify(comment[0]!.body)).toContain(
+    "Machdoch conflict resolution",
+  );
+  expect(
+    (await runtime.execution.runs.get(owner, claim.runId)).delivery,
+  ).toMatchObject({
+    state: "merging",
+    pullRequestNumber: 8,
+    reason: "Waiting for automations.",
+  });
+  await dispatch();
+  await deliver();
+  expect(change.state).toBe("merged");
+  expect(
+    (await runtime.execution.runs.get(owner, claim.runId)).delivery,
+  ).toMatchObject({ state: "merged" });
+}, 60_000);
+
+it("stops starting fix tasks after three rounds", async () => {
+  const automations = await sandboxAutomations();
+  await aiIssue("Use a formal German greeting");
+  await runtime.autopilot.autopilot.tick();
+  const change = await claimTask();
+  await review(change.worker, change.claim, 1, {
+    decision: "approve",
+    summary: "Fine.",
+    findings: [],
+  });
+  await runtime.execution.leases.finish(change.worker, finish(change.claim));
+  await deliver();
+  server.pullFiles.set(1, [
+    {
+      filename: "locales/de.json",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: `@@ -2,1 +2,1 @@\n-  "greeting": "Hallo"\n+  "greeting": "Guten Tag"`,
+    },
+  ]);
+  let head = candidate;
+  for (let round = 1; round <= 4; round++) {
+    await dispatch();
+    expect(sandboxStatus(head)).toMatchObject({ state: "pending" });
+    const check = await claimTask({ base: head, candidate: head }, false);
+    await review(
+      check.worker,
+      check.claim,
+      1,
+      { decision: "approve", summary: "Only the test fails.", findings: [] },
+      head,
+    );
+    await runtime.execution.leases.finish(
+      check.worker,
+      finish(check.claim, head, false),
+    );
+    await deliver();
+    await dispatch();
+    await deliver();
+    if (round === 4) break;
+    const next = sha(300 + round);
+    const fix = await claimTask({ base: head, candidate: next });
+    await review(
+      fix.worker,
+      fix.claim,
+      1,
+      { decision: "approve", summary: "Tried.", findings: [] },
+      next,
+    );
+    await runtime.execution.leases.finish(fix.worker, finish(fix.claim, next));
+    await deliver();
+    head = next;
+  }
+  expect(await pullRequestRuns("check")).toHaveLength(4);
+  expect(await pullRequestRuns("fix")).toHaveLength(3);
+  const fixRuns = await runtime.automations.service.runs(owner, {
+    automationId: automations.fix.id,
+  });
+  expect(fixRuns).toHaveLength(4);
+  expect(fixRuns[0]!.steps[0]).toMatchObject({
+    state: "skipped",
+    detail: "3 fix tasks already ran on #1.",
+  });
+  const [lastFix] = (await pullRequestRuns("fix")).slice(-1);
+  expect(
+    (await runtime.execution.runs.get(owner, lastFix!.id)).delivery,
+  ).toMatchObject({
+    state: "needs_person",
+    reason: "Repository checks failed on the pull request.",
+  });
+  expect(server.github.get(1)!.state).toBe("open");
 }, 60_000);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { VirtualMachineSandbox } from "../../../packages/cloud-client/src/worker/sandbox/virtual-machine.ts";
 import {
@@ -9,11 +9,8 @@ import {
   cloudBrowserFixture,
   executionProviderFixture,
 } from "./cloud-browser-fixture.mjs";
+import { installedSandbox } from "./cloud-runner-process.mjs";
 
-assert.ok(
-  process.env.MACHDOCH_SANDBOX_CONFIG,
-  "Select a trusted sandbox artifact manifest.",
-);
 const repository = "https://github.com/octocat/Hello-World";
 const baseCommit = "7fd1a60b01f91b314f59955a4e4d4e80d8edf11d";
 const fixture = await cloudBrowserFixture();
@@ -91,7 +88,6 @@ try {
     name: "Repository",
     repository,
     autopilot: false,
-    checkPullRequests: false,
     target: "cloud",
     providerId: provider.id,
     model: "fixture",
@@ -117,12 +113,7 @@ try {
     },
   });
   sandbox = await VirtualMachineSandbox.create(
-    {
-      ...JSON.parse(
-        await readFile(process.env.MACHDOCH_SANDBOX_CONFIG, "utf8"),
-      ),
-      backend: "whpx",
-    },
+    { ...(await installedSandbox()), backend: "whpx" },
     { directory: fixture.directory, environmentId: randomUUID() },
   );
   const anchor = await sandbox.supervisor.anchor();

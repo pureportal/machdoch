@@ -221,7 +221,7 @@ Run the CLI with Node 24 or newer:
 pnpm --filter @machdoch/cloud-runner start --config C:\machdoch-runner\runner.json
 ```
 
-Supply `MACHDOCH_CLOUD_RUNNER_TOKEN` through the worker's environment. The JSON configuration requires an HTTPS `origin`, an absolute `stateDirectory`, and `sandbox` with `backend: "whpx"` plus `supervisor`, `qemu`, `kernel`, `initramfs` and `image`. Each artifact contains an absolute `path` and its lowercase SHA-256 `sha256`. Optional `pollIntervalMs` defaults to 3000 and `repairAttempts` to 2. Keep one private, persistent state directory per enrolled worker; preserve it after failure. The runner requires the current native helper and protocol-v2 guest image. This is a runnable source-package entry point; an installer and managed service are not delivered yet.
+The runner reads everything from its JSON configuration: an HTTPS (or loopback HTTP) `origin`, the enrolled `token`, an absolute `stateDirectory`, and `sandbox` with `backend: "whpx"` plus `supervisor`, `qemu`, `kernel`, `initramfs` and `image`. Each artifact contains an absolute `path` and its lowercase SHA-256 `sha256`. Optional `pollIntervalMs` defaults to 3000 and `repairAttempts` to 2. Start it with `--config <path>` on another machine; the cloud server starts its own runners with `--managed` and passes the configuration over the process channel. Keep one private, persistent state directory per enrolled worker; preserve it after failure. The runner requires the current native helper and protocol-v2 guest image.
 
 Reproduce the controlled and live journeys using `pnpm --filter @machdoch/cloud verify:cloud:runner` and `verify:cloud:runner-live`, respectively. Both require `MACHDOCH_CLOUD_DATABASE_URL` and `MACHDOCH_SANDBOX_CONFIG`; the current verified local artifact manifest is `.tmp/cloud-sandbox-probe/runner-artifacts.json`. Live verification additionally requires `OPENAI_API_KEY` and an explicit `MACHDOCH_VERIFY_MODEL`. The scripts use temporary production servers, isolated schemas and WHPX; no Docker is used. The runner receives no provider key.
 
@@ -614,6 +614,24 @@ Linked client profiles select a local agent (`codex-cli`, `claude-cli` or the cl
 **Ask** grounds conversations in a permission-filtered workspace snapshot (teams, projects, open cycles, referenced, matching, assigned and recent issues) and can keep one issue in focus, including its comments and AI task results. A domain test proves private-team issues are excluded. `scripts/verify-cloud-ask-live.mjs` passed with OpenAI `gpt-5.4-mini`: a workspace question returned and linked the only blocked issue, and an issue-focused question quoted its acceptance criteria (`.tmp/cloud-verification/cloud_verify_838e68d894e747968a4d5b8b993d46e2`).
 
 Projects now record status, lead, start and target dates with revision-checked edits and permission-filtered progress. Issues offer All, Active, Backlog and My issues views, status-grouped keyboard-navigable lists, a document-style detail view, and Delegate and Ask actions. The design verifier passed 99 desktop, light and 390-pixel captures with no WCAG 2.1 AA violations reported by axe (`.tmp/cloud-design-new`).
+
+## Local Windows sandbox setup
+
+Everything after the image build is configured in the cloud. No environment variables are involved.
+
+The host needs QEMU (`winget install SoftwareFreedomConservancy.QEMU`), a Rust toolchain and a WSL2 distribution with `e2fsprogs`, `squashfs-tools`, `libarchive-tools`, `cpio` and `qemu-utils` for image production.
+
+1. Build the native supervisor: `cargo build --release --locked --manifest-path apps/cloud-runner/native/Cargo.toml`.
+2. Build the shared agent bundle: `pnpm --filter @machdoch/client build:cloud-agent`.
+3. Produce the Alpine guest artifacts inside WSL as root: `apps/cloud-runner/scripts/build-guest-image.sh /mnt/c/Users/<user>/.machdoch-cloud/sandbox`. The script downloads the Alpine 3.24 `virt` ISO and mini root filesystem, verifies the published checksums, installs `tini`, `socat`, Node.js, Git, Bash, Python and Chromium with `playwright-core` (for the agent's browser tools) into a chroot, creates user 1000, writes a read-only 2 GiB ext4 `root.qcow2`, and extracts `vmlinuz-virt`, `initramfs-virt` and the two entropy modules. The ISO initramfs must be used; the netboot initramfs lacks ext4.
+4. Build the guest overlay: `node apps/cloud-runner/scripts/prepare-guest.mjs --base ~/.machdoch-cloud/sandbox/initramfs-virt --modules ~/.machdoch-cloud/sandbox/modules --runtime apps/client/dist/machdoch-cloud-agent.cjs --output ~/.machdoch-cloud/sandbox/initramfs`. `guest/boot.sh` must keep LF line endings; `.gitattributes` forces this for shell scripts because a CRLF checkout breaks the guest init.
+5. In the cloud, open **AI setup**. The **Sandbox on this server** section lists the supervisor, QEMU, kernel, initramfs and disk image it found in `~/.machdoch-cloud/sandbox`, the repository build output and the QEMU install folder. Adjust a path if needed and choose **Use sandbox**; the server computes and pins the SHA-256 of each file. The section is shown only to administrators of the organization that runs the server.
+6. Add an AI provider. For the in-sandbox agent use **Claude CLI** and sign in from the provider page.
+7. Open a project's **Runners**, choose **Add runner** and **Runs on: This server**. The cloud starts the runner, restarts it after failures, renews its credential, follows profile edits while it is idle and stops it when it is revoked or the server shuts down. Runner state lives in `~/.machdoch-cloud/runners/<runner>`. **Another machine** still issues a token for a runner configured with `--config`.
+
+Verification scripts read the same installed sandbox. `verify:cloud:runner-live` drives the whole path through the cloud: it picks and pins the sandbox through the API, adds a Claude CLI provider signed in from the local Claude CLI credentials (`--claude-config`, default `~/.claude`), adds a runner on this server through the UI and waits for the task. `--model` selects the Claude model (default `sonnet`).
+
+The VM socket bridge dropped once in roughly twenty launches during environment preparation, before any agent work, with the VM still running and no guest console output. The worker relaunches a fresh VM once when the channel closes during preparation; the root cause on the Windows transport is still open.
 
 ## Remaining release work
 

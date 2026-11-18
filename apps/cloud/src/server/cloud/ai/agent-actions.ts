@@ -15,6 +15,7 @@ import type { CloudTriage } from "../triage";
 import type { CloudReleases } from "../releases/releases";
 import type { CloudReleaseStudio } from "../releases/release-studio";
 import type { CloudAutomations } from "../automation/automations";
+import type { CloudRuns } from "../execution/runs";
 import type { CloudAttachments } from "../attachments/attachments";
 import { uploadInstructions } from "../attachments/upload-instructions";
 import { clientSessionHref, type CloudClients } from "../clients/clients";
@@ -39,6 +40,7 @@ interface AgentActionServices {
   releases: CloudReleases;
   studio: CloudReleaseStudio;
   pullRequests: CloudGitPullRequests;
+  runs: CloudRuns;
 }
 
 const textChanges = ["title", "description", "acceptanceCriteria"] as const;
@@ -430,6 +432,26 @@ export class CloudAgentActions {
       return this.configureAutomation(actor, action);
     if (action.kind === "client_session")
       return this.startClientSession(actor, action);
+    if (action.kind === "issue_task") {
+      const issue = await this.services.planning.getIssue(
+        actor,
+        action.issueId,
+      );
+      const run = await this.services.runs.create(
+        actor,
+        derivedCommandId(action.id, "issue-task"),
+        {
+          profileId: action.profileId,
+          subject: { kind: "issue", id: issue.id, revision: issue.revision },
+        },
+      );
+      return {
+        kind: "task",
+        id: run.id,
+        label: `${action.identifier} in ${action.repository}`,
+        href: `/cloud/tasks/${run.id}`,
+      };
+    }
     if (action.kind === "pull_request_comment") {
       const posted = await this.services.pullRequests.comment(
         actor,
@@ -448,11 +470,7 @@ ${automationMarker}`,
     if (action.kind === "pull_request_review") {
       await this.services.pullRequests.review(actor, action.pullRequestId, {
         decision: action.decision,
-        body: action.body
-          ? `${action.body}
-
-${automationMarker}`
-          : "",
+        body: action.body,
       });
       return {
         kind: "pull_request",

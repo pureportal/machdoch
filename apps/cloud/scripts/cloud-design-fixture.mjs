@@ -151,7 +151,6 @@ export async function seedCloudDesign(fixture) {
     target: "cloud",
     repository: "https://github.com/example/cloud-workspace",
     autopilot: false,
-    checkPullRequests: false,
     providerId: provider.id,
     model: "design-fixture-model",
     maxDurationSeconds: 1800,

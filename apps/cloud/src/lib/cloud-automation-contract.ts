@@ -8,6 +8,7 @@ import {
   isPullRequestEvent,
 } from "./git-events";
 import { gitMergeMethods, gitReviewDecisionInputs } from "./cloud-git-contract";
+import { pullRequestTasks } from "@machdoch/fleet-protocol/cloud-execution";
 import { issueFilterConditionSchema } from "./issue-filter-model";
 import { maximumPulseProjects } from "./cloud-pulse-contract";
 
@@ -153,6 +154,7 @@ export const automationActionSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("delegate"),
     profileId: cloudId,
+    task: z.enum(pullRequestTasks).default("fix"),
     instructions: template(20_000).default(""),
     acceptanceCriteria: template(20_000).default(""),
   }),

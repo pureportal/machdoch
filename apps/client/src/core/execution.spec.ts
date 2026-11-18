@@ -304,6 +304,49 @@ describe("executeTask", () => {
     expect(seenTools[1]).toContain("submit_final_response");
     expect(seenTools[1]).not.toContain("create_file");
   });
+  it("answers every tool call when a final response arrives with other calls", async () => {
+    const workspaceRoot = await createWorkspace();
+    const continuations: { callId: string; name: string; isError?: boolean }[][] =
+      [];
+    const adapter: AgentModelAdapter = {
+      startTurn: async () => ({
+        text: "",
+        toolCalls: [
+          { id: "read-1", name: "read_file", arguments: { path: "README.md" } },
+          createFinalResponseToolCall(),
+        ],
+      }),
+      continueTurn: async (params) => {
+        continuations.push(
+          params.toolResults.map(({ callId, name, isError }) => ({
+            callId,
+            name,
+            ...(isError ? { isError } : {}),
+          })),
+        );
+        return { text: "", toolCalls: [createFinalResponseToolCall()] };
+      },
+    };
+    const execution = await executeTask(
+      "Summarize the workspace",
+      createConfig(workspaceRoot, "machdoch", { provider: "openai" }),
+      emptyCustomizations(workspaceRoot),
+      {
+        modelAdapter: adapter,
+        monitorModelAdapter: createAcceptingMonitorAdapter(),
+        conversationContext: {
+          sessionId: randomUUID(),
+          history: [],
+          adaptiveControllerOverride: false,
+        },
+      },
+    );
+    expect(execution.status).toBe("executed");
+    expect(continuations[0]).toEqual([
+      { callId: "read-1", name: "read_file", isError: true },
+      { callId: "final-response", name: "submit_final_response", isError: true },
+    ]);
+  });
   it("exposes managed parallel work only when the chat mode enables it", async () => {
     const workspaceRoot = await createWorkspace();
     const available: Record<string, boolean> = {};

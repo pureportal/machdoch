@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { IssueEditor } from "@/components/cloud/issue-editor";
 import { cloudId } from "@/lib/cloud-contract";
-import { issueIdentifierFormat } from "@/lib/issue-links";
+import { issueIdentifierFormat } from "@/lib/reference-links";
 import { isCloudError } from "@/server/cloud/access";
 import {
   requireCloudPageSession,

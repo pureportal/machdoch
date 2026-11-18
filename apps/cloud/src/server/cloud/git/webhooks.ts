@@ -159,6 +159,16 @@ export class CloudGitWebhooks {
           "UPDATE cloud_git_pull_requests SET signals_synced_at=NULL WHERE organization_id=$1 AND repository_id=$2 AND number=$3 AND state='open'",
           [connection.organizationId, stored.id, parsed.staleNumber],
         );
+      const pushedBranches = new Set(
+        parsed.activities.flatMap((activity) =>
+          activity.kind === "push" && activity.branch ? [activity.branch] : [],
+        ),
+      );
+      for (const branch of pushedBranches)
+        await sql.query(
+          "UPDATE cloud_git_pull_requests SET signals_synced_at=NULL WHERE organization_id=$1 AND repository_id=$2 AND base_ref=$3 AND state='open'",
+          [connection.organizationId, stored.id, branch],
+        );
       return stored;
     });
     if (!repository || !parsed) return;

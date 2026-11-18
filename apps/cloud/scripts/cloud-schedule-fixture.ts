@@ -31,4 +31,5 @@ setCloudRuntimeForTests(
     }),
   }),
 );
+await new FleetDatabase(database).initialize();
 await import("../src/server");

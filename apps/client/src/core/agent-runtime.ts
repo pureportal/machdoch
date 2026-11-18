@@ -1220,6 +1220,7 @@ const runExecutorCycle = async (
             : {}),
           systemPrompt: executorSystemPrompt,
           userPrompt: executorUserPrompt,
+          toolChoice: "required",
           ...(imageInputs && imageInputs.length > 0 ? { imageInputs } : {}),
           tools: toolSpecs,
           ...(structuredOutput ? { structuredOutput } : {}),
@@ -1570,13 +1571,22 @@ const runExecutorCycle = async (
 
     if (finalResponseCall) {
       if (turn.toolCalls.length !== 1) {
-        turn = await continueTurnWithProgress([
-          createFinalResponseToolResult(
-            finalResponseCall.id,
-            "`submit_final_response` must be the only tool call in its turn.",
-            true,
+        turn = await continueTurnWithProgress(
+          turn.toolCalls.map((call) =>
+            call === finalResponseCall
+              ? createFinalResponseToolResult(
+                  call.id,
+                  "`submit_final_response` must be the only tool call in its turn.",
+                  true,
+                )
+              : {
+                  callId: call.id,
+                  name: call.name,
+                  output: `Not run because \`${FINAL_RESPONSE_TOOL_NAME}\` was called in the same turn. Run tools first, then submit the final response alone.`,
+                  isError: true,
+                },
           ),
-        ]);
+        );
         loopState.traceLines.push(
           `${FINAL_RESPONSE_TOOL_NAME}: rejected because additional tool calls were present in the same turn.`,
         );

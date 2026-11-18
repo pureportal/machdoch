@@ -16,6 +16,7 @@ export interface FakeChange {
   headRef: string;
   headSha: string;
   baseRef: string;
+  mergeable: boolean;
   updatedAt: string;
 }
 
@@ -34,6 +35,10 @@ export class FakeGitServer {
   readonly logins = new Map<string, string>();
   readonly branches = new Map<string, string>();
   readonly files = new Map<string, string>();
+  readonly statuses = new Map<
+    string,
+    { context: string; state: string; description: string }[]
+  >();
   readonly pullFiles = new Map<
     number,
     {
@@ -91,6 +96,7 @@ export class FakeGitServer {
       author: "octo",
       headSha: sha(number),
       baseRef: "main",
+      mergeable: true,
       updatedAt: this.later(),
       ...fields,
     };
@@ -124,8 +130,8 @@ export class FakeGitServer {
       user: { login: change.author },
       head: { ref: change.headRef, sha: change.headSha },
       base: { ref: change.baseRef },
-      mergeable: true,
-      mergeable_state: "clean",
+      mergeable: change.mergeable,
+      mergeable_state: change.mergeable ? "clean" : "dirty",
       updated_at: change.updatedAt,
     };
   }
@@ -142,8 +148,8 @@ export class FakeGitServer {
       source_branch: change.headRef,
       target_branch: change.baseRef,
       sha: change.headSha,
-      detailed_merge_status: "mergeable",
-      has_conflicts: false,
+      detailed_merge_status: change.mergeable ? "mergeable" : "conflict",
+      has_conflicts: !change.mergeable,
       changes_count: "2",
       updated_at: change.updatedAt,
       merged_at: change.state === "merged" ? change.updatedAt : null,
@@ -216,6 +222,32 @@ export class FakeGitServer {
           { name: "unit", status: "completed", conclusion: "success" },
         ],
       });
+    const compare =
+      /^\/repos\/acme\/app\/compare\/([^.]+)\.\.\.([0-9a-f]{40})$/u.exec(path);
+    if (compare)
+      return json({
+        base_commit: {
+          sha: this.branches.get(decodeURIComponent(compare[1]!)) ?? sha(1),
+        },
+        merge_base_commit: { sha: sha(2) },
+      });
+    const combined =
+      /^\/repos\/acme\/app\/commits\/([0-9a-f]{40})\/status$/u.exec(path);
+    if (combined)
+      return json({ statuses: this.statuses.get(combined[1]!) ?? [] });
+    const status = /^\/repos\/acme\/app\/statuses\/([0-9a-f]{40})$/u.exec(path);
+    if (status && method === "POST") {
+      const draft = body as {
+        state: string;
+        context: string;
+        description: string;
+      };
+      const existing = (this.statuses.get(status[1]!) ?? []).filter(
+        (entry) => entry.context !== draft.context,
+      );
+      this.statuses.set(status[1]!, [...existing, draft]);
+      return json({ id: existing.length + 1 }, 201);
+    }
     const comment = /^\/repos\/acme\/app\/issues\/(\d+)\/comments$/u.exec(path);
     if (comment && method === "GET") return json([]);
     if (comment && method === "POST")
@@ -273,6 +305,8 @@ export class FakeGitServer {
       return json([
         { id: 1, name: "test", status: "success", target_url: null },
       ]);
+    if (path.startsWith(`${project}/statuses/`) && method === "POST")
+      return json({ id: 9 }, 201);
     const match = new RegExp(
       `^${project}/merge_requests/(\\d+)(?:/([\\w-]+))?$`,
       "u",

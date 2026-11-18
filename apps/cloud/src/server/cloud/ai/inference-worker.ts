@@ -10,7 +10,7 @@ import type {
 } from "@machdoch/model-runtime/types";
 import {
   createIsolatedModelAdapter,
-  validateInferenceTools,
+  findInvalidToolCall,
   ModelWorkerFailure,
 } from "./isolated-model";
 import { CliModelFailure, createCliModelAdapter } from "./cli-model";
@@ -33,6 +33,7 @@ class InferenceStopped extends Error {
   }
 }
 const maximumLocalRequests = 16;
+const maximumToolCallAttempts = 2;
 
 interface ModelResponse {
   text: string;
@@ -393,47 +394,55 @@ export class CloudInferenceWorker {
     reportTokens: (tokens: number | null) => void,
   ): Promise<ModelResponse> {
     const adapter = await createAdapter(call.tools);
-    const response = await adapter.startTurn({
-      ...request,
-      userPrompt: call.userPrompt,
-      tools: call.tools,
-      signal: controller.signal,
-      onStreamEvent: (event) => output.consume(event),
-    });
-    const tokens = usageTokens(response.usage);
-    reportTokens(tokens);
-    if (
-      response.toolCalls.length > 16 ||
-      new Set(response.toolCalls.map((tool) => tool.id)).size !==
-        response.toolCalls.length
-    )
-      throw new InferenceStopped("invalid_tools");
-    for (const tool of response.toolCalls) {
-      const definition = call.tools.find((entry) => entry.name === tool.name);
-      if (!definition) throw new InferenceStopped("unexpected_tools");
-      if (!tool.id || tool.argumentError)
-        throw new InferenceStopped("invalid_tools");
-    }
-    try {
+    let userPrompt = call.userPrompt;
+    let tokens: number | null = null;
+    for (let attempt = 1; ; attempt++) {
+      const response = await adapter.startTurn({
+        ...request,
+        userPrompt,
+        tools: call.tools,
+        signal: controller.signal,
+        onStreamEvent: (event) => output.consume(event),
+      });
+      const attemptTokens = usageTokens(response.usage);
+      if (attemptTokens !== null) tokens = (tokens ?? 0) + attemptTokens;
+      reportTokens(tokens);
       if (
-        !(await validateInferenceTools(
-          call.tools,
-          response.toolCalls,
-          controller.signal,
-        ))
+        response.toolCalls.length > 16 ||
+        response.toolCalls.some((tool) => !tool.id) ||
+        new Set(response.toolCalls.map((tool) => tool.id)).size !==
+          response.toolCalls.length
       )
         throw new InferenceStopped("invalid_tools");
-    } catch (error) {
-      if (error instanceof ModelWorkerFailure)
-        throw new InferenceStopped(`tool_${error.code}`);
-      throw error;
+      const problem = await findInvalidToolCall(
+        call.tools,
+        response.toolCalls,
+        controller.signal,
+      ).catch((error: unknown) => {
+        if (error instanceof ModelWorkerFailure)
+          throw new InferenceStopped(`tool_${error.code}`);
+        throw error;
+      });
+      if (!problem)
+        return {
+          text: response.text,
+          toolCalls: response.toolCalls,
+          stopReason: response.stopReason,
+          tokens,
+        };
+      if (attempt === maximumToolCallAttempts)
+        throw new InferenceStopped(
+          response.toolCalls.every((tool) =>
+            call.tools.some((entry) => entry.name === tool.name),
+          )
+            ? "invalid_tools"
+            : "unexpected_tools",
+        );
+      output.reset();
+      userPrompt = `${call.userPrompt}
+
+Your previous reply was rejected because a tool call was invalid (${problem}). Reply again with tool calls whose names and arguments match the available tools.`;
     }
-    return {
-      text: response.text,
-      toolCalls: response.toolCalls,
-      stopReason: response.stopReason,
-      tokens,
-    };
   }
 
   private errorCode(error: unknown): string {

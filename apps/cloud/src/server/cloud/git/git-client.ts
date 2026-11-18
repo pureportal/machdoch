@@ -49,8 +49,23 @@ export interface GitPullRequestRecord {
   deletions: number | null;
   changedFiles: number | null;
   updatedAt: string;
+  openedAt: string | null;
   mergedAt: string | null;
   requestedReviewers: string[] | null;
+}
+
+export const gitCommitStatusStates = [
+  "pending",
+  "success",
+  "failure",
+  "error",
+] as const;
+export type GitCommitStatusState = (typeof gitCommitStatusStates)[number];
+export interface GitCommitStatus {
+  state: GitCommitStatusState;
+  context: string;
+  description: string;
+  targetUrl: string;
 }
 
 export interface GitChecks {
@@ -78,6 +93,16 @@ export interface GitClient {
   pullRequests(fullName: string): Promise<GitPullRequestRecord[]>;
   pullRequest(fullName: string, number: number): Promise<GitPullRequestRecord>;
   checks(fullName: string, number: number, headSha: string): Promise<GitChecks>;
+  commitStatus(
+    fullName: string,
+    sha: string,
+    status: GitCommitStatus,
+  ): Promise<void>;
+  mergeBase(
+    fullName: string,
+    baseRef: string,
+    headSha: string,
+  ): Promise<{ baseSha: string; mergeBase: string }>;
   reviews(fullName: string, number: number): Promise<GitReview[]>;
   files(fullName: string, number: number): Promise<GitPullRequestFile[]>;
   reviewComments(fullName: string, number: number): Promise<GitReviewComment[]>;

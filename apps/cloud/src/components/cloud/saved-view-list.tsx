@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Columns3, Layers, LayoutList, Pencil, Search, X } from "lucide-react";
+import {
+  Columns3,
+  Layers,
+  LayoutList,
+  Pencil,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { holderCan } from "@/lib/cloud-permissions";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import { savedViewHref, type SavedView } from "@/lib/cloud-view-contract";
@@ -13,6 +20,7 @@ import {
   completedWindows,
   parseIssueViewOptions,
 } from "@/lib/issue-view-options";
+import { ConfirmButton } from "@/components/confirm-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cloudRequest } from "./api-client";
@@ -25,7 +33,6 @@ import {
 } from "./issue-filter-fields";
 import { issueGroupings, parseGrouping } from "./issue-grouping";
 import { SaveViewDialog } from "./save-view-dialog";
-import { useToast } from "./toast";
 
 const scopes = { all: "All", mine: "Created by me", shared: "Shared" } as const;
 type Scope = keyof typeof scopes;
@@ -71,7 +78,6 @@ export function SavedViewList({
   workspace: CloudWorkspace;
 }) {
   const router = useRouter();
-  const toast = useToast();
   const [scope, setScope] = useState<Scope>("all");
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<SavedView | null>(null);
@@ -155,28 +161,34 @@ export function SavedViewList({
                       </Button>
                     )}
                     {view.owned && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Remove view ${view.name}`}
-                        onClick={() =>
-                          void cloudRequest(`views/${view.id}/remove`, {
+                      <ConfirmButton
+                        trigger={
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Remove view ${view.name}`}
+                          >
+                            <Trash2 />
+                          </Button>
+                        }
+                        title={`Remove ${view.name}?`}
+                        description={
+                          view.shared
+                            ? "It is removed for everyone it is shared with."
+                            : "Links and favorites pointing to it stop working."
+                        }
+                        actionLabel="Remove view"
+                        onConfirm={async () => {
+                          await cloudRequest(`views/${view.id}/remove`, {
                             method: "POST",
                             body: {},
-                          })
-                            .then(() => {
-                              window.dispatchEvent(
-                                new Event(favoritesChangedEvent),
-                              );
-                              router.refresh();
-                            })
-                            .catch((reason: Error) =>
-                              toast(reason.message, "error"),
-                            )
-                        }
-                      >
-                        <X />
-                      </Button>
+                          });
+                          window.dispatchEvent(
+                            new Event(favoritesChangedEvent),
+                          );
+                          router.refresh();
+                        }}
+                      />
                     )}
                   </li>
                 );

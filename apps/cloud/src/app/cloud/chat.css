@@ -1,52 +1,32 @@
-.cloud-agent-dock {
-  position: fixed;
-  right: 18px;
-  bottom: 14px;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.cloud-agent-dock-button,
-.cloud-agent-dock-tab {
+.cloud-agent-toggle {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 12px;
+  height: 28px;
+  padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  box-shadow: var(--cloud-shadow);
+  border-radius: 6px;
   color: var(--foreground);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
 }
-.cloud-agent-dock-tab {
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: block;
-  line-height: 28px;
-}
-.cloud-agent-dock-button:hover,
-.cloud-agent-dock-tab:hover,
-.cloud-agent-dock-button[aria-expanded="true"] {
+.cloud-agent-toggle:hover,
+.cloud-agent-toggle[aria-expanded="true"] {
   background: var(--cloud-hover);
 }
-.cloud-agent-dock-button svg {
+.cloud-agent-toggle svg {
   color: var(--primary);
 }
 .cloud-agent-panel {
   position: fixed;
+  top: 56px;
   right: 18px;
-  bottom: 52px;
   z-index: 40;
   display: flex;
   flex-direction: column;
   width: min(440px, calc(100vw - 36px));
-  height: min(640px, calc(100dvh - 96px));
+  height: min(680px, calc(100dvh - 72px));
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--card);
@@ -479,7 +459,9 @@
   grid-template-columns: 240px minmax(0, 1fr);
   height: calc(100dvh - 59px);
   min-height: 480px;
-  margin: -20px calc(-1 * clamp(16px, 2.2vw, 32px)) -40px;
+  margin: calc(-1 * var(--cloud-content-block-start))
+    calc(-1 * var(--cloud-content-inline))
+    calc(-1 * var(--cloud-content-block-end));
 }
 .cloud-agent-history {
   display: flex;
@@ -569,20 +551,25 @@
 @media (max-width: 800px) {
   .cloud-agent-page {
     grid-template-columns: minmax(0, 1fr);
-    margin: -24px -16px -76px;
-    height: calc(100dvh - 56px);
+    height: calc(100dvh - 57px);
   }
   .cloud-agent-history {
     display: none;
   }
   .cloud-agent-panel {
+    top: 64px;
     right: 8px;
-    bottom: 48px;
     width: calc(100vw - 16px);
+    height: calc(100dvh - 72px - env(safe-area-inset-bottom));
   }
-  .cloud-agent-dock {
-    right: 10px;
-    bottom: max(10px, env(safe-area-inset-bottom));
+  .cloud-agent-toggle {
+    width: 36px;
+    height: 36px;
+    justify-content: center;
+    padding: 0;
+  }
+  .cloud-agent-toggle span {
+    display: none;
   }
 }
 .cloud-agent-action dl > div {

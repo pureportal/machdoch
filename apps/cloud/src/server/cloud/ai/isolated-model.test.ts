@@ -2,7 +2,7 @@ import { afterEach, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import {
   createIsolatedModelAdapter,
-  validateInferenceTools,
+  findInvalidToolCall,
 } from "./isolated-model";
 import type { AgentModelToolSpec } from "@machdoch/model-runtime/types";
 
@@ -29,19 +29,21 @@ const tool: AgentModelToolSpec = {
 it("validates tool arguments in a bounded worker", async () => {
   const signal = new AbortController().signal;
   expect(
-    await validateInferenceTools(
+    await findInvalidToolCall(
       [tool],
       [{ id: "call", name: "read_file", arguments: { path: "README" } }],
       signal,
     ),
-  ).toBe(true);
+  ).toBeNull();
   expect(
-    await validateInferenceTools(
+    await findInvalidToolCall(
       [tool],
       [{ id: "call", name: "read_file", arguments: {} }],
       signal,
     ),
-  ).toBe(false);
+  ).toBe(
+    "read_file: Tool arguments do not match the input schema: / must have required property 'path'",
+  );
 });
 
 it("terminates pathological validation while the server event loop remains responsive", async () => {
@@ -58,7 +60,7 @@ it("terminates pathological validation while the server event loop remains respo
   }, 20);
   try {
     await expect(
-      validateInferenceTools(
+      findInvalidToolCall(
         [unsafe],
         [
           {
@@ -72,12 +74,12 @@ it("terminates pathological validation while the server event loop remains respo
     ).rejects.toMatchObject({ code: "worker_timeout" });
     expect(ticks).toBeGreaterThan(10);
     expect(
-      await validateInferenceTools(
+      await findInvalidToolCall(
         [tool],
         [{ id: "next", name: "read_file", arguments: { path: "README" } }],
         new AbortController().signal,
       ),
-    ).toBe(true);
+    ).toBeNull();
   } finally {
     clearInterval(timer);
   }

@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bot } from "lucide-react";
 import type { ExecutionProfile } from "@machdoch/fleet-protocol/cloud-execution";
 import { cloudRequest } from "./api-client";
 
@@ -34,9 +33,7 @@ export function ProjectAi({
   return (
     <section className="cloud-card cloud-project-runs">
       <header className="cloud-project-section-header">
-        <h2>
-          <Bot size={15} aria-hidden="true" /> AI
-        </h2>
+        <h2>AI</h2>
         {administrator && (
           <Link href={`/cloud/execution?project=${projectId}`} prefetch={false}>
             {setup ? "Edit" : "Set up"}

@@ -60,7 +60,7 @@ import {
 } from "../../../lib/cloud-git-contract";
 import { automationMarker } from "../../../lib/git-events";
 import { issueFilterConditionSchema } from "../../../lib/issue-filter-model";
-import { issueIdentifierFormat } from "../../../lib/issue-links";
+import { issueIdentifierFormat } from "../../../lib/reference-links";
 import { CloudError } from "../access";
 import type { CloudRuntime } from "../runtime";
 import {

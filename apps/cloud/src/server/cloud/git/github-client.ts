@@ -9,12 +9,17 @@ import type {
   GitReviewComment,
   GitReviewInput,
 } from "../../../lib/cloud-git-contract";
-import { checkRunState, checksState } from "../../../lib/git-automation";
+import {
+  checkRunState,
+  checksState,
+  type CheckRunState,
+} from "../../../lib/git-automation";
 import {
   maximumPatchCharacters,
   type GitAccess,
   type GitChecks,
   type GitClient,
+  type GitCommitStatus,
   type GitPullRequestDraft,
   type GitPullRequestRecord,
   type GitRepositoryRecord,
@@ -59,6 +64,7 @@ export const githubPullRequestSchema = z.object({
   deletions: z.number().optional(),
   changed_files: z.number().optional(),
   updated_at: z.string(),
+  created_at: z.string().optional(),
   requested_reviewers: z
     .array(z.object({ login: z.string() }))
     .nullable()
@@ -88,11 +94,28 @@ export function githubPullRequest(
     deletions: pullRequest.deletions ?? null,
     changedFiles: pullRequest.changed_files ?? null,
     updatedAt: pullRequest.updated_at,
+    openedAt: pullRequest.created_at ?? null,
     mergedAt: pullRequest.merged_at ?? null,
     requestedReviewers:
       pullRequest.requested_reviewers?.map((reviewer) => reviewer.login) ??
       null,
   };
+}
+
+const combinedStatusSchema = z.object({
+  statuses: z.array(
+    z.object({
+      context: z.string(),
+      state: z.string(),
+      target_url: z.string().nullable().optional(),
+    }),
+  ),
+});
+
+function commitStatusState(state: string): CheckRunState {
+  if (state === "pending") return "pending";
+  if (state === "success") return "success";
+  return state === "failure" || state === "error" ? "failure" : "skipped";
 }
 
 const checkRunsSchema = z.object({
@@ -264,16 +287,67 @@ export class GitHubClient implements GitClient {
     _number: number,
     headSha: string,
   ): Promise<GitChecks> {
-    const result = await this.request(
-      `/repos/${fullName}/commits/${headSha}/check-runs?per_page=100`,
-      checkRunsSchema,
-    );
-    const runs = result.check_runs.map((run) => ({
-      name: run.name,
-      state: checkRunState(run.status, run.conclusion),
-      url: run.html_url ?? run.details_url ?? null,
-    }));
+    const [result, combined] = await Promise.all([
+      this.request(
+        `/repos/${fullName}/commits/${headSha}/check-runs?per_page=100`,
+        checkRunsSchema,
+      ),
+      this.request(
+        `/repos/${fullName}/commits/${headSha}/status`,
+        combinedStatusSchema,
+      ),
+    ]);
+    const runs = [
+      ...result.check_runs.map((run) => ({
+        name: run.name,
+        state: checkRunState(run.status, run.conclusion),
+        url: run.html_url ?? run.details_url ?? null,
+      })),
+      ...combined.statuses.map((status) => ({
+        name: status.context,
+        state: commitStatusState(status.state),
+        url: status.target_url ?? null,
+      })),
+    ];
     return { conclusion: checksState(runs.map((run) => run.state)), runs };
+  }
+
+  async mergeBase(
+    fullName: string,
+    baseRef: string,
+    headSha: string,
+  ): Promise<{ baseSha: string; mergeBase: string }> {
+    const compared = await this.request(
+      `/repos/${fullName}/compare/${encodeURIComponent(baseRef)}...${headSha}`,
+      z.object({
+        base_commit: z.object({ sha: z.string() }),
+        merge_base_commit: z.object({ sha: z.string() }),
+      }),
+    );
+    return {
+      baseSha: compared.base_commit.sha,
+      mergeBase: compared.merge_base_commit.sha,
+    };
+  }
+
+  async commitStatus(
+    fullName: string,
+    sha: string,
+    status: GitCommitStatus,
+  ): Promise<void> {
+    await this.request(
+      `/repos/${fullName}/statuses/${sha}`,
+      z.object({ id: z.number() }),
+      {
+        method: "POST",
+        body: {
+          state: status.state,
+          context: status.context,
+          description: status.description.slice(0, 140),
+          target_url: status.targetUrl,
+        },
+      },
+    );
   }
 
   async reviews(fullName: string, number: number): Promise<GitReview[]> {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { productCommandSchema } from "@machdoch/fleet-protocol";
 import {
+  completeTaskList,
   issueBranchName,
   issuePrompt,
   issueSessionTitle,
@@ -103,6 +104,18 @@ describe("issueBranchName", () => {
     expect(issueBranchName("ENG-2", "!!!")).toBe("eng-2");
     expect(issueBranchName("ENG-3", "a".repeat(59) + " bcd").length).toBe(
       "eng-3-".length + 59,
+    );
+  });
+});
+
+describe("completeTaskList", () => {
+  it("checks every open task item and leaves other lines untouched", () => {
+    expect(
+      completeTaskList(
+        "- [ ] Docs link\n  * [x] Footer\n1. [ ] Styling\nText with [ ] brackets\n",
+      ),
+    ).toBe(
+      "- [x] Docs link\n  * [x] Footer\n1. [x] Styling\nText with [ ] brackets\n",
     );
   });
 });

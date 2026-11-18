@@ -17,6 +17,7 @@ import {
   type GitAccess,
   type GitChecks,
   type GitClient,
+  type GitCommitStatus,
   type GitPullRequestDraft,
   type GitPullRequestRecord,
   type GitRepositoryRecord,
@@ -48,6 +49,7 @@ export const gitlabMergeRequestSchema = z.object({
   has_conflicts: z.boolean().optional(),
   changes_count: z.string().nullable().optional(),
   updated_at: z.string(),
+  created_at: z.string().optional(),
   merged_at: z.string().nullable().optional(),
   reviewers: z
     .array(z.object({ username: z.string() }))
@@ -101,6 +103,7 @@ export function gitlabMergeRequest(
     deletions: null,
     changedFiles: Number.isFinite(changed) ? changed : null,
     updatedAt: request.updated_at,
+    openedAt: request.created_at ?? null,
     mergedAt: request.merged_at ?? null,
     requestedReviewers:
       request.reviewers?.map((reviewer) => reviewer.username) ?? null,
@@ -288,6 +291,50 @@ export class GitLabClient implements GitClient {
       url: status.target_url ?? null,
     }));
     return { conclusion: checksState(runs.map((run) => run.state)), runs };
+  }
+
+  async mergeBase(
+    fullName: string,
+    baseRef: string,
+    headSha: string,
+  ): Promise<{ baseSha: string; mergeBase: string }> {
+    const project = this.project(fullName);
+    const [branch, merged] = await Promise.all([
+      this.request(
+        `${project}/repository/branches/${encodeURIComponent(baseRef)}`,
+        z.object({ commit: z.object({ id: z.string() }) }),
+      ),
+      this.request(
+        `${project}/repository/merge_base?refs[]=${encodeURIComponent(baseRef)}&refs[]=${headSha}`,
+        z.object({ id: z.string() }),
+      ),
+    ]);
+    return { baseSha: branch.commit.id, mergeBase: merged.id };
+  }
+
+  async commitStatus(
+    fullName: string,
+    sha: string,
+    status: GitCommitStatus,
+  ): Promise<void> {
+    await this.request(
+      `${this.project(fullName)}/statuses/${sha}`,
+      z.object({ id: z.number() }),
+      {
+        method: "POST",
+        body: {
+          state:
+            status.state === "success"
+              ? "success"
+              : status.state === "pending"
+                ? "pending"
+                : "failed",
+          name: status.context,
+          description: status.description.slice(0, 255),
+          target_url: status.targetUrl,
+        },
+      },
+    );
   }
 
   async reviews(fullName: string, number: number): Promise<GitReview[]> {

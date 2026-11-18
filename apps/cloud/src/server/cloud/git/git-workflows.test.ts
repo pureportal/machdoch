@@ -392,6 +392,15 @@ it("tracks stacked pull requests, completes issues only on the default branch an
   expect((await runtime.planning.getIssue(owner, base.id)).state).toBe(
     "complete",
   );
+  expect((await runtime.planning.history(owner, base.id))[0]).toMatchObject({
+    actor: "acme/app#1",
+    automated: true,
+  });
+  expect(
+    (await runtime.inbox.list(owner)).find(
+      (entry) => entry.issueId === base.id && entry.kind === "status_changed",
+    ),
+  ).toMatchObject({ actor: "acme/app#1" });
   await dispatch();
   expect(server.callsTo("/repos/acme/app/pulls/2", "PATCH")).toEqual([
     expect.objectContaining({
@@ -626,7 +635,6 @@ it("starts AI tasks on pull requests pinned to their head commit", async () => {
       target: "cloud",
       repository,
       autopilot: false,
-      checkPullRequests: false,
       providerId: provider.id,
       model: "fixture",
       maxDurationSeconds: 600,
@@ -660,25 +668,34 @@ it("starts AI tasks on pull requests pinned to their head commit", async () => {
   await dispatch();
   const [run] = await runs(tasks.id);
   expect(run).toMatchObject({
-    state: "failed",
+    state: "succeeded",
     trigger: "pull_request_opened",
   });
-  expect(run!.steps[0]).toMatchObject({
-    state: "succeeded",
-    detail: "AI task started on #9",
-  });
-  expect(run!.error).toContain("pull request's repository");
+  expect(run!.steps).toMatchObject([
+    { state: "succeeded", detail: "AI task started on #9" },
+    { state: "succeeded", detail: "AI task started on #9" },
+  ]);
   const stored = (
     await database.engine.query<{
       manifest: RunManifest;
       issue_id: string | null;
-    }>("SELECT manifest,issue_id FROM cloud_runs WHERE organization_id=$1", [
-      owner.organizationId,
-    ])
+      profile_id: string;
+    }>(
+      "SELECT manifest,issue_id,profile_id FROM cloud_runs WHERE organization_id=$1",
+      [owner.organizationId],
+    )
   ).rows;
-  expect(stored).toHaveLength(1);
-  const manifest = stored[0]!.manifest;
-  expect(stored[0]!.issue_id).toBeNull();
+  expect(stored.map((entry) => entry.profile_id)).toEqual([
+    matching.id,
+    matching.id,
+  ]);
+  const reviewed = stored.find(
+    (entry) =>
+      entry.manifest.subject.kind === "pull_request" &&
+      entry.manifest.subject.acceptanceCriteria === "Regressions are fixed.",
+  )!;
+  const manifest = reviewed.manifest;
+  expect(reviewed.issue_id).toBeNull();
   expect(manifest.subject).toMatchObject({
     kind: "pull_request",
     headSha: sha(9),

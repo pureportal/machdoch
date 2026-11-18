@@ -141,6 +141,8 @@ const transport = (async (input: RequestInfo | URL, init?: RequestInit) => {
       })),
     });
   }
+  if (/^\/repos\/acme\/app\/commits\/[0-9a-f]{40}\/status$/u.test(url.pathname))
+    return json({ statuses: [] });
   const issueComments = /^\/repos\/acme\/app\/issues\/(\d+)\/comments$/u.exec(
     url.pathname,
   );
@@ -636,6 +638,24 @@ it("accepts only signed webhooks, processes each delivery once and refreshes che
   expect(
     (await runtime.git.pullRequests.forIssue(owner, issue.id))[0],
   ).toMatchObject({ checks: "failure", stage: "attention" });
+
+  Object.assign(pulls.get(4)!, { mergeable: false, mergeable_state: "dirty" });
+  const push = JSON.stringify({
+    ref: "refs/heads/main",
+    before: sha(10),
+    after: sha(11),
+    commits: [{ id: sha(11), message: "Base change", author: { name: "Ada" } }],
+    repository: { id: 7 },
+    sender: { login: "ada" },
+  });
+  expect(
+    (await deliver(hook, "push", "delivery-push", push, signed(hook.secret, push)))
+      .status,
+  ).toBe(204);
+  await sync();
+  expect(
+    (await runtime.git.pullRequests.forIssue(owner, issue.id))[0],
+  ).toMatchObject({ mergeableState: "dirty" });
   const unknown = await handleCloudApi(
     new Request(
       `https://cloud.example.test/api/v1/integrations/github/webhooks/${randomUUID()}`,

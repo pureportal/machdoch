@@ -24,13 +24,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cloud-issue-breadcrumb-title {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--foreground);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .cloud-icon-button {
   display: inline-grid;
   flex-shrink: 0;
@@ -363,8 +356,8 @@
   font-size: 11.5px;
 }
 .cloud-activity .cloud-comment-composer {
-  position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
   margin-top: 6px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -374,8 +367,8 @@
   border-color: var(--input);
 }
 .cloud-activity .cloud-comment-composer textarea {
-  min-height: 72px;
-  padding: 12px 48px 12px 14px;
+  min-height: 64px;
+  padding: 12px 14px 4px;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -386,9 +379,8 @@
   box-shadow: none;
 }
 .cloud-comment-send {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
+  align-self: flex-end;
+  margin: 0 10px 10px;
   width: 28px;
   height: 28px;
   border-radius: 999px;
@@ -397,8 +389,14 @@
   position: sticky;
   top: 12px;
   display: grid;
+  align-content: start;
   gap: 18px;
   min-width: 0;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 56px;
+  scrollbar-width: thin;
 }
 .cloud-aside-section {
   display: grid;
@@ -579,6 +577,8 @@
   }
   .cloud-issue-page .cloud-issue-aside {
     position: static;
+    max-height: none;
+    overflow: visible;
     order: -1;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 12px 20px;
@@ -611,9 +611,6 @@
   }
 }
 @media (max-width: 800px) {
-  .cloud-issue-breadcrumb-title {
-    display: none;
-  }
   .cloud-issue-page .cloud-issue-actions {
     flex-wrap: wrap;
     flex-shrink: 1;

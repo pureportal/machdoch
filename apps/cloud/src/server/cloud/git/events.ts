@@ -37,6 +37,7 @@ export function gitEvent(
     push: null,
     review: null,
     comment: null,
+    check: null,
     tag: null,
     parent: null,
     issueIds: [],

@@ -1,6 +1,10 @@
 "use client";
 
 import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
+import {
+  pullRequestTasks,
+  type PullRequestTask,
+} from "@machdoch/fleet-protocol/cloud-execution";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +18,7 @@ import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { CloudLabel } from "@/lib/cloud-label-contract";
 import type { CloudWorkflowStatus } from "@/lib/cloud-workflow-contract";
 import { ChipToggle, VariableMenu } from "./automation-chips";
-import { actionKinds } from "./automation-display";
+import { actionKinds, pullRequestTaskLabels } from "./automation-display";
 import { ClientTargetSelect } from "./automation-client-fields";
 import { GitActionFields, isGitAction } from "./automation-git-action-fields";
 import { TemplateText } from "./automation-template-text";
@@ -69,6 +73,7 @@ export function defaultAction(
           context.options.profiles.find(
             (profile) => profile.teamId === context.teamId,
           )?.id ?? "",
+        task: "fix",
         instructions: "",
         acceptanceCriteria: "",
       };
@@ -462,6 +467,22 @@ export function ActionCard({
           </Select>
           {hasPullRequest && (
             <>
+              <Select
+                aria-label="Task"
+                value={action.task}
+                onChange={(event) =>
+                  onChange({
+                    ...action,
+                    task: event.target.value as PullRequestTask,
+                  })
+                }
+              >
+                {pullRequestTasks.map((task) => (
+                  <option key={task} value={task}>
+                    {pullRequestTaskLabels[task]}
+                  </option>
+                ))}
+              </Select>
               <TemplateText
                 label="Instructions"
                 value={action.instructions}

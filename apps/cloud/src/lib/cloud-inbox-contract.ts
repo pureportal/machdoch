@@ -8,6 +8,7 @@ export const inboxKinds = [
   "mentioned",
   "task_finished",
   "status_changed",
+  "pull_request",
 ] as const;
 export type InboxKind = (typeof inboxKinds)[number];
 

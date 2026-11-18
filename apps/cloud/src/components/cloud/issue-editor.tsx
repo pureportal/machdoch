@@ -14,7 +14,7 @@ import {
   Bot,
 } from "lucide-react";
 import type { CloudMilestone } from "@/lib/cloud-milestone-contract";
-import { IssueRunList } from "./issue-run-list";
+import { IssueDeliveryTimeline } from "./issue-delivery";
 import { IssuePullRequests } from "./issue-pull-requests";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
 import type {
@@ -605,7 +605,7 @@ export function IssueEditor({
             state={relations}
           />
           <IssuePullRequests issueId={issue.id} />
-          <IssueRunList issueId={issue.id} />
+          <IssueDeliveryTimeline issueId={issue.id} />
         </aside>
       </div>
     </div>

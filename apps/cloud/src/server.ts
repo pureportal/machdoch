@@ -13,7 +13,7 @@ import {
   incomingRequestUrl,
 } from "./server/http-request";
 import { closeRuntime, getRuntime, initializeRuntime } from "./server/runtime";
-import { requestClientAddress } from "./server/network";
+import { isLoopbackAddress, requestClientAddress } from "./server/network";
 import { maximumRequestBodyBytes } from "./server/request-limits";
 import { getPreviewHub } from "./server/previews";
 import {
@@ -25,6 +25,7 @@ import { createPersistentCloudRuntime } from "./server/cloud/startup";
 import { validateInstallationOrigin } from "./server/cloud/installation-storage";
 import { CloudClientMonitor } from "./server/cloud/activity/client-monitor";
 import { CloudPeriodicLoop } from "./server/cloud/periodic-loop";
+import { hostedRunnerOrigin } from "./server/cloud/execution/hosted-runners";
 import { restoreRememberedNavigation } from "./server/cloud/auth/remembered-navigation";
 
 type Command = "dev" | "serve";
@@ -183,6 +184,7 @@ async function runServer(
       process.stdout.write(
         `machdoch.cloud listening on http://${hostname}:${port}\n`,
       );
+      cloud.execution.hostedRunners.start(hostedRunnerOrigin(hostname, port));
       resolveListening();
     });
   });
@@ -210,8 +212,9 @@ async function dispatchHttpRequest(
   }
   const cloud = await getCloudRuntime();
   if (cloud.origin) previewRuntime.config.externalBaseUrl = cloud.origin;
-  const requestOrigin =
-    previewRuntime.config.externalBaseUrl || initialRequestOrigin(request);
+  const requestOrigin = isHostedRunnerRequest(request, pathname)
+    ? initialRequestOrigin(request)
+    : previewRuntime.config.externalBaseUrl || initialRequestOrigin(request);
   if (
     (request.headers.host ?? "").toLowerCase() !==
     new URL(requestOrigin).host.toLowerCase()
@@ -285,6 +288,18 @@ function parseCommand(value: string | undefined): Command {
     return value as Command;
   }
   throw new Error("Usage: server.ts <dev|serve> [--import-config <path>]");
+}
+
+function isHostedRunnerRequest(
+  request: IncomingMessage,
+  pathname: string,
+): boolean {
+  return (
+    pathname.startsWith("/api/v1/runner/") &&
+    request.headers["x-forwarded-for"] === undefined &&
+    isLoopbackAddress(request.socket.remoteAddress ?? "") &&
+    /^(127\.0\.0\.1|\[::1\]):\d+$/u.test(request.headers.host ?? "")
+  );
 }
 
 function initialRequestOrigin(request: IncomingMessage): string {

@@ -1,0 +1,244 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { machdochDataDirectory } from "@machdoch/cloud-client/sandbox-installation";
+import type { HostedRunnerStatus } from "@machdoch/fleet-protocol/cloud-execution";
+import type { SettingsCipher } from "../../settings-crypto";
+import type { CloudDatabase } from "../database";
+import { CloudPeriodicLoop } from "../periodic-loop";
+import { lockExecution } from "./records";
+import type { CloudSandboxRuntime, HostedSandbox } from "./sandbox-runtime";
+
+const restartDelayMs = 30_000;
+const errorLimit = 300;
+
+interface HostedWorker {
+  organizationId: string;
+  id: string;
+  token: string;
+}
+
+interface HostedProcess {
+  child: ChildProcess;
+  token: string;
+  stderr: string;
+  stopping: boolean;
+  exited: Promise<unknown>;
+}
+
+function lastLine(output: string): string {
+  const line = output.trim().split(/\r?\n/).at(-1) ?? "";
+  return line.slice(0, errorLimit) || "The runner stopped unexpectedly.";
+}
+
+export function hostedTokenContext(
+  organizationId: string,
+  workerId: string,
+): Buffer {
+  return Buffer.from(`cloud.runner.hosted/${organizationId}/${workerId}`);
+}
+
+export function hostedRunnerOrigin(address: string, port: number): string {
+  if (address === "::1") return `http://[::1]:${port}`;
+  if (["", "0.0.0.0", "::", "127.0.0.1", "localhost"].includes(address))
+    return `http://127.0.0.1:${port}`;
+  return `http://${address.includes(":") ? `[${address}]` : address}:${port}`;
+}
+
+export class CloudHostedRunners {
+  private readonly processes = new Map<string, HostedProcess>();
+  private readonly failures = new Map<
+    string,
+    { error: string; failedAt: number }
+  >();
+  private loop: CloudPeriodicLoop | null = null;
+  private origin = "";
+
+  constructor(
+    private readonly database: CloudDatabase,
+    private readonly cipher: SettingsCipher | null,
+    private readonly sandbox: CloudSandboxRuntime,
+  ) {}
+
+  get localOrigin(): string {
+    return this.origin;
+  }
+
+  start(origin: string): void {
+    this.origin = origin;
+    this.loop = new CloudPeriodicLoop("Hosted runners", () => this.tick(), 1);
+    this.loop.start();
+  }
+
+  wake(): void {
+    this.loop?.wake();
+  }
+
+  async close(): Promise<void> {
+    await this.loop?.close();
+    await Promise.all([...this.processes.keys()].map((id) => this.stop(id)));
+  }
+
+  status(workerId: string): HostedRunnerStatus {
+    if (this.processes.has(workerId)) return { state: "running", error: null };
+    const failure = this.failures.get(workerId);
+    return failure
+      ? { state: "failed", error: failure.error }
+      : { state: "stopped", error: null };
+  }
+
+  private async desiredWorkers(): Promise<HostedWorker[]> {
+    if (!this.cipher) return [];
+    const cipher = this.cipher;
+    return this.database.transaction(async (sql) => {
+      const organizationId = (
+        await sql.query<{ organization_id: string }>(
+          "SELECT organization_id FROM cloud_installation WHERE id=1 AND organization_id IS NOT NULL",
+        )
+      ).rows[0]?.organization_id;
+      if (!organizationId) return [];
+      await lockExecution(sql, organizationId);
+      await sql.query(
+        `UPDATE cloud_execution_workers SET expires_at=clock_timestamp()+interval '30 days'
+        WHERE organization_id=$1 AND hosted_token IS NOT NULL AND enabled AND expires_at<clock_timestamp()+interval '29 days'`,
+        [organizationId],
+      );
+      await sql.query(
+        `UPDATE cloud_execution_workers w SET profile_revision=p.revision FROM cloud_execution_profiles p
+        WHERE w.organization_id=$1 AND p.organization_id=w.organization_id AND p.id=w.profile_id
+        AND w.hosted_token IS NOT NULL AND w.enabled AND w.profile_revision<>p.revision
+        AND NOT EXISTS (SELECT 1 FROM cloud_run_attempts a WHERE a.organization_id=w.organization_id AND a.worker_id=w.id AND a.state<>'stopped')`,
+        [organizationId],
+      );
+      const rows = (
+        await sql.query<{ id: string; hosted_token: Uint8Array }>(
+          `SELECT w.id,w.hosted_token FROM cloud_execution_workers w
+          JOIN cloud_execution_profiles p ON p.organization_id=w.organization_id AND p.id=w.profile_id
+          WHERE w.organization_id=$1 AND w.hosted_token IS NOT NULL AND w.enabled AND p.enabled AND p.definition->>'target'='cloud'`,
+          [organizationId],
+        )
+      ).rows;
+      return rows.map((row) => ({
+        organizationId,
+        id: row.id,
+        token: cipher
+          .decrypt(
+            Buffer.from(row.hosted_token),
+            hostedTokenContext(organizationId, row.id),
+          )
+          .toString("utf8"),
+      }));
+    });
+  }
+
+  async tick(): Promise<number> {
+    if (!this.origin) return 0;
+    const desired = new Map(
+      (await this.desiredWorkers()).map((worker) => [worker.id, worker]),
+    );
+    for (const [id, running] of this.processes)
+      if (desired.get(id)?.token !== running.token) await this.stop(id);
+    for (const id of this.failures.keys())
+      if (!desired.has(id)) this.failures.delete(id);
+    const sandbox = desired.size ? await this.sandbox.current() : null;
+    let started = 0;
+    for (const worker of desired.values()) {
+      if (this.processes.has(worker.id)) continue;
+      const failure = this.failures.get(worker.id);
+      if (failure && Date.now() - failure.failedAt < restartDelayMs) continue;
+      if (!sandbox) {
+        this.failures.set(worker.id, {
+          error: "Set up the sandbox on this server.",
+          failedAt: Date.now(),
+        });
+        continue;
+      }
+      await this.launch(worker, sandbox);
+      started += 1;
+    }
+    return started;
+  }
+
+  private async launch(
+    worker: HostedWorker,
+    sandbox: HostedSandbox,
+  ): Promise<void> {
+    const stateDirectory = join(machdochDataDirectory, "runners", worker.id);
+    await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
+    const { cgroupRoot, ...artifacts } = sandbox;
+    const configuration = {
+      origin: this.origin,
+      token: worker.token,
+      stateDirectory,
+      sandbox: cgroupRoot
+        ? { backend: "kvm", cgroupRoot, ...artifacts }
+        : { backend: "whpx", ...artifacts },
+    };
+    const runnerPackage = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../../../cloud-runner",
+    );
+    const child = spawn(
+      process.execPath,
+      [
+        "--import",
+        "@oxc-node/core/register",
+        join(runnerPackage, "src/main.ts"),
+        "--managed",
+      ],
+      {
+        cwd: runnerPackage,
+        windowsHide: true,
+        stdio: ["ignore", "ignore", "pipe", "ipc"],
+        env: {
+          NODE_ENV: process.env.NODE_ENV,
+          ...(process.env.SystemRoot
+            ? { SystemRoot: process.env.SystemRoot }
+            : {}),
+        },
+      },
+    );
+    const running: HostedProcess = {
+      child,
+      token: worker.token,
+      stderr: "",
+      stopping: false,
+      exited: once(child, "exit").catch(() => undefined),
+    };
+    this.processes.set(worker.id, running);
+    this.failures.delete(worker.id);
+    const record = (output: string) => {
+      running.stderr = (running.stderr + output).slice(-4000);
+    };
+    const finish = () => {
+      if (this.processes.get(worker.id) !== running) return;
+      this.processes.delete(worker.id);
+      if (!running.stopping)
+        this.failures.set(worker.id, {
+          error: lastLine(running.stderr),
+          failedAt: Date.now(),
+        });
+    };
+    child.stderr?.on("data", (bytes: Buffer) => record(bytes.toString("utf8")));
+    child.once("error", (error) => {
+      record(`\n${error.message}`);
+      finish();
+    });
+    child.once("exit", finish);
+    child.send(configuration, (error) => {
+      if (error) record(`\n${error.message}`);
+    });
+  }
+
+  private async stop(id: string): Promise<void> {
+    const running = this.processes.get(id);
+    if (!running) return;
+    running.stopping = true;
+    if (running.child.exitCode === null && running.child.signalCode === null)
+      running.child.kill();
+    await running.exited;
+    this.processes.delete(id);
+  }
+}

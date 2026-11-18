@@ -15,6 +15,20 @@ import { agentToolSpecs, type CloudAgentSession } from "./agent-tools";
 export const maximumAgentRounds = 8;
 const maximumToolCallsPerRound = 8;
 const maximumExchangeCharacters = 64_000;
+const duplicateProposalOutput = JSON.stringify({
+  proposed: true,
+  note: "This exact proposal is already part of this answer. Do not propose it again.",
+});
+
+function proposalKey(action: AgentAction): string {
+  return JSON.stringify({
+    ...action,
+    id: null,
+    state: null,
+    error: null,
+    result: null,
+  });
+}
 
 export interface AgentProgress {
   steps: AgentStep[];
@@ -133,8 +147,13 @@ export async function runAgent(options: {
     for (const call of calls) {
       options.signal.throwIfAborted();
       const result = await options.session.execute(call);
+      const duplicate =
+        result.action !== undefined &&
+        progress.actions.some(
+          (existing) => proposalKey(existing) === proposalKey(result.action!),
+        );
       progress.steps.push(result.step);
-      if (result.action) progress.actions.push(result.action);
+      if (result.action && !duplicate) progress.actions.push(result.action);
       if (result.question) progress.question = result.question;
       terminal ||= result.terminal;
       exchangeCharacters += result.output.length;
@@ -142,7 +161,7 @@ export async function runAgent(options: {
         role: "tool",
         toolCallId: call.id,
         name: call.name,
-        content: result.output,
+        content: duplicate ? duplicateProposalOutput : result.output,
         ...(result.isError ? { isError: true as const } : {}),
       });
     }

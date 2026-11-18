@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RunnerJournal } from "../../../packages/cloud-client/src/worker/journal.ts";
@@ -12,14 +12,9 @@ import {
   cloudBrowserFixture,
   executionProviderFixture,
 } from "./cloud-browser-fixture.mjs";
+import { installedSandbox } from "./cloud-runner-process.mjs";
 
-assert.ok(
-  process.env.MACHDOCH_SANDBOX_CONFIG,
-  "Select a trusted sandbox artifact manifest.",
-);
-const artifacts = JSON.parse(
-  await readFile(process.env.MACHDOCH_SANDBOX_CONFIG, "utf8"),
-);
+const artifacts = await installedSandbox();
 let dropFinish = false;
 let finishRequests = 0;
 const fixture = await cloudBrowserFixture({
@@ -63,7 +58,6 @@ function launch(path, mode) {
           ? { SystemRoot: process.env.SystemRoot }
           : {}),
         NODE_EXTRA_CA_CERTS: join(fixture.directory, "tls.crt"),
-        MACHDOCH_CLOUD_RUNNER_TOKEN: worker.token,
       },
     },
   );
@@ -113,7 +107,12 @@ async function configure(name) {
   const path = join(directory, "configuration.json");
   await writeFile(
     path,
-    JSON.stringify({ origin: fixture.origin, directory, artifacts }),
+    JSON.stringify({
+      origin: fixture.origin,
+      token: worker.token,
+      directory,
+      artifacts,
+    }),
   );
   return { path, directory };
 }
@@ -146,7 +145,6 @@ try {
     target: "cloud",
     repository: "https://github.com/octocat/Hello-World",
     autopilot: false,
-    checkPullRequests: false,
     providerId: provider.id,
     model: "fixture",
     maxDurationSeconds: 600,

@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { writeFile, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import {
+  detectSandboxArtifacts,
+  pinSandboxArtifacts,
+} from "@machdoch/cloud-client/sandbox-installation";
+
+export async function installedSandbox() {
+  return pinSandboxArtifacts(await detectSandboxArtifacts());
+}
 
 export async function startRunnerProcess(
   fixture,
@@ -15,39 +23,34 @@ export async function startRunnerProcess(
 ) {
   const stateDirectory = join(fixture.directory, name);
   await mkdir(stateDirectory, { recursive: true });
-  const path = join(stateDirectory, "runner.json");
-  await writeFile(
-    path,
-    JSON.stringify({
-      origin: fixture.origin,
-      stateDirectory,
-      repairAttempts,
-      sandbox: { backend: "whpx", ...sandbox },
-    }),
-  );
   const child = spawn(
     process.execPath,
     [
       "--import",
       "@oxc-node/core/register",
       fileURLToPath(new URL("../../cloud-runner/src/main.ts", import.meta.url)),
-      "--config",
-      path,
+      "--managed",
       ...(onceOnly ? ["--once"] : []),
     ],
     {
       cwd: fileURLToPath(new URL("../../cloud-runner/", import.meta.url)),
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
       env: {
         ...(process.env.SystemRoot
           ? { SystemRoot: process.env.SystemRoot }
           : {}),
-        MACHDOCH_CLOUD_RUNNER_TOKEN: worker.token,
         NODE_EXTRA_CA_CERTS: join(fixture.directory, "tls.crt"),
       },
     },
   );
+  child.send({
+    origin: fixture.origin,
+    token: worker.token,
+    stateDirectory,
+    repairAttempts,
+    sandbox: { backend: "whpx", ...sandbox },
+  });
   let output = "";
   child.stdout.on("data", (bytes) => {
     output = (output + bytes).slice(-16000);

@@ -500,6 +500,15 @@ Reconnecting now keeps pending edits and restores the selected workspace. The Ge
     summary: "The idle timeout is now 60 minutes as requested.",
     findings: [],
   });
+  await api("automations", "POST", {
+    name: "Check pull requests in a sandbox",
+    teamId: team.id,
+    trigger: {
+      kind: "git_event",
+      events: ["pull_request_opened", "pull_request_updated"],
+    },
+    actions: [{ kind: "delegate", profileId, task: "check" }],
+  });
   await deliver(
     waiting.claim,
     sessions.id,
@@ -577,21 +586,6 @@ Reconnecting now keeps pending edits and restores the selected workspace. The Ge
   await capture(page, "11-task-mobile");
 
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const setupProfile = (
-    await api(`execution-profiles?projectId=${project.id}`)
-  ).profiles[0];
-  const {
-    id: setupId,
-    teamId: _team,
-    projectId: _project,
-    revision: setupRevision,
-    ...setupDefinition
-  } = setupProfile;
-  await api(`execution-profiles/${setupId}`, "PATCH", {
-    ...setupDefinition,
-    revision: setupRevision,
-    checkPullRequests: true,
-  });
   const checker = await runtime.execution.workers.register(
     owner,
     profileId,
@@ -648,7 +642,11 @@ Reconnecting now keeps pending edits and restores the selected workspace. The Ge
     ...checkIdentity,
     entries: [
       { title: "Validating in a fresh VM", status: "started", detail: "" },
-      { title: "Check Unit tests failed", status: "failed", detail: "pnpm test" },
+      {
+        title: "Check Unit tests failed",
+        status: "failed",
+        detail: "pnpm test",
+      },
       { title: "Review round 1 started", status: "started", detail: "" },
     ],
   });
@@ -674,7 +672,8 @@ Reconnecting now keeps pending edits and restores the selected workspace. The Ge
               file: "src/session/reconnect.ts",
               line: 15,
               title: "Attempts never reset",
-              detail: "Reset attempts after a successful reconnect, otherwise later drops fail immediately.",
+              detail:
+                "Reset attempts after a successful reconnect, otherwise later drops fail immediately.",
             },
           ],
         }),

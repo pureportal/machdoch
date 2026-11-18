@@ -134,7 +134,6 @@ async function queuePrivateTask() {
     agent: "codex-cli",
     repository: "https://github.com/example/project",
     autopilot: false,
-    checkPullRequests: false,
     maxDurationSeconds: 3600,
     maxTokens: 10000,
     requiredChecks: [

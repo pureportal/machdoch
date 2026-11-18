@@ -14,6 +14,7 @@ import {
   reviewDecision,
   type PullRequestStage,
 } from "../../../lib/git-automation";
+import { automationMarker, type GitEventKind } from "../../../lib/git-events";
 import { pullRequestStacks } from "../../../lib/pull-request-stacks";
 import type { SettingsCipher } from "../../settings-crypto";
 import {
@@ -24,13 +25,24 @@ import {
 } from "../access";
 import type { CloudDatabase, CloudSql } from "../database";
 import { readIssue } from "../planning";
-import { gitClient } from "./git-client";
+import { gitClient, type GitCommitStatus } from "./git-client";
 import { gitConnection, type GitConnectionRecord } from "./connections";
-import type { StoredRepository } from "./events";
+import { gitEvent, queueGitEvents, type StoredRepository } from "./events";
 import type { ActingAccess, ActingMode, GitIdentities } from "./identity";
-import type { CloudGitSync } from "./sync";
+import { eventPullRequest, type CloudGitSync } from "./sync";
 import type { GitProvider } from "../../../lib/git-providers";
 
+const reviewEvents: Record<
+  GitReviewInput,
+  { kind: GitEventKind; state: string }
+> = {
+  approve: { kind: "review_approved", state: "approved" },
+  request_changes: {
+    kind: "review_changes_requested",
+    state: "changes_requested",
+  },
+  comment: { kind: "review_commented", state: "commented" },
+};
 const timestamp = `'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'`;
 const recentDays = 14;
 const stackDays = 30;
@@ -286,6 +298,23 @@ export class CloudGitPullRequests {
     };
   }
 
+  find(
+    actor: CloudActor,
+    repository: string,
+    number: number,
+  ): Promise<string | null> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "git.view");
+      const [row] = await visibleRows(
+        sql,
+        actor,
+        "lower(r.full_name)=lower($3) AND p.number=$4",
+        [repository, number],
+      );
+      return row?.id ?? null;
+    });
+  }
+
   get(actor: CloudActor, id: string): Promise<CloudPullRequest> {
     return this.database.transaction(
       async (sql) => (await this.visible(sql, actor, id)).pullRequest,
@@ -370,6 +399,41 @@ export class CloudGitPullRequests {
       canMerge: updated.canAct && updated.pullRequest.state === "open",
       actingAs,
       mergeMethods: [...client.mergeMethods],
+    };
+  }
+
+  async commitStatus(
+    actor: CloudActor,
+    id: string,
+    headSha: string,
+    status: GitCommitStatus,
+  ): Promise<void> {
+    const visible = await this.database.transaction((sql) =>
+      this.visible(sql, actor, id),
+    );
+    await gitClient(visible.connection, this.transport).commitStatus(
+      visible.pullRequest.repository,
+      headSha,
+      status,
+    );
+  }
+
+  async mergeBase(
+    actor: CloudActor,
+    id: string,
+  ): Promise<{ ref: string; sha: string; mergeBase: string }> {
+    const visible = await this.database.transaction((sql) =>
+      this.visible(sql, actor, id),
+    );
+    const { repository, baseRef, headSha } = visible.pullRequest;
+    const resolved = await gitClient(
+      visible.connection,
+      this.transport,
+    ).mergeBase(repository, baseRef, headSha);
+    return {
+      ref: baseRef,
+      sha: resolved.baseSha,
+      mergeBase: resolved.mergeBase,
     };
   }
 
@@ -475,17 +539,41 @@ export class CloudGitPullRequests {
     mode: ActingMode = "personal_first",
   ): Promise<{ actingAs: string }> {
     const visible = await this.writable(actor, id, mode);
+    const { pullRequest } = visible;
     await gitClient(visible.acting, this.transport).review(
-      visible.pullRequest.repository,
-      visible.pullRequest.number,
-      { ...input, headSha: visible.pullRequest.headSha },
+      pullRequest.repository,
+      pullRequest.number,
+      {
+        decision: input.decision,
+        body: input.body
+          ? `${input.body}
+
+${automationMarker}`
+          : automationMarker,
+        headSha: pullRequest.headSha,
+      },
     );
-    await this.database.transaction((sql) =>
-      sql.query(
+    const event = reviewEvents[input.decision];
+    await this.database.transaction(async (sql) => {
+      await sql.query(
         "UPDATE cloud_git_pull_requests SET signals_synced_at=NULL WHERE organization_id=$1 AND id=$2",
         [actor.organizationId, id],
-      ),
-    );
+      );
+      if (input.decision !== "comment" || input.body)
+        await queueGitEvents(sql, visible.connection, [
+          gitEvent(visible.repository, event.kind, {
+            branch: pullRequest.baseRef,
+            sender: visible.acting.login,
+            pullRequest: eventPullRequest(pullRequest.id, pullRequest),
+            review: {
+              state: event.state,
+              body: input.body,
+              author: visible.acting.login,
+            },
+            issueIds: visible.issues.map((issue) => issue.id),
+          }),
+        ]);
+    });
     return { actingAs: visible.acting.login };
   }
 }

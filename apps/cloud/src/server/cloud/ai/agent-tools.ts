@@ -30,6 +30,7 @@ import { releaseTools } from "./agent-release-tools";
 import { automationTools } from "./agent-automation-tools";
 import { attachmentTools } from "./agent-attachment-tools";
 import { clientTools } from "./agent-client-tools";
+import { taskTools } from "./agent-task-tools";
 import { gitTools } from "./agent-git-tools";
 import { agentTool, type AgentServices, type AgentTool } from "./agent-tool";
 
@@ -598,6 +599,7 @@ const tools = [
   ...automationTools,
   ...attachmentTools,
   ...clientTools,
+  ...taskTools,
   ...gitTools,
 ];
 

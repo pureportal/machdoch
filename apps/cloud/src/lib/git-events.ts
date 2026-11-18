@@ -21,6 +21,9 @@ export const gitEventKinds = [
   "comment_created",
   "checks_passed",
   "checks_failed",
+  "sandbox_check_passed",
+  "sandbox_check_failed",
+  "merge_conflict",
   "stack_base_merged",
 ] as const;
 export type GitEventKind = (typeof gitEventKinds)[number];
@@ -58,6 +61,13 @@ export interface GitEventPullRequest {
   draft: boolean;
 }
 
+export interface GitEventCheck {
+  runId: string;
+  problems: number;
+  summary: string;
+  report: string;
+}
+
 export interface GitEventCommit {
   id: string;
   message: string;
@@ -88,6 +98,7 @@ export interface GitEvent {
     url: string | null;
     path: string | null;
   } | null;
+  check: GitEventCheck | null;
   tag: string | null;
   parent: {
     number: number;
@@ -211,6 +222,7 @@ export function gitEventVariables(event: GitEvent): Record<string, unknown> {
         .join("\n"),
     },
     review: event.review,
+    check: event.check,
     comment: event.comment && {
       ...event.comment,
       url: event.comment.url ?? "",
@@ -225,6 +237,7 @@ export interface PullRequestSnapshot {
   draft: boolean;
   headSha: string;
   checks: GitChecksState | null;
+  mergeable: boolean | null;
 }
 
 export function pullRequestLifecycleEvents(
@@ -256,5 +269,10 @@ export function pullRequestLifecycleEvents(
     if (next.checks === "success") events.push("checks_passed");
     if (next.checks === "failure") events.push("checks_failed");
   }
+  if (
+    next.mergeable === false &&
+    (previous.mergeable !== false || previous.headSha !== next.headSha)
+  )
+    events.push("merge_conflict");
   return events;
 }

@@ -200,7 +200,11 @@ export const automationTemplates: AutomationTemplate[] = [
       automation(
         context,
         "Review new pull requests",
-        gitTrigger(["pull_request_opened", "pull_request_ready"]),
+        gitTrigger([
+          "pull_request_opened",
+          "pull_request_ready",
+          "pull_request_updated",
+        ]),
         [
           askAgent(
             context,
@@ -228,6 +232,20 @@ export const automationTemplates: AutomationTemplate[] = [
             { postAnswer: false, applyProposals: true },
           ),
         ],
+      ),
+  },
+  {
+    id: "merge-approved",
+    name: "Merge approved pull requests",
+    category: "integration",
+    trigger: "git_event",
+    requires: [],
+    build: (context) =>
+      automation(
+        context,
+        "Merge approved pull requests",
+        gitTrigger(["review_approved"]),
+        [{ kind: "git_merge", method: "squash", identity: "organization" }],
       ),
   },
   {
@@ -411,10 +429,107 @@ export const automationTemplates: AutomationTemplate[] = [
           {
             kind: "delegate",
             profileId: context.profileId ?? "",
+            task: "fix",
             instructions:
               "The checks failed on {{repository.name}}#{{pullRequest.number}} “{{pullRequest.title}}” ({{pullRequest.headRef}}). Find the cause and fix it without changing unrelated code.",
             acceptanceCriteria:
               "The failing checks pass and no other check starts failing.",
+          },
+        ],
+      ),
+  },
+  {
+    id: "sandbox-check",
+    name: "Check pull requests in a sandbox",
+    category: "agent",
+    trigger: "git_event",
+    requires: ["profile"],
+    build: (context) =>
+      automation(
+        context,
+        "Check pull requests in a sandbox",
+        gitTrigger([
+          "pull_request_opened",
+          "pull_request_updated",
+          "pull_request_ready",
+        ]),
+        [
+          {
+            kind: "delegate",
+            profileId: context.profileId ?? "",
+            task: "check",
+            instructions: "",
+            acceptanceCriteria: "",
+          },
+        ],
+      ),
+  },
+  {
+    id: "sandbox-fix",
+    name: "Fix what the sandbox check found",
+    category: "agent",
+    trigger: "git_event",
+    requires: ["profile"],
+    build: (context) =>
+      automation(
+        context,
+        "Fix what the sandbox check found",
+        gitTrigger(["sandbox_check_failed"]),
+        [
+          {
+            kind: "delegate",
+            profileId: context.profileId ?? "",
+            task: "fix",
+            instructions:
+              "The sandbox check of {{repository.name}}#{{pullRequest.number}} “{{pullRequest.title}}” found problems:\n\n{{check.report}}\n\nFix every problem without changing unrelated code.",
+            acceptanceCriteria:
+              "Every reported problem is fixed and the build and tests pass.",
+          },
+        ],
+      ),
+  },
+  {
+    id: "fix-requested-changes",
+    name: "Address requested changes with an AI task",
+    category: "agent",
+    trigger: "git_event",
+    requires: ["profile"],
+    build: (context) =>
+      automation(
+        context,
+        "Address requested changes with an AI task",
+        gitTrigger(["review_changes_requested"]),
+        [
+          {
+            kind: "delegate",
+            profileId: context.profileId ?? "",
+            task: "fix",
+            instructions:
+              "{{review.author}} requested changes on {{repository.name}}#{{pullRequest.number}} “{{pullRequest.title}}”:\n\n{{review.body}}\n\nAddress every point without changing unrelated code.",
+            acceptanceCriteria:
+              "Every requested change is addressed and the build and tests pass.",
+          },
+        ],
+      ),
+  },
+  {
+    id: "resolve-conflicts",
+    name: "Resolve merge conflicts with an AI task",
+    category: "agent",
+    trigger: "git_event",
+    requires: ["profile"],
+    build: (context) =>
+      automation(
+        context,
+        "Resolve merge conflicts with an AI task",
+        gitTrigger(["merge_conflict"]),
+        [
+          {
+            kind: "delegate",
+            profileId: context.profileId ?? "",
+            task: "resolve",
+            instructions: "",
+            acceptanceCriteria: "",
           },
         ],
       ),

@@ -11,6 +11,7 @@ import {
   ChevronRight,
   ChevronUp,
   ClipboardType,
+  Copy,
   Ellipsis,
   GitBranch,
   Hash,
@@ -137,7 +138,6 @@ export function IssueHeader({
           </>
         )}
         <h1 className="cloud-issue-key">{issue.identifier}</h1>
-        <span className="cloud-issue-breadcrumb-title">{issue.title}</span>
         <FavoriteButton kind="issue" id={issue.id} initial={favorite} />
         {writable && (
           <PropertyMenu
@@ -170,49 +170,50 @@ export function IssueHeader({
         </span>
       </nav>
       <div className="cloud-issue-actions">
-        <button
-          type="button"
-          className="cloud-icon-button"
-          aria-label="Copy issue link"
-          title="Copy issue link"
-          onClick={() => copy(location.href, "Link")}
+        <PropertyMenu
+          label="Copy"
+          align="end"
+          options={[
+            { value: "link", label: "Copy link", icon: <Link2 size={14} /> },
+            { value: "id", label: "Copy ID", icon: <Hash size={14} /> },
+            {
+              value: "branch",
+              label: "Copy branch name",
+              icon: <GitBranch size={14} />,
+            },
+            {
+              value: "prompt",
+              label: "Copy as prompt",
+              icon: <ClipboardType size={14} />,
+            },
+          ]}
+          onSelect={(value) => {
+            if (value === "link") copy(location.href, "Link");
+            else if (value === "id") copy(issue.identifier, "ID");
+            else if (value === "branch")
+              copy(
+                issueBranchName(issue.identifier, issue.title),
+                "Branch name",
+              );
+            else
+              copy(
+                issuePrompt(
+                  issue,
+                  `${location.origin}/cloud/issues/${issue.id}`,
+                ),
+                "Prompt",
+              );
+          }}
         >
-          <Link2 size={14} />
-        </button>
-        <button
-          type="button"
-          className="cloud-icon-button"
-          aria-label="Copy issue ID"
-          title="Copy issue ID"
-          onClick={() => copy(issue.identifier, "ID")}
-        >
-          <Hash size={14} />
-        </button>
-        <button
-          type="button"
-          className="cloud-icon-button"
-          aria-label="Copy branch name"
-          title="Copy branch name"
-          onClick={() =>
-            copy(issueBranchName(issue.identifier, issue.title), "Branch name")
-          }
-        >
-          <GitBranch size={14} />
-        </button>
-        <button
-          type="button"
-          className="cloud-icon-button"
-          aria-label="Copy as prompt"
-          title="Copy as prompt"
-          onClick={() =>
-            copy(
-              issuePrompt(issue, `${location.origin}/cloud/issues/${issue.id}`),
-              "Prompt",
-            )
-          }
-        >
-          <ClipboardType size={14} />
-        </button>
+          <button
+            type="button"
+            className="cloud-icon-button"
+            aria-label="Copy"
+            title="Copy"
+          >
+            <Copy size={14} />
+          </button>
+        </PropertyMenu>
         {navigation && (
           <span className="cloud-issue-navigation">
             <span>
