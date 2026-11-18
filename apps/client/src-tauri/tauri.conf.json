@@ -51,7 +51,7 @@
   "bundle": {
     "active": true,
     "publisher": "machdoch",
-    "license": "Apache-2.0",
+    "license": "PolyForm-Noncommercial-1.0.0",
     "licenseFile": "../../../LICENSE",
     "homepage": "https://github.com/pureportal/machdoch",
     "category": "Productivity",

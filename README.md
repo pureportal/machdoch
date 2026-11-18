@@ -161,4 +161,4 @@ MiniMax H3 support uses code from [Fizgig](https://github.com/shootthesound/Fizg
 
 ## Licence
 
-Machdoch-owned code and documentation are licensed under [Apache-2.0](LICENSE). Third-party components and models retain their own terms. See [end-user terms](EULA.md), [third-party notices](THIRD_PARTY_NOTICES.md) and [licensing status](legal/README.md).
+Machdoch-owned code and documentation are licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). Commercial use requires a separate licence. Third-party components and models retain their own terms. See [end-user terms](EULA.md), [third-party notices](THIRD_PARTY_NOTICES.md) and [licensing status](legal/README.md).
