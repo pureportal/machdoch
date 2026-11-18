@@ -16,32 +16,37 @@ from media_student_checkpoints import checkpoint_path
 
 
 class SDXLStudentTests(unittest.TestCase):
-    def test_native_rocm_decoder_bounds_actual_vae_tiles(self):
-        vae = AutoencoderKL(
-            block_out_channels=(4, 4, 4, 4), norm_num_groups=4,
+    def test_native_rocm_runs_half_precision_vae_coders_in_bfloat16_full_frame(self):
+        torch.manual_seed(5)
+        reference = AutoencoderKL(
+            block_out_channels=(8, 8, 8, 8), norm_num_groups=4,
             down_block_types=("DownEncoderBlock2D",) * 4,
             up_block_types=("UpDecoderBlock2D",) * 4,
             layers_per_block=1, sample_size=1024,
         ).eval()
-        rocm = SimpleNamespace(version=SimpleNamespace(hip="7.14"),
-                               backends=SimpleNamespace(cudnn=SimpleNamespace(enabled=False)))
+        vae = AutoencoderKL.from_config(reference.config).eval()
+        vae.load_state_dict(reference.state_dict())
+        vae.to(torch.float16)
+        rocm = SimpleNamespace(version=SimpleNamespace(hip="7.14"), nn=torch.nn,
+                               backends=SimpleNamespace(cudnn=SimpleNamespace(enabled=False)),
+                               float16=torch.float16, bfloat16=torch.bfloat16)
         evidence = worker._configure_large_image_vae_decode(
             SimpleNamespace(vae=vae), "stable-diffusion-xl-dmad-4step", rocm, 1024, 768, 16 * 1024 ** 3,
         )
-        tile_shapes = []
-        handle = vae.decoder.register_forward_pre_hook(
-            lambda module, args: tile_shapes.append(args[0].shape[-2:]),
-        )
-        try:
-            with torch.no_grad():
-                decoded = vae.decode(torch.zeros(1, 4, 128, 96)).sample
-        finally:
-            handle.remove()
-        self.assertEqual(decoded.shape, (1, 3, 1024, 768))
-        self.assertTrue(torch.isfinite(decoded).all())
-        self.assertGreater(len(tile_shapes), 1)
-        self.assertTrue(all(max(shape) <= 64 for shape in tile_shapes))
-        self.assertEqual(evidence["mode"], "native-overlap-tiled")
+        latents = torch.randn(1, 4, 32, 24)
+        with torch.no_grad():
+            decoded = vae.decode(latents.half()).sample
+            expected = reference.decode(latents).sample
+            encoded = vae.encode(decoded).latent_dist.mean
+        self.assertEqual(decoded.dtype, torch.float16)
+        self.assertEqual(encoded.dtype, torch.float16)
+        self.assertEqual(vae.decoder.conv_in.weight.dtype, torch.bfloat16)
+        self.assertEqual(vae.post_quant_conv.weight.dtype, torch.float16)
+        self.assertFalse(vae.config.force_upcast)
+        self.assertLess((decoded.float() - expected).abs().mean().item(), 0.01)
+        self.assertEqual(evidence["mode"], "native-full-frame")
+        self.assertEqual(evidence["coderDtype"], "bfloat16")
+        self.assertGreater(evidence["bandedConvolutions"], 0)
         self.assertEqual(evidence["device"], "pipeline")
 
     def test_spectral_weights_use_the_first_forward_power_iteration_and_gain(self):

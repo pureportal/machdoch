@@ -217,7 +217,7 @@ class TextualInversionTests(unittest.TestCase):
             path = Path(directory) / "text-lora.safetensors"
             save_file(state, path)
             IMAGE_ADDONS.load_text_encoder_lora(
-                pipeline, path, "style", ["text-encoder"]
+                pipeline, str(path.parent), {"weight_name": path.name}, "style", ["text-encoder"]
             )
         pipeline.set_adapters(["style"], adapter_weights=[0.6])
         result = pipeline.text_encoder.get_submodule(target)(value)
@@ -251,7 +251,7 @@ class TextualInversionTests(unittest.TestCase):
             path = Path(directory) / "kohya.safetensors"
             save_file(state, path)
             IMAGE_ADDONS.load_text_encoder_lora(
-                pipeline, path, "kohya-style", ["text-encoder", "text-encoder-2"]
+                pipeline, str(path.parent), {"weight_name": path.name}, "kohya-style", ["text-encoder", "text-encoder-2"]
             )
         pipeline.set_adapters(["kohya-style"], adapter_weights=[0.6])
         for prefix, encoder, module in modules:
@@ -304,7 +304,7 @@ class TextualInversionTests(unittest.TestCase):
                     },
                 )
                 IMAGE_ADDONS.load_text_encoder_lora(
-                    pipeline, path, "metadata-style", ["text-encoder"]
+                    pipeline, str(path.parent), {"weight_name": path.name}, "metadata-style", ["text-encoder"]
                 )
                 pipeline.set_adapters(["metadata-style"], adapter_weights=[0.6])
                 for target, reference in expected.items():
@@ -345,7 +345,7 @@ class TextualInversionTests(unittest.TestCase):
                 path = Path(directory) / "sdxl-encoder-lora.safetensors"
                 save_file(state, path, metadata={"lora_adapter_metadata": json.dumps(metadata, default=list)} if with_metadata else None)
                 IMAGE_ADDONS.load_text_encoder_lora(
-                    pipeline, path, "dual-clip", ["text-encoder", "text-encoder-2"]
+                    pipeline, str(path.parent), {"weight_name": path.name}, "dual-clip", ["text-encoder", "text-encoder-2"]
                 )
                 pipeline.set_adapters(["dual-clip"], adapter_weights=[0.6])
                 alpha_scale = 4 if with_metadata else 1
@@ -522,6 +522,29 @@ class VideoLoraTests(unittest.TestCase):
                 torch.testing.assert_close(
                     transformer.get_submodule(target)(value), baseline
                 )
+
+    def test_worker_fuses_float_video_loras_and_keeps_fp8_adapters_separate(self):
+        for name, create, target in video_models():
+            if name not in ("wan", "ltx"):
+                continue
+            for storage in (None, torch.float8_e4m3fn):
+                with self.subTest(model=name, storage=storage), tempfile.TemporaryDirectory() as directory:
+                    transformer = create().eval()
+                    if storage is not None:
+                        transformer.enable_layerwise_casting(storage_dtype=storage, compute_dtype=torch.bfloat16)
+                    width = transformer.get_submodule(target).weight.shape[1]
+                    dtype = torch.bfloat16 if storage is not None else torch.float32
+                    value = torch.ones(1, width, dtype=dtype)
+                    addon, down, up = self.write_addon(Path(directory) / "video.safetensors", target, width)
+                    with torch.inference_mode():
+                        expected = transformer.get_submodule(target)(value) + 0.7 * (
+                            value @ down.to(dtype).T @ up.to(dtype).T
+                        )
+                    WORKER._load_video_addons(transformer, [addon])
+                    layer = transformer.get_submodule(target)
+                    with torch.inference_mode():
+                        torch.testing.assert_close(layer(value), expected, atol=0.015, rtol=0.015)
+                    self.assertEqual(layer.merged, storage is None)
 
     def test_wrong_digest_and_wrong_model_variant_fail_before_loading(self):
         _, create, target = video_models()[0]

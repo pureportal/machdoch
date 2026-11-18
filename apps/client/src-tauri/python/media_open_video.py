@@ -49,8 +49,16 @@ def _mux_audio(destination: Path, audio: Any, sample_rate: int, duration: float)
     audio_path.unlink()
 
 
-def _prepare_pipeline(request, profile, arguments, model, dtype, device, diffusers, worker):
-    pipeline = media_open_models.load_pipeline(diffusers, model, dtype, image_conditioned="image" in arguments)
+def _prepare_pipeline(request, profile, arguments, model, dtype, device, diffusers, torch, worker):
+    resident = (
+        device == "cuda"
+        and request.get("memoryProfile") not in ("memory-saver", "maximum-speed")
+        and profile["architecture"] in worker.RESIDENT_TRANSFORMER_ARCHITECTURES
+        and worker._transformer_fits_on_device(
+            Path(model["path"]), dtype, torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory)
+    )
+    pipeline = media_open_models.load_pipeline(diffusers, model, dtype, image_conditioned="image" in arguments,
+                                               transformer_device="cuda" if resident else None)
     applied_addons = []
     if profile["family"] == "CogVideoX" or profile["architecture"] == "wan-2.1-t2v-1.3b":
         addons = request.get("addons", [])
@@ -69,6 +77,8 @@ def _prepare_pipeline(request, profile, arguments, model, dtype, device, diffuse
             pipeline.enable_sequential_cpu_offload()
         elif request.get("memoryProfile") == "maximum-speed":
             pipeline.to(device)
+        elif resident:
+            worker._configure_resident_transformer(pipeline, torch)
         else:
             pipeline.enable_model_cpu_offload()
     else:
@@ -77,7 +87,7 @@ def _prepare_pipeline(request, profile, arguments, model, dtype, device, diffuse
         from media_cogvideo_conditioning import enable_vae_tiling
 
         enable_vae_tiling(pipeline)
-    elif hasattr(pipeline.vae, "enable_tiling"):
+    elif hasattr(pipeline.vae, "use_tiling"):
         pipeline.vae.enable_tiling()
     return pipeline, applied_addons
 
@@ -91,7 +101,7 @@ def _sample_pipeline(request, profile, arguments, model, dtype, device, diffuser
     try:
         if cached is None:
             worker._progress("Loading video model", 0.04)
-            pipeline, applied_addons = _prepare_pipeline(request, profile, arguments, model, dtype, device, diffusers, worker)
+            pipeline, applied_addons = _prepare_pipeline(request, profile, arguments, model, dtype, device, diffusers, torch, worker)
             if cache is not None:
                 cache.store({"pipeline": pipeline, "addons": deepcopy(applied_addons)})
         else:

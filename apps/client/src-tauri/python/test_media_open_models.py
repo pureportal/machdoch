@@ -165,6 +165,40 @@ class OpenMediaModelTests(unittest.TestCase):
                     models.load_pipeline(diffusers, {"architecture": "sana", "path": directory, "packageKind": "diffusers-directory"}, "fp16")
                 self.assertEqual(loader.call_args.kwargs["dtype"]["text_encoder"], "bf16" if supported else "fp32")
 
+    def test_resident_transformer_is_loaded_straight_onto_the_device(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "model_index.json").write_text(json.dumps({
+                "_class_name": "ZImagePipeline", "transformer": ["diffusers", "ZImageTransformer2DModel"],
+            }), encoding="utf-8")
+            transformer = object()
+            transformer_loader = mock.Mock(return_value=transformer)
+            loader = mock.Mock(return_value=SimpleNamespace())
+            diffusers = SimpleNamespace(ZImagePipeline=SimpleNamespace(from_pretrained=loader),
+                                        ZImageTransformer2DModel=SimpleNamespace(from_pretrained=transformer_loader))
+            model = {"architecture": "z-image-turbo", "path": directory, "packageKind": "diffusers-directory"}
+            models.load_pipeline(diffusers, model, "bf16", transformer_device="cuda")
+            self.assertIs(loader.call_args.kwargs["transformer"], transformer)
+            self.assertEqual(transformer_loader.call_args.args, (str(Path(directory, "transformer")),))
+            self.assertEqual(transformer_loader.call_args.kwargs["device_map"], "cuda")
+            self.assertEqual(transformer_loader.call_args.kwargs["torch_dtype"], "bf16")
+            models.load_pipeline(diffusers, model, "bf16")
+            self.assertNotIn("transformer", loader.call_args.kwargs)
+
+    def test_wan_decodes_in_bf16_when_the_gpu_supports_it(self):
+        for supported in (True, False):
+            with self.subTest(supported=supported), tempfile.TemporaryDirectory() as directory:
+                Path(directory, "model_index.json").write_text('{"_class_name":"WanPipeline"}', encoding="utf-8")
+                loader = mock.Mock(return_value=SimpleNamespace())
+                diffusers = SimpleNamespace(WanPipeline=SimpleNamespace(from_pretrained=loader))
+                cuda = SimpleNamespace(is_available=lambda: True, is_bf16_supported=lambda: supported)
+                torch = SimpleNamespace(float32="fp32", bfloat16="bf16", cuda=cuda)
+                with mock.patch.dict("sys.modules", {"torch": torch}):
+                    models.load_pipeline(diffusers, {"architecture": "wan-2.1-t2v-1.3b", "path": directory, "packageKind": "diffusers-directory"}, "fp16")
+                self.assertEqual(loader.call_args.kwargs["dtype"], {
+                    "transformer": "fp16", "transformer_2": "fp16", "text_encoder": "fp16",
+                    "vae": "bf16" if supported else "fp32", "default": "fp16",
+                })
+
     def test_audio_uses_the_current_gpt2_generation_component_without_changing_weights(self):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "model_index.json").write_text('{"_class_name":"AudioLDM2Pipeline"}', encoding="utf-8")
@@ -253,7 +287,8 @@ class OpenMediaModelTests(unittest.TestCase):
             _configure_video_conv3d_backend=lambda *_: "cpu", _start_video_memory_observation=lambda *_: None,
             _pipeline_dtype=lambda *_: "fp32", _fresh_output_directory=lambda path: Path(path),
             _progress=mock.Mock(), _enable_sampling_progress=mock.Mock(),
-            _finish_video_memory_observation=lambda *_: None, _package_versions=lambda: {})
+            _finish_video_memory_observation=lambda *_: None, _package_versions=lambda: {},
+            RESIDENT_TRANSFORMER_ARCHITECTURES=worker.RESIDENT_TRANSFORMER_ARCHITECTURES)
         with tempfile.TemporaryDirectory() as directory:
             runtime._encode_video_webm = mock.Mock(return_value=(Path(directory, "video.webm"), {"durationSeconds": 0.3125}, None))
             request = {"schemaVersion": 1, "model": {"architecture": "wan-2.2-t2v-a14b", "revision": "revision", "digest": "digest"}, "prompt": "A bird flies", "numFrames": 5, "numInferenceSteps": 40, "guidanceScale": 4, "fps": 16, "seed": 1, "loopMode": "none", "aspectRatio": "16:9", "resolution": "preview-512", "outputDirectory": directory, "matteQuality": "production", "encodingQuality": "lossless"}
@@ -278,6 +313,38 @@ class OpenMediaModelTests(unittest.TestCase):
             request["model"]["architecture"] = "wan-2.2-t2v-a14b"
             with self.assertRaisesRegex(ValueError, "does not support these add-ons"):
                 video.generate(request, runtime)
+
+    def test_wan_keeps_a_fitting_transformer_resident_and_streams_the_text_encoder(self):
+        profile = models.PROFILES["wan-2.1-t2v-1.3b"]
+        torch = SimpleNamespace(cuda=SimpleNamespace(current_device=lambda: 0,
+                                                     get_device_properties=lambda _: SimpleNamespace(total_memory=16 * 1024**3)))
+        for memory_profile, fits, resident in ((None, True, True), (None, False, False), ("maximum-speed", True, False)):
+            with self.subTest(memory_profile=memory_profile, fits=fits):
+                pipeline = mock.Mock()
+                runtime = SimpleNamespace(RESIDENT_TRANSFORMER_ARCHITECTURES=worker.RESIDENT_TRANSFORMER_ARCHITECTURES,
+                                          _transformer_fits_on_device=mock.Mock(return_value=fits),
+                                          _configure_resident_transformer=mock.Mock(), _load_video_addons=mock.Mock(return_value=[]))
+                with mock.patch.object(models, "load_pipeline", return_value=pipeline) as load:
+                    video._prepare_pipeline({"memoryProfile": memory_profile}, profile, {}, {"path": "model"}, "fp16",
+                                            "cuda", SimpleNamespace(), torch, runtime)
+                self.assertEqual(load.call_args.kwargs["transformer_device"], "cuda" if resident else None)
+                self.assertEqual(runtime._configure_resident_transformer.called, resident)
+                self.assertEqual(pipeline.enable_model_cpu_offload.called, not resident and memory_profile is None)
+
+    def test_video_vae_tiling_is_enabled_only_where_the_vae_implements_it(self):
+        from diffusers import AutoencoderKLTemporalDecoder, AutoencoderKLWan
+
+        for architecture, vae, tiled in (
+            ("stable-video-diffusion", AutoencoderKLTemporalDecoder(block_out_channels=(32,), down_block_types=("DownEncoderBlock2D",),
+                                                                   layers_per_block=1, latent_channels=4), False),
+            ("wan-2.1-t2v-1.3b", AutoencoderKLWan(base_dim=8, z_dim=4, dim_mult=[1], num_res_blocks=1, temperal_downsample=[]), True),
+        ):
+            with self.subTest(architecture=architecture):
+                pipeline = SimpleNamespace(vae=vae, transformer=None, to=mock.Mock())
+                with mock.patch.object(models, "load_pipeline", return_value=pipeline):
+                    video._prepare_pipeline({}, models.PROFILES[architecture], {}, {"path": "model"}, "fp16", "cpu",
+                                            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(RESIDENT_TRANSFORMER_ARCHITECTURES=(), _load_video_addons=mock.Mock(return_value=[])))
+                self.assertEqual(getattr(vae, "use_tiling", False), tiled)
 
     def test_generated_audio_is_muxed_and_both_tracks_decode(self):
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()

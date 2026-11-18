@@ -1,25 +1,24 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
 from typing import Any
 
 
 def load_text_encoder_lora(
-    pipeline: Any, path: Path, name: str, components: list[str]
+    pipeline: Any, source: str | dict[str, Any], options: dict[str, str], name: str, components: list[str]
 ) -> None:
     arguments = {
-        "weight_name": path.name,
+        **options,
         "local_files_only": True,
         "return_lora_metadata": True,
     }
     if hasattr(pipeline, "unet"):
         state, alphas, metadata = pipeline.lora_state_dict(
-            str(path.parent), unet_config=pipeline.unet.config, **arguments
+            source, unet_config=pipeline.unet.config, **arguments
         )
     else:
         state, alphas, metadata = pipeline.lora_state_dict(
-            str(path.parent), return_alphas=True, **arguments
+            source, return_alphas=True, **arguments
         )
 
     clip_prefixes = [

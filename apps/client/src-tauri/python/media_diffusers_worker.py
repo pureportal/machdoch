@@ -30,11 +30,14 @@ import numpy as np
 from PIL import Image, ImageOps
 import media_open_models
 import media_image_sampling
+import media_lycoris
 
 WORKER_VERSION = "media-diffusers-worker/1.113.0"
 OFFLOAD_CACHE_COMPATIBILITY_VERSION = "media-diffusers-worker/1.19.0"
 SCHEMA_VERSION = 5
 MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES = 15 * 1024**3
+RESIDENT_TRANSFORMER_ARCHITECTURES = ("z-image", "z-image-turbo", "wan-2.1-t2v-1.3b")
+RESIDENT_TRANSFORMER_RESERVE_BYTES = 4 * 1024**3
 LTX_13B_MIN_MEMORY_BYTES = 15 * 1024**3
 FRAMEPACK_MIN_MEMORY_BYTES = 6 * 1024**3
 FRAMEPACK_MIN_PHYSICAL_MEMORY_BYTES = 30 * 1024**3
@@ -181,9 +184,9 @@ def _runtime() -> tuple[Any, Any]:
         raise WorkerError(f"The pinned Diffusers runtime could not be imported: {error}") from error
     if os.name == "nt":
         import safetensors.torch as safe_torch
-        from fizgig.utils.safetensors import load_owned_safetensors_file
+        from fizgig.utils.safetensors import load_safetensors
 
-        safe_torch.load_file = load_owned_safetensors_file
+        safe_torch.load_file = load_safetensors
     return torch, diffusers
 
 
@@ -578,7 +581,7 @@ def _krea_scaled_fp8_linear_forward(module: Any, input_tensor: Any) -> Any:
 
 def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
     from accelerate import init_empty_weights
-    from fizgig.utils.safetensors import MemoryEfficientSafeOpen
+    from fizgig.utils.safetensors import SafetensorsReader
     from media_krea_quantization import quantized_layers, layer_configuration, dequantized_linear_forward
 
     with init_empty_weights():
@@ -590,7 +593,7 @@ def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
     observed: set[str] = set()
     scaled_modules: list[tuple[str, Any, bool]] = []
     fp8_dtypes = {"F8_E4M3": torch.float8_e4m3fn, "F8_E5M2": torch.float8_e5m2}
-    with MemoryEfficientSafeOpen(checkpoint, disable_numpy_memmap=True) as tensor_file:
+    with SafetensorsReader(checkpoint) as tensor_file:
         try:
             layer_configurations = quantized_layers(tensor_file)
         except (ValueError, TypeError) as error:
@@ -611,19 +614,19 @@ def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
                 ) from error
             if destination in observed:
                 raise WorkerError(f"KREA checkpoint maps duplicate tensor {destination}")
-            metadata = tensor_file.header[source_key]
-            if metadata["dtype"] not in ("F32", "F16", "BF16", "I8", *fp8_dtypes):
+            metadata = tensor_file.specs[source_key]
+            if metadata.dtype not in ("F32", "F16", "BF16", "I8", *fp8_dtypes):
                 raise WorkerError("KREA requires floating-point or declared scaled INT8 checkpoint weights")
-            shape = tuple(metadata["shape"])
+            shape = metadata.shape
             if destination.endswith("scale_shift_table") and len(shape) == 1 and shape[0] % 6144 == 0:
                 shape = (shape[0] // 6144, 6144)
             if shape != expected_shapes.get(destination):
                 raise WorkerError(
                     f"KREA tensor {source_key} has an incompatible shape for {destination}"
                 )
-            is_fp8 = metadata["dtype"] in fp8_dtypes
-            is_int8 = metadata["dtype"] == "I8"
-            dtype = torch.int8 if is_int8 else fp8_dtypes.get(metadata["dtype"], torch.bfloat16)
+            is_fp8 = metadata.dtype in fp8_dtypes
+            is_int8 = metadata.dtype == "I8"
+            dtype = torch.int8 if is_int8 else fp8_dtypes.get(metadata.dtype, torch.bfloat16)
             module_name, _, attribute = destination.rpartition(".")
             module = transformer.get_submodule(module_name)
             value = torch.empty(0, dtype=dtype)
@@ -637,7 +640,7 @@ def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
                 if scale_key not in checkpoint_key_set:
                     raise WorkerError(f"KREA tensor {source_key} has no scale metadata")
                 try:
-                    expected_format = "int8_tensorwise" if is_int8 else "float8_e4m3fn" if metadata["dtype"] == "F8_E4M3" else "float8_e5m2"
+                    expected_format = "int8_tensorwise" if is_int8 else "float8_e4m3fn" if metadata.dtype == "F8_E4M3" else "float8_e5m2"
                     quant = layer_configuration(tensor_file, source_key, layer_configurations, expected_format)
                 except (UnicodeDecodeError, ValueError, TypeError) as error:
                     raise WorkerError(str(error)) from error
@@ -664,14 +667,14 @@ def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
 
 
 def _krea_tensor_value(tensor: Any, readers: dict[Path, Any], stack: ExitStack) -> Any:
-    from fizgig.utils.safetensors import MemoryEfficientSafeOpen
+    from fizgig.utils.safetensors import SafetensorsReader
 
     source = getattr(tensor, "_machdoch_krea_source", None)
     if source is None:
         return tensor.data.to("cpu")
     path, key, shape = source
     if path not in readers:
-        readers[path] = stack.enter_context(MemoryEfficientSafeOpen(path, disable_numpy_memmap=True))
+        readers[path] = stack.enter_context(SafetensorsReader(path))
     return readers[path].get_tensor(key).reshape(shape).to(tensor.dtype)
 
 
@@ -862,10 +865,10 @@ def _install_windows_krea_disk_offload_fixes(torch: Any) -> bool:
         return False
     import functools
     import safetensors.torch as safe_torch
-    from fizgig.utils.safetensors import load_owned_safetensors_file
+    from fizgig.utils.safetensors import load_safetensors
     from diffusers.hooks.group_offloading import ModuleGroup
 
-    safe_torch.load_file = load_owned_safetensors_file
+    safe_torch.load_file = load_safetensors
 
     original_offload = getattr(
         ModuleGroup._offload_to_disk,
@@ -1032,7 +1035,7 @@ def _load_pipeline(
                               flux2_inpainting=flux2_inpainting, torch_dtype=torch_dtype)
     package_kind = _required_text(model, "packageKind", 64)
     model_path = _absolute_existing_path(model.get("path"), file=package_kind == "single-file")
-    device, _, _ = _device(torch)
+    device, _, device_memory = _device(torch)
     dtype = torch_dtype if torch_dtype is not None else _pipeline_dtype(torch, device)
     if torch_dtype is None and architecture in (
         "stable-diffusion-3", "anima", "moss-image-base", "moss-image-sft", "flux-3-image-klein",
@@ -1049,8 +1052,12 @@ def _load_pipeline(
         "use_safetensors": True,
     }
     if architecture in media_open_models.PROFILES and not (architecture in ("krea-2-raw", "krea-2-turbo") and package_kind == "single-file"):
+        transformer_device = (
+            "cuda" if architecture in RESIDENT_TRANSFORMER_ARCHITECTURES
+            and _transformer_fits_on_device(model_path, dtype, device_memory) else None
+        )
         try:
-            return media_open_models.load_pipeline(diffusers, model, dtype)
+            return media_open_models.load_pipeline(diffusers, model, dtype, transformer_device=transformer_device)
         except ValueError as error:
             raise WorkerError(str(error)) from error
     if architecture == "qwen-image-2.1" and package_kind == "single-file":
@@ -1447,29 +1454,22 @@ def _confirmed_lora_components(
 
 def _unsupported_lora_algorithm(keys: list[str]) -> str | None:
     if any(
-        "hada_w1_a" in key
-        or "hada_w1_b" in key
-        or "hada_w2_a" in key
-        or ".hada_" in key
-        for key in keys
-    ):
-        return "LoHa"
-    if any(
-        "lokr_w1" in key
-        or "lokr_w2" in key
-        or "lokr_t2" in key
-        or ".lokr_" in key
-        for key in keys
-    ):
-        return "LoKr"
-    if any(
         "oft_blocks" in key or "oft_diag" in key or ".oft_" in key
         for key in keys
     ):
         return "OFT"
-    if any(key.endswith(".lora_mid.weight") for key in keys):
-        return "CP-decomposed LoCon"
     return None
+
+
+def _lora_source(path: Path, tensor_shapes: dict[str, tuple[int, ...]]) -> tuple[Any, dict[str, str]]:
+    if not any(key.endswith(".lora_mid.weight") for key in tensor_shapes):
+        return str(path.parent), {"weight_name": path.name}
+    from safetensors.torch import load_file
+
+    try:
+        return media_lycoris.fold_tucker_locon(load_file(str(path))), {}
+    except media_lycoris.LycorisError as error:
+        raise WorkerError(str(error)) from error
 
 
 def _lora_component(key: str) -> str:
@@ -1490,6 +1490,14 @@ def _lora_profile(
     unsupported = _unsupported_lora_algorithm(keys)
     if unsupported is not None:
         raise WorkerError(f"Unsupported LoRA tensor algorithm at runtime: {unsupported}")
+    if media_lycoris.lycoris_algorithm(keys) is not None:
+        try:
+            observed = media_lycoris.lycoris_profile(tensor_shapes)
+        except media_lycoris.LycorisError as error:
+            raise WorkerError(str(error)) from error
+        if observed != expected:
+            raise WorkerError("LoRA tensors do not match their inspected profile")
+        return observed
     lower_to_original = {key.lower(): key for key in tensor_shapes}
     if len(lower_to_original) != len(tensor_shapes):
         raise WorkerError("LoRA tensor keys collide when compared case-insensitively")
@@ -1668,24 +1676,29 @@ def _apply_addons(
                     for key in tensor_file.keys()
                 }
             lora_profile = _lora_profile(addon, tensor_shapes)
-            if any(component.startswith("text-encoder") for component in target_components):
+            if lora_profile["algorithm"] in ("lokr", "loha"):
+                try:
+                    media_lycoris.load_lycoris(pipeline, path, name, target_components)
+                except media_lycoris.LycorisError as error:
+                    raise WorkerError(f"LoRA {addon_id}: {error}") from error
+            elif any(component.startswith("text-encoder") for component in target_components):
                 module_path = Path(__file__).with_name("media_image_addons.py")
                 spec = importlib.util.spec_from_file_location("media_image_addons", module_path)
                 if spec is None or spec.loader is None:
                     raise WorkerError("Image LoRA runtime is unavailable")
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-                module.load_text_encoder_lora(pipeline, path, name, target_components)
+                module.load_text_encoder_lora(pipeline, *_lora_source(path, tensor_shapes), name, target_components)
+            elif getattr(pipeline, "_machdoch_krea_text_root", None) is not None:
+                _load_krea_lora(pipeline, path, name)
             else:
-                if getattr(pipeline, "_machdoch_krea_text_root", None) is not None:
-                    _load_krea_lora(pipeline, path, name)
-                else:
-                    pipeline.load_lora_weights(
-                        str(path.parent),
-                        weight_name=path.name,
-                        adapter_name=name,
-                        low_cpu_mem_usage=True,
-                    )
+                source, options = _lora_source(path, tensor_shapes)
+                pipeline.load_lora_weights(
+                    source,
+                    adapter_name=name,
+                    low_cpu_mem_usage=True,
+                    **options,
+                )
             # PEFT initializes adapter matrices from the base layer's dtype. For
             # scaled-FP8 KREA checkpoints that would leave LoRA A/B in FP8 and
             # route them through ordinary addmm, which ROCm intentionally does
@@ -1837,6 +1850,13 @@ def _apply_addons(
                 lora_weights, lora_schedules, 0.0
             ),
         )
+        if (
+            all(schedule is None for schedule in lora_schedules)
+            and hasattr(pipeline, "fuse_lora")
+            and getattr(pipeline, "_machdoch_krea_text_root", None) is None
+            and _lora_layers_fusable(list(pipeline.components.values()))
+        ):
+            pipeline.fuse_lora(adapter_names=lora_names, lora_scale=1.0)
     _verify_embedding_prompt_tokens(pipeline, applied, prompt, negative_prompt)
     return (
         prompt,
@@ -1846,6 +1866,21 @@ def _apply_addons(
         lora_weights,
         lora_schedules,
     )
+
+
+def _lora_layers_fusable(components: list[Any]) -> bool:
+    import torch
+    from peft.tuners.tuners_utils import BaseTunerLayer
+
+    for component in components:
+        if not isinstance(component, torch.nn.Module):
+            continue
+        for module in component.modules():
+            if isinstance(module, BaseTunerLayer):
+                weight = module.get_base_layer().weight
+                if type(weight) is not torch.nn.Parameter or weight.dtype not in (torch.float16, torch.bfloat16, torch.float32):
+                    return False
+    return True
 
 
 def _lora_denoising_schedule(
@@ -2045,25 +2080,44 @@ def _image_sampling(request: dict[str, Any], architecture: str, policy: str) -> 
 
 def _image_vae_decode_settings(
     architecture: str,
-    torch: Any,
     width: int,
     height: int,
     device_memory: int | None,
-) -> tuple[bool, int, bool]:
-    native_sdxl_decode = (
-        architecture in (
-            "stable-diffusion-xl", "stable-diffusion-xl-dmad-4step",
-            "stable-diffusion-xl-dmad-1step",
-        )
-        and getattr(torch.version, "hip", None) is not None
-        and not torch.backends.cudnn.enabled
-    )
+) -> tuple[bool, int]:
     qwen_decode = architecture in ("qwen-image-2.1", "qwen-image-2.1-turbo")
-    tile_size = 512 if native_sdxl_decode else 1_024
+    tile_size = 1_024
     if qwen_decode and (device_memory is None or device_memory < 15 * 1024 ** 3):
         tile_size = 512
     enabled = width * height > tile_size ** 2 if qwen_decode else max(width, height) > tile_size
-    return enabled, tile_size, native_sdxl_decode
+    return enabled, tile_size
+
+
+def _run_half_precision_vae_in_bfloat16(vae: Any, torch: Any) -> bool:
+    """Native HIP convolutions are fast in bfloat16 and slow in float32; bfloat16 also has the
+    float32 range that the float16 upcast exists for."""
+    coders = [getattr(vae, name, None) for name in ("encoder", "decoder")]
+    if (
+        getattr(torch.version, "hip", None) is None
+        or torch.backends.cudnn.enabled
+        or getattr(vae, "dtype", None) != torch.float16
+        or any(not isinstance(coder, torch.nn.Module) for coder in coders)
+    ):
+        return False
+    for coder in coders:
+        coder.to(dtype=torch.bfloat16)
+        coder.register_forward_pre_hook(lambda module, args: (args[0].to(torch.bfloat16), *args[1:]))
+        coder.register_forward_hook(lambda module, args, output: output.to(torch.float16))
+    vae.register_to_config(force_upcast=False)
+    return True
+
+
+def _band_native_vae_convolutions(vae: Any, torch: Any) -> int:
+    if getattr(torch.version, "hip", None) is None or torch.backends.cudnn.enabled:
+        return 0
+    from media_chunked_convolution import chunk_large_convolutions
+
+    coders = [getattr(vae, name, None) for name in ("encoder", "decoder")]
+    return sum(chunk_large_convolutions(coder) for coder in coders if isinstance(coder, torch.nn.Module))
 
 
 def _configure_large_image_vae_decode(
@@ -2074,9 +2128,11 @@ def _configure_large_image_vae_decode(
     height: int,
     device_memory: int | None,
 ) -> dict[str, Any]:
-    enabled, tile_size, native_sdxl_decode = _image_vae_decode_settings(architecture, torch, width, height, device_memory)
+    enabled, tile_size = _image_vae_decode_settings(architecture, width, height, device_memory)
     qwen_decode = architecture in ("qwen-image-2.1", "qwen-image-2.1-turbo")
     vae = getattr(pipeline, "vae", None)
+    bfloat16_coders = vae is not None and _run_half_precision_vae_in_bfloat16(vae, torch)
+    banded_convolutions = _band_native_vae_convolutions(vae, torch) if vae is not None else 0
     enable_tiling = getattr(vae, "enable_tiling", None)
     if enabled and not callable(enable_tiling):
         raise WorkerError(
@@ -2094,7 +2150,7 @@ def _configure_large_image_vae_decode(
             vae.disable_tiling()
     elif enabled:
         enable_tiling()
-        if architecture == "flux-2" or native_sdxl_decode:
+        if architecture == "flux-2":
             vae.tile_sample_min_size = 512
             vae.tile_latent_min_size = 64
     post_quant_backend = "native"
@@ -2134,6 +2190,8 @@ def _configure_large_image_vae_decode(
             "tileStride": tile_size * 3 // 4 if enabled else None,
         } if qwen_decode else {}),
         "postQuantBackend": post_quant_backend,
+        "coderDtype": "bfloat16" if bfloat16_coders else str(getattr(vae, "dtype", None)).removeprefix("torch."),
+        "bandedConvolutions": banded_convolutions,
         "device": (
             "cpu"
             if enabled
@@ -2142,6 +2200,55 @@ def _configure_large_image_vae_decode(
             else "pipeline"
         ),
     }
+
+
+def _transformer_fits_on_device(model_path: Path, dtype: Any, device_memory: int | None) -> bool:
+    if device_memory is None:
+        return False
+    from fizgig.utils.safetensors import ShardedSafetensorsReader
+
+    reader = ShardedSafetensorsReader(model_path / "transformer")
+    try:
+        transformer_bytes = sum(math.prod(spec.shape) for spec in reader.specs.values()) * dtype.itemsize
+    finally:
+        reader.close()
+    return transformer_bytes + RESIDENT_TRANSFORMER_RESERVE_BYTES <= device_memory
+
+
+def _configure_resident_transformer(pipeline: Any, torch: Any) -> None:
+    onload_device = torch.device("cuda", torch.cuda.current_device())
+    pipeline.vae.to(onload_device)
+    for name, component in pipeline.components.items():
+        if name not in ("transformer", "vae") and isinstance(component, torch.nn.Module):
+            _stream_component_layers(component, onload_device, torch)
+
+
+def _stream_component_layers(component: Any, onload_device: Any, torch: Any) -> None:
+    """Streams a frozen component through the device one layer block at a time.
+
+    Block streaming needs the module that directly owns the layer list; encoders often nest it
+    (T5 keeps it in ``encoder.block``), so the largest layer list is located first and every
+    module beside the path to it streams leaf by leaf."""
+    from diffusers.hooks import apply_group_offloading
+
+    owners = {
+        name: module for name, module in component.named_modules()
+        if any(isinstance(child, torch.nn.ModuleList) for child in module.children())
+    }
+    options = {"onload_device": onload_device, "offload_device": torch.device("cpu"), "non_blocking": True,
+               "use_stream": True, "record_stream": True, "low_cpu_mem_usage": True}
+    if not owners:
+        apply_group_offloading(component, offload_type="leaf_level", **options)
+        return
+    owner_name = max(owners, key=lambda name: sum(parameter.numel() for parameter in owners[name].parameters()))
+    apply_group_offloading(owners[owner_name], offload_type="block_level", num_blocks_per_group=1, **options)
+    path = owner_name.split(".") if owner_name else []
+    ancestor = component
+    for step in path:
+        for child_name, child in ancestor.named_children():
+            if child_name != step and any(True for _ in child.parameters()):
+                apply_group_offloading(child, offload_type="leaf_level", **options)
+        ancestor = getattr(ancestor, step)
 
 
 def _configure_image_group_offload(pipeline: Any, torch: Any) -> None:
@@ -2909,7 +3016,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         "controlnetPath": str(controlnet_path) if controlnet_path is not None else None,
         "ipAdapterPath": request.get("ipAdapterPath") if ip_adapter_references else None,
         "references": [{"role": item["role"], "influence": item["influence"]} for item in references] if ip_adapter_references else [],
-        "vaeDecode": _image_vae_decode_settings(architecture, torch, width, height, device_memory),
+        "vaeDecode": _image_vae_decode_settings(architecture, width, height, device_memory),
         "memoryProfile": request.get("memoryProfile"),
     }) if cache is not None else None
     if krea_checkpoint:
@@ -2986,7 +3093,10 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                     "flux-1", "flux-2-dev",
                     "krea-2-raw", "krea-2-turbo",
                 ) or sampling_architecture == "stable-diffusion-3.5-large-turbo":
-                    _configure_image_group_offload(pipeline, torch)
+                    if pipeline.transformer.device.type == "cuda":
+                        _configure_resident_transformer(pipeline, torch)
+                    else:
+                        _configure_image_group_offload(pipeline, torch)
                 else:
                     pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
             else:
@@ -4543,7 +4653,10 @@ def _load_video_addons(transformer: Any, addons: list[dict[str, Any]]) -> list[d
         raise WorkerError("Video LoRA runtime is unavailable")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.load_loras(transformer, addons, _lora_profile)
+    applied = module.load_loras(transformer, addons, _lora_profile)
+    if applied and _lora_layers_fusable([transformer]):
+        transformer.fuse_lora(adapter_names=[addon["adapterName"] for addon in applied])
+    return applied
 
 
 def _load_framepack_pipeline(
@@ -9024,7 +9137,7 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
         width=width,
         height=height,
         frames=frames,
-        steps=steps + 1,
+        steps=steps,
         seed=seed,
         swap_blocks=44,
         ref_mods=ref_mods,

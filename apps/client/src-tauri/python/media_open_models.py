@@ -11,7 +11,8 @@ PROFILES = {
 }
 
 
-def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_conditioned: bool = False) -> Any:
+def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_conditioned: bool = False,
+                  transformer_device: str | None = None) -> Any:
     profile = PROFILES[model["architecture"]]
     if model.get("packageKind") != "diffusers-directory":
         raise ValueError(f"{profile['displayName']} requires a complete Diffusers model folder")
@@ -82,6 +83,11 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
             str(root / "language_model"), dtype=dtype,
             local_files_only=True, use_safetensors=True, trust_remote_code=False,
         )
+    if transformer_device is not None:
+        options["transformer"] = getattr(diffusers, index["transformer"][1]).from_pretrained(
+            str(root / "transformer"), torch_dtype=dtype, device_map=transformer_device,
+            local_files_only=True, use_safetensors=True,
+        )
     if profile["pipeline"] == "Flux2KleinPipeline":
         options["is_distilled"] = profile["fixedSteps"]
     if profile["architecture"] == "krea-2-raw":
@@ -103,8 +109,9 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
     elif profile["family"] == "Wan":
         import torch
 
+        vae_dtype = torch.bfloat16 if dtype != torch.float32 and torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float32
         dtype = {"transformer": dtype, "transformer_2": dtype, "text_encoder": dtype,
-                 "vae": torch.float32, "default": dtype}
+                 "vae": vae_dtype, "default": dtype}
     pipeline = pipeline_class.from_pretrained(
         str(root), dtype=dtype, local_files_only=True,
         use_safetensors=True, trust_remote_code=False, **options,
