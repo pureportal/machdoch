@@ -31,6 +31,7 @@ from PIL import Image, ImageOps
 import media_open_models
 import media_image_sampling
 import media_lycoris
+import media_lora_state
 
 WORKER_VERSION = "media-diffusers-worker/1.113.0"
 OFFLOAD_CACHE_COMPATIBILITY_VERSION = "media-diffusers-worker/1.19.0"
@@ -1624,6 +1625,145 @@ def _lora_profile(
     return observed
 
 
+def _verified_addon(addon: dict[str, Any]) -> tuple[str, Path, str, str]:
+    kind = _required_text(addon, "kind", 64)
+    path = _absolute_existing_path(addon.get("path"), file=True)
+    addon_id = _required_text(addon, "addonId", 256)
+    digest = _required_text(addon, "digest", 64)
+    if len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        raise WorkerError(f"Model add-on {addon_id} has an invalid immutable digest")
+    if _sha256_file(path) != digest:
+        raise WorkerError(
+            f"Model add-on {addon_id} changed after desktop integrity verification"
+        )
+    return kind, path, addon_id, digest
+
+
+def _load_lora_addon(
+    pipeline: Any, addon: dict[str, Any], path: Path, addon_id: str, digest: str
+) -> tuple[str, float | dict[str, float], dict[str, float] | None, dict[str, Any]]:
+    if not hasattr(pipeline, "load_lora_weights"):
+        raise WorkerError("The selected pipeline does not expose LoRA loading")
+    name = f"machdoch_{digest[:16]}"
+    target_components = addon.get("targetComponents")
+    if (
+        not isinstance(target_components, list)
+        or not target_components
+        or any(not isinstance(component, str) for component in target_components)
+    ):
+        raise WorkerError(f"LoRA {addon_id} has no inspected target inventory")
+    from safetensors import safe_open
+
+    with safe_open(str(path), framework="pt", device="cpu") as tensor_file:
+        tensor_shapes = {
+            key: tuple(int(value) for value in tensor_file.get_slice(key).get_shape())
+            for key in tensor_file.keys()
+        }
+    lora_profile = _lora_profile(addon, tensor_shapes)
+    if lora_profile["algorithm"] in ("lokr", "loha"):
+        try:
+            media_lycoris.load_lycoris(pipeline, path, name, target_components)
+        except media_lycoris.LycorisError as error:
+            raise WorkerError(f"LoRA {addon_id}: {error}") from error
+    elif any(component.startswith("text-encoder") for component in target_components):
+        module_path = Path(__file__).with_name("media_image_addons.py")
+        spec = importlib.util.spec_from_file_location("media_image_addons", module_path)
+        if spec is None or spec.loader is None:
+            raise WorkerError("Image LoRA runtime is unavailable")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.load_text_encoder_lora(pipeline, *_lora_source(path, tensor_shapes), name, target_components)
+    elif getattr(pipeline, "_machdoch_krea_text_root", None) is not None:
+        _load_krea_lora(pipeline, path, name)
+    else:
+        source, options = _lora_source(path, tensor_shapes)
+        pipeline.load_lora_weights(
+            source,
+            adapter_name=name,
+            low_cpu_mem_usage=True,
+            **options,
+        )
+    # PEFT initializes adapter matrices from the base layer's dtype. For
+    # scaled-FP8 KREA checkpoints that would leave LoRA A/B in FP8 and
+    # route them through ordinary addmm, which ROCm intentionally does
+    # not implement. The frozen base still uses its checkpoint scale
+    # through _scaled_mm; adapters are small and compute in BF16.
+    if getattr(pipeline, "_machdoch_krea_text_root", None) is not None:
+        import torch
+
+        cast_adapter_modules = 0
+        for component in pipeline.components.values():
+            if not isinstance(component, torch.nn.Module):
+                continue
+            for module in component.modules():
+                for collection_name in (
+                    "lora_A",
+                    "lora_B",
+                    "lora_embedding_A",
+                    "lora_embedding_B",
+                ):
+                    collection = getattr(module, collection_name, None)
+                    if collection is None or name not in collection:
+                        continue
+                    adapter_module = collection[name]
+                    if isinstance(adapter_module, torch.nn.Module):
+                        adapter_module.to(dtype=torch.bfloat16)
+                    elif isinstance(adapter_module, torch.nn.Parameter):
+                        adapter_module.data = adapter_module.data.to(
+                            dtype=torch.bfloat16
+                        )
+                    cast_adapter_modules += 1
+        if cast_adapter_modules == 0:
+            raise WorkerError(
+                f"LoRA {addon_id} registered no BF16 adapter matrices"
+            )
+    loaded_components = _confirmed_lora_components(
+        pipeline, name, target_components
+    )
+    model_strength = float(addon.get("modelStrength", 1.0))
+    text_strength = addon.get("textEncoderStrength")
+    schedule = _lora_denoising_schedule(
+        addon, addon_id, target_components, text_strength
+    )
+    if text_strength is None:
+        weight: float | dict[str, float] = model_strength
+    else:
+        runtime_components = {
+            "denoiser": "unet" if hasattr(pipeline, "unet") else "transformer",
+            "text-encoder": "text_encoder",
+            "text-encoder-2": "text_encoder_2",
+        }
+        if not any(
+            component in ("text-encoder", "text-encoder-2")
+            for component in target_components
+        ):
+            raise WorkerError(
+                f"LoRA {addon_id} does not target a text encoder"
+            )
+        weight = {
+            runtime_components[component]: (
+                model_strength
+                if component == "denoiser"
+                else float(text_strength)
+            )
+            for component in target_components
+        }
+    return name, weight, schedule, {
+        "kind": "lora",
+        "addonId": addon_id,
+        "digest": digest,
+        "modelStrength": model_strength,
+        "textEncoderStrength": text_strength,
+        "denoisingSchedule": schedule,
+        "scheduleApplied": schedule is not None,
+        "adapterName": name,
+        "loadedComponents": loaded_components,
+        "loraProfile": lora_profile,
+    }
+
+
 def _apply_addons(
     pipeline: Any,
     addons: list[dict[str, Any]],
@@ -1645,142 +1785,13 @@ def _apply_addons(
     for addon in addons:
         if not addon.get("enabled", True):
             continue
-        kind = _required_text(addon, "kind", 64)
-        path = _absolute_existing_path(addon.get("path"), file=True)
-        addon_id = _required_text(addon, "addonId", 256)
-        digest = _required_text(addon, "digest", 64)
-        if len(digest) != 64 or any(
-            character not in "0123456789abcdef" for character in digest
-        ):
-            raise WorkerError(f"Model add-on {addon_id} has an invalid immutable digest")
-        if _sha256_file(path) != digest:
-            raise WorkerError(
-                f"Model add-on {addon_id} changed after desktop integrity verification"
-            )
+        kind, path, addon_id, digest = _verified_addon(addon)
         if kind == "lora":
-            if not hasattr(pipeline, "load_lora_weights"):
-                raise WorkerError("The selected pipeline does not expose LoRA loading")
-            name = f"machdoch_{digest[:16]}"
-            target_components = addon.get("targetComponents")
-            if (
-                not isinstance(target_components, list)
-                or not target_components
-                or any(not isinstance(component, str) for component in target_components)
-            ):
-                raise WorkerError(f"LoRA {addon_id} has no inspected target inventory")
-            from safetensors import safe_open
-
-            with safe_open(str(path), framework="pt", device="cpu") as tensor_file:
-                tensor_shapes = {
-                    key: tuple(int(value) for value in tensor_file.get_slice(key).get_shape())
-                    for key in tensor_file.keys()
-                }
-            lora_profile = _lora_profile(addon, tensor_shapes)
-            if lora_profile["algorithm"] in ("lokr", "loha"):
-                try:
-                    media_lycoris.load_lycoris(pipeline, path, name, target_components)
-                except media_lycoris.LycorisError as error:
-                    raise WorkerError(f"LoRA {addon_id}: {error}") from error
-            elif any(component.startswith("text-encoder") for component in target_components):
-                module_path = Path(__file__).with_name("media_image_addons.py")
-                spec = importlib.util.spec_from_file_location("media_image_addons", module_path)
-                if spec is None or spec.loader is None:
-                    raise WorkerError("Image LoRA runtime is unavailable")
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                module.load_text_encoder_lora(pipeline, *_lora_source(path, tensor_shapes), name, target_components)
-            elif getattr(pipeline, "_machdoch_krea_text_root", None) is not None:
-                _load_krea_lora(pipeline, path, name)
-            else:
-                source, options = _lora_source(path, tensor_shapes)
-                pipeline.load_lora_weights(
-                    source,
-                    adapter_name=name,
-                    low_cpu_mem_usage=True,
-                    **options,
-                )
-            # PEFT initializes adapter matrices from the base layer's dtype. For
-            # scaled-FP8 KREA checkpoints that would leave LoRA A/B in FP8 and
-            # route them through ordinary addmm, which ROCm intentionally does
-            # not implement. The frozen base still uses its checkpoint scale
-            # through _scaled_mm; adapters are small and compute in BF16.
-            if getattr(pipeline, "_machdoch_krea_text_root", None) is not None:
-                import torch
-
-                cast_adapter_modules = 0
-                for component in pipeline.components.values():
-                    if not isinstance(component, torch.nn.Module):
-                        continue
-                    for module in component.modules():
-                        for collection_name in (
-                            "lora_A",
-                            "lora_B",
-                            "lora_embedding_A",
-                            "lora_embedding_B",
-                        ):
-                            collection = getattr(module, collection_name, None)
-                            if collection is None or name not in collection:
-                                continue
-                            adapter_module = collection[name]
-                            if isinstance(adapter_module, torch.nn.Module):
-                                adapter_module.to(dtype=torch.bfloat16)
-                            elif isinstance(adapter_module, torch.nn.Parameter):
-                                adapter_module.data = adapter_module.data.to(
-                                    dtype=torch.bfloat16
-                                )
-                            cast_adapter_modules += 1
-                if cast_adapter_modules == 0:
-                    raise WorkerError(
-                        f"LoRA {addon_id} registered no BF16 adapter matrices"
-                    )
-            loaded_components = _confirmed_lora_components(
-                pipeline, name, target_components
-            )
-            model_strength = float(addon.get("modelStrength", 1.0))
-            text_strength = addon.get("textEncoderStrength")
-            schedule = _lora_denoising_schedule(
-                addon, addon_id, target_components, text_strength
-            )
-            if text_strength is None:
-                weight: float | dict[str, float] = model_strength
-            else:
-                runtime_components = {
-                    "denoiser": "unet" if hasattr(pipeline, "unet") else "transformer",
-                    "text-encoder": "text_encoder",
-                    "text-encoder-2": "text_encoder_2",
-                }
-                if not any(
-                    component in ("text-encoder", "text-encoder-2")
-                    for component in target_components
-                ):
-                    raise WorkerError(
-                        f"LoRA {addon_id} does not target a text encoder"
-                    )
-                weight = {
-                    runtime_components[component]: (
-                        model_strength
-                        if component == "denoiser"
-                        else float(text_strength)
-                    )
-                    for component in target_components
-                }
+            name, weight, schedule, evidence = _load_lora_addon(pipeline, addon, path, addon_id, digest)
             lora_names.append(name)
             lora_weights.append(weight)
             lora_schedules.append(schedule)
-            applied.append(
-                {
-                    "kind": kind,
-                    "addonId": addon_id,
-                    "digest": digest,
-                    "modelStrength": model_strength,
-                    "textEncoderStrength": text_strength,
-                    "denoisingSchedule": schedule,
-                    "scheduleApplied": schedule is not None,
-                    "adapterName": name,
-                    "loadedComponents": loaded_components,
-                    "loraProfile": lora_profile,
-                }
-            )
+            applied.append(evidence)
         elif kind == "textual-inversion":
             token = _required_text(addon, "token", 128)
             if token in tokens or _token_exists(pipeline, token):
@@ -1841,22 +1852,6 @@ def _apply_addons(
             )
         else:
             raise WorkerError(f"Unsupported model add-on kind: {kind}")
-    if lora_names:
-        if not hasattr(pipeline, "set_adapters"):
-            raise WorkerError("The selected pipeline cannot activate multiple named LoRAs")
-        pipeline.set_adapters(
-            lora_names,
-            adapter_weights=_lora_weights_at_progress(
-                lora_weights, lora_schedules, 0.0
-            ),
-        )
-        if (
-            all(schedule is None for schedule in lora_schedules)
-            and hasattr(pipeline, "fuse_lora")
-            and getattr(pipeline, "_machdoch_krea_text_root", None) is None
-            and _lora_layers_fusable(list(pipeline.components.values()))
-        ):
-            pipeline.fuse_lora(adapter_names=lora_names, lora_scale=1.0)
     _verify_embedding_prompt_tokens(pipeline, applied, prompt, negative_prompt)
     return (
         prompt,
@@ -1865,6 +1860,82 @@ def _apply_addons(
         lora_names,
         lora_weights,
         lora_schedules,
+    )
+
+
+def _activate_loras(
+    pipeline: Any,
+    names: list[str],
+    weights: list[float | dict[str, float]],
+    schedules: list[dict[str, float] | None],
+) -> list[tuple[Any, Any]]:
+    if not names:
+        return []
+    if not hasattr(pipeline, "set_adapters"):
+        raise WorkerError("The selected pipeline cannot activate multiple named LoRAs")
+    pipeline.set_adapters(names, adapter_weights=_lora_weights_at_progress(weights, schedules, 0.0))
+    components = list(pipeline.components.values())
+    if (
+        any(schedule is not None for schedule in schedules)
+        or getattr(pipeline, "_machdoch_krea_text_root", None) is not None
+        or not _lora_layers_fusable(components)
+        or not media_lora_state.tuner_bases_on_cpu(components)
+    ):
+        return []
+    snapshot = media_lora_state.snapshot_tuner_bases(components)
+    media_lora_state.fuse_tuner_layers(components, names)
+    return snapshot
+
+
+def _release_loras(pipeline: Any, names: list[str], snapshot: list[tuple[Any, Any]]) -> None:
+    if not names:
+        return
+    media_lora_state.restore_tuner_bases(snapshot)
+    pipeline.unload_lora_weights()
+
+
+def _lora_swap_supported(
+    placement: str, applied: list[dict[str, Any]], requested: list[dict[str, Any]]
+) -> bool:
+    if placement == "model-offload":
+        return True
+    return (
+        placement == "resident"
+        and all(item["loadedComponents"] == ["denoiser"] for item in applied if item["kind"] == "lora")
+        and all(addon.get("targetComponents") == ["denoiser"] for addon in requested)
+    )
+
+
+def _swap_cached_loras(
+    pipeline: Any, cached: dict[str, Any], addons: list[dict[str, Any]], lora_addons: list[dict[str, Any]]
+) -> None:
+    _release_loras(pipeline, cached["loraNames"], cached["loraSnapshot"])
+    cached["loraSnapshot"] = []
+    names: list[str] = []
+    weights: list[float | dict[str, float]] = []
+    schedules: list[dict[str, float] | None] = []
+    loaded: list[dict[str, Any]] = []
+    for addon in lora_addons:
+        _, path, addon_id, digest = _verified_addon(addon)
+        name, weight, schedule, evidence = _load_lora_addon(pipeline, addon, path, addon_id, digest)
+        names.append(name)
+        weights.append(weight)
+        schedules.append(schedule)
+        loaded.append(evidence)
+    snapshot = _activate_loras(pipeline, names, weights, schedules)
+    embeddings = iter([item for item in cached["addons"] if item["kind"] != "lora"])
+    loras = iter(loaded)
+    cached.update(
+        addons=[
+            next(loras) if addon.get("kind") == "lora" else next(embeddings)
+            for addon in addons
+            if addon.get("enabled", True)
+        ],
+        loraRequest=lora_addons,
+        loraNames=names,
+        loraWeights=weights,
+        loraSchedules=schedules,
+        loraSnapshot=snapshot,
     )
 
 
@@ -2120,6 +2191,15 @@ def _band_native_vae_convolutions(vae: Any, torch: Any) -> int:
     return sum(chunk_large_convolutions(coder) for coder in coders if isinstance(coder, torch.nn.Module))
 
 
+def _prepare_image_vae(pipeline: Any, torch: Any) -> dict[str, Any]:
+    vae = getattr(pipeline, "vae", None)
+    bfloat16_coders = vae is not None and _run_half_precision_vae_in_bfloat16(vae, torch)
+    return {
+        "coderDtype": "bfloat16" if bfloat16_coders else str(getattr(vae, "dtype", None)).removeprefix("torch."),
+        "bandedConvolutions": _band_native_vae_convolutions(vae, torch) if vae is not None else 0,
+    }
+
+
 def _configure_large_image_vae_decode(
     pipeline: Any,
     architecture: str,
@@ -2131,8 +2211,6 @@ def _configure_large_image_vae_decode(
     enabled, tile_size = _image_vae_decode_settings(architecture, width, height, device_memory)
     qwen_decode = architecture in ("qwen-image-2.1", "qwen-image-2.1-turbo")
     vae = getattr(pipeline, "vae", None)
-    bfloat16_coders = vae is not None and _run_half_precision_vae_in_bfloat16(vae, torch)
-    banded_convolutions = _band_native_vae_convolutions(vae, torch) if vae is not None else 0
     enable_tiling = getattr(vae, "enable_tiling", None)
     if enabled and not callable(enable_tiling):
         raise WorkerError(
@@ -2153,8 +2231,12 @@ def _configure_large_image_vae_decode(
         if architecture == "flux-2":
             vae.tile_sample_min_size = 512
             vae.tile_latent_min_size = 64
+    elif callable(getattr(vae, "disable_tiling", None)):
+        vae.disable_tiling()
     post_quant_backend = "native"
     post_quant = getattr(vae, "post_quant_conv", None)
+    if post_quant is not None:
+        vars(post_quant).pop("forward", None)
     if (
         enabled
         and architecture == "flux-2"
@@ -2190,8 +2272,6 @@ def _configure_large_image_vae_decode(
             "tileStride": tile_size * 3 // 4 if enabled else None,
         } if qwen_decode else {}),
         "postQuantBackend": post_quant_backend,
-        "coderDtype": "bfloat16" if bfloat16_coders else str(getattr(vae, "dtype", None)).removeprefix("torch."),
-        "bandedConvolutions": banded_convolutions,
         "device": (
             "cpu"
             if enabled
@@ -3008,17 +3088,27 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                 .crop(masked_context["bounds"])
                 .resize((width, height), Image.Resampling.LANCZOS)
             )
-    cached = cache.acquire({
+    lora_addons = [] if krea_checkpoint else [
+        addon for addon in addons if addon.get("kind") == "lora" and addon.get("enabled", True)
+    ]
+    base_configuration = {
         "model": model,
-        "addons": addons,
+        "addons": addons if krea_checkpoint else [addon for addon in addons if addon.get("kind") != "lora"],
         "inpainting": mask_image is not None,
         "imageToImage": primary_reference_image is not None,
         "controlnetPath": str(controlnet_path) if controlnet_path is not None else None,
         "ipAdapterPath": request.get("ipAdapterPath") if ip_adapter_references else None,
         "references": [{"role": item["role"], "influence": item["influence"]} for item in references] if ip_adapter_references else [],
-        "vaeDecode": _image_vae_decode_settings(architecture, width, height, device_memory),
         "memoryProfile": request.get("memoryProfile"),
-    }) if cache is not None else None
+    }
+    cached = cache.acquire(base_configuration) if cache is not None else None
+    if (
+        cached is not None
+        and cached["loraRequest"] != lora_addons
+        and not _lora_swap_supported(cached["placement"], cached["addons"], lora_addons)
+    ):
+        cache.clear()
+        cached = cache.acquire(base_configuration)
     if krea_checkpoint:
         config_path = _absolute_existing_path(model.get("configPath"), file=False)
         krea_text_root, _ = _krea_runtime_paths(config_path)
@@ -3067,26 +3157,23 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         if ip_adapter_references:
             adapter_root = _absolute_existing_path(request.get("ipAdapterPath"), file=False)
             _load_image_conditioning().load_ip_adapter(pipeline, adapter_root, architecture, references)
-        vae_decode_evidence = _configure_large_image_vae_decode(
-            pipeline,
-            architecture,
-            torch,
-            width,
-            height,
-            device_memory,
-        )
-        vae_decode_evidence["convolutionBackend"] = convolution_backend
+        media_lora_state.freeze_pipeline(pipeline)
+        vae_preparation = _prepare_image_vae(pipeline, torch)
         (
             prompt, negative_prompt, applied, lora_names, lora_weights, lora_schedules,
         ) = _apply_addons(
             pipeline, addons, prompt, negative_prompt
         )
+        lora_snapshot = _activate_loras(pipeline, lora_names, lora_weights, lora_schedules)
+        placement = "custom"
         if architecture == "anima":
             pipeline.to(runtime_device)
+            placement = "device"
         elif not krea_checkpoint and architecture not in ("hunyuan-image-3", "flux-3-image-klein"):
             if runtime_device == "cuda":
                 if architecture in ("flux-1-dev", "flux-1-schnell"):
                     pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
+                    placement = "model-offload"
                 elif architecture in (
                     "z-image", "z-image-turbo", "qwen-image", "qwen-image-2512",
                     "qwen-image-2.1", "qwen-image-2.1-turbo",
@@ -3095,12 +3182,15 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                 ) or sampling_architecture == "stable-diffusion-3.5-large-turbo":
                     if pipeline.transformer.device.type == "cuda":
                         _configure_resident_transformer(pipeline, torch)
+                        placement = "resident"
                     else:
                         _configure_image_group_offload(pipeline, torch)
                 else:
                     pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
+                    placement = "model-offload"
             else:
                 pipeline.to(runtime_device)
+                placement = "device"
         elif krea_checkpoint:
             krea_performance_evidence = _configure_krea_offload(
                 pipeline, torch, model, addons, request.get("memoryProfile"),
@@ -3109,17 +3199,23 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         if cache is not None:
             cache.store({
                 "pipeline": pipeline,
-                "vaeDecode": vae_decode_evidence,
+                "placement": placement,
+                "vaePreparation": vae_preparation,
                 "addons": applied,
+                "loraRequest": lora_addons,
                 "loraNames": lora_names,
                 "loraWeights": lora_weights,
                 "loraSchedules": lora_schedules,
+                "loraSnapshot": lora_snapshot,
                 "performance": krea_performance_evidence,
             })
     else:
         _progress("Preparing image", 0.08)
         pipeline = cached["pipeline"]
-        vae_decode_evidence = cached["vaeDecode"]
+        if cached["loraRequest"] != lora_addons:
+            _progress("Switching LoRAs", 0.08)
+            _swap_cached_loras(pipeline, cached, addons, lora_addons)
+        vae_preparation = cached["vaePreparation"]
         applied = cached["addons"]
         lora_names = cached["loraNames"]
         lora_weights = cached["loraWeights"]
@@ -3132,6 +3228,11 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                 if addon["placement"] in ("negative", "both"):
                     negative_prompt = _append_token(negative_prompt, addon["token"])
         _verify_embedding_prompt_tokens(pipeline, applied, prompt, negative_prompt)
+    vae_decode_evidence = {
+        **_configure_large_image_vae_decode(pipeline, architecture, torch, width, height, device_memory),
+        **vae_preparation,
+        "convolutionBackend": convolution_backend,
+    }
     media_image_sampling.configure_sampler(pipeline, diffusers, sampling_architecture, request.get("sampling", {}).get("sampler"))
     edit_strength = request.get("editStrength", 0.5)
     if primary_reference_image is not None:
@@ -4646,17 +4747,39 @@ def _load_framepack_transformer(
     ), cached_checkpoint is not None
 
 
-def _load_video_addons(transformer: Any, addons: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _injected_video_loras(transformer: Any, addons: list[dict[str, Any]]) -> list[dict[str, Any]]:
     path = Path(__file__).with_name("media_video_addons.py")
     spec = importlib.util.spec_from_file_location("media_video_addons", path)
     if spec is None or spec.loader is None:
         raise WorkerError("Video LoRA runtime is unavailable")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    applied = module.load_loras(transformer, addons, _lora_profile)
+    return module.load_loras(transformer, addons, _lora_profile)
+
+
+def _load_video_addons(transformer: Any, addons: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    applied = _injected_video_loras(transformer, addons)
     if applied and _lora_layers_fusable([transformer]):
-        transformer.fuse_lora(adapter_names=[addon["adapterName"] for addon in applied])
+        media_lora_state.fuse_tuner_layers([transformer], [addon["adapterName"] for addon in applied])
     return applied
+
+
+def _load_swappable_video_addons(
+    transformer: Any, addons: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[tuple[Any, Any]]]:
+    applied = _injected_video_loras(transformer, addons)
+    if not applied or not _lora_layers_fusable([transformer]) or not media_lora_state.tuner_bases_on_cpu([transformer]):
+        return applied, []
+    snapshot = media_lora_state.snapshot_tuner_bases([transformer])
+    media_lora_state.fuse_tuner_layers([transformer], [addon["adapterName"] for addon in applied])
+    return applied, snapshot
+
+
+def _release_video_loras(transformer: Any, applied: list[dict[str, Any]], snapshot: list[tuple[Any, Any]]) -> None:
+    if not any(addon["kind"] == "lora" for addon in applied):
+        return
+    media_lora_state.restore_tuner_bases(snapshot)
+    transformer.unload_lora()
 
 
 def _load_framepack_pipeline(

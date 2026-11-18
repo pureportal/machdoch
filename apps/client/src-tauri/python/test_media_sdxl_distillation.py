@@ -30,8 +30,10 @@ class SDXLStudentTests(unittest.TestCase):
         rocm = SimpleNamespace(version=SimpleNamespace(hip="7.14"), nn=torch.nn,
                                backends=SimpleNamespace(cudnn=SimpleNamespace(enabled=False)),
                                float16=torch.float16, bfloat16=torch.bfloat16)
+        pipeline = SimpleNamespace(vae=vae)
+        preparation = worker._prepare_image_vae(pipeline, rocm)
         evidence = worker._configure_large_image_vae_decode(
-            SimpleNamespace(vae=vae), "stable-diffusion-xl-dmad-4step", rocm, 1024, 768, 16 * 1024 ** 3,
+            pipeline, "stable-diffusion-xl-dmad-4step", rocm, 1024, 768, 16 * 1024 ** 3,
         )
         latents = torch.randn(1, 4, 32, 24)
         with torch.no_grad():
@@ -45,8 +47,8 @@ class SDXLStudentTests(unittest.TestCase):
         self.assertFalse(vae.config.force_upcast)
         self.assertLess((decoded.float() - expected).abs().mean().item(), 0.01)
         self.assertEqual(evidence["mode"], "native-full-frame")
-        self.assertEqual(evidence["coderDtype"], "bfloat16")
-        self.assertGreater(evidence["bandedConvolutions"], 0)
+        self.assertEqual(preparation["coderDtype"], "bfloat16")
+        self.assertGreater(preparation["bandedConvolutions"], 0)
         self.assertEqual(evidence["device"], "pipeline")
 
     def test_spectral_weights_use_the_first_forward_power_iteration_and_gain(self):

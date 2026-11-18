@@ -54,11 +54,13 @@ class KreaCheckpointLoadingTests(unittest.TestCase):
                         "_krea_runtime_paths": (root, root),
                         "_load_image_conditioning": SimpleNamespace(encode_krea_prompts=encode),
                         "_configure_large_image_vae_decode": {"device": "cuda"},
+                        "_prepare_image_vae": {},
                         "_apply_addons": ("A red teapot", "blurry", [], [], [], []),
                         "_configure_krea_offload": {}, "_package_versions": {}, "_progress": None,
                         "_validate_generated_pixels": None,
                     }.items():
                         patches.enter_context(patch.object(worker, name, return_value=value))
+                    patches.enter_context(patch.object(worker.media_lora_state, "freeze_pipeline"))
                     patches.enter_context(patch.object(torch.cuda, "current_device", return_value=0))
                     patches.enter_context(patch.object(torch, "device", return_value=cpu))
                     result = worker.generate(request)

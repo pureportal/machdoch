@@ -12,6 +12,7 @@ import wave
 import numpy as np
 from PIL import Image, ImageOps
 
+import media_lora_state
 import media_open_models
 
 
@@ -59,12 +60,15 @@ def _prepare_pipeline(request, profile, arguments, model, dtype, device, diffuse
     )
     pipeline = media_open_models.load_pipeline(diffusers, model, dtype, image_conditioned="image" in arguments,
                                                transformer_device="cuda" if resident else None)
+    media_lora_state.freeze_pipeline(pipeline)
     applied_addons = []
+    lora_snapshot = []
     if profile["family"] == "CogVideoX" or profile["architecture"] == "wan-2.1-t2v-1.3b":
         addons = request.get("addons", [])
         if any(addon.get("kind") not in ("lora", "textual-inversion") for addon in addons):
             raise ValueError("Choose video LoRAs or embeddings.")
-        applied_addons = worker._load_video_addons(pipeline.transformer, [addon for addon in addons if addon["kind"] == "lora"])
+        applied_addons, lora_snapshot = worker._load_swappable_video_addons(
+            pipeline.transformer, [addon for addon in addons if addon["kind"] == "lora"])
         embeddings = [addon for addon in addons if addon["kind"] == "textual-inversion"]
         if embeddings:
             if len(embeddings) > 16:
@@ -72,15 +76,19 @@ def _prepare_pipeline(request, profile, arguments, model, dtype, device, diffuse
             prompt, negative, applied, *_ = worker._apply_addons(pipeline, embeddings, arguments["prompt"], arguments.get("negative_prompt", ""))
             arguments.update(prompt=prompt, negative_prompt=negative)
             applied_addons.extend(applied)
+    placement = "device"
     if device == "cuda":
         if request.get("memoryProfile") == "memory-saver":
             pipeline.enable_sequential_cpu_offload()
+            placement = "sequential-offload"
         elif request.get("memoryProfile") == "maximum-speed":
             pipeline.to(device)
         elif resident:
             worker._configure_resident_transformer(pipeline, torch)
+            placement = "resident"
         else:
             pipeline.enable_model_cpu_offload()
+            placement = "model-offload"
     else:
         pipeline.to(device)
     if profile["family"] == "CogVideoX":
@@ -89,23 +97,42 @@ def _prepare_pipeline(request, profile, arguments, model, dtype, device, diffuse
         enable_vae_tiling(pipeline)
     elif hasattr(pipeline.vae, "use_tiling"):
         pipeline.vae.enable_tiling()
-    return pipeline, applied_addons
+    return pipeline, applied_addons, lora_snapshot, placement
+
+
+def _swap_cached_loras(cached, lora_addons, worker):
+    transformer = cached["pipeline"].transformer
+    worker._release_video_loras(transformer, cached["addons"], cached["loraSnapshot"])
+    cached["loraSnapshot"] = []
+    loaded, snapshot = worker._load_swappable_video_addons(transformer, lora_addons)
+    cached.update(addons=loaded + [addon for addon in cached["addons"] if addon["kind"] != "lora"],
+                  loraRequest=lora_addons, loraSnapshot=snapshot)
 
 
 def _sample_pipeline(request, profile, arguments, model, dtype, device, diffusers, torch, worker, cache=None):
-    cached = cache.acquire({"command": "generate-video", "model": model, "dtype": str(dtype),
-        "addons": request.get("addons", []), "imageConditioned": "image" in arguments,
-        "width": arguments["width"], "height": arguments["height"],
-        "memoryProfile": request.get("memoryProfile")}) if cache is not None else None
+    addons = request.get("addons", [])
+    lora_addons = [addon for addon in addons if addon.get("kind") == "lora" and addon.get("enabled", True)]
+    base_configuration = {"command": "generate-video", "model": model, "dtype": str(dtype),
+        "addons": [addon for addon in addons if addon.get("kind") != "lora"], "imageConditioned": "image" in arguments,
+        "memoryProfile": request.get("memoryProfile")}
+    cached = cache.acquire(base_configuration) if cache is not None else None
+    if cached is not None and cached["loraRequest"] != lora_addons and cached["placement"] not in ("model-offload", "resident"):
+        cache.clear()
+        cached = cache.acquire(base_configuration)
     pipeline = None
     try:
         if cached is None:
             worker._progress("Loading video model", 0.04)
-            pipeline, applied_addons = _prepare_pipeline(request, profile, arguments, model, dtype, device, diffusers, torch, worker)
+            pipeline, applied_addons, lora_snapshot, placement = _prepare_pipeline(
+                request, profile, arguments, model, dtype, device, diffusers, torch, worker)
             if cache is not None:
-                cache.store({"pipeline": pipeline, "addons": deepcopy(applied_addons)})
+                cache.store({"pipeline": pipeline, "addons": deepcopy(applied_addons), "loraRequest": lora_addons,
+                             "loraSnapshot": lora_snapshot, "placement": placement})
         else:
             worker._progress("Preparing video", 0.04)
+            if cached["loraRequest"] != lora_addons:
+                worker._progress("Switching LoRAs", 0.04)
+                _swap_cached_loras(cached, lora_addons, worker)
             pipeline, applied_addons = cached["pipeline"], deepcopy(cached["addons"])
             prompt, negative = arguments.get("prompt", ""), arguments.get("negative_prompt", "")
             for addon in applied_addons:

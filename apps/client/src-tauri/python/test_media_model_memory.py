@@ -11,6 +11,7 @@ from unittest import mock
 import weakref
 
 from PIL import Image
+import torch as real_torch
 
 import media_diffusers_worker as worker
 from media_model_memory import ModelPipelineCache, GPU_MEMORY_ERROR, is_gpu_out_of_memory, memory_snapshot, retention_seconds
@@ -23,7 +24,7 @@ def fake_torch():
     cuda.memory_allocated.return_value = 128
     cuda.memory_reserved.return_value = 256
     cuda.current_device.return_value = 0
-    return SimpleNamespace(cuda=cuda, Generator=mock.Mock(), version=SimpleNamespace(hip=None),
+    return SimpleNamespace(cuda=cuda, Generator=mock.Mock(), version=SimpleNamespace(hip=None), nn=real_torch.nn,
                            device=mock.Mock(side_effect=lambda kind, index=None: (kind, index)))
 
 
@@ -119,7 +120,7 @@ class ModelMemoryTests(unittest.TestCase):
         torch.mps.synchronize.assert_called_once()
         torch.mps.empty_cache.assert_called_once()
 
-    def test_repeated_generation_loads_once_without_reusing_prompt_or_output(self):
+    def test_repeated_generation_and_resolution_changes_load_once_without_reusing_prompt_or_output(self):
         torch = fake_torch()
         cache = ModelPipelineCache(torch, "cuda")
         pipeline = Pipeline()
@@ -135,6 +136,7 @@ class ModelMemoryTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(worker, "_progress"))
             loader = stack.enter_context(mock.patch.object(worker, "_load_pipeline", return_value=pipeline))
             stack.enter_context(mock.patch.object(worker, "_configure_large_image_vae_decode", return_value={"device": "pipeline"}))
+            stack.enter_context(mock.patch.object(worker, "_prepare_image_vae", return_value={}))
             apply = stack.enter_context(mock.patch.object(worker, "_apply_addons", return_value=("first prompt, style_token", "style_token", addons, [], [], [])))
             stack.enter_context(mock.patch.object(worker, "_verify_embedding_prompt_tokens"))
             stack.enter_context(mock.patch.object(worker, "_package_versions", return_value={}))
@@ -160,7 +162,7 @@ class ModelMemoryTests(unittest.TestCase):
             self.assertTrue((first / "output-0000.png").is_file())
             self.assertTrue((second / "output-0000.png").is_file())
             worker.generate({**request, "sampling": {"width": 1280, "height": 640}, "outputDirectory": str(third)}, cache)
-            self.assertEqual(loader.call_count, 2)
+            self.assertEqual(loader.call_count, 1)
             cache.clear()
 
     def test_server_releases_models_on_error_and_end_of_input(self):
@@ -201,6 +203,7 @@ class ModelMemoryTests(unittest.TestCase):
                 torch = fake_torch()
                 pipeline = Pipeline()
                 pipeline.enable_group_offload = mock.Mock()
+                pipeline.transformer = SimpleNamespace(device=SimpleNamespace(type="cpu"))
                 parameter = SimpleNamespace(numel=lambda: 20 * 1024**3, element_size=lambda: 1)
                 pipeline.components = {"transformer": SimpleNamespace(parameters=lambda: [parameter])}
                 stack.enter_context(mock.patch.object(worker, "_physical_memory_bytes", return_value=32 * 1024**3))
@@ -209,6 +212,7 @@ class ModelMemoryTests(unittest.TestCase):
                 stack.enter_context(mock.patch.object(worker, "_progress"))
                 stack.enter_context(mock.patch.object(worker, "_load_pipeline", return_value=pipeline))
                 stack.enter_context(mock.patch.object(worker, "_configure_large_image_vae_decode", return_value={"device": "pipeline"}))
+                stack.enter_context(mock.patch.object(worker, "_prepare_image_vae", return_value={}))
                 stack.enter_context(mock.patch.object(worker, "_package_versions", return_value={}))
                 request = {
                     "schemaVersion": worker.SCHEMA_VERSION,
@@ -237,6 +241,7 @@ class ModelMemoryTests(unittest.TestCase):
                 stack.enter_context(mock.patch.object(worker, "_progress"))
                 stack.enter_context(mock.patch.object(worker, "_load_pipeline", return_value=pipeline))
                 stack.enter_context(mock.patch.object(worker, "_configure_large_image_vae_decode", return_value={"device": "pipeline"}))
+                stack.enter_context(mock.patch.object(worker, "_prepare_image_vae", return_value={}))
                 stack.enter_context(mock.patch.object(worker, "_package_versions", return_value={}))
                 response = worker.generate({"schemaVersion": worker.SCHEMA_VERSION, "model": {"architecture": architecture, "digest": "flux"}, "prompt": "A ceramic teapot", "negativePrompt": "", "outputCount": 1, "outputFormat": "png", "modelPolicy": "quality", "seed": 1, "aspectRatio": "1:1", "outputDirectory": directory})
                 pipeline.enable_group_offload.assert_not_called()

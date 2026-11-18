@@ -292,7 +292,7 @@ class OpenMediaModelTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             runtime._encode_video_webm = mock.Mock(return_value=(Path(directory, "video.webm"), {"durationSeconds": 0.3125}, None))
             request = {"schemaVersion": 1, "model": {"architecture": "wan-2.2-t2v-a14b", "revision": "revision", "digest": "digest"}, "prompt": "A bird flies", "numFrames": 5, "numInferenceSteps": 40, "guidanceScale": 4, "fps": 16, "seed": 1, "loopMode": "none", "aspectRatio": "16:9", "resolution": "preview-512", "outputDirectory": directory, "matteQuality": "production", "encodingQuality": "lossless"}
-            with mock.patch.object(models, "load_pipeline", return_value=pipeline):
+            with mock.patch.object(video.media_lora_state, "freeze_pipeline"), mock.patch.object(models, "load_pipeline", return_value=pipeline):
                 result = video.generate(request, runtime)
             self.assertEqual(result["conditioningMode"], "native-text-to-video")
             self.assertNotIn("image", pipeline.call_args.kwargs)
@@ -300,15 +300,15 @@ class OpenMediaModelTests(unittest.TestCase):
             runtime._enable_sampling_progress.assert_called_once_with(pipeline)
             request.update(model={"architecture": "cogvideox-2b", "revision": "revision", "digest": "digest"}, numFrames=9, numInferenceSteps=20, guidanceScale=6, addons=[{"addonId": "liquid-art", "kind": "lora"}])
             pipeline.return_value = SimpleNamespace(frames=[[object()] * 9])
-            runtime._load_video_addons = mock.Mock(return_value=[{"addonId": "liquid-art", "kind": "lora", "modelStrength": 0.15}])
+            runtime._load_swappable_video_addons = mock.Mock(return_value=([{"addonId": "liquid-art", "kind": "lora", "modelStrength": 0.15}], []))
             runtime._device = lambda _: ("cuda", "GPU", 16 * 1024**3)
             torch.float16 = "fp16"
             torch.cuda = SimpleNamespace(empty_cache=mock.Mock())
-            with mock.patch.object(models, "load_pipeline", return_value=pipeline) as load:
+            with mock.patch.object(video.media_lora_state, "freeze_pipeline"), mock.patch.object(models, "load_pipeline", return_value=pipeline) as load:
                 result = video.generate(request, runtime)
             self.assertEqual(load.call_args.args[2], "fp16")
             self.assertEqual(result["performance"]["inferenceDtype"], "fp16")
-            runtime._load_video_addons.assert_called_once_with(pipeline.transformer, request["addons"])
+            runtime._load_swappable_video_addons.assert_called_once_with(pipeline.transformer, request["addons"])
             self.assertEqual(result["addons"], [{"addonId": "liquid-art", "kind": "lora", "modelStrength": 0.15}])
             request["model"]["architecture"] = "wan-2.2-t2v-a14b"
             with self.assertRaisesRegex(ValueError, "does not support these add-ons"):
@@ -323,8 +323,8 @@ class OpenMediaModelTests(unittest.TestCase):
                 pipeline = mock.Mock()
                 runtime = SimpleNamespace(RESIDENT_TRANSFORMER_ARCHITECTURES=worker.RESIDENT_TRANSFORMER_ARCHITECTURES,
                                           _transformer_fits_on_device=mock.Mock(return_value=fits),
-                                          _configure_resident_transformer=mock.Mock(), _load_video_addons=mock.Mock(return_value=[]))
-                with mock.patch.object(models, "load_pipeline", return_value=pipeline) as load:
+                                          _configure_resident_transformer=mock.Mock(), _load_swappable_video_addons=mock.Mock(return_value=([], [])))
+                with mock.patch.object(video.media_lora_state, "freeze_pipeline"), mock.patch.object(models, "load_pipeline", return_value=pipeline) as load:
                     video._prepare_pipeline({"memoryProfile": memory_profile}, profile, {}, {"path": "model"}, "fp16",
                                             "cuda", SimpleNamespace(), torch, runtime)
                 self.assertEqual(load.call_args.kwargs["transformer_device"], "cuda" if resident else None)
@@ -341,9 +341,9 @@ class OpenMediaModelTests(unittest.TestCase):
         ):
             with self.subTest(architecture=architecture):
                 pipeline = SimpleNamespace(vae=vae, transformer=None, to=mock.Mock())
-                with mock.patch.object(models, "load_pipeline", return_value=pipeline):
+                with mock.patch.object(video.media_lora_state, "freeze_pipeline"), mock.patch.object(models, "load_pipeline", return_value=pipeline):
                     video._prepare_pipeline({}, models.PROFILES[architecture], {}, {"path": "model"}, "fp16", "cpu",
-                                            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(RESIDENT_TRANSFORMER_ARCHITECTURES=(), _load_video_addons=mock.Mock(return_value=[])))
+                                            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(RESIDENT_TRANSFORMER_ARCHITECTURES=(), _load_swappable_video_addons=mock.Mock(return_value=([], []))))
                 self.assertEqual(getattr(vae, "use_tiling", False), tiled)
 
     def test_generated_audio_is_muxed_and_both_tracks_decode(self):
