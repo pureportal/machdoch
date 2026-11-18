@@ -12,11 +12,26 @@ export const runnerConfigurationSchema = z.strictObject({
   sandbox: sandboxConfigurationSchema,
 });
 export type RunnerConfiguration = z.infer<typeof runnerConfigurationSchema>;
-export async function readRunnerConfiguration(
-  path: string,
-): Promise<RunnerConfiguration> {
+const runnerLaunchSchema = runnerConfigurationSchema.extend({
+  token: z.string().startsWith("mch_cloud_worker_"),
+});
+export type RunnerLaunch = z.infer<typeof runnerLaunchSchema>;
+export async function readRunnerLaunch(path: string): Promise<RunnerLaunch> {
   const bytes = await readFile(path);
   if (bytes.length > 64 * 1024)
     throw new Error("Runner configuration exceeds its size limit");
-  return runnerConfigurationSchema.parse(JSON.parse(bytes.toString("utf8")));
+  return runnerLaunchSchema.parse(JSON.parse(bytes.toString("utf8")));
+}
+export function receiveRunnerLaunch(): Promise<RunnerLaunch> {
+  if (!process.send)
+    throw new Error("A managed runner needs a parent process channel");
+  return new Promise((resolve, reject) => {
+    process.once("message", (message) => {
+      try {
+        resolve(runnerLaunchSchema.parse(message));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
 }

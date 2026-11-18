@@ -51,7 +51,6 @@ export function claimFixture(): WorkerClaim {
         target: "cloud",
         repository: "https://github.com/example/project",
         autopilot: false,
-        checkPullRequests: false,
         providerId,
         model: "fixture",
         maxDurationSeconds: 3600,

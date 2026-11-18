@@ -62,6 +62,43 @@ await test("retries lost inference admission with the original identity and char
   assert.deepEqual(inputs[0], inputs[1]);
   assert.deepEqual(usage, { tokens: 32, requests: 1 });
 });
+await test("resubmits an interrupted inference under a new identity and replies to the original request", async () => {
+  const submitted: string[] = [];
+  const connection = new RunnerConnection(
+    "https://cloud.example.test",
+    token,
+    async (url, options) => {
+      if (String(url).endsWith("/progress"))
+        return Response.json({ instruction: "continue" });
+      const input = JSON.parse(String(options?.body));
+      submitted.push(input.requestId);
+      return Response.json(
+        submitted.length === 1
+          ? {
+              ...receipt(input.requestId, 5),
+              state: "unknown",
+              response: null,
+              errorCode: "interrupted",
+            }
+          : receipt(input.requestId),
+      );
+    },
+  );
+  const usage = { tokens: 0, requests: 0 };
+  const original = request();
+  const result = await agentInference(
+    connection,
+    claimFixture(),
+    environment,
+    usage,
+    original,
+  );
+  assert.equal(result.kind, "inference_result");
+  assert.equal(result.requestId, original.requestId);
+  assert.equal(submitted[0], original.requestId);
+  assert.notEqual(submitted[1], original.requestId);
+  assert.deepEqual(usage, { tokens: 37, requests: 2 });
+});
 await test("rejects mismatched receipts without forwarding a model reply", async () => {
   const connection = new RunnerConnection(
     "https://cloud.example.test",

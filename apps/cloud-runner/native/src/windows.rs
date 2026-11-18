@@ -1,6 +1,8 @@
 use machdoch_process::{SupervisedChild, SupervisedChildSpawnError};
 use std::process::{Command, ExitStatus};
 
+use crate::MACHINE_TERMINATION_TIMEOUT;
+
 pub type IsolatedChild = SupervisedChild;
 
 pub struct Configuration;
@@ -19,6 +21,7 @@ pub fn spawn(
     _: &Configuration,
 ) -> Result<IsolatedChild, SupervisedChildSpawnError> {
     SupervisedChild::spawn_with_job_limits(command, memory, 128, 2)
+        .map(|child| child.with_forced_termination_timeout(MACHINE_TERMINATION_TIMEOUT))
 }
 
 pub fn stop(child: &mut IsolatedChild) -> Result<ExitStatus, String> {

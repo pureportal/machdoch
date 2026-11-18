@@ -3,13 +3,14 @@
   "version": "46.1.0",
   "private": true,
   "type": "module",
-  "license": "Apache-2.0",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "exports": {
     ".": "./src/connection.ts",
     "./supervisor": "./src/supervisor.ts",
     "./stop-receipt": "./src/stop-receipt.ts",
     "./runtime-assets": "./src/runtime-assets.ts",
-    "./worker": "./src/worker/index.ts"
+    "./worker": "./src/worker/index.ts",
+    "./sandbox-installation": "./src/worker/sandbox/installation.ts"
   },
   "dependencies": {
     "@machdoch/fleet-protocol": "workspace:*",

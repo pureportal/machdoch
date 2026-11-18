@@ -560,3 +560,15 @@ await test("cancels readiness when the guest cannot finish booting", async () =>
   socket.destroy();
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
+
+await test("reports why the guest agent stopped", async (context) => {
+  const channel = await fixture(context, (_input, socket) => {
+    socket.write(
+      `\x1e${JSON.stringify({ kind: "stopped", error: "Unknown repository transfer" })}\n`,
+    );
+  });
+  await assert.rejects(
+    channel.call("read_file", { path: "README" }, new AbortController().signal),
+    /The sandbox agent stopped: Unknown repository transfer/,
+  );
+});

@@ -29,7 +29,7 @@ await test("KVM launch has no accelerator fallback, network or writable source d
   );
   assert.equal(
     option("-chardev"),
-    "socket,id=agent,path=agent.sock,server=on,wait=off",
+    "socket,id=agent,path=agent.sock,server=on,wait=on",
   );
   const disks = launch.process.args.flatMap((value, index, args) =>
     value === "-blockdev" ? [JSON.parse(args[index + 1]!)] : [],
@@ -70,7 +70,7 @@ await test("WHPX uses a private local socket without a named pipe or network lis
     launch.process.args[launch.process.args.indexOf(key) + 1];
   assert.equal(
     option("-chardev"),
-    "socket,id=agent,path=agent.sock,server=on,wait=off",
+    "socket,id=agent,path=agent.sock,server=on,wait=on",
   );
   assert.equal(launch.process.directory, "C:\\private\\environment");
   assert.equal(option("-nic"), "none");

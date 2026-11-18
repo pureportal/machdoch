@@ -233,7 +233,9 @@ export async function executeTask(
 ): Promise<WorkerFinish> {
   let agent = initial;
   let previousTree: string | null = null;
-  let correction = "";
+  let correction = environments.merge
+    ? JSON.stringify({ conflictedFiles: environments.merge.conflicts })
+    : "";
   let repairs = 0;
   let reviewRound = 0;
   while (true) {
@@ -249,7 +251,12 @@ export async function executeTask(
     const candidate = await guest(
       agent,
       "snapshot_candidate",
-      { baseCommit: environments.baseCommit },
+      {
+        baseCommit: environments.baseCommit,
+        ...(environments.merge
+          ? { mergeParent: environments.merge.parent }
+          : {}),
+      },
       z.strictObject({
         candidateCommit: z.string().regex(/^[a-f0-9]{40}$/),
         tree: z.string().regex(/^[a-f0-9]{40}$/),

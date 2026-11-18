@@ -1,6 +1,8 @@
 import { dirname, join, win32 } from "node:path";
 import type { SandboxConfiguration } from "./configuration.ts";
 
+export const guestMemoryMiB = 3072;
+
 export function machineLaunch(
   configuration: SandboxConfiguration,
   socketDirectory: string,
@@ -28,7 +30,7 @@ export function machineLaunch(
         "-machine",
         configuration.backend === "kvm" ? "q35,dump-guest-core=off" : "q35",
         "-m",
-        "1024",
+        String(guestMemoryMiB),
         "-smp",
         "2",
         "-nodefaults",
@@ -38,7 +40,7 @@ export function machineLaunch(
         "-device",
         "virtio-serial-pci,disable-legacy=on",
         "-chardev",
-        "socket,id=agent,path=agent.sock,server=on,wait=off",
+        "socket,id=agent,path=agent.sock,server=on,wait=on",
         "-device",
         "virtserialport,chardev=agent,name=org.machdoch.agent",
         "-object",
@@ -46,7 +48,7 @@ export function machineLaunch(
         "-device",
         "virtio-rng-pci,rng=entropy,max-bytes=1024,period=1000,disable-legacy=on",
         "-serial",
-        "null",
+        "stdio",
         "-monitor",
         "none",
         "-nic",
@@ -73,7 +75,7 @@ export function machineLaunch(
         "-initrd",
         initramfs.path,
         "-append",
-        "console=ttyS0 rdinit=/cloud-enter panic=-1 loglevel=3",
+        "console=ttyS0 rdinit=/cloud-enter panic=-1 loglevel=4",
         ...(configuration.backend === "kvm"
           ? [
               "-sandbox",

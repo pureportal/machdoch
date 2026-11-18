@@ -45,11 +45,14 @@ const tools = {
     keys: ["path", "offset", "content"],
   },
   shell: { execute: runShell, keys: ["command", "directory", "timeoutMs"] },
-  snapshot_candidate: { execute: snapshotCandidate, keys: ["baseCommit"] },
+  snapshot_candidate: {
+    execute: snapshotCandidate,
+    keys: ["baseCommit", "mergeParent"],
+  },
   freeze_repository: { execute: freezeRepository, keys: [] as string[] },
   prepare_repository: {
     execute: (input: Record<string, unknown>) => prepareRepository(input, emit),
-    keys: ["commit", "reference"],
+    keys: ["commit", "reference", "baseSha", "mergeBase"],
   },
   prepare_local_repository: {
     execute: prepareLocalRepository,
@@ -72,6 +75,7 @@ interface Receipt {
 const receipts = new Map<string, Receipt>();
 let pending: (Receipt & { id: string }) | undefined;
 let buffer: Buffer = Buffer.alloc(0);
+let stopping = false;
 function emit(
   value:
     | ToolResponse
@@ -84,7 +88,11 @@ function emit(
       }
     | Record<string, unknown>,
 ) {
-  if (process.stdout.writableLength > 1024 * 1024) process.exit(2);
+  if (stopping) return;
+  if (process.stdout.writableLength > 1024 * 1024) {
+    stop(new Error("Host channel is not draining"));
+    return;
+  }
   process.stdout.write(`\x1e${JSON.stringify(value)}\n`);
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -202,14 +210,28 @@ async function dispatch(bytes: Buffer) {
   pending = undefined;
   emit(response);
 }
+function stop(error: unknown): void {
+  if (stopping) return;
+  stopping = true;
+  const reason = error instanceof Error ? error.message : String(error);
+  setTimeout(() => process.exit(2), 1000);
+  process.stdout.write(
+    `\x1e${JSON.stringify({ kind: "stopped", error: reason.slice(0, 1000) })}\n`,
+    () => process.exit(2),
+  );
+}
 process.stdin.on("data", (chunk: Buffer) => {
+  if (stopping) return;
   buffer = Buffer.concat([buffer, chunk]);
-  if (buffer.length > 1024 * 1024) process.exit(2);
+  if (buffer.length > 1024 * 1024) {
+    stop(new Error("Host frame exceeds its limit"));
+    return;
+  }
   let end;
   while ((end = buffer.indexOf(10)) >= 0) {
     const message = buffer.subarray(0, end);
     buffer = buffer.subarray(end + 1);
-    void dispatch(message).catch(() => process.exit(2));
+    void dispatch(message).catch(stop);
   }
 });
 process.stdin.on("end", () => {

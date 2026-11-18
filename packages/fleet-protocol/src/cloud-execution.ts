@@ -86,7 +86,6 @@ const executionProfileFields = {
   repository: gitRepositoryUrlSchema,
   branch: gitBranchSchema.optional(),
   autopilot: z.boolean().default(false),
-  checkPullRequests: z.boolean().default(false),
   maxDurationSeconds: z.number().int().min(60).max(86_400),
   maxTokens: z.number().int().min(1).max(10_000_000),
   requiredChecks: z
@@ -136,11 +135,21 @@ export const runInputSchema = z.strictObject({
     }),
   ]),
 });
+const commitSha = z.string().regex(/^[0-9a-f]{40}$/);
+export const pullRequestTasks = ["fix", "check", "resolve"] as const;
+export type PullRequestTask = (typeof pullRequestTasks)[number];
 export const pullRequestRunSubjectSchema = z.strictObject({
   kind: z.literal("pull_request"),
-  purpose: z.enum(["check", "fix"]),
+  purpose: z.enum(pullRequestTasks),
   id: cloudId,
-  headSha: z.string().regex(/^[0-9a-f]{40}$/),
+  headSha: commitSha,
+  base: z
+    .strictObject({
+      ref: gitBranchSchema,
+      sha: commitSha,
+      mergeBase: commitSha,
+    })
+    .optional(),
   objective: z.string().trim().min(1).max(20_000),
   acceptanceCriteria: z.string().trim().min(1).max(20_000),
 });
@@ -160,6 +169,7 @@ export const runCancelSchema = z.strictObject({ revision });
 export const workerInputSchema = z.strictObject({
   profileId: cloudId,
   name: z.string().trim().min(1).max(120),
+  hosted: z.boolean().default(false),
 });
 export const clientWorkspaceBindingSchema = z.strictObject({
   workspaceId: cloudId,
@@ -320,6 +330,11 @@ export interface ExecutionWorker {
   lastSeenAt: string | null;
   expiresAt: string;
   workspaceBinding: ClientWorkspaceBinding | null;
+  hosted: HostedRunnerStatus | null;
+}
+export interface HostedRunnerStatus {
+  state: "running" | "stopped" | "failed";
+  error: string | null;
 }
 export interface ExecutionRepository {
   url: string;

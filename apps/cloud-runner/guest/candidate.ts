@@ -8,15 +8,23 @@ export async function snapshotCandidate(input: Record<string, unknown>) {
     !/^[a-f0-9]{40}$/.test(input.baseCommit)
   )
     throw new Error("Use a full base commit SHA");
+  if (
+    input.mergeParent !== undefined &&
+    (typeof input.mergeParent !== "string" ||
+      !/^[a-f0-9]{40}$/.test(input.mergeParent))
+  )
+    throw new Error("Use a full merge parent commit SHA");
+  const mergeParent =
+    typeof input.mergeParent === "string" ? input.mergeParent : null;
   const result = await runShell({
     command: `set -eu
 mkdir -p /tmp/machdoch-artifacts
 git -c core.hooksPath=/dev/null -c core.fsmonitor=false add -A
 tree=$(git write-tree)
-candidate=$(printf 'Machdoch task result\\n' | git -c user.name='Machdoch agent' -c user.email='agent@machdoch.invalid' commit-tree "$tree" -p '${input.baseCommit}')
+candidate=$(printf 'Machdoch task result\\n' | git -c user.name='Machdoch agent' -c user.email='agent@machdoch.invalid' commit-tree "$tree" -p '${input.baseCommit}'${mergeParent ? ` -p '${mergeParent}'` : ""})
 git update-ref refs/machdoch/candidate "$candidate"
-git bundle create /tmp/machdoch-artifacts/candidate.bundle refs/machdoch/candidate '^${input.baseCommit}'
-git diff --no-ext-diff --no-textconv --binary '${input.baseCommit}' "$candidate" > /tmp/machdoch-artifacts/changes.patch
+git bundle create /tmp/machdoch-artifacts/candidate.bundle refs/machdoch/candidate '^${input.baseCommit}'${mergeParent ? ` '^${mergeParent}'` : ""}
+git diff --no-ext-diff --no-textconv --binary '${mergeParent ? "refs/machdoch/merged" : input.baseCommit}' "$candidate" > /tmp/machdoch-artifacts/changes.patch
 printf '%s\\n%s\\n' "$candidate" "$tree"`,
     timeoutMs: 300000,
   });

@@ -89,7 +89,8 @@ export async function runSharedAgent(
   let stderr = "",
     buffer = Buffer.alloc(0),
     frames = 0;
-  let complete: { status: string; summary: string } | undefined;
+  let complete:
+    { status: string; summary: string; reason: string | null } | undefined;
   let failure: Error | undefined;
   let finish!: () => void;
   const finished = new Promise<void>((resolve) => {
@@ -141,11 +142,18 @@ export async function runSharedAgent(
           message.kind === "complete" &&
           typeof message.status === "string" &&
           typeof message.summary === "string" &&
-          message.summary.length <= 8192
+          message.summary.length <= 8192 &&
+          (message.reason === null ||
+            (typeof message.reason === "string" &&
+              message.reason.length <= 8192))
         ) {
           if (current.requests.size)
             throw new Error("Agent completed with outstanding inference");
-          complete = { status: message.status, summary: message.summary };
+          complete = {
+            status: message.status,
+            summary: message.summary,
+            reason: message.reason,
+          };
           finish();
           continue;
         }
@@ -179,10 +187,13 @@ export async function runSharedAgent(
   }
   return {
     status: !failure && complete?.status === "executed" ? "executed" : "failed",
-    summary:
+    summary: (
       failure?.message ??
-      complete?.summary ??
-      "The shared agent did not finish",
+      (complete?.status !== "executed" && complete?.reason
+        ? `${complete.summary} ${complete.reason}`
+        : complete?.summary) ??
+      "The shared agent did not finish"
+    ).slice(0, 8192),
     processTreeStopped: true,
   };
 }

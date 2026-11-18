@@ -1,1 +1,2 @@
 legal/third-party/** -text
+*.sh text eol=lf

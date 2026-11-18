@@ -1,18 +1,16 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { VirtualMachineSandbox } from "../../../packages/cloud-client/src/worker/sandbox/virtual-machine.ts";
 import { shell } from "../../../packages/cloud-client/src/worker/guest-operations.ts";
+import {
+  detectSandboxArtifacts,
+  pinSandboxArtifacts,
+} from "@machdoch/cloud-client/sandbox-installation";
 
-assert.ok(
-  process.env.MACHDOCH_SANDBOX_CONFIG,
-  "Select a trusted sandbox artifact manifest.",
-);
-const artifacts = JSON.parse(
-  await readFile(process.env.MACHDOCH_SANDBOX_CONFIG, "utf8"),
-);
+const artifacts = await pinSandboxArtifacts(await detectSandboxArtifacts());
 const backend = process.platform === "win32" ? "whpx" : "kvm";
 const configuration = {
   ...artifacts,

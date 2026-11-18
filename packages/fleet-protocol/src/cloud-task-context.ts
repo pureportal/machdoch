@@ -26,6 +26,9 @@ export type TaskPromptManifest = Pick<
   | "branch"
   | "subject"
 >;
+const sharedAgentEnvironment =
+  "Offline Linux sandbox without network access, so package installs fail. Node.js can load playwright-core from /opt/node_modules/playwright-core and launch Chromium at /usr/bin/chromium; the browser tools use the same browser.";
+
 export function sharedAgentTask(
   manifest: TaskPromptManifest,
   correction = "",
@@ -38,6 +41,7 @@ export function sharedAgentTask(
       branch: manifest.branch,
       requiredChecks: manifest.profile.requiredChecks,
       reportFormat: taskReportFormat(manifest),
+      environment: sharedAgentEnvironment,
       ...(excerpt
         ? {
             verificationFeedback: excerpt,

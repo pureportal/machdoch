@@ -213,7 +213,7 @@ pub fn stop(process: &mut IsolatedChild) -> Result<ExitStatus, String> {
         .group
         .write("cgroup.kill", b"1")
         .map_err(|error| error.to_string())?;
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + crate::MACHINE_TERMINATION_TIMEOUT;
     loop {
         let status = process
             .child

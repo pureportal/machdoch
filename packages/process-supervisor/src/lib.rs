@@ -129,6 +129,7 @@ pub struct SupervisedChild {
     job: Option<ChildProcessJob>,
     preserve_descendants_after_exit: bool,
     tree_termination_attempted: bool,
+    forced_termination_timeout: Duration,
     #[cfg(test)]
     tree_termination_attempts: usize,
 }
@@ -137,7 +138,7 @@ impl SupervisedChild {
     #[cfg(windows)]
     pub fn confirm_isolation_stopped(&self) -> Result<(), String> {
         let job = self.job.as_ref().ok_or("Process job is unavailable")?;
-        let deadline = Instant::now() + FORCED_TERMINATION_TIMEOUT;
+        let deadline = Instant::now() + self.forced_termination_timeout;
         loop {
             let mut information = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
             unsafe {
@@ -270,6 +271,7 @@ impl SupervisedChild {
             job: None,
             preserve_descendants_after_exit: true,
             tree_termination_attempted: false,
+            forced_termination_timeout: FORCED_TERMINATION_TIMEOUT,
             #[cfg(test)]
             tree_termination_attempts: 0,
         })
@@ -320,9 +322,15 @@ impl SupervisedChild {
             job,
             preserve_descendants_after_exit: false,
             tree_termination_attempted: false,
+            forced_termination_timeout: FORCED_TERMINATION_TIMEOUT,
             #[cfg(test)]
             tree_termination_attempts: 0,
         })
+    }
+
+    pub fn with_forced_termination_timeout(mut self, timeout: Duration) -> Self {
+        self.forced_termination_timeout = timeout;
+        self
     }
 
     pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
@@ -348,7 +356,7 @@ impl SupervisedChild {
             Err(_) => {
                 self.terminate_tree_once();
                 return self
-                    .wait_for_exit(FORCED_TERMINATION_TIMEOUT)
+                    .wait_for_exit(self.forced_termination_timeout)
                     .and_then(|status| {
                         status
                             .map(|status| ChildCleanupOutcome {
@@ -377,7 +385,7 @@ impl SupervisedChild {
         }
 
         self.terminate_tree_once();
-        match self.wait_for_exit(FORCED_TERMINATION_TIMEOUT)? {
+        match self.wait_for_exit(self.forced_termination_timeout)? {
             Some(status) => Ok(ChildCleanupOutcome {
                 kind: ChildCleanupKind::ForceTerminated,
                 status,

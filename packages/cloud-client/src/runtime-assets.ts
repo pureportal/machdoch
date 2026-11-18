@@ -10,6 +10,13 @@ export const runtimeAssetSchema = z.strictObject({
 });
 export type RuntimeAsset = z.infer<typeof runtimeAssetSchema>;
 
+export async function fileDigest(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const bytes of createReadStream(path, { highWaterMark: 4 << 20 }))
+    hash.update(bytes);
+  return hash.digest("hex");
+}
+
 export async function verifyRuntimeAsset(input: RuntimeAsset): Promise<string> {
   const asset = runtimeAssetSchema.parse(input);
   const metadata = await lstat(asset.path);
@@ -17,9 +24,7 @@ export async function verifyRuntimeAsset(input: RuntimeAsset): Promise<string> {
     throw new Error(
       "A runtime asset is not a regular file. Reinstall the verified runtime.",
     );
-  const hash = createHash("sha256");
-  for await (const bytes of createReadStream(asset.path)) hash.update(bytes);
-  if (hash.digest("hex") !== asset.sha256)
+  if ((await fileDigest(asset.path)) !== asset.sha256)
     throw new Error("A runtime asset changed. Reinstall the verified runtime.");
   return realpath(asset.path);
 }

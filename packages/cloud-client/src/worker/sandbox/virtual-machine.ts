@@ -1,6 +1,10 @@
 import { mkdir, open, unlink, rmdir } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import { GuestChannel, type GuestResponse } from "./guest-channel.ts";
+import {
+  GuestChannel,
+  SandboxChannelClosedError,
+  type GuestResponse,
+} from "./guest-channel.ts";
 import { NativeSupervisor } from "@machdoch/cloud-client/supervisor";
 import { verifyRuntimeAsset } from "@machdoch/cloud-client/runtime-assets";
 import {
@@ -14,11 +18,17 @@ import {
   sandboxConfigurationSchema,
   type SandboxConfiguration,
 } from "./configuration.ts";
-import { machineLaunch } from "./machine-launch.ts";
+import { guestMemoryMiB, machineLaunch } from "./machine-launch.ts";
 import {
   openWindowsSocket,
   prepareWindowsSocketDirectory,
 } from "./windows-socket.ts";
+
+const stopDescriptions: Record<string, string> = {
+  lease_expired: "The sandbox lease expired before the cloud renewed it.",
+  start_expired: "The virtual machine did not start in time.",
+  completed: "The virtual machine exited.",
+};
 
 export class VirtualMachineSandbox {
   private channel: GuestChannel | undefined;
@@ -127,7 +137,7 @@ export class VirtualMachineSandbox {
       anchorId,
       allowanceMs,
       maxDurationMs,
-      memoryLimitBytes: 3 * 1024 * 1024 * 1024,
+      memoryLimitBytes: (guestMemoryMiB + 1024) * 1024 * 1024,
       ...launch.process,
     });
     if (this.configuration.backend === "whpx") {
@@ -139,13 +149,17 @@ export class VirtualMachineSandbox {
         this.bridge.stream,
         this.supervisor.signal,
         repositoryTransport,
-      );
+      ).catch(async (error: unknown) => {
+        throw await this.explained(error);
+      });
     } else {
       this.channel = await GuestChannel.open(
         launch.channel,
         this.supervisor.signal,
         repositoryTransport,
-      );
+      ).catch(async (error: unknown) => {
+        throw await this.explained(error);
+      });
     }
     this.supervisor.signal.throwIfAborted();
     return processId;
@@ -160,15 +174,37 @@ export class VirtualMachineSandbox {
   ): Promise<GuestResponse> {
     if (this.closed || !this.channel)
       return Promise.reject(new Error("Sandbox is not ready"));
-    return this.channel.call(
-      tool,
-      args,
-      signal
-        ? AbortSignal.any([signal, this.supervisor.signal])
-        : this.supervisor.signal,
-      id,
-      agentTransport,
-    );
+    return this.channel
+      .call(
+        tool,
+        args,
+        signal
+          ? AbortSignal.any([signal, this.supervisor.signal])
+          : this.supervisor.signal,
+        id,
+        agentTransport,
+      )
+      .catch(async (error: unknown) => {
+        throw await this.explained(error);
+      });
+  }
+
+  private async explained(error: unknown): Promise<unknown> {
+    if (!(error instanceof SandboxChannelClosedError)) return error;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      this.supervisor.finished,
+      new Promise((resolve) => (timer = setTimeout(resolve, 2000))),
+    ]);
+    clearTimeout(timer);
+    const reason = this.supervisor.stopReason;
+    const details = [
+      reason && (stopDescriptions[reason] ?? `The sandbox stopped (${reason}).`),
+      this.supervisor.recentOutput,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return details ? new SandboxChannelClosedError(details) : error;
   }
 
   close(): Promise<StopReceipt> {

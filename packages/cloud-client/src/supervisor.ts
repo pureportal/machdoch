@@ -15,6 +15,7 @@ export class NativeSupervisor {
   private buffer: Buffer = Buffer.alloc(0);
   private failure: Error | undefined;
   private diagnostics = "";
+  private stoppedBecause: string | undefined;
   readonly finished: Promise<void>;
   readonly signal: AbortSignal;
   private readonly controller = new AbortController();
@@ -53,6 +54,19 @@ export class NativeSupervisor {
       );
     });
     this.process.stdout.on("data", (data: Buffer) => this.consume(data));
+  }
+
+  get stopReason(): string | undefined {
+    return this.stoppedBecause;
+  }
+
+  get recentOutput(): string {
+    return this.diagnostics
+      .trim()
+      .split(/\r?\n/)
+      .slice(-5)
+      .join(" ")
+      .slice(-1000);
   }
 
   private fail(error: Error): void {
@@ -102,6 +116,8 @@ export class NativeSupervisor {
         );
         continue;
       }
+      if (event.kind === "stopped" && typeof event.reason === "string")
+        this.stoppedBecause = event.reason;
       if (
         (event.kind === "stdout" || event.kind === "stderr") &&
         typeof event.data === "string"

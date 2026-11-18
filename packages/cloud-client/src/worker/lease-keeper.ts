@@ -1,6 +1,12 @@
 import type { WorkerClaim } from "@machdoch/fleet-protocol/cloud-execution";
-import { RunnerConnection } from "@machdoch/cloud-client";
+import {
+  isTransientRunnerError,
+  RunnerConnection,
+} from "@machdoch/cloud-client";
 import { VirtualMachineSandbox } from "./sandbox/virtual-machine.ts";
+
+const renewalIntervalMs = 15000;
+const transientRetryMs = 2000;
 
 export class LeaseKeeper {
   readonly signal: AbortSignal;
@@ -26,6 +32,7 @@ export class LeaseKeeper {
   }
   private async renew(): Promise<void> {
     if (!this.active || this.signal.aborted) return;
+    let delay = renewalIntervalMs;
     try {
       const anchor = await this.sandbox.supervisor.anchor();
       const receipt = await this.connection.heartbeat(
@@ -40,12 +47,13 @@ export class LeaseKeeper {
         receipt.localStopSeconds * 1000,
       );
     } catch (error) {
-      if (this.active) this.stopped.abort(error);
+      if (isTransientRunnerError(error)) delay = transientRetryMs;
+      else if (this.active) this.stopped.abort(error);
     }
     if (this.active && !this.signal.aborted)
       this.timer = setTimeout(() => {
         this.pending = this.renew();
-      }, 15000);
+      }, delay);
   }
   async close(): Promise<void> {
     this.active = false;

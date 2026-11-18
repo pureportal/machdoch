@@ -4,7 +4,8 @@ export { RunnerJournal } from "./journal.ts";
 export { recoverRunner } from "./recovery.ts";
 export { uploadArtifact } from "./artifact-uploader.ts";
 export {
-  readRunnerConfiguration,
+  readRunnerLaunch,
+  receiveRunnerLaunch,
   runnerConfigurationSchema,
   type RunnerConfiguration,
 } from "./configuration.ts";

@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import {
-  readRunnerConfiguration,
+  readRunnerLaunch,
+  receiveRunnerLaunch,
   RunnerJournal,
   CloudRunner,
   runWorkerLoop,
@@ -10,15 +11,19 @@ import { RunnerConnection } from "@machdoch/cloud-client";
 const { values } = parseArgs({
   options: {
     config: { type: "string" },
+    managed: { type: "boolean", default: false },
     once: { type: "boolean", default: false },
   },
 });
-if (!values.config)
+if (!values.config && !values.managed)
   throw new Error("Provide --config with the runner configuration path");
-const configuration = await readRunnerConfiguration(values.config);
-const token = process.env.MACHDOCH_CLOUD_RUNNER_TOKEN;
-if (!token) throw new Error("Configure MACHDOCH_CLOUD_RUNNER_TOKEN");
-const connection = new RunnerConnection(configuration.origin, token);
+const { token, ...configuration } = values.managed
+  ? await receiveRunnerLaunch()
+  : await readRunnerLaunch(values.config!);
+process.channel?.unref();
+const connection = new RunnerConnection(configuration.origin, token, fetch, {
+  allowLoopbackHttp: true,
+});
 const journal = new RunnerJournal(
   configuration.stateDirectory,
   connection.origin,
@@ -30,6 +35,7 @@ const controller = new AbortController();
 const stop = () => controller.abort(new Error("Runner shutdown requested"));
 process.once("SIGINT", stop);
 process.once("SIGTERM", stop);
+process.once("disconnect", stop);
 try {
   const succeeded = await runWorkerLoop(runner, journal, {
     signal: controller.signal,
@@ -47,5 +53,6 @@ try {
 } finally {
   process.removeListener("SIGINT", stop);
   process.removeListener("SIGTERM", stop);
+  process.removeListener("disconnect", stop);
   journal.close();
 }

@@ -20,6 +20,18 @@ interface RepositoryTransfer {
   id: string;
 }
 
+const startTimeoutMs = 45_000;
+
+export class SandboxChannelClosedError extends Error {
+  constructor(machineOutput = "") {
+    super(
+      machineOutput
+        ? `Sandbox tool channel closed: ${machineOutput}`
+        : "Sandbox tool channel closed",
+    );
+  }
+}
+
 export class GuestChannel {
   private buffer: Buffer = Buffer.alloc(0);
   private pending:
@@ -58,9 +70,7 @@ export class GuestChannel {
     });
     this.socket.on("data", (data: Buffer) => this.consume(data));
     this.socket.on("error", (error) => this.fail(error));
-    this.socket.on("close", () =>
-      this.fail(new Error("Sandbox tool channel closed")),
-    );
+    this.socket.on("close", () => this.fail(new SandboxChannelClosedError()));
   }
 
   static async open(
@@ -68,7 +78,10 @@ export class GuestChannel {
     signal: AbortSignal,
     repositoryTransport?: RepositoryTransport,
   ): Promise<GuestChannel> {
-    const deadline = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
+    const deadline = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(startTimeoutMs),
+    ]);
     while (true) {
       deadline.throwIfAborted();
       const socket = connect(pipe);
@@ -95,8 +108,16 @@ export class GuestChannel {
     repositoryTransport?: RepositoryTransport,
   ): Promise<GuestChannel> {
     const channel = new GuestChannel(stream, repositoryTransport);
-    const deadline = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
-    const abort = () => channel.close();
+    const startup = AbortSignal.timeout(startTimeoutMs);
+    const deadline = AbortSignal.any([signal, startup]);
+    const abort = () =>
+      channel.close(
+        startup.aborted
+          ? new Error(
+              `The sandbox did not start within ${startTimeoutMs / 1000} seconds`,
+            )
+          : undefined,
+      );
     deadline.addEventListener("abort", abort, { once: true });
     try {
       if (deadline.aborted) abort();
@@ -138,6 +159,15 @@ export class GuestChannel {
         const response = JSON.parse(
           frame.subarray(1).toString("utf8"),
         ) as Record<string, unknown>;
+        if (response.kind === "stopped" && typeof response.error === "string") {
+          this.fail(
+            new Error(
+              `The sandbox agent stopped: ${response.error.slice(0, 1000)}`,
+            ),
+          );
+          this.socket.destroy();
+          return;
+        }
         if (
           !this.readyReceived &&
           response.kind === "ready" &&
@@ -319,7 +349,7 @@ export class GuestChannel {
     );
     if (bytes.length > 1024 * 1024)
       throw new Error("Sandbox tool request exceeds its limit");
-    const abort = () => this.close();
+    const abort = () => this.close(deadline.reason);
     const deadline =
       tool === "run_agent"
         ? signal
@@ -353,8 +383,12 @@ export class GuestChannel {
     }
   }
 
-  close(): void {
-    this.fail(new Error("Sandbox tool channel closed"));
+  close(reason?: unknown): void {
+    this.fail(
+      reason instanceof Error && reason.name !== "AbortError"
+        ? reason
+        : new SandboxChannelClosedError(),
+    );
     this.socket.destroy();
   }
 }

@@ -178,14 +178,60 @@ export async function closeRepositoryGateway(): Promise<void> {
   send = undefined;
 }
 
+const commitSha = /^[a-f0-9]{40}$/;
+
+function mergeBase(
+  input: Record<string, unknown>,
+): { sha: string; mergeBase: string } | null | undefined {
+  const { baseSha, mergeBase } = input;
+  if (baseSha === undefined && mergeBase === undefined) return undefined;
+  return typeof baseSha === "string" &&
+    commitSha.test(baseSha) &&
+    typeof mergeBase === "string" &&
+    commitSha.test(mergeBase)
+    ? { sha: baseSha, mergeBase }
+    : null;
+}
+
+async function mergeBaseBranch(base: { sha: string; mergeBase: string }) {
+  const result = await runShell({
+    command: `set -u
+output=$(git -c core.hooksPath=/dev/null merge-tree --write-tree --name-only --merge-base='${base.mergeBase}' HEAD '${base.sha}')
+status=$?
+if [ "$status" -gt 1 ]; then printf '%s\n' "$output" >&2; exit "$status"; fi
+tree=$(printf '%s\n' "$output" | head -n 1)
+git update-ref refs/machdoch/base '${base.sha}' || exit 1
+git update-ref refs/machdoch/merged "$tree" || exit 1
+git -c core.hooksPath=/dev/null read-tree -u --reset "$tree" || exit 1
+printf '%s\n' "$output"`,
+    timeoutMs: 300000,
+  });
+  if (result.exitCode !== 0 || result.timedOut || result.truncated)
+    throw new Error(
+      "Merging the base branch failed: " + result.stderr.slice(-2000),
+    );
+  const [tree, ...rest] = result.stdout.split("\n");
+  if (!commitSha.test(tree ?? ""))
+    throw new Error("Merging the base branch returned an invalid tree");
+  const conflicts = new Set<string>();
+  for (const line of rest) {
+    if (!line) break;
+    conflicts.add(line);
+  }
+  return [...conflicts];
+}
+
 export async function prepareRepository(
   input: Record<string, unknown>,
   emit: (message: Record<string, unknown>) => void,
 ) {
   const commit =
-    typeof input.commit === "string" && /^[a-f0-9]{40}$/.test(input.commit)
+    typeof input.commit === "string" && commitSha.test(input.commit)
       ? input.commit
       : null;
+  const base = mergeBase(input);
+  if (base === null)
+    throw new Error("Use full commit SHAs for the base branch and merge base");
   const reference =
     typeof input.reference === "string" &&
     (input.reference === "HEAD" ||
@@ -198,8 +244,9 @@ export async function prepareRepository(
   const url = await openRepositoryGateway(emit);
   let result;
   try {
+    const fetch = `git -c core.hooksPath=/dev/null -c protocol.version=2 -c credential.helper= -c http.followRedirects=false fetch --no-tags --depth=1 '${url}'`;
     result = await runShell({
-      command: `test ! -e .git && git -c init.templateDir= init -q && git -c core.hooksPath=/dev/null -c protocol.version=2 -c credential.helper= -c http.followRedirects=false fetch --no-tags --depth=1 '${url}' '${commit ?? reference}' && git -c core.hooksPath=/dev/null checkout --detach FETCH_HEAD && git rev-parse HEAD`,
+      command: `test ! -e .git && git -c init.templateDir= init -q && ${fetch} '${commit ?? reference}' && git -c core.hooksPath=/dev/null checkout --detach FETCH_HEAD${base ? ` && ${fetch} '${base.sha}' '${base.mergeBase}'` : ""} && git rev-parse HEAD`,
       timeoutMs: 300000,
     });
   } finally {
@@ -215,5 +262,6 @@ export async function prepareRepository(
     throw new Error(
       "Repository preparation failed: " + result.stderr.slice(-2000),
     );
-  return { baseCommit: fetched };
+  if (!base) return { baseCommit: fetched };
+  return { baseCommit: fetched, conflicts: await mergeBaseBranch(base) };
 }

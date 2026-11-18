@@ -4,6 +4,7 @@ import { RunnerConnection } from "@machdoch/cloud-client";
 import { RunnerJournal } from "./journal.ts";
 import { LeaseKeeper } from "./lease-keeper.ts";
 import { VirtualMachineSandbox } from "./sandbox/virtual-machine.ts";
+import { SandboxChannelClosedError } from "./sandbox/guest-channel.ts";
 import type { SandboxConfiguration } from "./sandbox/configuration.ts";
 import {
   guest,
@@ -18,9 +19,14 @@ interface ManagedEnvironment extends ActiveEnvironment {
 export type RepositorySource =
   | { kind: "broker" }
   | { kind: "local"; baseCommit: string; bytes: Buffer; sha256: string };
+export interface BaseBranchMerge {
+  parent: string;
+  conflicts: string[];
+}
 export class TaskEnvironments {
   private source: RepositorySource = { kind: "broker" };
   private resolvedBase: string | null = null;
+  private baseMerge: BaseBranchMerge | null = null;
   private readonly active = new Map<
     string,
     { sandbox: VirtualMachineSandbox; keeper: LeaseKeeper | null }
@@ -38,6 +44,9 @@ export class TaskEnvironments {
     if (!this.resolvedBase)
       throw new Error("The task repository has not been prepared");
     return this.resolvedBase;
+  }
+  get merge(): BaseBranchMerge | null {
+    return this.baseMerge;
   }
   async prepare(id: string): Promise<VirtualMachineSandbox> {
     this.signal.throwIfAborted();
@@ -74,7 +83,14 @@ export class TaskEnvironments {
     keeper.start();
     const environment = { sandbox, keeper, signal: keeper.signal };
     const pinned = this.resolvedBase ?? claim.baseCommit;
+    const subject = claim.manifest.subject;
+    const base =
+      subject.kind === "pull_request" && subject.base
+        ? { sha: subject.base.sha, mergeBase: subject.base.mergeBase }
+        : null;
     if (this.source.kind === "local") {
+      if (base)
+        throw new Error("Conflict resolution needs the repository broker.");
       if (pinned !== null && this.source.baseCommit !== pinned)
         throw new Error("The local source belongs to another commit.");
       await importBytes(environment, "source.pack", this.source.bytes);
@@ -86,18 +102,26 @@ export class TaskEnvironments {
         : "prepare_local_repository",
       this.source.kind === "local"
         ? { commit: this.source.baseCommit }
-        : pinned
-          ? { commit: pinned }
-          : {
-              reference: claim.manifest.branch
-                ? `refs/heads/${claim.manifest.branch}`
-                : "HEAD",
-            },
-      z.strictObject({ baseCommit: z.string().regex(/^[a-f0-9]{40}$/) }),
+        : {
+            ...(pinned
+              ? { commit: pinned }
+              : {
+                  reference: claim.manifest.branch
+                    ? `refs/heads/${claim.manifest.branch}`
+                    : "HEAD",
+                }),
+            ...(base ? { baseSha: base.sha, mergeBase: base.mergeBase } : {}),
+          },
+      z.strictObject({
+        baseCommit: z.string().regex(/^[a-f0-9]{40}$/),
+        conflicts: z.array(z.string().max(4096)).max(10000).optional(),
+      }),
     );
     if (pinned !== null && source.baseCommit !== pinned)
       throw new Error("Prepared repository does not match the task");
     this.resolvedBase = source.baseCommit;
+    if (base)
+      this.baseMerge = { parent: base.sha, conflicts: source.conflicts ?? [] };
     return environment;
   }
   async launch(
@@ -105,24 +129,12 @@ export class TaskEnvironments {
     role: "agent" | "validation",
     bundle?: { bytes: Buffer; candidateCommit: string },
   ): Promise<ManagedEnvironment> {
-    const planned = this.journal.addEnvironment(role);
-    const sandbox = await this.prepare(planned.id);
-    const anchor = await sandbox.supervisor.anchor();
-    const receipt = await this.connection.heartbeat(claim, this.signal);
-    if (receipt.instruction !== "continue" || receipt.localStopSeconds <= 0)
-      throw new Error("Task execution authority ended");
-    this.journal.requestLaunch(planned.id);
-    const environment = await this.start(
-      sandbox,
-      claim,
-      anchor,
-      receipt.localStopSeconds,
-    );
+    const environment = await this.launchPrepared(claim, role);
     if (bundle) {
       await importBytes(environment, "incoming.bundle", bundle.bytes);
       await requireShell(
         environment,
-        `git -c core.hooksPath=/dev/null bundle verify /tmp/machdoch-artifacts/incoming.bundle && git -c core.hooksPath=/dev/null fetch /tmp/machdoch-artifacts/incoming.bundle refs/machdoch/candidate && git -c core.hooksPath=/dev/null checkout --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = '${bundle.candidateCommit}' && git merge-base --is-ancestor '${this.baseCommit}' HEAD`,
+        `git -c core.hooksPath=/dev/null bundle verify /tmp/machdoch-artifacts/incoming.bundle && git -c core.hooksPath=/dev/null fetch /tmp/machdoch-artifacts/incoming.bundle refs/machdoch/candidate && git -c core.hooksPath=/dev/null checkout --force --detach FETCH_HEAD && test "$(git rev-parse HEAD)" = '${bundle.candidateCommit}' && git merge-base --is-ancestor '${this.baseCommit}' HEAD`,
         300000,
       );
     }
@@ -134,6 +146,32 @@ export class TaskEnvironments {
         z.strictObject({ frozen: z.literal(true) }),
       );
     return environment;
+  }
+  private async launchPrepared(
+    claim: WorkerClaim,
+    role: "agent" | "validation",
+  ): Promise<ManagedEnvironment> {
+    for (let attempt = 1; ; attempt++) {
+      const planned = this.journal.addEnvironment(role);
+      const sandbox = await this.prepare(planned.id);
+      const anchor = await sandbox.supervisor.anchor();
+      const receipt = await this.connection.heartbeat(claim, this.signal);
+      if (receipt.instruction !== "continue" || receipt.localStopSeconds <= 0)
+        throw new Error("Task execution authority ended");
+      this.journal.requestLaunch(planned.id);
+      try {
+        return await this.start(
+          sandbox,
+          claim,
+          anchor,
+          receipt.localStopSeconds,
+        );
+      } catch (error) {
+        await this.close(planned.id);
+        if (attempt > 1 || !(error instanceof SandboxChannelClosedError))
+          throw error;
+      }
+    }
   }
   async close(id: string): Promise<void> {
     const environment = this.active.get(id);

@@ -79,6 +79,7 @@ export interface RunDelivery {
   pullRequestNumber: number | null;
   pullRequestUrl: string | null;
   autoMerge: boolean;
+  problems: number | null;
   reason: string | null;
   updatedAt: string;
   mergedAt: string | null;

@@ -8,12 +8,13 @@ import { workerLeaseReceiptSchema } from "@machdoch/fleet-protocol/cloud-executi
 
 const configuration = JSON.parse(await readFile(process.argv[2]!, "utf8")) as {
   origin: string;
+  token: string;
   directory: string;
   artifacts: SandboxConfiguration;
 };
 const connection = new RunnerConnection(
   configuration.origin,
-  process.env.MACHDOCH_CLOUD_RUNNER_TOKEN!,
+  configuration.token,
 );
 const journal = new RunnerJournal(
   configuration.directory,

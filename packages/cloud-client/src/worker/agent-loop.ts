@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import {
@@ -25,6 +26,7 @@ export interface TaskUsage {
   tokens: number;
   requests: number;
 }
+const maximumInterruptedRetries = 2;
 const inferenceErrors = new Map([
   [
     "provider_model_unavailable",
@@ -166,23 +168,35 @@ export async function agentInference(
       attemptId: claim.attemptId,
       epoch: claim.epoch,
     };
-    let receipt = await requestInference(
-      connection,
-      "inference",
-      { ...identity, ...request },
-      environment.signal,
-    );
-    while (["queued", "running", "cancel_requested"].includes(receipt.state)) {
-      await delay(500, undefined, { signal: environment.signal });
+    let receipt;
+    for (let attempt = 0; ; attempt++) {
+      const requestId = attempt ? randomUUID() : request.requestId;
       receipt = await requestInference(
         connection,
-        "inference/result",
-        { ...identity, requestId: request.requestId },
+        "inference",
+        { ...identity, ...request, requestId },
         environment.signal,
       );
+      while (
+        ["queued", "running", "cancel_requested"].includes(receipt.state)
+      ) {
+        await delay(500, undefined, { signal: environment.signal });
+        receipt = await requestInference(
+          connection,
+          "inference/result",
+          { ...identity, requestId },
+          environment.signal,
+        );
+      }
+      usage.requests++;
+      usage.tokens += receipt.chargedTokens;
+      if (
+        receipt.errorCode !== "interrupted" ||
+        attempt >= maximumInterruptedRetries
+      )
+        break;
+      await authorize(connection, claim, environment, "running");
     }
-    usage.requests++;
-    usage.tokens += receipt.chargedTokens;
     if (receipt.state !== "complete" || !receipt.response)
       throw new Error(
         inferenceErrors.get(receipt.errorCode ?? "") ??

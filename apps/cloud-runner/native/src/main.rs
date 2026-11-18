@@ -29,6 +29,8 @@ use std::{
 };
 use watchdog::Watchdog;
 
+const MACHINE_TERMINATION_TIMEOUT: Duration = Duration::from_secs(30);
+
 fn supervise(events: &EventSink) -> Result<(), String> {
     let (send, receive) = mpsc::sync_channel(8);
     thread::spawn(move || {
