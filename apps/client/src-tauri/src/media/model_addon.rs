@@ -10,6 +10,7 @@ use sha2::{Digest as _, Sha256};
 
 use super::{
     database,
+    model_addon_lycoris::{lycoris_algorithm, lycoris_module_dimensions, lycoris_tensor_profile},
     model_import::{self, ParsedSafetensorsHeader},
     ImportMediaModelAddonRequest, MediaAssetImportDuplicate, MediaEmbeddingVectorProfile,
     MediaLoraTensorProfile, MediaModelAddonCapability, MediaModelAddonImportInspection,
@@ -244,6 +245,7 @@ fn lora_pair_dimensions(header: &ParsedSafetensorsHeader, key_fragment: &str) ->
                 ))
             })
         })
+        .chain(lycoris_module_dimensions(header, key_fragment))
         .collect()
 }
 
@@ -280,30 +282,11 @@ fn unsupported_lora_algorithm(
         .iter()
         .map(|key| key.to_lowercase())
         .collect::<Vec<_>>();
-    if keys.iter().any(|key| {
-        key.contains("hada_w1_a")
-            || key.contains("hada_w1_b")
-            || key.contains("hada_w2_a")
-            || key.contains(".hada_")
-    }) {
-        return Some(("LoHa", "Hadamard-product adapters"));
-    }
-    if keys.iter().any(|key| {
-        key.contains("lokr_w1")
-            || key.contains("lokr_w2")
-            || key.contains("lokr_t2")
-            || key.contains(".lokr_")
-    }) {
-        return Some(("LoKr", "Kronecker-product adapters"));
-    }
     if keys
         .iter()
         .any(|key| key.contains("oft_blocks") || key.contains("oft_diag") || key.contains(".oft_"))
     {
         return Some(("OFT", "orthogonal fine-tuning adapters"));
-    }
-    if keys.iter().any(|key| key.ends_with(".lora_mid.weight")) {
-        return Some(("CP-decomposed LoCon", "LoCon tensors with lora_mid weights"));
     }
     None
 }
@@ -311,6 +294,7 @@ fn unsupported_lora_algorithm(
 fn has_lora_signature(header: &ParsedSafetensorsHeader) -> bool {
     has_lora_pair(header)
         || unsupported_lora_algorithm(header).is_some()
+        || !matches!(lycoris_algorithm(header), Ok(None))
         || header.tensor_keys.iter().any(|key| {
             let key = key.to_lowercase();
             LORA_TENSOR_PAIRS
@@ -357,8 +341,11 @@ fn lora_component_for_key(key: &str) -> &'static str {
 fn lora_tensor_profile(header: &ParsedSafetensorsHeader) -> MediaResult<MediaLoraTensorProfile> {
     if let Some((algorithm, description)) = unsupported_lora_algorithm(header) {
         return Err(format!(
-            "This file contains {algorithm} ({description}), which the pinned Diffusers runner does not safely support. Convert or export it as standard LoRA/LoCon/DoRA safetensors before importing."
+            "This file contains {algorithm} ({description}), which the pinned Diffusers runner does not safely support. Convert or export it as LoRA, LoCon, LoHa, LoKr or DoRA safetensors before importing."
         ));
+    }
+    if let Some(algorithm) = lycoris_algorithm(header)? {
+        return lycoris_tensor_profile(header, algorithm);
     }
 
     let lower_to_original = header
@@ -579,6 +566,7 @@ fn detected_target_components(header: &ParsedSafetensorsHeader, kind: &str) -> V
     let has_denoiser = kind == "lora"
         && keys.iter().any(|key| {
             key.contains("lora_unet")
+                || key.starts_with("lycoris_")
                 || key.contains("transformer")
                 || key.contains("diffusion_model")
                 || key.starts_with("unet.")
@@ -2532,6 +2520,67 @@ mod tests {
     }
 
     #[test]
+    fn profiles_sdxl_lokr_and_loha_adapters_from_their_factor_shapes() {
+        let lokr_path = temp_path("sdxl-lokr");
+        write_safetensors(
+            &lokr_path,
+            serde_json::json!({
+                "lycoris_down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lokr_w1": {"dtype": "F32", "shape": [16, 16], "data_offsets": [0, 1024]},
+                "lycoris_down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lokr_w2": {"dtype": "F32", "shape": [40, 128], "data_offsets": [1024, 21504]},
+                "lycoris_down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.alpha": {"dtype": "F32", "shape": [], "data_offsets": [21504, 21508]}
+            }),
+            &vec![0; 21508],
+        );
+        let lokr = inspect(lokr_path.to_str().unwrap()).unwrap();
+        assert!(lokr.can_import, "{:?}", lokr.blocking_reason);
+        assert_eq!(
+            lokr.detected_architecture.as_deref(),
+            Some("stable-diffusion-xl")
+        );
+        assert_eq!(lokr.target_components, vec!["denoiser".to_string()]);
+        let profile = lokr.lora_profile.unwrap();
+        assert_eq!(
+            (
+                profile.algorithm.as_str(),
+                profile.dialect.as_str(),
+                profile.rank_minimum,
+                profile.network_alpha_count
+            ),
+            ("lokr", "generic", 40, 1)
+        );
+        fs::remove_file(lokr_path).unwrap();
+
+        let loha_path = temp_path("sdxl-loha");
+        write_safetensors(
+            &loha_path,
+            serde_json::json!({
+                "lora_unet_input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w1_a": {"dtype": "F32", "shape": [640, 4], "data_offsets": [0, 10240]},
+                "lora_unet_input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w1_b": {"dtype": "F32", "shape": [4, 2048], "data_offsets": [10240, 43008]},
+                "lora_unet_input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w2_a": {"dtype": "F32", "shape": [640, 4], "data_offsets": [43008, 53248]},
+                "lora_unet_input_blocks_4_1_transformer_blocks_0_attn2_to_k.hada_w2_b": {"dtype": "F32", "shape": [4, 2048], "data_offsets": [53248, 86016]}
+            }),
+            &vec![0; 86016],
+        );
+        let loha = inspect(loha_path.to_str().unwrap()).unwrap();
+        assert!(loha.can_import, "{:?}", loha.blocking_reason);
+        assert_eq!(
+            loha.detected_architecture.as_deref(),
+            Some("stable-diffusion-xl")
+        );
+        let profile = loha.lora_profile.unwrap();
+        assert_eq!(
+            (
+                profile.algorithm.as_str(),
+                profile.dialect.as_str(),
+                profile.rank_maximum,
+                profile.target_module_count
+            ),
+            ("loha", "kohya", 4, 1)
+        );
+        fs::remove_file(loha_path).unwrap();
+    }
+
+    #[test]
     fn detects_flux_2_attention_only_lora_from_fused_projection_shape() {
         for width in [3_072, 4_096] {
             let path = temp_path("flux-2-attention-lora");
@@ -2983,14 +3032,9 @@ mod tests {
     #[test]
     fn blocks_unsupported_adapter_algorithms_and_incomplete_lora_pairs() {
         for (name, key, expected) in [
-            ("loha", "lycoris_block.hada_w1_a", "LoHa"),
-            ("lokr", "lycoris_block.lokr_w1", "LoKr"),
+            ("loha", "lycoris_block.hada_w1_a", "Hadamard factor"),
+            ("lokr", "lycoris_block.lokr_w1", "missing lokr_w2"),
             ("oft", "lycoris_block.oft_blocks", "OFT"),
-            (
-                "cp-locon",
-                "lora_unet_block.lora_mid.weight",
-                "CP-decomposed LoCon",
-            ),
         ] {
             let path = temp_path(name);
             write_safetensors(

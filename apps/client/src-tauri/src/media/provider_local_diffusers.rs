@@ -1164,7 +1164,10 @@ fn resolve_addons(
         }
         if row.0 == "lora"
             && lora_profile.as_ref().is_none_or(|profile| {
-                !matches!(profile.algorithm.as_str(), "lora" | "locon" | "dora")
+                !matches!(
+                    profile.algorithm.as_str(),
+                    "lora" | "locon" | "dora" | "lokr" | "loha"
+                )
                     || !matches!(
                         profile.dialect.as_str(),
                         "kohya" | "diffusers-peft" | "generic"
@@ -1184,6 +1187,8 @@ fn resolve_addons(
                         && (profile.convolution_target_count == 0
                             || profile.magnitude_vector_count > 0))
                     || (profile.algorithm == "dora" && profile.magnitude_vector_count == 0)
+                    || (matches!(profile.algorithm.as_str(), "lokr" | "loha")
+                        && profile.magnitude_vector_count > 0)
             })
         {
             return Err(format!(

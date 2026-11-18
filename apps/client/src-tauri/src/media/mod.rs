@@ -29,6 +29,7 @@ mod layout_asset_store;
 mod ingest;
 mod local_flow;
 mod model_addon;
+mod model_addon_lycoris;
 mod model_components;
 mod model_discovery;
 mod model_library;
