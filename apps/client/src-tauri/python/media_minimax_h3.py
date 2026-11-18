@@ -149,7 +149,7 @@ def render(args, progress=None):
 
     print("Loading H3 transformer", flush=True)
     model = load_minimax_h3_dit(str(model_path), device="cuda", blocks_to_swap=args.swap_blocks, base_quant="int8")
-    model.enable_block_swap(args.swap_blocks, h2d_only=False)
+    model.enable_block_swap(args.swap_blocks, h2d_only=True)
     lora_network, adaln_pairs = load_preview_turbo(model, str(args.lora), 1.0)
     lora_network.to("cuda", dtype=torch.bfloat16)
     for module in lora_network.unet_loras:
@@ -170,7 +170,7 @@ def render(args, progress=None):
         video_latent, audio_latent = sample_image(
             model, text_embeddings.to("cuda", torch.bfloat16),
             width=args.width, height=args.height, num_frames=args.frames,
-            steps=args.steps, shift=6.0, schedule_mode="reference", sampler="euler",
+            steps=args.steps, shift=6.0, sampler="euler",
             cfg_scale=1.0, seed=args.seed, dtype=torch.bfloat16, ref_latents=reference_latents, ref_schedule=ref_schedule,
             text_token_tags=token_tags, return_audio=True, log_steps=True,
             on_denoised=(lambda step, total, _: progress(step, total)) if progress else None,
@@ -213,7 +213,7 @@ def main():
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=384)
     parser.add_argument("--frames", type=int, default=124)
-    parser.add_argument("--steps", type=int, default=9)
+    parser.add_argument("--steps", type=int, default=8)
     parser.add_argument("--seed", type=int, default=57)
     parser.add_argument("--swap-blocks", type=int, default=44)
     args = parser.parse_args()

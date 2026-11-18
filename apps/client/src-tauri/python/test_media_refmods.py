@@ -14,7 +14,8 @@ from safetensors.torch import save_file
 from media_refmods import Reference, handle_request, inspect_file, load_references, reference_map, save_references, weaken_reference
 from media_refmod_creation import compress_visual
 from media_refmod_preview import preview
-from fizgig.minimax.model import MiniMaxH3Config, MiniMaxH3DiT, image_position_ids
+from fizgig.minimax.layout import AudioReference, VisualReference, packed_positions
+from fizgig.minimax.model import MiniMaxH3Config, MiniMaxH3DiT
 from fizgig.minimax.sampling import sample_image
 from media_refmod_conditioning import prepare_saved_references, reference_step_schedule, reference_video_decode_plan
 
@@ -335,8 +336,9 @@ class RefModTests(unittest.TestCase):
 
 class NativeReferenceTests(unittest.TestCase):
     def test_audio_position_grid_uses_target_stereo_axis_and_shifts_target_clock(self):
-        baseline = image_position_ids(3, 4, 4, num_audio_latents=2)
-        positions = image_position_ids(3, 4, 4, num_audio_latents=2, refs=[(4, 4, 1), ("audio", 5)])
+        baseline = packed_positions(3, 4, 4, audio_latents=2)
+        positions = packed_positions(3, 4, 4, audio_latents=2,
+                                     references=[VisualReference(4, 4), AudioReference(5)])
         self.assertEqual(positions.shape[0], baseline.shape[0] + 14)
         self.assertEqual(positions[7:12, 0].tolist(), [4, 5, 6, 7, 8])
         self.assertEqual(positions[12:17, 0].tolist(), [4, 5, 6, 7, 8])
@@ -350,7 +352,6 @@ class NativeReferenceTests(unittest.TestCase):
                                            num_attention_heads=3, attention_head_dim=16, ffn_hidden_size=64,
                                            text_dim=24, timestep_input_dim=16, time_embed_hidden_size=32,
                                            time_embed_dim=24, rope_inv_freq_len=2)).eval()
-        model.pack_audio_rows = True
         visual = torch.randn(1, 24, 2, 4, 4)
         audio = torch.randn(1, 32, 2, 5)
         original_visual, original_audio = visual.clone(), audio.clone()

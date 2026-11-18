@@ -2,9 +2,11 @@
 
 ## Scope
 
-Machdoch-owned code and documentation are licensed under Apache-2.0. The project licence does not relicense third-party source, dependencies, model weights, externally supplied assets or separately attributed material. Existing third-party licence and copyright notices take precedence for that material.
+Machdoch-owned code and documentation are licensed under the PolyForm Noncommercial License 1.0.0. Commercial use requires a separate licence from the licensor. The project licence does not relicense third-party source, dependencies, model weights, externally supplied assets or separately attributed material. Existing third-party licence and copyright notices take precedence for that material.
 
-[EULA.md](../EULA.md) states the end-user terms without adding restrictions to Apache-2.0. [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) identifies copied and bundled material. Contributions intentionally submitted for inclusion in Machdoch-owned code are covered by section 5 of [LICENSE](../LICENSE), unless explicitly stated otherwise or governed by a separate agreement; contributors must have the necessary rights.
+Releases published before this change remain available under Apache-2.0 for the versions already distributed under it.
+
+[EULA.md](../EULA.md) states the end-user terms. [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) identifies copied and bundled material. Contributions require a written agreement that lets the licensor offer them under both the project licence and separate commercial licences.
 
 ## Release bundles
 
@@ -14,11 +16,10 @@ The generated bundle's `manifest.json` records versions and file hashes. A bundl
 
 ## Unresolved obligations
 
-The [audit](../docs/licensing/README.md) remains relevant. Adding the project licence and notices does not resolve these findings:
+The [audit](../docs/licensing/README.md) remains relevant. Its first finding, the ComfyUI-derived MiniMax code in Fizgig, was resolved on 2026-11-17 by replacing that code; see [NOTICE-RefMod.txt](../apps/client/src-tauri/python/NOTICE-RefMod.txt). Adding the project licence and notices does not resolve these findings:
 
-- Fizgig's `minimax/model.py` and `minimax/sampling.py` describe ComfyUI ports. The checked upstream is GPLv3. Their rights and the scope of any affected combined work require resolution before a release containing them can be cleared. Obtain a verifiable grant, replace/remove the affected material, or satisfy the applicable GPL terms; the root Apache licence is not a grant for those portions. The former audio and video VAE ports were replaced with Machdoch adapters to Diffusers' Apache-2.0 H3 autoencoders; this does not clear the remaining combined-work obligations.
 - Redistributed LGPL/GPL binaries need their corresponding source and applicable build/relinking arrangements. Fleet Manager's Sharp/libvips libraries and any redistributed GPL-enabled FFmpeg are examples. Licence texts alone do not satisfy these obligations.
 - Python runtime and accelerator packages need review for each actual distributed environment; the earlier audit did not establish complete terms for seven AMD/ROCm packages. Runtime downloads and model acquisitions are governed by their publishers' terms.
-- Android packaging includes the project licence and end-user terms; complete Android dependency notices, final-artifact inspection and ownership of externally supplied assets remain unverified. Do not infer clearance from Apache declarations in dependency metadata.
+- Android packaging includes the project licence and end-user terms; complete Android dependency notices, final-artifact inspection and ownership of externally supplied assets remain unverified. Do not infer clearance from licence declarations in dependency metadata.
 
 Model restrictions, including territorial, commercial and registration requirements, remain separate from the application licence. No broader model permissions are granted here.

@@ -18,17 +18,12 @@ that tensor, decode it if quantized, and place it —
 The frozen base is what LoRA/FT trains on top of; the fp32 output-head island stays fp32.
 """
 
-import os
 from collections.abc import Mapping
 
 import torch
 import torch.nn as nn
 
-# Not the official safe_open mmap path: on Windows, streaming a 66 GB file via
-# safe_open(device="cpu").get_tensor() hard-crashes (access violation) in torch's storage
-# mmap-slicing. MemoryEfficientSafeOpen reads each tensor with a plain np.fromfile instead —
-# the same reader every other large-model loader in the repo uses. See embedder.py.
-from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen, ShardedSafeOpen
+from fizgig.utils.safetensors import open_safetensors
 
 from .convrot import ConvRotInt8Linear, dequantize_int8_convrot, parse_comfy_quant
 from .model import MiniMaxH3DiT, MiniMaxH3Config
@@ -68,16 +63,6 @@ def config_from_checkpoint(keys, table_shape=None) -> MiniMaxH3Config:
         size, dim = int(table_shape[0]), int(table_shape[1])
         return MiniMaxH3Config(adaln_t_table_size=size, time_embed_dim=dim)
     return MiniMaxH3Config()
-
-
-def _checkpoint_tensor_shape(reader, name: str) -> tuple[int, ...]:
-    """Return a checkpoint tensor's shape without reading its payload."""
-    if isinstance(reader, MemoryEfficientSafeOpen):
-        return tuple(reader.header[name]["shape"])
-    if isinstance(reader, ShardedSafeOpen):
-        shard = reader.weight_map[name]
-        return tuple(reader._reader(shard).header[name]["shape"])
-    raise TypeError(f"unsupported checkpoint reader: {type(reader).__name__}")
 
 
 def validate_dit_checkpoint_tensors(
@@ -138,7 +123,7 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
     perturbation applied 100 times per forward, not zero-mean rounding, and the gate scales the
     whole attention/MLP branch — i.e. exactly where a LoRA's contribution lands.
 
-    `_mod_scale_shift` / `_mod_gate` still cast to the activation dtype at the point of use, so
+    The block modulation still casts to the activation dtype at the point of use, so
     only the modulation itself gains precision; the block matmuls stay bf16, as in the reference.
 
     Ignored on the full bf16 checkpoint, where ComfyUI also uses the compute dtype. Pass False
@@ -149,9 +134,6 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                ~0.17% error in the frozen base, ~21 GB resident. Needs a pre-quantized file.
       "nf4"  — decode to bf16 then NF4 (bitsandbytes). ~9.5% error, ~11 GB resident. The only
                option for the bf16 checkpoint, and the fallback for small cards.
-      "hqq"  — decode to bf16 then HQQ 4-bit, group 8 (rintic-13, #102; needs `pip install
-               hqq`). ~6.3% error — a third closer to int8 than NF4 — at ~0.75 B/param, so
-               ~45% more resident than NF4. Explicit pick only; never chosen by "auto".
       "auto" — int8 when the file carries int8 ConvRot weights, else nf4. Matching the
                reference is worth the 10 GB: a LoRA fitted against a 9.5%-perturbed base spends
                capacity correcting quantization error that is absent at inference, and the
@@ -160,12 +142,11 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
 
     blocks_to_swap parks the LAST n blocks on CPU at load — pair it with
     model.enable_block_swap(n) so the forward moves them just-in-time."""
-    opener = ShardedSafeOpen if os.path.isdir(path) else MemoryEfficientSafeOpen
-    with opener(path) as f:
+    with open_safetensors(path) as f:
         keys = set(f.keys())
         table_shape = None
         if "adaln_t_table" in keys:
-            table_shape = _checkpoint_tensor_shape(f, "adaln_t_table")
+            table_shape = f.specs["adaln_t_table"].shape
         cfg = config_from_checkpoint(keys, table_shape)
         # `<module>.comfy_quant` marks a pre-quantized Linear; the config rides in the blob.
         quant_conf = {k[: -len(".comfy_quant")]: parse_comfy_quant(f.get_tensor(k))
@@ -177,9 +158,8 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
         if mode == "int8" and not quant_conf:
             raise ValueError("base_quant='int8' needs a pre-quantized checkpoint "
                              "(minimax_h3_*_pruned_int8_convrot.safetensors)")
-        if mode == "hqq":
-            from .hqq4 import HQQ4bitLinear, _quantizer
-            _quantizer()                      # fail HERE with the install hint, not mid-stream
+        if mode not in ("int8", "nf4"):
+            raise ValueError(f"unsupported base_quant {base_quant!r}")
         if not quantize:
             mode = "none"
         if mode == "nf4":
@@ -204,7 +184,7 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                 name for name, _ in model.named_buffers() if name in expected_shapes
             )
             checkpoint_shapes = {
-                name: _checkpoint_tensor_shape(f, name) for name in keys & expected_shapes.keys()
+                name: f.specs[name].shape for name in keys & expected_shapes.keys()
             }
             validate_dit_checkpoint_tensors(expected_shapes, checkpoint_shapes)
 
@@ -213,7 +193,6 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
             # (nn.Linear's default), which across the 33 B of NF4-target Linears is ~118 GB of
             # throwaway tensors that the process allocator then holds for the whole run. On meta
             # the shells are 0 bytes; the real weights are streamed in below.
-            hqq_targets = []                  # module paths that got an HQQ4bitLinear shell
             if mode != "none":
                 for mod_name, module in list(model.named_modules()):
                     for child_name, child in list(module.named_children()):
@@ -236,30 +215,16 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                             # Linear4bit shell is a 4-bit module holding a dense Parameter, and
                             # bitsandbytes only finds out on the first forward — deep inside a
                             # checkpointed block, as `assert module.weight.shape[1] == 1`.
-                            if mode == "hqq":
-                                n = child.in_features * child.out_features
-                                if n % 32:      # 2*group_size — leave the odd one dense
-                                    continue
-                                q = HQQ4bitLinear(child.in_features, child.out_features,
-                                                  bias=child.bias is not None,
-                                                  compute_dtype=compute_dtype)
-                                hqq_targets.append(full)
-                            else:
-                                q = Linear4bit(child.in_features, child.out_features,
-                                               bias=child.bias is not None,
-                                               compute_dtype=compute_dtype, quant_type="nf4")
-                            setattr(module, child_name, q)
+                            setattr(module, child_name, Linear4bit(
+                                child.in_features, child.out_features,
+                                bias=child.bias is not None,
+                                compute_dtype=compute_dtype, quant_type="nf4"))
 
         dev = torch.device(device)
         if mode == "int8":
             print(f"[load] streaming the MiniMax H3 base, KEEPING its {len(quant_conf)} int8 "
                   "ConvRot linears (~0.17% base error, ~21 GB resident — the reference's own "
                   "storage; NF4 would be ~9.5% error at ~11 GB).", flush=True)
-        elif mode == "hqq":
-            print(f"[load] streaming the MiniMax H3 base and quantizing {len(hqq_targets)} "
-                  "linears to HQQ 4-bit (group 8 — ~4.8% base error vs NF4's ~9.5%, ~45% "
-                  "more resident than NF4). The proximal solver runs per weight on the GPU; "
-                  "a few quiet minutes here is normal.", flush=True)
         elif quant_conf:
             print(f"[load] streaming the pre-quantized MiniMax H3 base ({len(quant_conf)} int8 "
                   "ConvRot linears decoded to bf16, then NF4) — a quiet minute here is normal "
@@ -283,14 +248,14 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                 return False
             return int(name.split(".")[1]) >= swap_from
 
-        def _read_weight(name: str):
+        def _read_weight(name: str, device=None):
             """The dense tensor for `name`, decoding a pre-quantized Linear if that's what it is."""
             module_path = name[: -len(".weight")]
             conf = quant_conf.get(module_path) if name.endswith(".weight") else None
             if conf is None:
-                return f.get_tensor(name)
-            return dequantize_int8_convrot(f.get_tensor(name),
-                                           f.get_tensor(f"{module_path}.weight_scale"),
+                return f.get_tensor(name, device)
+            return dequantize_int8_convrot(f.get_tensor(name, device),
+                                           f.get_tensor(f"{module_path}.weight_scale", device),
                                            conf, out_dtype=compute_dtype)
 
         # int8 mode: the quantized linears hold BUFFERS, not parameters — fill them first.
@@ -298,26 +263,17 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
             for mod_path in quant_conf:
                 mod = model.get_submodule(mod_path)
                 tgt = torch.device("cpu") if _parked(mod_path) else dev
-                mod.qdata = f.get_tensor(f"{mod_path}.weight").to(torch.int8).to(tgt)
-                mod.wscale = (f.get_tensor(f"{mod_path}.weight_scale")
-                              .to(torch.float32).reshape(-1, 1).to(tgt))
-        # hqq mode: same buffer story — the shells have no `weight` Parameter, so the
-        # named_parameters loop below never sees them. Quantize on the GPU (the solver is
-        # CPU-slow on fc1-sized weights), then park the packed buffers if the block is swapped.
-        if mode == "hqq":
-            for mod_path in hqq_targets:
-                mod = model.get_submodule(mod_path)
-                mod.load_dense(_read_weight(f"{mod_path}.weight").to(compute_dtype), dev)
-                if _parked(mod_path):
-                    mod.W_q, mod.scale, mod.zero, mod.qmeta = (
-                        mod.W_q.cpu(), mod.scale.cpu(), mod.zero.cpu(), mod.qmeta.cpu())
+                mod.qdata = f.get_tensor(f"{mod_path}.weight", tgt, torch.int8)
+                mod.wscale = f.get_tensor(f"{mod_path}.weight_scale", tgt, torch.float32).reshape(-1, 1)
 
         for name, _ in model.named_parameters():
             if mode == "int8" and name.rsplit(".", 1)[0] in quant_conf:
                 continue                      # already placed as int8 buffers above
-            w = _read_weight(name)
+            nf4_target = mode == "nf4" and _is_nf4_target(name) and not _is_adaln(name)
+            target = torch.device("cpu") if nf4_target or _parked(name) else dev
+            w = _read_weight(name, target)
             parent, leaf = _owner_and_leaf(model, name)
-            if mode == "nf4" and _is_nf4_target(name) and not _is_adaln(name):
+            if nf4_target:
                 # NF4-quantize this weight onto the GPU; frozen (no grad).
                 # NF4 quantization happens on the .to(cuda) move (Params4bit.cuda()).
                 p = Params4bit(w.to(compute_dtype), requires_grad=False, quant_type="nf4").to(dev)
@@ -328,12 +284,11 @@ def load_minimax_h3_dit(path: str, device="cuda", compute_dtype=torch.bfloat16,
                 keep = (w.to(torch.float32)
                         if (w.dtype == torch.float32 or _is_adaln(name))
                         else w.to(compute_dtype))
-                target = torch.device("cpu") if _parked(name) else dev
-                setattr(parent, leaf, nn.Parameter(keep.to(target), requires_grad=False))
+                setattr(parent, leaf, nn.Parameter(keep, requires_grad=False))
         # buffers (rope.inv_freq, and adaln_t_table on a pruned file)
         for name in checkpoint_buffer_names:
             parent, leaf = _owner_and_leaf(model, name)
-            parent.register_buffer(leaf, f.get_tensor(name).to(torch.float32).to(dev))
+            parent.register_buffer(leaf, f.get_tensor(name, dev, torch.float32))
     # tells the forward not to demote t_emb — an fp32 projection needs an fp32 input.
     model.adaln_fp32 = _adaln32
     model.eval()

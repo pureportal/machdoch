@@ -1,6 +1,5 @@
 """Device utilities for memory management and synchronization."""
 
-import gc
 import logging
 import math
 import os
@@ -91,21 +90,6 @@ def apply_sim_vram_cap(device: Optional[Union[str, torch.device]] = None):
         logger.warning(f"[sim] could not cap the allocator: {exc}")
 
 
-def clean_memory_on_device(device: Optional[Union[str, torch.device]]):
-    """Free cached memory on the specified device."""
-    if device is None:
-        return
-    if isinstance(device, str):
-        device = torch.device(device)
-
-    gc.collect()
-
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
-    elif device.type == "xpu":
-        torch.xpu.empty_cache()
-    elif device.type == "mps":
-        torch.mps.empty_cache()
 
 
 def gpu_svd(W: torch.Tensor) -> tuple:
@@ -144,19 +128,6 @@ def gpu_kron(w1: torch.Tensor, w2: torch.Tensor) -> torch.Tensor:
     return torch.kron(w1, w2)
 
 
-def synchronize_device(device: Optional[Union[str, torch.device]]):
-    """Block until all pending operations on the device are complete."""
-    if device is None:
-        return
-    if isinstance(device, str):
-        device = torch.device(device)
-
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-    elif device.type == "xpu":
-        torch.xpu.synchronize()
-    elif device.type == "mps":
-        torch.mps.synchronize()
 
 
 def release_module_tensors(module: "torch.nn.Module") -> None:

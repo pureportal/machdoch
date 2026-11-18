@@ -7,7 +7,7 @@ from unittest.mock import patch
 import torch
 from safetensors.torch import save_file
 
-from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen
+from fizgig.utils.safetensors import SafetensorsReader
 from fizgig.minimax.video_vae_checkpoint import load_video_vae
 
 
@@ -107,7 +107,7 @@ class H3VideoAdapterTests(unittest.TestCase):
 
     def test_missing_and_wrong_shape_weights_fail_before_loading_model_weights(self):
         name = "quant_conv.weight"
-        original_read = MemoryEfficientSafeOpen.get_tensor
+        original_read = SafetensorsReader.get_tensor
         for changes, removed in (({}, (name,)), ({name: torch.ones(4)}, ())):
             reads = []
 
@@ -116,7 +116,7 @@ class H3VideoAdapterTests(unittest.TestCase):
                 return original_read(checkpoint, key)
 
             path = self.changed_checkpoint(changes, removed)
-            with patch.object(MemoryEfficientSafeOpen, "get_tensor", autospec=True, side_effect=read):
+            with patch.object(SafetensorsReader, "get_tensor", autospec=True, side_effect=read):
                 with self.assertRaisesRegex(ValueError, "quant_conv.weight.*missing or incompatible"):
                     self.load("encode", path)
             self.assertEqual(reads, ["latents_mean", "latents_std"])
@@ -129,7 +129,7 @@ class H3VideoAdapterTests(unittest.TestCase):
             self.load("decode", self.changed_checkpoint({name: value}))
 
     def test_insufficient_gpu_memory_fails_before_loading_model_weights(self):
-        original_read = MemoryEfficientSafeOpen.get_tensor
+        original_read = SafetensorsReader.get_tensor
         for mode, component in (("encode", "encoder"), ("decode", "decoder")):
             reads = []
 
@@ -139,7 +139,7 @@ class H3VideoAdapterTests(unittest.TestCase):
 
             with patch("diffusers.AutoencoderKLMiniMaxH3", side_effect=lambda: self.factory(**self.configuration)), \
                     patch("torch.cuda.mem_get_info", return_value=(0, 0)) as memory, \
-                    patch.object(MemoryEfficientSafeOpen, "get_tensor", autospec=True, side_effect=read):
+                    patch.object(SafetensorsReader, "get_tensor", autospec=True, side_effect=read):
                 with self.assertRaisesRegex(ValueError, f"{component}.*free GPU memory.*Close GPU applications"):
                     load_video_vae(self.path, mode, device="cuda:1")
             memory.assert_called_once_with("cuda:1")

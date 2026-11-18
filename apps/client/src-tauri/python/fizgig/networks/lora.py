@@ -1846,9 +1846,9 @@ def lora_family_from_file(path: str) -> Optional[str]:
     identified by block count instead (checked last, after Krea 2 and MiniMax H3 are
     ruled out — diffusers-form Krea 2 also says `transformer_blocks.`).
     """
-    from fizgig.utils.safetensors import MemoryEfficientSafeOpen
+    from fizgig.utils.safetensors import SafetensorsReader
     try:
-        with MemoryEfficientSafeOpen(path) as f:
+        with SafetensorsReader(path) as f:
             keys = f.keys()
     except Exception:
         return None

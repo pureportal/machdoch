@@ -18,7 +18,7 @@ def layer_configuration(tensor_file: Any, source_key: str, layers: dict[str, Any
     layer = source_key.removesuffix(".weight")
     marker = layer + ".comfy_quant"
     configuration = layers.get(layer)
-    if marker in tensor_file.header:
+    if marker in tensor_file.specs:
         marked = json.loads(bytes(tensor_file.get_tensor(marker).tolist()).decode("utf-8"))
         if not isinstance(marked, dict):
             raise ValueError(f"KREA tensor {source_key} has invalid quantization metadata")

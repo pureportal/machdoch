@@ -20,12 +20,8 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 
-# The official safetensors safe_open(device="cpu") + get_tensor path memory-maps the file and
-# slices the torch storage per tensor — on Windows, reading a 48 GB file that way hard-crashes
-# (access violation, exit 0xC0000005) deep in torch.storage.__getitem__. The repo's own
-# MemoryEfficientSafeOpen reads each tensor with a plain np.fromfile (no torch mmap-view), which
-# is exactly why every large-model loader (krea2 / klein) uses it. Use it here too.
-from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen
+from fizgig.utils.safetensors import SafetensorsReader
+from fizgig.minimax.layout import TEXT_TAG, VIDEO_TAG
 
 # Derived from the checkpoint tensor shapes (U8 weights are 4-bit-packed: real in-dim = 2x).
 _QWEN3_32B_TRUNC50 = dict(
@@ -270,9 +266,6 @@ def build_qwen3vl_te(config_overrides=None):
     return model
 
 
-# AdaLN modality tags. The DiT selects its modulation by these, so a mis-tagged row is modulated
-# as the wrong modality — it renders, it just renders wrong.
-VIDEO_TAG, TEXT_TAG, AUDIO_TAG = 0, 1, 2
 
 
 def build_image_processor(tokenizer_dir=None):
@@ -734,7 +727,7 @@ def load_minimax_h3_te(path: str, device="cuda", compute_dtype=torch.bfloat16,
 
     cpu_embed = bool(cpu_embed) and not with_vision
 
-    with MemoryEfficientSafeOpen(path) as _probe:
+    with SafetensorsReader(path) as _probe:
         _is_cq = any(k.endswith(".comfy_quant") for k in _probe.keys())
     mode = te_quant
     if mode == "auto":
@@ -784,7 +777,7 @@ def load_minimax_h3_te(path: str, device="cuda", compute_dtype=torch.bfloat16,
           "normal (nvfp4 dequant is the slower one; a bitsandbytes 'expandable_segments not "
           "supported' warning on Windows is harmless).", flush=True)
     model_keys = {n for n, _ in model.named_parameters()}
-    with MemoryEfficientSafeOpen(path) as f:
+    with SafetensorsReader(path) as f:
         ckpt = set(f.keys())
         # The comfy nvfp4-awq TE (15 GB) stores packed quant weights + scales instead of plain
         # bf16 — detect once, then dequantize each Linear weight from its
@@ -927,7 +920,7 @@ def load_minimax_h3_te_planned(path: str, device="cuda", **kw):
         except Exception:
             pass
         try:
-            with MemoryEfficientSafeOpen(path) as _probe:
+            with SafetensorsReader(path) as _probe:
                 _is_cq = any(k.endswith(".comfy_quant") for k in _probe.keys())
         except Exception:
             _is_cq = False
@@ -974,7 +967,7 @@ def load_minimax_h3_te_planned(path: str, device="cuda", **kw):
         # stage packed weights at all, so they are exempt entirely.
         _is_cq_v = False
         try:
-            with MemoryEfficientSafeOpen(path) as _probe:
+            with SafetensorsReader(path) as _probe:
                 _is_cq_v = any(k.endswith(".comfy_quant") for k in _probe.keys())
         except Exception:
             pass

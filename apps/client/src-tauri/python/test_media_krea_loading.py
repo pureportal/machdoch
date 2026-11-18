@@ -117,7 +117,7 @@ class KreaCheckpointLoadingTests(unittest.TestCase):
                 self.assertEqual(evidence["offloadType"], "block-level-disk")
 
     def test_undeclared_integer_quantization_is_rejected_before_reading_weights(self):
-        from fizgig.utils.safetensors import MemoryEfficientSafeOpen
+        from fizgig.utils.safetensors import SafetensorsReader
 
         def transformer():
             model = torch.nn.Module()
@@ -127,7 +127,7 @@ class KreaCheckpointLoadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             checkpoint = Path(temporary) / "checkpoint.safetensors"
             save_file({"first.weight": torch.ones(2, 2, dtype=torch.int8)}, str(checkpoint))
-            with patch.object(MemoryEfficientSafeOpen, "get_tensor", side_effect=AssertionError("weight read")):
+            with patch.object(SafetensorsReader, "get_tensor", side_effect=AssertionError("weight read")):
                 with self.assertRaisesRegex(worker.WorkerError, "no scale metadata"):
                     worker._load_krea_transformer(SimpleNamespace(Krea2Transformer2DModel=transformer), torch, checkpoint)
 
@@ -285,7 +285,7 @@ class KreaCheckpointLoadingTests(unittest.TestCase):
 
     def test_disk_offload_materializes_one_block_at_a_time_and_reuses_saved_weights(self):
         from diffusers.hooks.group_offloading import ModuleGroup
-        from fizgig.utils.safetensors import MemoryEfficientSafeOpen
+        from fizgig.utils.safetensors import SafetensorsReader
 
         def transformer():
             model = torch.nn.Module()
@@ -314,17 +314,17 @@ class KreaCheckpointLoadingTests(unittest.TestCase):
                     patch.object(torch.accelerator, "current_accelerator", return_value=torch.device("cpu")):
                 with patch.object(worker.os, "name", "nt"):
                     self.assertTrue(worker._install_windows_krea_disk_offload_fixes(torch))
-                with patch.object(MemoryEfficientSafeOpen, "get_tensor", side_effect=AssertionError("eager weight read")):
+                with patch.object(SafetensorsReader, "get_tensor", side_effect=AssertionError("eager weight read")):
                     model = worker._load_krea_transformer(SimpleNamespace(Krea2Transformer2DModel=transformer), torch, checkpoint)
                 offload_groups = groups(model, Path(temporary) / "offload")
-                original_read = MemoryEfficientSafeOpen.get_tensor
-                with patch.object(MemoryEfficientSafeOpen, "get_tensor", autospec=True, side_effect=original_read) as reader:
+                original_read = SafetensorsReader.get_tensor
+                with patch.object(SafetensorsReader, "get_tensor", autospec=True, side_effect=original_read) as reader:
                     for index, group in enumerate(offload_groups):
                         reader.reset_mock()
                         group.offload_()
                         self.assertEqual([call.args[1] for call in reader.call_args_list], [f"blocks.{index}.attn.wq.weight"])
                         self.assertTrue(all(parameter.numel() == 0 for parameter in model.parameters()))
-                with patch.object(MemoryEfficientSafeOpen, "get_tensor", side_effect=AssertionError("cached checkpoint read")):
+                with patch.object(SafetensorsReader, "get_tensor", side_effect=AssertionError("cached checkpoint read")):
                     cached = worker._load_krea_transformer(SimpleNamespace(Krea2Transformer2DModel=transformer), torch, checkpoint)
                     cached_groups = groups(cached, Path(temporary) / "offload")
                     for group in cached_groups:
@@ -383,7 +383,7 @@ class KreaCheckpointLoadingTests(unittest.TestCase):
             self.assertFalse(hasattr(model.img_in.weight, "_machdoch_krea_source"))
 
     def test_flattened_modulation_rejects_incompatible_shapes_before_reading_weights(self):
-        from fizgig.utils.safetensors import MemoryEfficientSafeOpen
+        from fizgig.utils.safetensors import SafetensorsReader
 
         def transformer():
             model = torch.nn.Module()
@@ -394,7 +394,7 @@ class KreaCheckpointLoadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             checkpoint = Path(temporary) / "checkpoint.safetensors"
             save_file({"last.modulation.lin": torch.zeros(12289, dtype=torch.bfloat16)}, str(checkpoint))
-            with patch.object(MemoryEfficientSafeOpen, "get_tensor", side_effect=AssertionError("weight read")):
+            with patch.object(SafetensorsReader, "get_tensor", side_effect=AssertionError("weight read")):
                 with self.assertRaisesRegex(worker.WorkerError, "incompatible shape"):
                     worker._load_krea_transformer(SimpleNamespace(Krea2Transformer2DModel=transformer), torch, checkpoint)
 

@@ -167,7 +167,7 @@ def park_dit_partial(dit, need_gb=None):
     # slot storage — the next copy from that storage is a sticky CUDA 'invalid argument'
     # that killed the preview decode and the first training step (24 GB card, swap 6, 56-
     # frame preview at 4.9 GB free; step 0/6900 died in the rebuilt offloader). Their real
-    # masters are already on CPU in the offloader's pinned flats: re-bind, and the walk
+    # masters are already on CPU in the offloader's host buffers: re-bind, and the walk
     # skips them exactly as its own "already on CPU" rule intends.
     _off = getattr(dit, "_h2d_offloader", None)
     if _off is not None:
@@ -1122,12 +1122,12 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
         return loss, float(sigma.reshape(-1)[0])
 
     # The audio stream denoises on its OWN schedule — shift 3 against video's 12 — and
-    # remap_sigma is the closed form that keeps the two at the same underlying point. Noising the
+    # audio_sigma is the closed form that keeps the two at the same underlying point. Noising the
     # audio rows at the VIDEO sigma would put the stream somewhere the base has never seen it,
     # and the frozen model would spend the step disagreeing with the layout rather than learning.
-    from fizgig.minimax.model import remap_sigma
+    from fizgig.minimax.layout import audio_sigma
     sigma_v = float(sigma.reshape(-1)[0])
-    sigma_a = float(remap_sigma(torch.tensor(sigma_v)))
+    sigma_a = float(audio_sigma(torch.tensor(sigma_v)))
 
     a0 = audio_latent.to(device=device, dtype=torch.float32)
     a_noise = torch.randn(a0.shape, device=device, generator=generator, dtype=torch.float32)
@@ -1136,10 +1136,6 @@ def compute_loss(model, latent: torch.Tensor, text_embeds: torch.Tensor, *,
     pred, pred_a = model(noised.to(latent.dtype), t, text_embeds,
                          audio_rows=a_noised, return_audio=True, **_ref_kw)
     v_loss = F.mse_loss(pred.float(), (x0 - noise).to(pred.dtype).float())
-    if pred_a is None:                      # pack_audio_rows off — nothing to train against
-        if parts_out is not None:
-            parts_out.update(video=float(v_loss.detach()), audio=None)
-        return video_weight * v_loss, sigma_v
     a_loss = F.mse_loss(pred_a.float(), (a0 - a_noise).float())
     if parts_out is not None:
         parts_out.update(video=float(v_loss.detach()), audio=float(a_loss.detach()),
@@ -1566,12 +1562,9 @@ def compute_distill_loss(model, network, latent, text_plain, *, text_ref, ref_la
     t = (1.0 - sigma).to(device)
 
     # one soundtrack for both passes (see the docstring)
-    audio_noise = None
-    if getattr(model, "pack_audio_rows", False):
-        from fizgig.minimax.model import AUDIO_CHANNELS, audio_latents_for_frames
-        n_a = audio_latents_for_frames(1) * AUDIO_CHANNELS
-        audio_noise = torch.randn(n_a, model.config.audio_latents_dim, device=device,
-                                  generator=generator, dtype=torch.float32)
+    from fizgig.minimax.layout import AUDIO_CHANNELS, audio_latents_for_pixels
+    audio_noise = torch.randn(audio_latents_for_pixels(1) * AUDIO_CHANNELS, model.config.audio_latents_dim,
+                              device=device, generator=generator, dtype=torch.float32)
 
     with torch.no_grad(), lora_disabled(network):
         teacher = model(noised, t, text_ref, audio_noise, ref_latents=ref_latents,
@@ -3145,7 +3138,7 @@ def train_minimax(
                 f"seed {sample_seed if sample_seed else 'random'}, "
                 f"every {sample_every_n_epochs} epoch(s)"
                 f"{', plus epoch 0' if sample_at_first else ''} — "
-                f"{'full VAE decode' if vae_path else 'RGB approximation (no VAE path set)'}")
+                f"{'full VAE decode' if vae_path else 'not saved (no VAE path set)'}")
         except Exception as _e:
             logger.warning(f"[preview] prompt encoding failed ({type(_e).__name__}: {_e}) — "
                            f"previews disabled; training continues normally.")
@@ -3176,10 +3169,7 @@ def train_minimax(
         n_swap = dit.enable_block_swap(n_swap, h2d_only=_use_h2d, ring_size=2)
         _off = getattr(dit, "_h2d_offloader", None)
         if _off is not None:
-            _staging = ("pinned in RAM"
-                        if not getattr(_off, "_pin_failed", False)
-                        else "staged in ordinary RAM (pinning unavailable or RAM too "
-                             "tight) — copies synchronous")
+            _staging = "in RAM, streamed through pinned slots"
             # All three ring classes declare kind/staged_gb; the explicit None test matters
             # because `or` would swallow a legitimate 0.0 into the int8 estimate.
             _kind = getattr(_off, "kind", "?")
@@ -4912,11 +4902,9 @@ def train_minimax(
                     img = Image.fromarray(arr)
                     print(f"[preview] decoded {_w}x{_h}", flush=True)
                 else:
-                    # No VAE path configured — fall back to the 24ch->RGB linear approximation
-                    # (a 1/16-scale rough look) rather than dropping previews entirely.
-                    arr = sampling.latent_to_rgb(lat)
-                    img = Image.fromarray(arr).resize((_w, _h), Image.NEAREST)
-                    print(f"[preview] decoded {_w}x{_h}", flush=True)
+                    print(f"[preview] {stem} not saved: no VAE path set", flush=True)
+                    del lat
+                    continue
                 # The wav is written BEFORE the contract PNG on purpose: the gallery's
                 # settle guard treats the PNG as "this sample is finished", so everything
                 # belonging to the sample must already be on disk when it lands.

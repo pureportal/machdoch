@@ -3,7 +3,7 @@ from typing import Literal
 import torch
 from torch import nn
 
-from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen
+from fizgig.utils.safetensors import SafetensorsReader
 
 
 class H3AudioVAE(nn.Module):
@@ -41,10 +41,10 @@ class H3AudioVAE(nn.Module):
 def load_audio_vae(path, mode: Literal["encode", "decode"], device="cuda") -> H3AudioVAE:
     if mode not in ("encode", "decode"):
         raise ValueError("H3 audio VAE mode must be encode or decode")
-    with MemoryEfficientSafeOpen(str(path)) as checkpoint:
+    with SafetensorsReader(path) as checkpoint:
         for name in ("latents_mean", "latents_std"):
-            specification = checkpoint.header.get(name)
-            if not specification or specification["shape"] != [32] or specification["dtype"] != "F32":
+            specification = checkpoint.specs.get(name)
+            if not specification or specification.shape != (32,) or specification.dtype != "F32":
                 raise ValueError(f"H3 audio VAE needs an fp32 [32] {name} tensor. Install the complete audio checkpoint.")
         mean = checkpoint.get_tensor("latents_mean")
         standard_deviation = checkpoint.get_tensor("latents_std")
@@ -63,8 +63,8 @@ def load_audio_vae(path, mode: Literal["encode", "decode"], device="cuda") -> H3
             delattr(model, name)
         expected = model.state_dict()
         for name, tensor in expected.items():
-            specification = checkpoint.header.get(name)
-            if not specification or tuple(specification["shape"]) != tuple(tensor.shape) or specification["dtype"] != "F32":
+            specification = checkpoint.specs.get(name)
+            if not specification or specification.shape != tuple(tensor.shape) or specification.dtype != "F32":
                 raise ValueError(f"H3 audio VAE weight {name} is missing or incompatible. Install the complete audio checkpoint.")
         state = {}
         for name in expected:

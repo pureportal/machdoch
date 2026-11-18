@@ -4,7 +4,7 @@ from typing import Literal
 import torch
 from safetensors import SafetensorError, safe_open
 
-from fizgig.krea2.safetensors_utils import MemoryEfficientSafeOpen
+from fizgig.utils.safetensors import SafetensorsReader
 from fizgig.minimax.vae import H3VideoVAE
 
 
@@ -54,10 +54,10 @@ def load_video_vae(path, mode: Literal["encode", "decode"], device="cuda"):
             pass
     except SafetensorError as failure:
         raise ValueError("MiniMax H3 video VAE is incomplete or damaged. Redownload the video VAE.") from failure
-    with MemoryEfficientSafeOpen(str(path)) as checkpoint:
+    with SafetensorsReader(path) as checkpoint:
         for name in ("latents_mean", "latents_std"):
-            specification = checkpoint.header.get(name)
-            if not specification or specification["shape"] != [24] or specification["dtype"] not in ("F16", "F32"):
+            specification = checkpoint.specs.get(name)
+            if not specification or specification.shape != (24,) or specification.dtype not in ("F16", "F32"):
                 raise ValueError(f"H3 video VAE needs a floating-point [24] {name} tensor. Install the complete video checkpoint.")
         mean = checkpoint.get_tensor("latents_mean").float()
         standard_deviation = checkpoint.get_tensor("latents_std").float()
@@ -71,8 +71,8 @@ def load_video_vae(path, mode: Literal["encode", "decode"], device="cuda"):
             delattr(model, name)
         plan = video_vae_weight_plan(model)
         for name, entry in plan.items():
-            specification = checkpoint.header.get(name)
-            if not specification or tuple(specification["shape"]) != entry["shape"] or specification["dtype"] not in ("F16", "F32"):
+            specification = checkpoint.specs.get(name)
+            if not specification or specification.shape != entry["shape"] or specification.dtype not in ("F16", "F32"):
                 raise ValueError(f"H3 video VAE weight {name} is missing or incompatible. Install the complete video checkpoint.")
         if torch.device(device).type == "cuda":
             required_bytes = sum(parameter.numel() for parameter in model.parameters()) * 4
