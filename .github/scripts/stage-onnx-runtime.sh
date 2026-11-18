@@ -3,12 +3,10 @@ set -euo pipefail
 
 case "${1:?missing runner architecture}" in
   X64)
-    architecture=x64
-    checksum=43725474ba5663642e17684717946693850e2005efbd724ac72da278fead25e6
+    runtime_identifier=linux-x64
     ;;
   ARM64)
-    architecture=aarch64
-    checksum=6715b3d19965a2a6981e78ed4ba24f17a8c30d2d26420dbed10aac7ceca0085e
+    runtime_identifier=linux-arm64
     ;;
   *)
     echo "Unsupported ONNX Runtime architecture: $1" >&2
@@ -17,21 +15,34 @@ case "${1:?missing runner architecture}" in
 esac
 
 version=1.24.2
+checksum=782564d3d68e87269ea1812cc94710ad06fe014faf093f01a6f89d0bd58719d3
+staging_directory=apps/client/src-tauri/target/onnxruntime
 archive="$(mktemp)"
-extraction_directory="$(mktemp -d)"
-trap 'rm -rf "$archive" "$extraction_directory"' EXIT
+trap 'rm -f "$archive"' EXIT
 
 curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
   --output "$archive" \
-  "https://github.com/microsoft/onnxruntime/releases/download/v${version}/onnxruntime-linux-${architecture}-${version}.tgz"
+  "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${version}/microsoft.ml.onnxruntime.${version}.nupkg"
 printf '%s  %s\n' "$checksum" "$archive" | sha256sum --check --status
-tar -xzf "$archive" --directory "$extraction_directory" --strip-components=1
-install -Dm755 \
-  "$extraction_directory/lib/libonnxruntime.so.1.24.2" \
-  apps/client/src-tauri/target/onnxruntime/libonnxruntime.so.1
-ln -sfn libonnxruntime.so.1 \
-  apps/client/src-tauri/target/onnxruntime/libonnxruntime.so
-install -Dm644 "$extraction_directory/LICENSE" \
-  apps/client/src-tauri/target/onnxruntime/legal/LICENSE
-install -Dm644 "$extraction_directory/ThirdPartyNotices.txt" \
-  apps/client/src-tauri/target/onnxruntime/legal/ThirdPartyNotices.txt
+python3 -I - "$archive" "$staging_directory" "$runtime_identifier" <<'PYTHON'
+import shutil
+import sys
+import zipfile
+from pathlib import Path
+
+archive, staging_directory, runtime_identifier = sys.argv[1:]
+staging = Path(staging_directory)
+members = {
+    f"runtimes/{runtime_identifier}/native/libonnxruntime.so": staging / "libonnxruntime.so.1",
+    "LICENSE": staging / "legal" / "LICENSE",
+    "ThirdPartyNotices.txt": staging / "legal" / "ThirdPartyNotices.txt",
+}
+with zipfile.ZipFile(archive) as package:
+    for member, destination in members.items():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with package.open(member) as source, destination.open("wb") as target:
+            shutil.copyfileobj(source, target)
+PYTHON
+chmod 755 "$staging_directory/libonnxruntime.so.1"
+chmod 644 "$staging_directory/legal/LICENSE" "$staging_directory/legal/ThirdPartyNotices.txt"
+ln -sfn libonnxruntime.so.1 "$staging_directory/libonnxruntime.so"
