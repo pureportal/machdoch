@@ -3012,8 +3012,9 @@
       },
       {
         "path": "image_encoder/model.safetensors",
-        "byteSize": 2528371296,
-        "sha256": "ed1e5af7b4042ca30ec29999a4a5cfcac90b7fb610fd05ace834f2dcbb763eab"
+        "byteSize": 1264217240,
+        "sha256": "ae616c24393dd1854372b0639e5541666f7521cbe219669255e865cb7f89466a",
+        "downloadUrl": "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt/resolve/9e43909513c6714f1bc78bcb44d96e733cd242aa/image_encoder/model.fp16.safetensors"
       },
       {
         "path": "model_index.json",
@@ -3032,8 +3033,9 @@
       },
       {
         "path": "unet/diffusion_pytorch_model.safetensors",
-        "byteSize": 6098682464,
-        "sha256": "7783d82729af04f26ded4641a5952617fe331fc46add332fb9e47674fecc6ad7"
+        "byteSize": 3049435868,
+        "sha256": "9fbc02e90f37d422f5e3a4aeaee95f6629dc8c45ca211b951626e930daf2bddf",
+        "downloadUrl": "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt/resolve/9e43909513c6714f1bc78bcb44d96e733cd242aa/unet/diffusion_pytorch_model.fp16.safetensors"
       },
       {
         "path": "vae/config.json",
@@ -3042,8 +3044,9 @@
       },
       {
         "path": "vae/diffusion_pytorch_model.safetensors",
-        "byteSize": 391017740,
-        "sha256": "5d92aa595a53d9da9faf594f09910ee869d5d567c8bb0362d5095673c69997d6"
+        "byteSize": 195531910,
+        "sha256": "af602cd0eb4ad6086ec94fbf1438dfb1be5ec9ac03fd0215640854e90d6463a3",
+        "downloadUrl": "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt/resolve/9e43909513c6714f1bc78bcb44d96e733cd242aa/vae/diffusion_pytorch_model.fp16.safetensors"
       }
     ],
     "excludedPaths": [
