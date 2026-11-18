@@ -261,6 +261,9 @@ importers:
       '@machdoch/client-ui':
         specifier: workspace:*
         version: link:../../packages/client-ui
+      '@machdoch/cloud-client':
+        specifier: workspace:*
+        version: link:../../packages/cloud-client
       '@machdoch/fleet-protocol':
         specifier: workspace:*
         version: link:../../packages/fleet-protocol
@@ -340,9 +343,6 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.13
         version: 0.5.13
-      '@machdoch/cloud-client':
-        specifier: workspace:*
-        version: link:../../packages/cloud-client
       '@tailwindcss/postcss':
         specifier: ^4.3.3
         version: 4.3.3

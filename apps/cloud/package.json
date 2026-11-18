@@ -73,6 +73,7 @@
   "dependencies": {
     "@machdoch/analytics": "workspace:*",
     "@machdoch/client-ui": "workspace:*",
+    "@machdoch/cloud-client": "workspace:*",
     "@machdoch/fleet-protocol": "workspace:*",
     "@machdoch/media-studio": "workspace:*",
     "@machdoch/model-runtime": "workspace:*",
@@ -101,7 +102,6 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.13",
-    "@machdoch/cloud-client": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",

@@ -101,6 +101,7 @@ RUN test -f .next/BUILD_ID \
     && test -f dist/cloud-recurrence-worker.mjs \
     && test -f public/media-studio/index.html \
     && test -L node_modules/@machdoch/client-ui \
+    && test -L node_modules/@machdoch/cloud-client \
     && test -L node_modules/@machdoch/fleet-protocol \
     && test -L node_modules/@machdoch/media-studio \
     && test -L node_modules/@machdoch/product-ui \
