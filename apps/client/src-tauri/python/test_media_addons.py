@@ -546,6 +546,26 @@ class VideoLoraTests(unittest.TestCase):
                         torch.testing.assert_close(layer(value), expected, atol=0.015, rtol=0.015)
                     self.assertEqual(layer.merged, storage is None)
 
+    def test_original_wan_module_names_load_onto_the_diffusers_layers(self):
+        _, create, _ = next(model for model in video_models() if model[0] == "wan")
+        for stem, suffix in (("diffusion_model.blocks.0.self_attn.q", ""), ("blocks.0.ffn.0", ".default")):
+            with self.subTest(stem=stem), tempfile.TemporaryDirectory() as directory:
+                transformer = create().eval()
+                target = "blocks.0.attn1.to_q" if "self_attn" in stem else "blocks.0.ffn.net.0.proj"
+                layer = transformer.get_submodule(target)
+                value = torch.ones(1, layer.weight.shape[1])
+                baseline = layer(value).detach()
+                down = torch.full((2, layer.weight.shape[1]), 0.05)
+                up = torch.full((layer.weight.shape[0], 2), 0.1)
+                path = Path(directory) / "original.safetensors"
+                save_file({f"{stem}.lora_A{suffix}.weight": down, f"{stem}.lora_B{suffix}.weight": up}, path)
+                addon, _, _ = self.write_addon(Path(directory) / "unused.safetensors", target, layer.weight.shape[1])
+                addon.update(path=str(path), digest=hashlib.sha256(path.read_bytes()).hexdigest())
+                evidence = VIDEO_ADDONS.load_loras(transformer, [addon], WORKER._lora_profile)
+                result = transformer.get_submodule(target)(value)
+                torch.testing.assert_close(result, baseline + 0.7 * (value @ down.T @ up.T))
+                self.assertEqual(evidence[0]["loadedComponents"], ["denoiser"])
+
     def test_wrong_digest_and_wrong_model_variant_fail_before_loading(self):
         _, create, target = video_models()[0]
         with tempfile.TemporaryDirectory() as directory:

@@ -820,6 +820,19 @@ fn detect_lora_architecture(header: &ParsedSafetensorsHeader) -> (Option<String>
     {
         return (Some("wan-2.2-ti2v".to_string()), "high");
     }
+    for (architecture, width, feed_forward_width) in [
+        ("wan-2.1-t2v-1.3b", 1_536, 8_960),
+        ("wan-2.2-ti2v", 3_072, 14_336),
+    ] {
+        let original_attention = lora_pair_dimensions(header, ".self_attn.q.")
+            .contains(&(width, width))
+            && lora_pair_dimensions(header, ".cross_attn.k.").contains(&(width, width));
+        let original_feed_forward =
+            lora_pair_dimensions(header, ".ffn.0.").contains(&(width, feed_forward_width));
+        if original_attention || original_feed_forward {
+            return (Some(architecture.to_string()), "high");
+        }
+    }
     if has_lora_key_fragment(header, "transformer.transformer_blocks.")
         && !has_lora_key_fragment(header, ".attn.add_q_proj")
         && !has_lora_key_fragment(header, "single_transformer_blocks.")
@@ -2680,6 +2693,44 @@ mod tests {
             assert_eq!(
                 capabilities_for_model(provider_id, Some(architecture))[0].kind,
                 "lora"
+            );
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn detects_wan_loras_saved_with_original_module_names() {
+        for (prefix, suffix) in [("diffusion_model.", ""), ("", ".default")] {
+            let path = temp_path("wan-original-names");
+            let mut header = serde_json::Map::new();
+            let mut offset = 0;
+            for (target, input, output) in [
+                ("blocks.0.self_attn.q", 1_536, 1_536),
+                ("blocks.0.cross_attn.k", 1_536, 1_536),
+                ("blocks.0.ffn.0", 1_536, 8_960),
+            ] {
+                for (side, shape) in [("lora_A", vec![2, input]), ("lora_B", vec![output, 2])] {
+                    let size = shape.iter().product::<usize>() * 4;
+                    header.insert(
+                        format!("{prefix}{target}.{side}{suffix}.weight"),
+                        serde_json::json!({"dtype": "F32", "shape": shape, "data_offsets": [offset, offset + size]}),
+                    );
+                    offset += size;
+                }
+            }
+            write_safetensors(&path, serde_json::Value::Object(header), &vec![0; offset]);
+            let inspection = inspect(path.to_str().unwrap()).unwrap();
+            assert_eq!(
+                inspection.detected_architecture.as_deref(),
+                Some("wan-2.1-t2v-1.3b")
+            );
+            assert_eq!(inspection.target_components, vec!["denoiser"]);
+            assert_eq!(
+                inspection
+                    .lora_profile
+                    .as_ref()
+                    .map(|profile| profile.dialect.as_str()),
+                Some("diffusers-peft")
             );
             fs::remove_file(path).unwrap();
         }
