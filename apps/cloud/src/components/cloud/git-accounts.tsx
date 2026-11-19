@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { cloudRequest, formText } from "./api-client";
 import { useToast } from "./toast";
 import { RelativeTime } from "./relative-time";
+import { CliSignInDialog, useCliLogin } from "./provider-sign-in";
 
 function AccountSection({
   provider,
@@ -37,6 +38,14 @@ function AccountSection({
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [deviceSigningIn, setDeviceSigningIn] = useState(false);
+  const deviceSignIn =
+    provider === "github" &&
+    !oauth &&
+    (apiUrl ?? defaultGitApiUrls.github) === defaultGitApiUrls.github;
+  const device = useCliLogin(
+    deviceSignIn ? "git/accounts/github/sign-in" : null,
+  );
   const heading = `${provider}-account-heading`;
   const mismatched = account && apiUrl && account.apiUrl !== apiUrl;
   return (
@@ -65,12 +74,24 @@ function AccountSection({
               {account ? "Sign in again" : `Sign in with ${label}`}
             </Button>
           )}
+          {deviceSignIn && (
+            <Button
+              variant={account ? "outline" : "default"}
+              disabled={!available}
+              onClick={() => {
+                setDeviceSigningIn(true);
+                if (device.login?.state !== "waiting") void device.start();
+              }}
+            >
+              {account ? "Sign in again" : `Sign in with ${label}`}
+            </Button>
+          )}
           <Button
-            variant={oauth ? "ghost" : "outline"}
+            variant={oauth || deviceSignIn ? "ghost" : "outline"}
             disabled={!available}
             onClick={() => setEditing(true)}
           >
-            {oauth
+            {oauth || deviceSignIn
               ? "Use a token"
               : account
                 ? "Replace token"
@@ -78,6 +99,16 @@ function AccountSection({
           </Button>
         </div>
       </header>
+      {deviceSigningIn && (
+        <CliSignInDialog
+          providerName={label}
+          state={device}
+          onClose={() => {
+            setDeviceSigningIn(false);
+            if (device.login?.state === "signed-in") void onChanged();
+          }}
+        />
+      )}
       {account && (
         <>
           <dl className="cloud-mimorii-status">

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { cloudId, type CloudActor } from "../../../lib/cloud-contract";
 import {
   gitAccountInputSchema,
@@ -16,6 +17,7 @@ import {
 } from "../../../lib/cloud-git-contract";
 import type { GitProvider } from "../../../lib/git-providers";
 import { CloudError } from "../access";
+import type { GitHubSignInTarget } from "./github-sign-in";
 import { readBody, readRawBody } from "../request-body";
 import type { CloudRuntime } from "../runtime";
 
@@ -96,6 +98,25 @@ function idempotencyKey(request: Request): string {
   return cloudId.parse(request.headers.get("idempotency-key"));
 }
 
+async function gitHubSignIn(
+  runtime: CloudRuntime,
+  request: Request,
+  actor: CloudActor,
+  target: GitHubSignInTarget,
+  rest: string[],
+): Promise<Response | null> {
+  const signIn = runtime.git.gitHubSignIn;
+  const route = `${request.method} ${rest.join("/")}`;
+  if (route === "GET ") return Response.json(await signIn.get(actor, target));
+  if (route !== "POST " && route !== "POST cancel") return null;
+  await readBody(request, z.strictObject({}));
+  return Response.json(
+    route === "POST "
+      ? await signIn.start(actor, target)
+      : await signIn.cancel(actor, target),
+  );
+}
+
 async function handleGitSettings(
   runtime: CloudRuntime,
   request: Request,
@@ -113,6 +134,8 @@ async function handleGitSettings(
       return Response.json(
         await runtime.git.oauth.start(actor, gitProviderSchema.parse(path[2])),
       );
+    if (path[2] === "github" && path[3] === "sign-in")
+      return gitHubSignIn(runtime, request, actor, "account", path.slice(4));
     if (path.length !== 3) return null;
     const provider = gitProviderSchema.parse(path[2]);
     if (method === "PUT")
@@ -151,6 +174,8 @@ async function handleGitSettings(
     await connections.removeRepository(actor, cloudId.parse(path[2]));
     return Response.json({ ok: true });
   }
+  if (path[1] === "github" && path[2] === "sign-in")
+    return gitHubSignIn(runtime, request, actor, "connection", path.slice(3));
   const provider = gitProviderSchema.parse(path[1]);
   const route = `${method} ${path.slice(2).join("/")}`;
   if (route === "PUT ")

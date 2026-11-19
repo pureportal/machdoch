@@ -23,11 +23,10 @@ import { cloudRequest } from "./api-client";
 
 const pollMs = 2000;
 
-export function useCliLogin(providerId: string | null) {
+export function useCliLogin(path: string | null) {
   const [login, setLogin] = useState<CloudCliLogin | null>(null);
   const [error, setError] = useState<string | null>(null);
   const latest = useRef(0);
-  const path = `ai-providers/${providerId}/login`;
   const run = useCallback(async (request: Promise<CloudCliLogin>) => {
     const sequence = ++latest.current;
     try {
@@ -40,8 +39,8 @@ export function useCliLogin(providerId: string | null) {
     }
   }, []);
   const refresh = useCallback(
-    () => (providerId ? run(cloudRequest<CloudCliLogin>(path)) : undefined),
-    [providerId, path, run],
+    () => (path ? run(cloudRequest<CloudCliLogin>(path)) : undefined),
+    [path, run],
   );
   useEffect(() => {
     setLogin(null);
@@ -52,7 +51,7 @@ export function useCliLogin(providerId: string | null) {
     error,
     refresh,
     start: () =>
-      run(cloudRequest<CloudCliLogin>(path, { method: "POST", body: {} })),
+      run(cloudRequest<CloudCliLogin>(path!, { method: "POST", body: {} })),
     submit: (code: string) =>
       run(
         cloudRequest<CloudCliLogin>(`${path}/code`, {

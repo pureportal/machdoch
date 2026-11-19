@@ -124,6 +124,14 @@ RUN apt-get update \
 
 RUN npm install --global @anthropic-ai/claude-code@2.1.316 @openai/codex@0.166.0 @github/copilot@1.0.109
 
+ARG TARGETARCH
+ARG GH_VERSION=2.101.0
+ADD https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz /tmp/gh.tar.gz
+RUN tar -xzf /tmp/gh.tar.gz -C /tmp \
+    && install -m 0755 /tmp/gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh /usr/local/bin/gh \
+    && rm -rf /tmp/gh.tar.gz /tmp/gh_${GH_VERSION}_linux_${TARGETARCH} \
+    && gh --version
+
 USER node
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node", "-e", "fetch('http://127.0.0.1:43188/healthz').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]

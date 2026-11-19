@@ -69,6 +69,7 @@ import { join } from "node:path";
 import { CloudTaskInference } from "./execution/inference";
 import { CloudRepositories } from "./execution/repositories";
 import { CloudGitAccounts } from "./git/accounts";
+import { CloudGitHubSignIn } from "./git/github-sign-in";
 import { CloudRoles } from "./roles";
 import { CloudGitStatusRules } from "./git/automations";
 import { CloudGitConnections } from "./git/connections";
@@ -192,6 +193,7 @@ export interface CloudRuntime {
   git: {
     connections: CloudGitConnections;
     accounts: CloudGitAccounts;
+    gitHubSignIn: CloudGitHubSignIn;
     statusRules: CloudGitStatusRules;
     sync: CloudGitSync;
     webhooks: CloudGitWebhooks;
@@ -302,6 +304,11 @@ export function createCloudRuntime(
     gitFetch,
     (provider, id) => gitConnections.webhookUrl(provider, id),
     origin.startsWith("https://"),
+  );
+  const gitAccounts = new CloudGitAccounts(
+    database,
+    options.credentialsCipher ?? null,
+    gitFetch,
   );
   const gitCallbackUrl = (provider: GitProvider) =>
     gitConnections.oauthCallbackUrl(provider);
@@ -598,10 +605,11 @@ export function createCloudRuntime(
     },
     git: {
       connections: gitConnections,
-      accounts: new CloudGitAccounts(
+      accounts: gitAccounts,
+      gitHubSignIn: new CloudGitHubSignIn(
         database,
-        options.credentialsCipher ?? null,
-        gitFetch,
+        gitConnections,
+        gitAccounts,
       ),
       statusRules: new CloudGitStatusRules(database),
       sync: gitSync,
@@ -663,6 +671,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   const hostedOrigin = runtime.execution.hostedRunners.localOrigin;
   await runtime.execution.hostedRunners.close();
   runtime.cliLogins.close();
+  await runtime.git.gitHubSignIn.close();
   await runtime.scheduleLoop.close();
   await runtime.automations.loop.close();
   await runtime.autopilot.loop.close();

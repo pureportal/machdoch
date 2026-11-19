@@ -26,6 +26,7 @@ import {
   formText,
 } from "./api-client";
 import { GitRepositoryPicker } from "./git-repository-picker";
+import { CliSignInDialog, useCliLogin } from "./provider-sign-in";
 import { GitStatusRules } from "./git-status-rules";
 import { RelativeTime } from "./relative-time";
 
@@ -67,6 +68,11 @@ function ProviderSection({
   }, [editing, provider]);
   const tokenUrl = gitTokenUrl(provider, apiUrl);
   const [adding, setAdding] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
+  const deviceSignIn = provider === "github" && !connection;
+  const signIn = useCliLogin(
+    deviceSignIn || signingIn ? "git/github/sign-in" : null,
+  );
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
   const sender = useRef(createCommandSender());
@@ -77,22 +83,49 @@ function ProviderSection({
     <section className="cloud-settings-section" aria-labelledby={heading}>
       <header>
         <h2 id={heading}>{label}</h2>
-        <Button
-          variant="outline"
-          disabled={loading || !credentialStorageAvailable}
-          aria-busy={loading}
-          onClick={() => {
-            sender.current = createCommandSender();
-            setEditing(connection ?? null);
-          }}
-        >
-          {loading
-            ? "Loading…"
-            : connection
-              ? "Edit connection"
-              : `Connect ${label}`}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {deviceSignIn && (
+            <Button
+              disabled={loading || !credentialStorageAvailable}
+              onClick={() => {
+                setSigningIn(true);
+                if (signIn.login?.state !== "waiting") void signIn.start();
+              }}
+            >
+              Sign in with {label}
+            </Button>
+          )}
+          <Button
+            variant={deviceSignIn ? "ghost" : "outline"}
+            disabled={loading || !credentialStorageAvailable}
+            aria-busy={loading}
+            onClick={() => {
+              sender.current = createCommandSender();
+              setEditing(connection ?? null);
+            }}
+          >
+            {loading
+              ? "Loading…"
+              : connection
+                ? "Edit connection"
+                : deviceSignIn
+                  ? "Use a token"
+                  : `Connect ${label}`}
+          </Button>
+        </div>
       </header>
+      {signingIn && (
+        <CliSignInDialog
+          providerName={label}
+          state={signIn}
+          onClose={() => {
+            setSigningIn(false);
+            if (signIn.login?.state !== "signed-in") return;
+            setAdding(true);
+            void onChanged();
+          }}
+        />
+      )}
       {!loading && !credentialStorageAvailable && (
         <p>Configure credential storage before connecting {label}.</p>
       )}

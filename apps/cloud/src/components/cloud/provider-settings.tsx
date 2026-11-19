@@ -31,7 +31,9 @@ function ProviderCard({
   onEdit: () => void;
   onSignInStarted: () => void;
 }) {
-  const login = useCliLogin(provider.signIn ? provider.id : null);
+  const login = useCliLogin(
+    provider.signIn ? `ai-providers/${provider.id}/login` : null,
+  );
   const [signingIn, setSigningIn] = useState(false);
   const signedIn = login.login?.state === "signed-in";
   function openSignIn() {
