@@ -1,3 +1,4 @@
+use serde::Deserialize;
 #[cfg(target_os = "linux")]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::{
@@ -11,7 +12,6 @@ use super::window;
 
 const TRAY_ID: &str = "machdoch-tray";
 const TRAY_DEFAULT_TOOLTIP: &str = "machdoch - local assistant";
-const TRAY_COMPLETE_TOOLTIP: &str = "machdoch - chat session complete";
 const TRAY_MENU_WIDTH: f64 = 324.0;
 const TRAY_MENU_HEIGHT: f64 = 252.0;
 const TRAY_MENU_GAP: f64 = 10.0;
@@ -21,6 +21,22 @@ const TRAY_MENU_SHOW_ID: &str = "tray-show";
 const TRAY_MENU_HIDE_ID: &str = "tray-hide";
 #[cfg(target_os = "linux")]
 const TRAY_MENU_QUIT_ID: &str = "tray-quit";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DesktopActivityState {
+    Idle,
+    Running,
+    NeedsInput,
+    Failed,
+    Done,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ActivityPalette {
+    dark: [u8; 3],
+    light: [u8; 3],
+}
 
 pub(crate) fn create_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let tray = TrayIconBuilder::with_id(TRAY_ID)
@@ -97,39 +113,26 @@ pub(crate) fn create_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
-pub(crate) fn sync_chat_completion_indicator<R: Runtime>(
+pub(crate) fn sync_desktop_activity_indicator<R: Runtime>(
     app: &AppHandle<R>,
-    completed: bool,
+    state: DesktopActivityState,
 ) -> Result<(), String> {
     let mut errors = Vec::new();
 
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let icon = if completed {
-            completed_tray_icon()
-        } else {
-            default_tray_icon()
-        };
-
-        if let Err(error) = tray.set_icon(Some(icon)) {
+        if let Err(error) = tray.set_icon(Some(activity_tray_icon(state))) {
             errors.push(format!("tray icon update failed: {error}"));
         }
 
-        if let Err(error) = tray.set_tooltip(Some(if completed {
-            TRAY_COMPLETE_TOOLTIP
-        } else {
-            TRAY_DEFAULT_TOOLTIP
-        })) {
+        if let Err(error) = tray.set_tooltip(Some(activity_tooltip(state))) {
             errors.push(format!("tray tooltip update failed: {error}"));
-        }
-
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        if let Err(error) = tray.set_title(if completed { Some("OK") } else { None }) {
-            errors.push(format!("tray title update failed: {error}"));
         }
     }
 
     if let Some(window) = app.get_webview_window(super::MAIN_WINDOW_LABEL) {
-        if let Err(error) = sync_taskbar_completion_indicator(&window, completed) {
+        if let Err(error) =
+            sync_taskbar_completion_indicator(&window, state == DesktopActivityState::Done)
+        {
             errors.push(error);
         }
     }
@@ -138,6 +141,16 @@ pub(crate) fn sync_chat_completion_indicator<R: Runtime>(
         Ok(())
     } else {
         Err(errors.join("; "))
+    }
+}
+
+fn activity_tooltip(state: DesktopActivityState) -> &'static str {
+    match state {
+        DesktopActivityState::Idle => TRAY_DEFAULT_TOOLTIP,
+        DesktopActivityState::Running => "machdoch - working",
+        DesktopActivityState::NeedsInput => "machdoch - waiting for your answer",
+        DesktopActivityState::Failed => "machdoch - task needs attention",
+        DesktopActivityState::Done => "machdoch - chat session complete",
     }
 }
 
@@ -186,22 +199,67 @@ fn default_tray_icon() -> Image<'static> {
     tauri::include_image!("./icons/32x32.png")
 }
 
-fn completed_tray_icon() -> Image<'static> {
+fn activity_tray_icon(state: DesktopActivityState) -> Image<'static> {
     let base = default_tray_icon();
+    let Some(palette) = activity_palette(state) else {
+        return base;
+    };
     let mut rgba = base.rgba().to_vec();
-    let width = base.width();
-    let height = base.height();
 
-    draw_completion_badge(
-        &mut rgba,
-        width,
-        height,
-        width as f64 * 0.73,
-        height as f64 * 0.73,
-        width.min(height) as f64 * 0.31,
-    );
+    recolor_icon(&mut rgba, palette);
 
-    Image::new_owned(rgba, width, height)
+    Image::new_owned(rgba, base.width(), base.height())
+}
+
+fn activity_palette(state: DesktopActivityState) -> Option<ActivityPalette> {
+    match state {
+        DesktopActivityState::Idle => None,
+        DesktopActivityState::Running => Some(ActivityPalette {
+            dark: [124, 58, 237],
+            light: [167, 139, 250],
+        }),
+        DesktopActivityState::NeedsInput => Some(ActivityPalette {
+            dark: [217, 119, 6],
+            light: [251, 191, 36],
+        }),
+        DesktopActivityState::Failed => Some(ActivityPalette {
+            dark: [225, 29, 72],
+            light: [251, 113, 133],
+        }),
+        DesktopActivityState::Done => Some(ActivityPalette {
+            dark: [5, 150, 105],
+            light: [52, 211, 153],
+        }),
+    }
+}
+
+fn recolor_icon(rgba: &mut [u8], palette: ActivityPalette) {
+    let luminances: Vec<f64> = rgba
+        .chunks_exact(4)
+        .map(|pixel| 0.299 * pixel[0] as f64 + 0.587 * pixel[1] as f64 + 0.114 * pixel[2] as f64)
+        .collect();
+    let (min_luminance, max_luminance) = rgba
+        .chunks_exact(4)
+        .zip(&luminances)
+        .filter(|(pixel, _)| pixel[3] > 0)
+        .fold((f64::MAX, f64::MIN), |(min, max), (_, &luminance)| {
+            (min.min(luminance), max.max(luminance))
+        });
+    let luminance_range = (max_luminance - min_luminance).max(1.0);
+
+    for (pixel, luminance) in rgba.chunks_exact_mut(4).zip(luminances) {
+        if pixel[3] == 0 {
+            continue;
+        }
+
+        let blend = ((luminance - min_luminance) / luminance_range).clamp(0.0, 1.0);
+
+        for channel in 0..3 {
+            let dark = palette.dark[channel] as f64;
+            let light = palette.light[channel] as f64;
+            pixel[channel] = (dark + (light - dark) * blend).round() as u8;
+        }
+    }
 }
 
 fn completion_badge_icon() -> Image<'static> {
@@ -509,6 +567,38 @@ fn clamp_f64(value: f64, min: f64, max: f64) -> f64 {
 #[cfg(test)]
 mod display_tests {
     use super::*;
+    #[test]
+    fn activity_icons_keep_the_icon_shape_and_use_the_state_palette() {
+        let base = default_tray_icon();
+        assert_eq!(
+            activity_tray_icon(DesktopActivityState::Idle).rgba(),
+            base.rgba()
+        );
+
+        for state in [
+            DesktopActivityState::Running,
+            DesktopActivityState::NeedsInput,
+            DesktopActivityState::Failed,
+            DesktopActivityState::Done,
+        ] {
+            let palette = activity_palette(state).unwrap();
+            let icon = activity_tray_icon(state);
+            let in_palette = |pixel: &[u8]| {
+                (0..3).all(|channel| {
+                    let low = palette.dark[channel].min(palette.light[channel]);
+                    let high = palette.dark[channel].max(palette.light[channel]);
+                    (low..=high).contains(&pixel[channel])
+                })
+            };
+
+            assert_eq!((icon.width(), icon.height()), (base.width(), base.height()));
+            for (pixel, original) in icon.rgba().chunks_exact(4).zip(base.rgba().chunks_exact(4)) {
+                assert_eq!(pixel[3], original[3]);
+                assert!(pixel[3] == 0 || in_palette(pixel));
+            }
+        }
+    }
+
     fn tray(x: f64, y: f64) -> tauri::Rect {
         tauri::Rect {
             position: PhysicalPosition::new(x, y).into(),

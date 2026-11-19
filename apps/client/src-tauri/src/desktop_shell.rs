@@ -124,8 +124,11 @@ pub async fn ensure_assistant_window(app: AppHandle, label: String) -> Result<()
 }
 
 #[tauri::command]
-pub fn sync_chat_completion_indicator(app: AppHandle, completed: bool) -> Result<(), String> {
-    tray::sync_chat_completion_indicator(&app, completed)
+pub fn sync_desktop_activity_indicator(
+    app: AppHandle,
+    state: tray::DesktopActivityState,
+) -> Result<(), String> {
+    tray::sync_desktop_activity_indicator(&app, state)
 }
 
 #[tauri::command]

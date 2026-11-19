@@ -130,7 +130,7 @@ import {
   saveClipboardImageAttachment,
   mutateInstructions,
   subscribeToUserSettingsChanged,
-  syncChatCompletionIndicator,
+  syncDesktopActivityIndicator,
   type FileManagerInvocationRoute,
   type RecentDesktopTaskResult,
   type TaskInterviewResult,
@@ -143,7 +143,7 @@ import {
 } from "../../task-thinking.model";
 import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
 import { clampAiContextMessageLimit } from "./ai-context-window";
-import { isChatCompletionIndicatorActive } from "./chat-completion-indicator";
+import { resolveDesktopActivityState } from "./desktop-activity-indicator";
 import {
   extractChatInputNeededPlaceholders,
   replaceChatInputNeededPlaceholders,
@@ -1364,9 +1364,9 @@ export const useChatSessionController = (
   const chatInterviewBusy =
     chatInterview?.status === "loading" || chatInterview?.status === "starting";
   const promptEnhancementBusy = promptEnhancementPendingTasks.length > 0;
-  const chatCompletionIndicatorActive = useMemo(
+  const desktopActivityState = useMemo(
     () =>
-      isChatCompletionIndicatorActive({
+      resolveDesktopActivityState({
         shellState: state.shellState,
         hasHydrated: state.hasHydrated,
         promptEnhancementBusy,
@@ -1384,12 +1384,10 @@ export const useChatSessionController = (
       return;
     }
 
-    void syncChatCompletionIndicator(chatCompletionIndicatorActive).catch(
-      (error) => {
-        console.error("Failed to sync chat completion indicator", error);
-      },
-    );
-  }, [chatCompletionIndicatorActive, isDesktop, state.hasHydrated]);
+    void syncDesktopActivityIndicator(desktopActivityState).catch((error) => {
+      console.error("Failed to sync desktop activity indicator", error);
+    });
+  }, [desktopActivityState, isDesktop, state.hasHydrated]);
   const promptEnhancementWebSearchAvailable =
     isPromptEnhancementWebSearchAvailable(runtime.runtimeSnapshot);
   const promptEnhancementUnavailableReason =

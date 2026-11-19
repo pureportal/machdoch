@@ -282,7 +282,7 @@ pub fn run() {
             desktop_shell::quit_machdoch,
             desktop_shell::reveal_main_window,
             desktop_shell::file_manager::resolve_file_manager_invocation,
-            desktop_shell::sync_chat_completion_indicator,
+            desktop_shell::sync_desktop_activity_indicator,
             desktop_shell::file_manager::take_file_manager_invocations,
             desktop_task::cancel_desktop_task,
             desktop_task::reset_desktop_task_timeout,

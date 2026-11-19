@@ -3996,15 +3996,22 @@ export const subscribeToDesktopSettingsChanged = async (
   }
 };
 
-export const syncChatCompletionIndicator = async (
-  completed: boolean,
+export type DesktopActivityState =
+  | "idle"
+  | "running"
+  | "needs-input"
+  | "failed"
+  | "done";
+
+export const syncDesktopActivityIndicator = async (
+  state: DesktopActivityState,
 ): Promise<void> => {
   if (!canInvokeTauriCommands()) {
     return;
   }
 
   try {
-    await analyticsInvoke("sync_chat_completion_indicator", { completed });
+    await analyticsInvoke("sync_desktop_activity_indicator", { state });
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
