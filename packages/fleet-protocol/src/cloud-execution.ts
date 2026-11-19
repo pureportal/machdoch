@@ -169,7 +169,6 @@ export const runCancelSchema = z.strictObject({ revision });
 export const workerInputSchema = z.strictObject({
   profileId: cloudId,
   name: z.string().trim().min(1).max(120),
-  hosted: z.boolean().default(false),
 });
 export const clientWorkspaceBindingSchema = z.strictObject({
   workspaceId: cloudId,

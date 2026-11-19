@@ -1,17 +1,20 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { machdochDataDirectory } from "@machdoch/cloud-client/sandbox-installation";
 import type { HostedRunnerStatus } from "@machdoch/fleet-protocol/cloud-execution";
+import { createSecret, hashSecret } from "../../crypto";
 import type { SettingsCipher } from "../../settings-crypto";
-import type { CloudDatabase } from "../database";
+import type { CloudDatabase, CloudSql } from "../database";
 import { CloudPeriodicLoop } from "../periodic-loop";
 import { lockExecution } from "./records";
 import type { CloudSandboxRuntime, HostedSandbox } from "./sandbox-runtime";
 
 const restartDelayMs = 30_000;
+const hostedRunnerName = "This server";
 const errorLimit = 300;
 
 interface HostedWorker {
@@ -89,7 +92,41 @@ export class CloudHostedRunners {
       : { state: "stopped", error: null };
   }
 
-  private async desiredWorkers(): Promise<HostedWorker[]> {
+  private async provision(
+    sql: CloudSql,
+    cipher: SettingsCipher,
+    organizationId: string,
+  ): Promise<void> {
+    const profiles = (
+      await sql.query<{ id: string; revision: number }>(
+        `SELECT p.id,p.revision FROM cloud_execution_profiles p
+        WHERE p.organization_id=$1 AND p.enabled AND p.definition->>'target'='cloud'
+        AND NOT EXISTS (SELECT 1 FROM cloud_execution_workers w WHERE w.organization_id=p.organization_id AND w.profile_id=p.id AND w.hosted_token IS NOT NULL)`,
+        [organizationId],
+      )
+    ).rows;
+    for (const profile of profiles) {
+      const id = randomUUID();
+      const token = createSecret("mch_cloud_worker");
+      await sql.query(
+        "INSERT INTO cloud_execution_workers (organization_id,id,profile_id,profile_revision,name,token_hash,hosted_token) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        [
+          organizationId,
+          id,
+          profile.id,
+          profile.revision,
+          hostedRunnerName,
+          hashSecret(token),
+          cipher.encrypt(
+            Buffer.from(token),
+            hostedTokenContext(organizationId, id),
+          ),
+        ],
+      );
+    }
+  }
+
+  private async desiredWorkers(sandboxReady: boolean): Promise<HostedWorker[]> {
     if (!this.cipher) return [];
     const cipher = this.cipher;
     return this.database.transaction(async (sql) => {
@@ -100,6 +137,7 @@ export class CloudHostedRunners {
       ).rows[0]?.organization_id;
       if (!organizationId) return [];
       await lockExecution(sql, organizationId);
+      if (sandboxReady) await this.provision(sql, cipher, organizationId);
       await sql.query(
         `UPDATE cloud_execution_workers SET expires_at=clock_timestamp()+interval '30 days'
         WHERE organization_id=$1 AND hosted_token IS NOT NULL AND enabled AND expires_at<clock_timestamp()+interval '29 days'`,
@@ -135,14 +173,17 @@ export class CloudHostedRunners {
 
   async tick(): Promise<number> {
     if (!this.origin) return 0;
+    const sandbox = await this.sandbox.current();
     const desired = new Map(
-      (await this.desiredWorkers()).map((worker) => [worker.id, worker]),
+      (await this.desiredWorkers(sandbox !== null)).map((worker) => [
+        worker.id,
+        worker,
+      ]),
     );
     for (const [id, running] of this.processes)
       if (desired.get(id)?.token !== running.token) await this.stop(id);
     for (const id of this.failures.keys())
       if (!desired.has(id)) this.failures.delete(id);
-    const sandbox = desired.size ? await this.sandbox.current() : null;
     let started = 0;
     for (const worker of desired.values()) {
       if (this.processes.has(worker.id)) continue;
@@ -150,7 +191,7 @@ export class CloudHostedRunners {
       if (failure && Date.now() - failure.failedAt < restartDelayMs) continue;
       if (!sandbox) {
         this.failures.set(worker.id, {
-          error: "Set up the sandbox on this server.",
+          error: "The sandbox on this server is unavailable.",
           failedAt: Date.now(),
         });
         continue;

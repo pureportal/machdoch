@@ -57,6 +57,7 @@ import { CloudRuns } from "./execution/runs";
 import { CloudWorkers } from "./execution/workers";
 import { CloudHostedRunners } from "./execution/hosted-runners";
 import { CloudSandboxRuntime } from "./execution/sandbox-runtime";
+import type { HostSandboxLocation } from "@machdoch/cloud-client/sandbox-installation";
 import { CloudClientWorkspaces } from "./execution/client-workspaces";
 import { CloudExecutionLeases } from "./execution/leases";
 import { CloudExecutionEffects } from "./execution/effects";
@@ -257,6 +258,7 @@ export function createCloudRuntime(
     mailSender?: MailSender;
     gitCacheDirectory?: string;
     candidatePush?: typeof pushCandidate;
+    sandboxLocation?: () => Promise<HostSandboxLocation>;
   } = {},
 ): CloudRuntime {
   const aiProviders = new CloudAiProviders(
@@ -427,7 +429,10 @@ export function createCloudRuntime(
     }),
   );
   const autopilot = new CloudAutopilot(database, issueChanges);
-  const sandboxRuntime = new CloudSandboxRuntime(database);
+  const sandboxRuntime = new CloudSandboxRuntime(
+    database,
+    options.sandboxLocation,
+  );
   const hostedRunners = new CloudHostedRunners(
     database,
     options.credentialsCipher ?? null,
@@ -637,11 +642,7 @@ export function createCloudRuntime(
     execution: {
       profiles: executionProfiles,
       runs,
-      workers: new CloudWorkers(
-        database,
-        options.credentialsCipher ?? null,
-        hostedRunners,
-      ),
+      workers: new CloudWorkers(database, hostedRunners),
       sandbox: sandboxRuntime,
       hostedRunners,
       clientWorkspaces: new CloudClientWorkspaces(database),

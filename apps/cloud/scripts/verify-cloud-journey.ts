@@ -213,7 +213,8 @@ async function chat(message: string) {
       const detail = await api(`chats/${chatId}`);
       const turn = detail.turns.at(-1);
       const progress = `${turn.state} · ${turn.steps.map((entry: { label: string }) => entry.label).join(" → ")}`;
-      if (progress !== lastProgress) log(`  agent: ${(lastProgress = progress)}`);
+      if (progress !== lastProgress)
+        log(`  agent: ${(lastProgress = progress)}`);
       if (turn.state === "failed") throw new Error(JSON.stringify(turn));
       return turn.state === "complete" ? turn : null;
     },
@@ -392,16 +393,6 @@ try {
     }
   });
 
-  await step("Pick the sandbox on this server", async () => {
-    await page.goto(`${origin}/cloud/execution`);
-    await page.getByRole("button", { name: "Use sandbox" }).click();
-    await eventually(
-      "the sandbox is saved",
-      async () => (await api("execution-sandbox")).sandbox?.savedAt,
-      60_000,
-    );
-  });
-
   await step("Set up two repositories for one project", async () => {
     await setUpRepository(landing, [
       { name: "Docs link", command: `grep -q "${docsUrl}" index.html` },
@@ -424,13 +415,6 @@ try {
         has: page.getByRole("heading", { name: landing }),
       })
       .getByRole("button", { name: "Runners" })
-      .click();
-    await page.getByRole("button", { name: "Add runner" }).click();
-    await page.getByLabel("Name").fill("Server sandbox");
-    await page.getByLabel("Runs on").selectOption("server");
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Add runner" })
       .click();
     await page.getByText("This server · Running").waitFor({ timeout: 120_000 });
     for (const worker of (

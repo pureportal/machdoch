@@ -7,8 +7,6 @@ import type {
   ProjectClient,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import { createSecret, hashSecret, validateSecret } from "../../crypto";
-import type { SettingsCipher } from "../../settings-crypto";
-import { requireCredentialStorage } from "../credential-storage";
 import {
   CloudError,
   command,
@@ -18,8 +16,7 @@ import {
 } from "../access";
 import type { CloudDatabase, CloudSql } from "../database";
 import { fenceRun, lockExecution, readProfile, readRun } from "./records";
-import { hostedTokenContext, type CloudHostedRunners } from "./hosted-runners";
-import { requireInstallationAdministrator } from "./sandbox-runtime";
+import type { CloudHostedRunners } from "./hosted-runners";
 
 export interface WorkerIdentity {
   organizationId: string;
@@ -94,7 +91,6 @@ export async function requireWorker(
 export class CloudWorkers {
   constructor(
     private readonly database: CloudDatabase,
-    private readonly cipher: SettingsCipher | null,
     private readonly hostedRunners: CloudHostedRunners,
   ) {}
 
@@ -170,59 +166,10 @@ export class CloudWorkers {
     });
   }
 
-  private async sealHostedToken(
-    sql: CloudSql,
-    actor: CloudActor,
-    id: string,
-    target: ExecutionProfile["target"],
-    token: string,
-  ): Promise<Buffer> {
-    await requireInstallationAdministrator(sql, actor);
-    if (target !== "cloud")
-      throw new CloudError(
-        409,
-        "hosted_target",
-        "Only cloud profiles can run on this server.",
-      );
-    if (
-      !(await sql.query("SELECT 1 FROM cloud_sandbox_runtime WHERE id=1")).rows
-        .length
-    )
-      throw new CloudError(
-        409,
-        "sandbox_required",
-        "Set up the sandbox on this server first.",
-      );
-    const cipher = await requireCredentialStorage(sql, this.cipher);
-    return cipher.encrypt(
-      Buffer.from(token),
-      hostedTokenContext(actor.organizationId, id),
-    );
-  }
-
   register(
     actor: CloudActor,
     profileId: string,
     name: string,
-  ): Promise<{ id: string; token: string }> {
-    return this.enroll(actor, profileId, name, false);
-  }
-
-  async host(
-    actor: CloudActor,
-    profileId: string,
-    name: string,
-  ): Promise<{ id: string }> {
-    const { id } = await this.enroll(actor, profileId, name, true);
-    this.hostedRunners.wake();
-    return { id };
-  }
-
-  private enroll(
-    actor: CloudActor,
-    profileId: string,
-    name: string,
-    hosted: boolean,
   ): Promise<{ id: string; token: string }> {
     const token = createSecret("mch_cloud_worker");
     return this.database.transaction(async (sql) => {
@@ -236,11 +183,8 @@ export class CloudWorkers {
           "Enable the execution profile before enrolling a runner.",
         );
       const id = randomUUID();
-      const sealed = hosted
-        ? await this.sealHostedToken(sql, actor, id, profile.target, token)
-        : null;
       await sql.query(
-        "INSERT INTO cloud_execution_workers (organization_id,id,profile_id,profile_revision,name,token_hash,hosted_token) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        "INSERT INTO cloud_execution_workers (organization_id,id,profile_id,profile_revision,name,token_hash) VALUES ($1,$2,$3,$4,$5,$6)",
         [
           actor.organizationId,
           id,
@@ -248,13 +192,9 @@ export class CloudWorkers {
           profile.revision,
           name,
           hashSecret(token),
-          sealed,
         ],
       );
-      await recordEvent(sql, actor, "runner.enrolled", id, 1, {
-        profileId,
-        hosted,
-      });
+      await recordEvent(sql, actor, "runner.enrolled", id, 1, { profileId });
       return { id, token };
     });
   }

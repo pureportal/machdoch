@@ -3,8 +3,14 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it } from "vitest";
-import { sandboxArtifactNames } from "@machdoch/fleet-protocol/cloud-sandbox";
-import { machdochDataDirectory } from "@machdoch/cloud-client/sandbox-installation";
+import {
+  sandboxArtifactNames,
+  type SandboxRequirement,
+} from "@machdoch/fleet-protocol/cloud-sandbox";
+import {
+  machdochDataDirectory,
+  sandboxDirectory,
+} from "@machdoch/cloud-client/sandbox-installation";
 import {
   defaultEstimateScale,
   type CloudActor,
@@ -19,6 +25,7 @@ let owner: CloudActor;
 let profileId: string;
 let directory: string;
 let artifacts: Record<(typeof sandboxArtifactNames)[number], string>;
+let missing: SandboxRequirement[];
 
 beforeAll(async () => {
   database = await createTestCloudDatabase();
@@ -34,8 +41,14 @@ afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 beforeEach(async () => {
+  missing = [];
   runtime = createCloudRuntime(database, "https://cloud.example.test", {
     credentialsCipher: new SettingsCipher(Buffer.alloc(32, 7)),
+    sandboxLocation: async () => ({
+      artifacts,
+      cgroupRoot: process.platform === "win32" ? null : directory,
+      missing,
+    }),
   });
   await database.engine.exec(
     "TRUNCATE cloud_organizations,cloud_users CASCADE",
@@ -58,7 +71,6 @@ beforeEach(async () => {
     "INSERT INTO cloud_installation (id,organization_id,origin,credentials_key) VALUES (1,$1,'https://cloud.example.test','test')",
     [organizationId],
   );
-  await database.engine.exec("DELETE FROM cloud_sandbox_runtime");
   owner = { userId, organizationId };
   const teamId = (
     await runtime.planning.createTeam(owner, randomUUID(), {
@@ -106,24 +118,20 @@ afterEach(async () => {
   await runtime.execution.hostedRunners.close();
 });
 
-async function saveSandbox() {
-  return runtime.execution.sandbox.save(owner, {
-    cgroupRoot: process.platform === "win32" ? null : directory,
-    artifacts,
-  });
+async function hostedWorkers() {
+  return (await runtime.execution.workers.list(owner, profileId)).filter(
+    (worker) => worker.hosted && worker.enabled,
+  );
 }
 
-it("pins the sandbox picked in the cloud and hides it from other organizations", async () => {
-  expect((await runtime.execution.sandbox.read(owner))?.savedAt).toBeNull();
-  await expect(
-    runtime.execution.sandbox.save(owner, {
-      cgroupRoot: directory,
-      artifacts: { ...artifacts, image: join(directory, "missing") },
-    }),
-  ).rejects.toMatchObject({ status: 400, code: "sandbox_artifact" });
-  const saved = await saveSandbox();
-  expect(saved.artifacts).toEqual(artifacts);
-  expect(saved.savedAt).not.toBeNull();
+it("reports what the server sandbox is missing only to the installation", async () => {
+  missing = ["image", "cgroup"];
+  expect(await runtime.execution.sandbox.read(owner)).toEqual({
+    directory: sandboxDirectory,
+    missing: ["image", "cgroup"],
+  });
+  expect(await runtime.execution.sandbox.current()).toBeNull();
+  missing = [];
   const pinned = await runtime.execution.sandbox.current();
   expect(pinned?.kernel.sha256).toBe(
     createHash("sha256").update("kernel artifact").digest("hex"),
@@ -132,26 +140,14 @@ it("pins the sandbox picked in the cloud and hides it from other organizations",
     "UPDATE cloud_installation SET organization_id=NULL",
   );
   expect(await runtime.execution.sandbox.read(owner)).toBeNull();
-  await expect(saveSandbox()).rejects.toMatchObject({
-    status: 403,
-    code: "installation_required",
-  });
 });
 
-it("runs server runners without exposing a token and keeps them current", async () => {
-  await expect(
-    runtime.execution.workers.host(owner, profileId, "Server"),
-  ).rejects.toMatchObject({ code: "sandbox_required" });
-  await saveSandbox();
-  const hosted = await runtime.execution.workers.host(
-    owner,
-    profileId,
-    "Server",
-  );
-  expect(hosted).toEqual({ id: hosted.id });
-  await expect(
-    runtime.execution.workers.rotate(owner, hosted.id),
-  ).rejects.toMatchObject({ code: "hosted_runner" });
+it("runs cloud profiles on this server without setup and keeps them current", async () => {
+  runtime.execution.hostedRunners.start("http://127.0.0.1:9");
+  missing = ["qemu"];
+  await runtime.execution.hostedRunners.tick();
+  expect(await hostedWorkers()).toEqual([]);
+  missing = [];
   const remote = await runtime.execution.workers.register(
     owner,
     profileId,
@@ -162,28 +158,32 @@ it("runs server runners without exposing a token and keeps them current", async 
     "UPDATE cloud_execution_profiles SET revision=revision+1 WHERE id=$1",
     [profileId],
   );
-  runtime.execution.hostedRunners.start("http://127.0.0.1:9");
   await runtime.execution.hostedRunners.tick();
-  const workers = await runtime.execution.workers.list(owner, profileId);
-  expect(workers.find((worker) => worker.id === hosted.id)?.hosted).toEqual({
-    state: "running",
-    error: null,
+  const [hosted] = await hostedWorkers();
+  expect(hosted).toMatchObject({
+    name: "This server",
+    hosted: { state: "running", error: null },
   });
-  expect(workers.find((worker) => worker.id === remote.id)?.hosted).toBeNull();
+  await expect(
+    runtime.execution.workers.rotate(owner, hosted!.id),
+  ).rejects.toMatchObject({ code: "hosted_runner" });
+  await runtime.execution.hostedRunners.tick();
+  expect(await hostedWorkers()).toHaveLength(1);
   const revisions = (
     await database.engine.query<{ id: string; current: boolean }>(
       "SELECT w.id,w.profile_revision=p.revision AS current FROM cloud_execution_workers w JOIN cloud_execution_profiles p ON p.id=w.profile_id",
     )
   ).rows;
-  expect(revisions.find((row) => row.id === hosted.id)?.current).toBe(true);
+  expect(revisions.find((row) => row.id === hosted!.id)?.current).toBe(true);
   expect(revisions.find((row) => row.id === remote.id)?.current).toBe(false);
-  await runtime.execution.workers.revoke(owner, randomUUID(), hosted.id);
+  await runtime.execution.workers.revoke(owner, randomUUID(), hosted!.id);
   await runtime.execution.hostedRunners.tick();
-  expect(runtime.execution.hostedRunners.status(hosted.id)).toEqual({
+  expect(runtime.execution.hostedRunners.status(hosted!.id)).toEqual({
     state: "stopped",
     error: null,
   });
-  await rm(join(machdochDataDirectory, "runners", hosted.id), {
+  expect(await hostedWorkers()).toEqual([]);
+  await rm(join(machdochDataDirectory, "runners", hosted!.id), {
     recursive: true,
     force: true,
   });

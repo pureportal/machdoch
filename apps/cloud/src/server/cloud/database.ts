@@ -69,6 +69,7 @@ export const cloudMigrations = [
   "066-pull-request-opened.sql",
   "067-pull-request-notifications.sql",
   "068-automated-changes.sql",
+  "069-automatic-sandbox.sql",
 ];
 
 export interface CloudSql {

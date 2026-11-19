@@ -18,7 +18,7 @@ import type { ExecutionSandbox } from "@machdoch/fleet-protocol/cloud-sandbox";
 import { Button } from "@/components/ui/button";
 import { ExecutionProfileForm } from "./execution-profile-form";
 import { ExecutionRunners } from "./execution-runners";
-import { ExecutionSandboxSettings } from "./execution-sandbox";
+import { ExecutionSandboxStatus } from "./execution-sandbox";
 import { cloudRequest } from "./api-client";
 import { executionTargetLabels, profileAgentLabel } from "./execution-labels";
 
@@ -143,15 +143,17 @@ export function ExecutionSettings({
           ))}
         </div>
       )}
-      {selected && <ExecutionRunners profile={selected} sandbox={sandbox} />}
+      {selected && <ExecutionRunners profile={selected} />}
       {sandboxError && (
         <p role="alert" className="cloud-error mt-8">
           {sandboxError}
         </p>
       )}
-      {sandbox && (
-        <ExecutionSandboxSettings sandbox={sandbox} onSaved={setSandbox} />
-      )}
+      {sandbox &&
+        sandbox.missing.length > 0 &&
+        profiles.some((entry) => entry.target === "cloud") && (
+          <ExecutionSandboxStatus sandbox={sandbox} />
+        )}
       <ExecutionProfileForm
         open={editing !== null}
         profile={editing && editing !== "new" ? editing : null}

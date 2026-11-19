@@ -80,11 +80,7 @@ try {
   });
   const account = await signInClaude(provider);
   const detected = await api("execution-sandbox");
-  assert.ok(detected.sandbox, "The fixture organization runs this server");
-  await api("execution-sandbox", "POST", {
-    cgroupRoot: null,
-    artifacts: detected.sandbox.artifacts,
-  });
+  assert.deepEqual(detected.sandbox?.missing, []);
   const command = `node -e "const fs=require('node:fs'),a=require('node:assert/strict'),text=fs.readFileSync('README','utf8');a.equal(process.getuid(),1000);a.ok(text.startsWith('Hello World!'));a.equal((text.match(/MACHDOCH_LIVE_RUNNER_OK/g)||[]).length,1);console.log('README verified')"`;
   const profile = await api("execution-profiles", "POST", {
     projectId: project.id,
@@ -98,7 +94,6 @@ try {
     maxTokens: 400000,
     requiredChecks: [{ name: "README marker", command, timeoutSeconds: 15 }],
   });
-  const runnerName = "Live worker";
   const issue = await api("issues", "POST", {
     teamId: team.id,
     projectId: project.id,
@@ -119,17 +114,10 @@ try {
   const runId = queued.id;
   await page.goto(`${fixture.origin}/cloud/execution`);
   await page.getByRole("button", { name: "Runners" }).click();
-  await page.getByRole("button", { name: "Add runner" }).click();
-  await page.getByLabel("Name").fill(runnerName);
-  await page.getByLabel("Runs on").selectOption("server");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Add runner" })
-    .click();
   await page.getByText("This server · Running").waitFor({ timeout: 60000 });
   worker = (
     await api(`execution-workers?profileId=${profile.id}`)
-  ).workers.find((entry) => entry.name === runnerName);
+  ).workers.find((entry) => entry.hosted);
   await page.goto(`${fixture.origin}/cloud/tasks/${runId}`);
   await page
     .getByRole("status")

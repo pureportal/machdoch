@@ -21,7 +21,6 @@ import {
   clientWorkspaceBindingSchema,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import { workerReviewRequestSchema } from "@machdoch/fleet-protocol/cloud-delivery";
-import { sandboxRuntimeInputSchema } from "@machdoch/fleet-protocol/cloud-sandbox";
 import { bearerToken } from "../../request-auth";
 import { CloudError } from "../access";
 import { readBody } from "../request-body";
@@ -274,27 +273,14 @@ export async function handleExecutionApi(
   ) {
     const input = await readBody(request, workerInputSchema);
     return Response.json(
-      input.hosted
-        ? await runtime.execution.workers.host(
-            actor,
-            input.profileId,
-            input.name,
-          )
-        : await runtime.execution.workers.register(
-            actor,
-            input.profileId,
-            input.name,
-          ),
+      await runtime.execution.workers.register(
+        actor,
+        input.profileId,
+        input.name,
+      ),
       { status: 201 },
     );
   }
-  if (method === "POST" && path[0] === "execution-sandbox" && path.length === 1)
-    return Response.json({
-      sandbox: await runtime.execution.sandbox.save(
-        actor,
-        await readBody(request, sandboxRuntimeInputSchema),
-      ),
-    });
   if (
     method === "POST" &&
     path[0] === "execution-workers" &&

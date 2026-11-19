@@ -21,6 +21,7 @@
 !apps/client/package.json
 !apps/client/vite.fleet-media.config.ts
 !apps/client/tsconfig.json
+!apps/client/scripts/build-cloud-agent.mjs
 !apps/client/src/
 !apps/client/src/**
 !apps/client/src-tauri/
@@ -30,6 +31,7 @@
 !apps/client/src-tauri/resources/
 !apps/client/src-tauri/resources/whisper/
 !apps/client/src-tauri/resources/whisper/LICENSE-*.txt
+!apps/cloud-runner/
 !packages/
 !packages/client-ui/
 !packages/client-ui/**
@@ -51,6 +53,7 @@
 !packages/cloud-client/**
 !packages/recurrence/
 !packages/recurrence/**
+!packages/process-supervisor/
 
 apps/cloud/.next/
 apps/cloud/.env*
@@ -60,5 +63,7 @@ apps/cloud/node_modules/
 apps/cloud/*.tsbuildinfo
 apps/cloud/public/media-studio/
 packages/**/node_modules/
+apps/cloud-runner/node_modules/
+apps/cloud-runner/native/target/
 packages/**/target/
 packages/fleet-protocol/Cargo.lock

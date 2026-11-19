@@ -6,12 +6,10 @@ import type {
   ExecutionWorker,
   HostedRunnerStatus,
 } from "@machdoch/fleet-protocol/cloud-execution";
-import type { ExecutionSandbox } from "@machdoch/fleet-protocol/cloud-sandbox";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { cloudRequest, createCommandSender, formText } from "./api-client";
 import { Timestamp } from "./timestamp";
 
@@ -30,13 +28,7 @@ function HostedState({ status }: { status: HostedRunnerStatus }) {
   );
 }
 
-export function ExecutionRunners({
-  profile,
-  sandbox,
-}: {
-  profile: ExecutionProfile;
-  sandbox: ExecutionSandbox | null;
-}) {
+export function ExecutionRunners({ profile }: { profile: ExecutionProfile }) {
   const sender = useRef(createCommandSender());
   const [workers, setWorkers] = useState<ExecutionWorker[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,7 +65,6 @@ export function ExecutionRunners({
     const timer = setInterval(() => void load(), 5000);
     return () => clearInterval(timer);
   }, [watching, profile.id]);
-  const hostable = profile.target === "cloud" && sandbox !== null;
 
   return (
     <section className="cloud-settings-section mt-8">
@@ -141,7 +132,7 @@ export function ExecutionRunners({
                   Rotate token
                 </Button>
               )}
-              {worker.enabled && (
+              {worker.enabled && !worker.hosted && (
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -195,47 +186,23 @@ export function ExecutionRunners({
         title="Add runner"
         submitLabel="Add runner"
         onSubmit={async (form) => {
-          const hosted = hostable && formText(form, "location") === "server";
-          const result = await cloudRequest<{ token?: string }>(
+          const result = await cloudRequest<{ token: string }>(
             "execution-workers",
             {
               method: "POST",
               body: {
                 profileId: profile.id,
                 name: formText(form, "name"),
-                hosted,
               },
             },
           );
-          setToken(result.token ?? "");
+          setToken(result.token);
           await load();
         }}
       >
         <Field label="Name" htmlFor="runner-name">
           <Input id="runner-name" name="name" required maxLength={120} />
         </Field>
-        {hostable && (
-          <Field
-            label="Runs on"
-            htmlFor="runner-location"
-            hint={
-              sandbox.savedAt
-                ? undefined
-                : "Set up the sandbox on this server to run here."
-            }
-          >
-            <Select
-              id="runner-location"
-              name="location"
-              defaultValue={sandbox.savedAt ? "server" : "remote"}
-            >
-              <option value="server" disabled={!sandbox.savedAt}>
-                This server
-              </option>
-              <option value="remote">Another machine</option>
-            </Select>
-          </Field>
-        )}
       </FormDialog>
       <FormDialog
         open={revoking !== null}

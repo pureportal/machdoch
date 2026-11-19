@@ -16,6 +16,9 @@ Start the container behind an HTTPS reverse proxy, expose port 43188, and open i
 docker run --detach --name machdoch-cloud --restart unless-stopped \
   --publish 127.0.0.1:43188:43188 \
   --env MACHDOCH_CLOUD_DATABASE_URL \
+  --volume machdoch-cloud-home:/home/node/.machdoch-cloud \
+  --device /dev/kvm --group-add "$(getent group kvm | cut -d: -f3)" \
+  --security-opt writable-cgroups=true \
   ghcr.io/pureportal/machdoch-cloud:latest
 ```
 
@@ -56,6 +59,29 @@ The [Android controller](../fleet-android/README.md) uses the same Cloud sign-in
 Create an execution profile with the **Linked client** target and choose Codex CLI, Claude Code or the client's configured Machdoch agent. Enroll a runner for the profile and link the matching local checkout with `machdoch cloud connect`. Start the runner from the desktop workspace connection (**Run tasks**) or with `machdoch cloud run <connection id>`.
 
 Delegated issues run in a separate checkout of the profile's base commit. Required checks run in another checkout built from the uploaded candidate. A verified result is added to the local repository as a `machdoch/…` branch; the working tree, uncommitted files and existing branches are not changed.
+
+## Cloud sandbox
+
+**Cloud sandbox** profiles of the organization that runs the server run on the server itself, without enrolling a runner: Cloud finds the supervisor, QEMU, kernel, initramfs and disk image in `~/.machdoch-cloud/sandbox` (QEMU also in its default install location) and starts a **This server** runner for every enabled profile. On Linux it moves its own processes into a child cgroup and gives the sandbox a sibling, so run it with cgroup delegation, such as `Delegate=yes` in a systemd unit. **AI setup** names anything that is missing. Pause a profile to stop its server runner; **Add runner** enrolls other machines.
+
+The server image contains the whole sandbox. Its container needs the host's KVM device, the host `kvm` group (its numeric ID from `getent group kvm`) and a writable cgroup, which Docker delegates to the container user. Keep `/home/node/.machdoch-cloud` on a volume: it holds CLI sign-ins and runner state. With Docker Compose:
+
+```yaml
+services:
+  cloud:
+    image: ghcr.io/pureportal/machdoch-cloud:latest
+    devices:
+      - /dev/kvm
+    group_add:
+      - "108"
+    security_opt:
+      - writable-cgroups=true
+    volumes:
+      - cloud-home:/home/node/.machdoch-cloud
+
+volumes:
+  cloud-home:
+```
 
 ## Agent
 

@@ -1,3 +1,50 @@
+FROM rust:1-bookworm AS sandbox-supervisor
+
+WORKDIR /workspace
+
+COPY packages/process-supervisor packages/process-supervisor
+COPY apps/cloud-runner/native apps/cloud-runner/native
+
+RUN cargo build --release --locked --manifest-path apps/cloud-runner/native/Cargo.toml --bin machdoch-cloud-supervisor
+
+FROM --platform=linux/amd64 alpine:3.24 AS sandbox-root
+
+RUN apk add --no-cache tini socat nodejs npm git bash python3 coreutils findutils grep sed diffutils patch chromium font-dejavu \
+    && npm install --prefix /opt --omit=dev --no-audit --no-fund playwright-core@1.60.0 \
+    && rm -rf /root/.npm \
+    && addgroup -g 1000 machdoch \
+    && adduser -D -u 1000 -G machdoch -h /workspace -s /bin/bash machdoch \
+    && mkdir -p /workspace /run /opt/machdoch /tmp \
+    && chown 1000:1000 /workspace /run \
+    && chmod 1777 /tmp
+
+FROM alpine:3.24 AS sandbox-guest
+
+RUN apk add --no-cache curl libarchive-tools squashfs-tools e2fsprogs qemu-img
+
+WORKDIR /guest
+
+RUN set -eu \
+    && base=https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64 \
+    && curl -fsSLO "$base/latest-releases.yaml" \
+    && version=$(awk '$1=="version:" {print $2; exit}' latest-releases.yaml) \
+    && iso="alpine-virt-$version-x86_64.iso" \
+    && curl -fsSLO "$base/$iso" \
+    && sum=$(awk -v f="$iso" '$1=="file:" && $2==f {found=1} found && $1=="sha256:" {print $2; exit}' latest-releases.yaml) \
+    && echo "$sum  $iso" | sha256sum -c \
+    && bsdtar -xf "$iso" boot/vmlinuz-virt boot/initramfs-virt boot/modloop-virt \
+    && unsquashfs -no-progress -d extracted boot/modloop-virt 'modules/*/kernel/drivers/char/hw_random/rng-core.ko' 'modules/*/kernel/drivers/char/hw_random/virtio-rng.ko' >/dev/null \
+    && mkdir modules \
+    && for name in rng-core virtio-rng; do cp "$(find extracted -name "$name.ko")" "modules/$name.ko"; done \
+    && mv boot/vmlinuz-virt boot/initramfs-virt . \
+    && rm -rf boot extracted "$iso" latest-releases.yaml
+
+COPY --from=sandbox-root / /rootfs/
+
+RUN mkfs.ext4 -q -F -d /rootfs -L machdoch-root -O ^has_journal root.raw 2048M \
+    && qemu-img convert -f raw -O qcow2 root.raw root.qcow2 \
+    && rm -rf root.raw /rootfs
+
 FROM node:24.22.1-bookworm-slim AS base
 
 WORKDIR /workspace
@@ -10,6 +57,7 @@ FROM base AS dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/cloud/package.json apps/cloud/package.json
 COPY apps/client/package.json apps/client/package.json
+COPY apps/cloud-runner/package.json apps/cloud-runner/package.json
 COPY packages/client-ui/package.json packages/client-ui/package.json
 COPY packages/fleet-protocol/package.json packages/fleet-protocol/package.json
 COPY packages/product-ui/package.json packages/product-ui/package.json
@@ -27,6 +75,7 @@ FROM dependencies AS build
 
 COPY apps/cloud apps/cloud
 COPY apps/client apps/client
+COPY apps/cloud-runner apps/cloud-runner
 COPY packages/client-ui packages/client-ui
 COPY packages/fleet-protocol packages/fleet-protocol
 COPY packages/product-ui packages/product-ui
@@ -45,10 +94,17 @@ COPY scripts/licensing scripts/licensing
 RUN pnpm build:cloud \
     && node scripts/licensing/generate.mjs cloud
 
+COPY --from=sandbox-guest /guest/initramfs-virt /guest/initramfs-virt
+COPY --from=sandbox-guest /guest/modules /guest/modules
+
+RUN pnpm --filter @machdoch/client build:cloud-agent \
+    && node apps/cloud-runner/scripts/prepare-guest.mjs --base /guest/initramfs-virt --modules /guest/modules --runtime apps/client/dist/machdoch-cloud-agent.cjs --output /sandbox/initramfs
+
 FROM base AS production-dependencies
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/cloud/package.json apps/cloud/package.json
+COPY apps/cloud-runner/package.json apps/cloud-runner/package.json
 COPY packages/client-ui/package.json packages/client-ui/package.json
 COPY packages/fleet-protocol/package.json packages/fleet-protocol/package.json
 COPY packages/product-ui/package.json packages/product-ui/package.json
@@ -80,6 +136,8 @@ COPY --from=build --chown=node:node /workspace/apps/cloud/dist/cloud-oidc-worker
 COPY --from=build --chown=node:node /workspace/apps/cloud/dist/cloud-recurrence-worker.mjs apps/cloud/dist/cloud-recurrence-worker.mjs
 COPY --from=build --chown=node:node /workspace/apps/cloud/next.config.ts apps/cloud/next.config.ts
 COPY --from=build --chown=node:node /workspace/apps/cloud/tsconfig.json apps/cloud/tsconfig.json
+COPY --from=build --chown=node:node /workspace/apps/cloud-runner/src apps/cloud-runner/src
+COPY --from=build --chown=node:node /workspace/apps/cloud-runner/tsconfig.json apps/cloud-runner/tsconfig.json
 COPY --from=build --chown=node:node /workspace/packages/client-ui/src packages/client-ui/src
 COPY --from=build --chown=node:node /workspace/packages/fleet-protocol/src packages/fleet-protocol/src
 COPY --from=build --chown=node:node /workspace/packages/product-ui/src packages/product-ui/src
@@ -108,6 +166,7 @@ RUN test -f .next/BUILD_ID \
     && test -L node_modules/@machdoch/speech \
     && test -L node_modules/@machdoch/text-to-speech \
     && test -L node_modules/@machdoch/model-runtime \
+    && test -L ../cloud-runner/node_modules/@machdoch/cloud-client \
     && node --import @oxc-node/core/register --input-type=module --eval "await import('@machdoch/fleet-protocol')"
 
 USER node
@@ -119,7 +178,7 @@ FROM application AS server
 USER root
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ffmpeg git ca-certificates \
+    && apt-get install --yes --no-install-recommends ffmpeg git ca-certificates qemu-system-x86 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install --global @anthropic-ai/claude-code@2.1.316 @openai/codex@0.166.0 @github/copilot@1.0.109
@@ -132,7 +191,15 @@ RUN tar -xzf /tmp/gh.tar.gz -C /tmp \
     && rm -rf /tmp/gh.tar.gz /tmp/gh_${GH_VERSION}_linux_${TARGETARCH} \
     && gh --version
 
+COPY --from=sandbox-supervisor /workspace/apps/cloud-runner/native/target/release/machdoch-cloud-supervisor /usr/lib/machdoch-cloud/sandbox/machdoch-cloud-supervisor
+COPY --from=sandbox-guest /guest/vmlinuz-virt /guest/root.qcow2 /usr/lib/machdoch-cloud/sandbox/
+COPY --from=build /sandbox/initramfs /usr/lib/machdoch-cloud/sandbox/initramfs
+
+RUN install -d -o node -g node -m 0700 /home/node/.machdoch-cloud
+
 USER node
+
+VOLUME /home/node/.machdoch-cloud
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node", "-e", "fetch('http://127.0.0.1:43188/healthz').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
 
