@@ -1,6 +1,6 @@
 [package]
 name = "machdoch"
-version = "46.3.0"
+version = "46.4.0"
 license = "PolyForm-Noncommercial-1.0.0"
 description = "Local-first OS AI agent desktop shell"
 authors = ["Andreas Ehrhardt <a.ehrhardt@alphartis.com>"]
