@@ -8,6 +8,7 @@ import type { FileDropTarget } from "./session-context-attachments";
 const TEXT_URI_LIST_TYPE = "text/uri-list";
 const TEXT_PLAIN_TYPE = "text/plain";
 const MOZ_URL_TYPE = "text/x-moz-url";
+const ELEVATED_FILE_DROP_EVENT = "machdoch://file-drop";
 const URL_DROP_PROTOCOLS = new Set(["http:", "https:", "mailto:", "ftp:"]);
 
 interface SessionDropPayload {
@@ -241,9 +242,30 @@ export const useSessionFileDrops = (options: {
     }
 
     let disposed = false;
-    let unsubscribe: (() => void) | undefined;
+    const unsubscribers: (() => void)[] = [];
+    const currentWindow = getCurrentWindow();
 
-    void getCurrentWindow()
+    const attachDroppedPaths = (paths: string[]): void => {
+      setIsNativeDropActive(false);
+      void attachDropPayload({ paths }, fileDropTarget).catch((error) => {
+        console.error("Failed to attach dropped files", error);
+      });
+    };
+
+    const keepSubscription = (unlisten: () => void): void => {
+      if (disposed) {
+        unlisten();
+        return;
+      }
+
+      unsubscribers.push(unlisten);
+    };
+
+    const reportSubscriptionError = (error: unknown): void => {
+      console.error("Failed to subscribe to dropped files", error);
+    };
+
+    void currentWindow
       .onDragDropEvent((event: { payload: TauriDragDropEvent }) => {
         const payload = event.payload;
 
@@ -257,28 +279,23 @@ export const useSessionFileDrops = (options: {
           return;
         }
 
-        setIsNativeDropActive(false);
-        void attachDropPayload({ paths: payload.paths }, fileDropTarget).catch(
-          (error) => {
-            console.error("Failed to attach dropped files", error);
-          },
-        );
+        attachDroppedPaths(payload.paths);
       })
-      .then((unlisten) => {
-        if (disposed) {
-          unlisten();
-          return;
-        }
+      .then(keepSubscription)
+      .catch(reportSubscriptionError);
 
-        unsubscribe = unlisten;
+    void currentWindow
+      .listen<{ paths: string[] }>(ELEVATED_FILE_DROP_EVENT, (event) => {
+        attachDroppedPaths(event.payload.paths);
       })
-      .catch((error) => {
-        console.error("Failed to subscribe to dropped files", error);
-      });
+      .then(keepSubscription)
+      .catch(reportSubscriptionError);
 
     return () => {
       disposed = true;
-      unsubscribe?.();
+      for (const unlisten of unsubscribers) {
+        unlisten();
+      }
     };
   }, [attachDropPayload, options.fileDropTarget, options.isDesktop]);
 

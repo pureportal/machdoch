@@ -239,6 +239,19 @@ pub fn run() {
 
             desktop_shell::display_layout::initialize(app.handle());
 
+            #[cfg(target_os = "windows")]
+            if desktop_shell::current_process_has_administrator_rights() {
+                if let Some(main_window) =
+                    app.get_webview_window(desktop_shell::MAIN_WINDOW_LABEL)
+                {
+                    if let Err(error) =
+                        desktop_shell::elevated_file_drop::enable(&main_window)
+                    {
+                        eprintln!("Failed to enable file drops while elevated: {error}");
+                    }
+                }
+            }
+
             desktop_task::ralph_host_recovery::initialize(app.handle())
                 .map_err(std::io::Error::other)?;
 

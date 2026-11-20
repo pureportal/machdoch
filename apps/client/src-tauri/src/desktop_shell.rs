@@ -11,6 +11,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 pub(crate) mod display_layout;
+#[cfg(target_os = "windows")]
+pub(crate) mod elevated_file_drop;
 pub(crate) mod file_manager;
 #[cfg(target_os = "windows")]
 mod logon_path;
