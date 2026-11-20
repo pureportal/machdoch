@@ -265,6 +265,84 @@ mod model_catalog_parser_tests {
     }
 
     #[test]
+    fn copilot_sdk_models_list_accepts_protocol_v4_payload() {
+        let models: Vec<github_copilot_sdk::Model> = serde_json::from_value(serde_json::json!([
+            {
+                "id": "auto",
+                "name": "Auto",
+                "capabilities": {},
+                "provider": { "id": "copilot", "label": "GitHub Copilot", "kind": "copilot" },
+                "billing": {}
+            },
+            {
+                "id": "claude-sonnet-5.5",
+                "name": "Claude Sonnet 5.5",
+                "capabilities": {
+                    "family": "claude-sonnet-5.5",
+                    "limits": {
+                        "max_context_window_tokens": 1000000,
+                        "max_non_streaming_output_tokens": 16000,
+                        "max_output_tokens": 128000,
+                        "max_prompt_tokens": 936000,
+                        "vision": {
+                            "max_prompt_image_size": 3145728,
+                            "max_prompt_images": 5,
+                            "supported_media_types": ["image/jpeg", "image/png"]
+                        }
+                    },
+                    "object": "model_capabilities",
+                    "supports": {
+                        "adaptive_thinking": "adaptive_only",
+                        "parallel_tool_calls": true,
+                        "reasoning_effort": ["low", "medium", "high", "xhigh", "max"],
+                        "streaming": true,
+                        "structured_outputs": true,
+                        "tool_calls": true,
+                        "vision": true,
+                        "reasoningEffort": true
+                    },
+                    "tokenizer": "o200k_base",
+                    "type": "chat"
+                },
+                "provider": { "id": "copilot", "label": "GitHub Copilot", "kind": "copilot" },
+                "policy": { "state": "enabled", "terms": "" },
+                "supportedReasoningEfforts": ["low", "medium", "high", "xhigh", "max"],
+                "billing": {
+                    "tokenPrices": {
+                        "inputPrice": 200,
+                        "outputPrice": 1000,
+                        "maxPromptTokens": 200000,
+                        "longContext": { "maxPromptTokens": 936000 }
+                    }
+                },
+                "vendor": "Anthropic",
+                "modelPickerCategory": "versatile",
+                "modelPickerPriceCategory": "medium"
+            }
+        ]))
+        .expect("Copilot protocol v4 models.list payload should deserialize");
+        let runtime_models = models
+            .iter()
+            .filter_map(create_copilot_cli_runtime_model)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            runtime_models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["auto", "claude-sonnet-5.5"]
+        );
+        let sonnet = &runtime_models[1];
+        assert_eq!(sonnet.capabilities.image_input, Some(true));
+        assert_eq!(sonnet.capabilities.context_window_tokens, Some(1_000_000));
+        assert_eq!(
+            string_values(sonnet.capabilities.reasoning_modes.as_deref()),
+            Some(vec!["default", "low", "medium", "high", "xhigh", "max"])
+        );
+    }
+
+    #[test]
     fn copilot_sdk_model_conversion_preserves_live_metadata() {
         let model = serde_json::from_value(serde_json::json!({
             "id": "mai-code-1-flash",

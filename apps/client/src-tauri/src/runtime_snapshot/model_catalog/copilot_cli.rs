@@ -181,19 +181,11 @@ async fn list_copilot_cli_models(
         .map_err(|error| format!("failed to connect to the Copilot CLI stdout: {error}"))?;
     let client = Client::from_streams(reader, writer, working_directory)
         .map_err(|error| format!("failed to start the Copilot SDK runtime: {error}"))?;
-    let discovery = async {
-        client
-            .verify_protocol_version()
-            .await
-            .map_err(|error| format!("Copilot SDK handshake failed: {error}"))?;
-        client
-            .list_models()
-            .await
-            .map_err(|error| format!("Copilot SDK models.list failed: {error}"))
-    };
-    let models = tokio::time::timeout(COPILOT_SDK_DISCOVERY_TIMEOUT, discovery).await;
+    let models = tokio::time::timeout(COPILOT_SDK_DISCOVERY_TIMEOUT, client.list_models()).await;
     client.force_stop();
-    models.map_err(|_| "Copilot SDK models.list timed out.".to_string())?
+    models
+        .map_err(|_| "Copilot SDK models.list timed out.".to_string())?
+        .map_err(|error| format!("Copilot SDK models.list failed: {error}"))
 }
 
 async fn fetch_copilot_cli_sdk_model_catalog(
