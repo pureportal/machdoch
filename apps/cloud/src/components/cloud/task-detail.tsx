@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -57,25 +58,22 @@ export function TaskDetail({
   }, [initial.id]);
   useEffect(() => {
     const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
     let delay = activePollMs;
     async function poll() {
       try {
-        if (!document.hidden) {
-          const next = await cloudRequest<RunDetail>(`runs/${initial.id}`, {
-            signal: abort.signal,
-          });
-          if (!abort.signal.aborted) {
-            delay = settled(next) ? settledPollMs : activePollMs;
-            setRun((previous) =>
-              previous &&
-              previous.revision > next.revision &&
-              previous.delivery?.updatedAt === next.delivery?.updatedAt
-                ? previous
-                : next,
-            );
-            setError("");
-          }
+        const next = await cloudRequest<RunDetail>(`runs/${initial.id}`, {
+          signal: abort.signal,
+        });
+        if (!abort.signal.aborted) {
+          delay = settled(next) ? settledPollMs : activePollMs;
+          setRun((previous) =>
+            previous &&
+            previous.revision > next.revision &&
+            previous.delivery?.updatedAt === next.delivery?.updatedAt
+              ? previous
+              : next,
+          );
+          setError("");
         }
       } catch (reason) {
         if (abort.signal.aborted) return;
@@ -86,12 +84,11 @@ export function TaskDetail({
           setRun(null);
         setError((reason as Error).message);
       }
-      if (!abort.signal.aborted) timer = setTimeout(() => void poll(), delay);
     }
-    void poll();
+    const stop = pollWhileVisible(poll, () => delay);
     return () => {
       abort.abort();
-      clearTimeout(timer);
+      stop();
     };
   }, [initial.id]);
   if (!run)

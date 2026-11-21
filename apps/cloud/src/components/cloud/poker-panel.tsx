@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { holderCan } from "@/lib/cloud-permissions";
 import { LoadingState } from "@machdoch/product-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -63,10 +64,9 @@ export function PokerPanel({
   );
   useEffect(() => {
     const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
-        if (!document.hidden) await refresh(abort.signal);
+        await refresh(abort.signal);
       } catch (reason) {
         if (abort.signal.aborted) return;
         if (
@@ -77,12 +77,11 @@ export function PokerPanel({
         setConnectionError((reason as Error).message);
         setLoading(false);
       }
-      if (!abort.signal.aborted) timer = setTimeout(() => void poll(), 3000);
     }
-    void poll();
+    const stop = pollWhileVisible(poll, 3000);
     return () => {
       abort.abort();
-      clearTimeout(timer);
+      stop();
       requestSequence.current++;
     };
   }, [refresh]);

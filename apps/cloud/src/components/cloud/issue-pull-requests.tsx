@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
@@ -114,13 +115,10 @@ export function IssuePullRequests({ issueId }: { issueId: string }) {
   );
   useEffect(() => {
     const abort = new AbortController();
-    void load(abort.signal);
-    const timer = setInterval(() => {
-      if (!document.hidden) void load(abort.signal);
-    }, pollMs);
+    const stop = pollWhileVisible(() => load(abort.signal), pollMs);
     return () => {
       abort.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [load]);
   if (!pullRequests.length) return null;

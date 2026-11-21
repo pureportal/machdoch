@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -54,12 +55,14 @@ export function PullRequestList({
   );
   useEffect(() => {
     const abort = new AbortController();
-    const timer = setInterval(() => {
-      if (!document.hidden) void load(abort.signal);
-    }, pollMs);
+    const stop = pollWhileVisible(
+      () => load(abort.signal),
+      pollMs,
+      { immediate: false },
+    );
     return () => {
       abort.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [load]);
   const repositories = [

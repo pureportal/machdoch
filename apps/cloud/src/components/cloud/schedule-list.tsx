@@ -1,4 +1,5 @@
 "use client";
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import {
@@ -72,13 +73,17 @@ export function ScheduleList({
   const latestRefresh = useRef(refresh);
   latestRefresh.current = refresh;
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (document.hidden || busy.current) return;
-      latestRefresh
-        .current()
-        .catch((reason: Error) => setError(reason.message));
-    }, schedulePollMs);
-    return () => clearInterval(timer);
+    const stop = pollWhileVisible(
+      async () => {
+        if (busy.current) return;
+        await latestRefresh
+          .current()
+          .catch((reason: Error) => setError(reason.message));
+      },
+      schedulePollMs,
+      { immediate: false },
+    );
+    return stop;
   }, []);
   async function load(action: () => Promise<void>) {
     if (busy.current) return;

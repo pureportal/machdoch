@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Lock, Trash2 } from "lucide-react";
 import type {
@@ -439,13 +440,10 @@ export function GitSettings() {
       load(controller.signal).catch((reason: Error) => {
         if (!controller.signal.aborted) setError(reason.message);
       });
-    void refresh();
-    const timer = setInterval(() => {
-      if (!document.hidden) void refresh();
-    }, 15_000);
+    const stop = pollWhileVisible(() => refresh(), 15_000);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [load]);
   const automated = gitProviders.some(

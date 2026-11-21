@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import {
@@ -200,13 +201,10 @@ export function IssueDeliveryTimeline({ issueId }: { issueId: string }) {
         .catch((reason: Error) => {
           if (!abort.signal.aborted) setError(reason.message);
         });
-    void load();
-    const timer = setInterval(() => {
-      if (!document.hidden) void load();
-    }, pollMs);
+    const stop = pollWhileVisible(() => load(), pollMs);
     return () => {
       abort.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [issueId]);
   if (!delivery?.entries.length && !error) return null;

@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { holderCan } from "@/lib/cloud-permissions";
 import { Pencil, Play, Plus, RefreshCw, Trash2, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -104,12 +105,17 @@ export function AutomationList({
     void loadRuns(selectedId).catch((reason: Error) =>
       toast(reason.message, "error"),
     );
-    const timer = setInterval(() => {
-      if (document.hidden) return;
-      void loadRuns(selectedId).catch(() => undefined);
-      void refresh().catch(() => undefined);
-    }, pollMs);
-    return () => clearInterval(timer);
+    const stop = pollWhileVisible(
+      async () => {
+        await Promise.all([
+          loadRuns(selectedId).catch(() => undefined),
+          refresh().catch(() => undefined),
+        ]);
+      },
+      pollMs,
+      { immediate: false },
+    );
+    return stop;
   }, [selectedId, loadRuns, refresh, toast]);
 
   async function perform(action: () => Promise<unknown>, success?: string) {

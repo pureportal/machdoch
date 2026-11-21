@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { holderCan } from "@/lib/cloud-permissions";
 import { LoadingState } from "@machdoch/product-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -77,11 +78,10 @@ export function IssueComments({
   );
   useEffect(() => {
     const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
     setLoading(true);
     async function poll() {
       try {
-        if (!document.hidden) await refresh(abort.signal);
+        await refresh(abort.signal);
       } catch (reason) {
         if (abort.signal.aborted) return;
         if (
@@ -92,12 +92,11 @@ export function IssueComments({
         setConnectionError((reason as Error).message);
         setLoading(false);
       }
-      if (!abort.signal.aborted) timer = setTimeout(() => void poll(), 5000);
     }
-    void poll();
+    const stop = pollWhileVisible(poll, 5000);
     return () => {
       abort.abort();
-      clearTimeout(timer);
+      stop();
       sequence.current++;
     };
   }, [refresh]);

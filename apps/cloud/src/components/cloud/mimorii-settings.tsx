@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import {
@@ -46,13 +47,10 @@ export function MimoriiSettings() {
         .catch((reason: Error) => {
           if (!controller.signal.aborted) setError(reason.message);
         });
-    void refresh();
-    const timer = setInterval(() => {
-      if (!document.hidden) void refresh();
-    }, 15_000);
+    const stop = pollWhileVisible(() => refresh(), 15_000);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      stop();
     };
   }, []);
   const settings = data?.settings;

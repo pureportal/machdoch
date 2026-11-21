@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
@@ -40,10 +41,9 @@ export function useIssueRelations(issueId: string): IssueRelationsState {
   );
   useEffect(() => {
     const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
-        if (!document.hidden) await load(abort.signal);
+        await load(abort.signal);
       } catch (reason) {
         if (abort.signal.aborted) return;
         if (
@@ -53,12 +53,11 @@ export function useIssueRelations(issueId: string): IssueRelationsState {
           setRelations([]);
         setError((reason as Error).message);
       }
-      if (!abort.signal.aborted) timer = setTimeout(() => void poll(), 5000);
     }
-    void poll();
+    const stop = pollWhileVisible(poll, 5000);
     return () => {
       abort.abort();
-      clearTimeout(timer);
+      stop();
       sequence.current++;
     };
   }, [load]);

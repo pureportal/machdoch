@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { holderCan } from "@/lib/cloud-permissions";
 import Link from "next/link";
 import {
@@ -108,10 +109,12 @@ export function ReleaseStudio({
     );
   useEffect(() => {
     if (!active) return;
-    const timer = setInterval(() => {
-      if (!document.hidden) void refresh().catch(() => undefined);
-    }, pollMs);
-    return () => clearInterval(timer);
+    const stop = pollWhileVisible(
+      () => refresh().catch(() => undefined),
+      pollMs,
+      { immediate: false },
+    );
+    return stop;
   }, [active, refresh]);
   const context: StudioContext = {
     workspace,

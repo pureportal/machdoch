@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CloudIssue } from "@/lib/cloud-contract";
@@ -57,10 +58,9 @@ export function IssueLabels({
   );
   useEffect(() => {
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
-        if (!document.hidden) await refresh(controller.signal);
+        await refresh(controller.signal);
       } catch (reason) {
         if (controller.signal.aborted) return;
         if (
@@ -75,14 +75,12 @@ export function IssueLabels({
         }
         setError((reason as Error).message);
       }
-      if (!controller.signal.aborted)
-        timer = setTimeout(() => void poll(), 5000);
     }
-    void poll();
+    const stop = pollWhileVisible(poll, 5000);
     return () => {
       controller.abort();
       openingRequest.current?.abort();
-      clearTimeout(timer);
+      stop();
       sequence.current++;
     };
   }, [refresh]);

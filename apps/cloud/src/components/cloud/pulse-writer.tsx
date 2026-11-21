@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LoaderCircle, Sparkles } from "lucide-react";
@@ -63,10 +64,12 @@ export function PulseWriter({
   }, [refresh]);
   useEffect(() => {
     if (!waiting.length) return;
-    const timer = setInterval(() => {
-      if (!document.hidden) void refresh();
-    }, pollMs);
-    return () => clearInterval(timer);
+    const stop = pollWhileVisible(
+      () => refresh(),
+      pollMs,
+      { immediate: false },
+    );
+    return stop;
   }, [waiting.length, refresh]);
   if (waiting.length)
     return (

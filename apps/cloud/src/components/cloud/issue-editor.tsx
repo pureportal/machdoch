@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { holderCan } from "@/lib/cloud-permissions";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -175,10 +176,12 @@ export function IssueEditor({
   }, [initial.id, refreshHistory]);
   useEffect(() => {
     refreshHistory();
-    const timer = setInterval(() => {
-      if (!document.hidden) void reload().catch(() => undefined);
-    }, pollMs);
-    return () => clearInterval(timer);
+    const stop = pollWhileVisible(
+      () => reload().catch(() => undefined),
+      pollMs,
+      { immediate: false },
+    );
+    return stop;
   }, [refreshHistory, reload]);
   function changeProperties(changes: IssueChangeSet) {
     const previous = latest.current;

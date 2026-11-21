@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -126,12 +127,14 @@ export function Inbox({ initial }: { initial: InboxEntry[] }) {
   }, []);
   useEffect(() => {
     const abort = new AbortController();
-    const timer = setInterval(() => {
-      if (!document.hidden) void refresh(abort.signal).catch(() => undefined);
-    }, pollMs);
+    const stop = pollWhileVisible(
+      () => refresh(abort.signal).catch(() => undefined),
+      pollMs,
+      { immediate: false },
+    );
     return () => {
       abort.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [refresh]);
   const update = useCallback(

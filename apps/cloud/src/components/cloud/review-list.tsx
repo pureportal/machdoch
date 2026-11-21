@@ -1,5 +1,6 @@
 "use client";
 
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { GitPullRequest } from "lucide-react";
@@ -27,12 +28,14 @@ export function ReviewList({ initial }: { initial: CloudReviewInbox }) {
   );
   useEffect(() => {
     const abort = new AbortController();
-    const timer = setInterval(() => {
-      if (!document.hidden) void load(abort.signal);
-    }, pollMs);
+    const stop = pollWhileVisible(
+      () => load(abort.signal),
+      pollMs,
+      { immediate: false },
+    );
     return () => {
       abort.abort();
-      clearInterval(timer);
+      stop();
     };
   }, [load]);
   const groups = reviewGroups
