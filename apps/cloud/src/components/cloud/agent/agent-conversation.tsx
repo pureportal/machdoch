@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -32,6 +32,12 @@ interface ComposerFile {
   name: string;
   preview: string | null;
   id: string | null;
+  progress: number;
+}
+
+function saveDraft(key: string, value: string) {
+  if (value) sessionStorage.setItem(key, value);
+  else sessionStorage.removeItem(key);
 }
 
 const agentDescription = sidebarItems.find(
@@ -93,6 +99,7 @@ export function AgentConversation({
   const conversation = useAgentConversation(chatId, onCreated, initial);
   const { detail, settings, providerId, model, active, pending } = conversation;
   const [prompt, setPrompt] = useState(initialPrompt);
+  const draftKey = `machdoch:agent-draft:${chatId ?? "new"}`;
   const [excluded, setExcluded] = useState<string | null>(null);
   const [attached, setAttached] = useState<AgentPageEntity[]>([]);
   const [unseen, setUnseen] = useState(false);
@@ -146,6 +153,22 @@ export function AgentConversation({
   }, [chatId]);
 
   useEffect(() => {
+    if (initialPrompt) return;
+    const stored = sessionStorage.getItem(draftKey);
+    if (stored) setPrompt(stored);
+  }, [draftKey, initialPrompt]);
+
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  useEffect(
+    () => () => {
+      for (const file of filesRef.current)
+        if (file.preview) URL.revokeObjectURL(file.preview);
+    },
+    [],
+  );
+
+  useEffect(() => {
     if (!initialPrompt || sendInitialPrompt) return;
     setPrompt(initialPrompt);
     onPromptUsed?.();
@@ -172,9 +195,17 @@ export function AgentConversation({
         : null;
       setFiles((current) => [
         ...current,
-        { key, name: file.name || "file", preview, id: null },
+        { key, name: file.name || "file", preview, id: null, progress: 0 },
       ]);
-      void uploadAttachment(file, null)
+      void uploadAttachment(file, null, (loaded, total) =>
+        setFiles((current) =>
+          current.map((entry) =>
+            entry.key === key
+              ? { ...entry, progress: total ? loaded / total : 0 }
+              : entry,
+          ),
+        ),
+      )
         .then((attachment) =>
           setFiles((current) =>
             current.map((entry) =>
@@ -184,6 +215,7 @@ export function AgentConversation({
         )
         .catch((reason: Error) => {
           setUploadError(reason.message);
+          if (preview) URL.revokeObjectURL(preview);
           setFiles((current) => current.filter((entry) => entry.key !== key));
         });
     }
@@ -209,6 +241,7 @@ export function AgentConversation({
     );
     if (!sent) return;
     setPrompt("");
+    sessionStorage.removeItem(draftKey);
     setAttached([]);
     for (const file of files)
       if (file.preview) URL.revokeObjectURL(file.preview);
@@ -242,12 +275,13 @@ export function AgentConversation({
             variant="ghost"
             size="sm"
             className="self-center"
+            disabled={conversation.loadingOlder}
             onClick={() => {
               following.current = false;
               void conversation.loadOlder();
             }}
           >
-            Earlier messages
+            {conversation.loadingOlder ? "Loading…" : "Earlier messages"}
           </Button>
         )}
         {!chatId && (
@@ -353,7 +387,10 @@ export function AgentConversation({
           event.preventDefault();
           setDragging(true);
         }}
-        onDragLeave={() => setDragging(false)}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+            setDragging(false);
+        }}
         onDrop={(event) => {
           if (!writable || !event.dataTransfer.files.length) return;
           event.preventDefault();
@@ -368,6 +405,11 @@ export function AgentConversation({
                 key={file.key}
                 className="cloud-agent-attachment"
                 data-pending={!file.id || undefined}
+                style={
+                  file.id
+                    ? undefined
+                    : ({ "--upload-progress": file.progress } as CSSProperties)
+                }
               >
                 {file.preview ? (
                   <img src={file.preview} alt="" />
@@ -429,7 +471,10 @@ export function AgentConversation({
           rows={variant === "page" ? 3 : 2}
           maxLength={20000}
           disabled={!writable}
-          onChange={(event) => setPrompt(event.target.value)}
+          onChange={(event) => {
+            setPrompt(event.target.value);
+            saveDraft(draftKey, event.target.value);
+          }}
           onPaste={(event) => {
             if (!event.clipboardData.files.length) return;
             event.preventDefault();

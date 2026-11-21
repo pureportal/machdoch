@@ -241,7 +241,10 @@ export const MediaSampleImagesInput = ({
           setDragActive(true);
         }}
         onDragOver={(event) => event.preventDefault()}
-        onDragLeave={() => setDragActive(false)}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+            setDragActive(false);
+        }}
         onDrop={handleDrop}
         className={cn(
           "min-h-24 rounded-xl border border-dashed p-2 outline-none focus:border-sky-500",

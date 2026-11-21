@@ -83,11 +83,32 @@
 }
 .cloud-issue-attachments li.cloud-attachment-uploading {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   min-height: 140px;
   color: var(--muted-foreground);
   font-size: 12px;
+}
+.cloud-attachment-uploading progress {
+  width: min(160px, 80%);
+  height: 4px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--muted);
+  accent-color: var(--primary);
+  appearance: none;
+}
+.cloud-attachment-uploading progress::-webkit-progress-bar {
+  background: var(--muted);
+}
+.cloud-attachment-uploading progress::-webkit-progress-value {
+  background: var(--primary);
+}
+.cloud-attachment-uploading progress::-moz-progress-bar {
+  background: var(--primary);
 }
 .cloud-agent-attachments {
   display: flex;
@@ -133,6 +154,16 @@
 }
 .cloud-agent-attachment[data-pending] {
   opacity: 0.6;
+}
+.cloud-agent-attachment[data-pending]::after {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--upload-progress, 0) * 100%);
+  height: 2px;
+  background: var(--primary);
+  content: "";
+  transition: width 120ms linear;
 }
 .cloud-agent-composer[data-dragging] {
   outline: 1px dashed var(--ring);

@@ -93,26 +93,47 @@ export async function cloudRequest<T>(
   }
 }
 
-export async function cloudUpload<T>(path: string, file: Blob): Promise<T> {
-  const response = await fetch(`/api/v1/${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-      "x-machdoch-cloud-csrf": csrfToken(),
-    },
-    body: file,
-    cache: "no-store",
-  });
-  const value = (await response.json().catch(() => null)) as
-    | (T & { error?: string; code?: string })
-    | null;
-  if (!response.ok)
-    throw new CloudRequestError(
-      value?.error ?? "The upload failed. Try again.",
-      response.status,
-      value?.code ?? "unknown",
+export function cloudUpload<T>(
+  path: string,
+  file: Blob,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `/api/v1/${path}`);
+    request.responseType = "json";
+    request.setRequestHeader(
+      "Content-Type",
+      file.type || "application/octet-stream",
     );
-  return value as T;
+    request.setRequestHeader("x-machdoch-cloud-csrf", csrfToken());
+    if (onProgress)
+      request.upload.onprogress = (event) =>
+        onProgress(event.loaded, event.lengthComputable ? event.total : file.size);
+    request.onload = () => {
+      const value = request.response as
+        | (T & { error?: string; code?: string })
+        | null;
+      if (request.status >= 200 && request.status < 300) resolve(value as T);
+      else
+        reject(
+          new CloudRequestError(
+            value?.error ?? "The upload failed. Try again.",
+            request.status,
+            value?.code ?? "unknown",
+          ),
+        );
+    };
+    request.onerror = () =>
+      reject(
+        new CloudRequestError(
+          "The upload was interrupted. Check your connection and try again.",
+          0,
+          "network_unavailable",
+        ),
+      );
+    request.send(file);
+  });
 }
 
 export function formText(form: FormData, name: string): string {
@@ -132,6 +153,13 @@ export function createCommandSender() {
     const serialized = JSON.stringify({ path, body, method });
     if (previous?.serialized !== serialized)
       previous = { serialized, key: crypto.randomUUID() };
-    return cloudRequest<T>(path, { method, body, key: previous.key });
+    const attempt = previous;
+    const result = await cloudRequest<T>(path, {
+      method,
+      body,
+      key: attempt.key,
+    });
+    if (previous === attempt) previous = null;
+    return result;
   };
 }

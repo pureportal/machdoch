@@ -44,7 +44,16 @@ export function IssueAttachments({
 }) {
   const toast = useToast();
   const [attachments, setAttachments] = useState<CloudAttachment[]>([]);
-  const [uploading, setUploading] = useState(0);
+  const [uploads, setUploads] = useState<
+    Record<string, { loaded: number; total: number }>
+  >({});
+  const pendingUploads = Object.values(uploads);
+  const uploading = pendingUploads.length;
+  const uploadTotal = pendingUploads.reduce((sum, entry) => sum + entry.total, 0);
+  const uploadLoaded = pendingUploads.reduce(
+    (sum, entry) => sum + entry.loaded,
+    0,
+  );
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const load = useCallback(
@@ -77,11 +86,25 @@ export function IssueAttachments({
   }, [load]);
   const upload = (files: File[]) => {
     if (!files.length) return;
-    setUploading((count) => count + files.length);
-    for (const file of files)
-      void uploadAttachment(file, issueId)
+    for (const file of files) {
+      const key = crypto.randomUUID();
+      setUploads((current) => ({
+        ...current,
+        [key]: { loaded: 0, total: file.size },
+      }));
+      void uploadAttachment(file, issueId, (loaded, total) =>
+        setUploads((current) =>
+          current[key] ? { ...current, [key]: { loaded, total } } : current,
+        ),
+      )
         .catch((reason: Error) => toast(reason.message, "error"))
-        .finally(() => setUploading((count) => count - 1));
+        .finally(() =>
+          setUploads((current) => {
+            const { [key]: _finished, ...rest } = current;
+            return rest;
+          }),
+        );
+    }
   };
   const dropHandlers = writable
     ? {
@@ -90,7 +113,10 @@ export function IssueAttachments({
           event.preventDefault();
           setDragging(true);
         },
-        onDragLeave: () => setDragging(false),
+        onDragLeave: (event: React.DragEvent) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+            setDragging(false);
+        },
         onDrop: (event: React.DragEvent) => {
           event.preventDefault();
           setDragging(false);
@@ -190,6 +216,11 @@ export function IssueAttachments({
         {uploading > 0 && (
           <li className="cloud-attachment-uploading" role="status">
             Uploading {uploading} {uploading === 1 ? "file" : "files"}…
+            <progress
+              aria-label="Upload progress"
+              value={uploadLoaded}
+              max={uploadTotal || 1}
+            />
           </li>
         )}
       </ul>

@@ -246,20 +246,38 @@ function ActionResult({ action }: { action: AgentAction }) {
 }
 
 function CopyAnswer({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+  const [result, setResult] = useState<"copied" | "failed" | null>(null);
   return (
     <button
       type="button"
       className="cloud-agent-copy"
-      aria-label={copied ? "Copied" : "Copy answer"}
+      aria-label={
+        result === "copied"
+          ? "Copied"
+          : result === "failed"
+            ? "Copy failed"
+            : "Copy answer"
+      }
       onClick={() =>
-        void navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        })
+        void navigator.clipboard
+          .writeText(text)
+          .then(
+            () => "copied" as const,
+            () => "failed" as const,
+          )
+          .then((next) => {
+            setResult(next);
+            setTimeout(() => setResult(null), 1500);
+          })
       }
     >
-      {copied ? <Check size={13} /> : <Copy size={13} />}
+      {result === "copied" ? (
+        <Check size={13} />
+      ) : result === "failed" ? (
+        <X size={13} />
+      ) : (
+        <Copy size={13} />
+      )}
     </button>
   );
 }

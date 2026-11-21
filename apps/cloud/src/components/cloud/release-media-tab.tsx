@@ -55,7 +55,7 @@ export function ReleaseMediaTab({ context }: { context: StudioContext }) {
   const { release, media, canWrite, capabilities } = context;
   const toast = useToast();
   const input = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(0);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [dialog, setDialog] = useState<
     | { kind: "visual"; recipe?: VisualInput }
     | { kind: "video"; recipe?: VideoInput }
@@ -66,7 +66,9 @@ export function ReleaseMediaTab({ context }: { context: StudioContext }) {
   async function upload(files: FileList | File[]) {
     const list = [...files];
     if (!list.length) return;
-    setUploading(list.length);
+    const totalBytes = list.reduce((sum, file) => sum + file.size, 0) || 1;
+    let uploadedBytes = 0;
+    setUploadProgress(0);
     try {
       for (const file of list) {
         const query = new URLSearchParams({
@@ -75,8 +77,10 @@ export function ReleaseMediaTab({ context }: { context: StudioContext }) {
           name: file.name.slice(0, 200),
           role: file.type.startsWith("video/") ? "recording" : "screenshot",
         });
-        await cloudUpload(`release-media?${query}`, file);
-        setUploading((count) => count - 1);
+        await cloudUpload(`release-media?${query}`, file, (loaded) =>
+          setUploadProgress((uploadedBytes + loaded) / totalBytes),
+        );
+        uploadedBytes += file.size;
       }
       toast(
         list.length === 1 ? "File uploaded" : `${list.length} files uploaded`,
@@ -87,7 +91,7 @@ export function ReleaseMediaTab({ context }: { context: StudioContext }) {
         "error",
       );
     } finally {
-      setUploading(0);
+      setUploadProgress(null);
       await context.refresh();
     }
   }
@@ -112,7 +116,10 @@ export function ReleaseMediaTab({ context }: { context: StudioContext }) {
         event.preventDefault();
         setDragging(true);
       }}
-      onDragLeave={() => setDragging(false)}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setDragging(false);
+      }}
       onDrop={(event) => {
         event.preventDefault();
         setDragging(false);
@@ -134,11 +141,13 @@ export function ReleaseMediaTab({ context }: { context: StudioContext }) {
           />
           <Button
             variant="outline"
-            disabled={uploading > 0}
+            disabled={uploadProgress !== null}
             onClick={() => input.current?.click()}
           >
             <Upload />
-            {uploading ? `Uploading ${uploading}…` : "Upload"}
+            {uploadProgress === null
+              ? "Upload"
+              : `Uploading ${Math.min(100, Math.round(uploadProgress * 100))}%`}
           </Button>
           <Button
             variant="outline"

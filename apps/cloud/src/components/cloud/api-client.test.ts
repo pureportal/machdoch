@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cloudRequest, createCommandSender } from "./api-client";
+import { cloudRequest, cloudUpload, createCommandSender } from "./api-client";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -75,12 +75,13 @@ it("preserves caller cancellation and releases its deadline", async () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("retains the command identity after an uncertain response and creates a new identity for changed input", async () => {
+it("retains the command identity after an uncertain response and creates a new identity for changed or repeated input", async () => {
   const transport = vi
     .fn<typeof fetch>()
     .mockRejectedValueOnce(new TypeError("Connection closed"))
     .mockResolvedValueOnce(Response.json({ id: "saved" }))
-    .mockResolvedValueOnce(Response.json({ id: "changed" }));
+    .mockResolvedValueOnce(Response.json({ id: "changed" }))
+    .mockResolvedValueOnce(Response.json({ id: "repeated" }));
   vi.stubGlobal("fetch", transport);
   const send = createCommandSender();
   await expect(
@@ -99,6 +100,10 @@ it("retains the command identity after an uncertain response and creates a new i
   expect(requests[2]!.get("Idempotency-Key")).not.toBe(
     requests[1]!.get("Idempotency-Key"),
   );
+  await send("projects/one", { name: "Second" }, "PATCH");
+  expect(
+    new Headers(transport.mock.calls[3]![1]!.headers).get("Idempotency-Key"),
+  ).not.toBe(requests[2]!.get("Idempotency-Key"));
   expect(requests[0]!.get("x-machdoch-cloud-csrf")).toBe("test-csrf");
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -129,4 +134,58 @@ it("reports malformed gateway bodies without displaying them and preserves struc
     code: "revision_conflict",
   });
   expect(vi.getTimerCount()).toBe(0);
+});
+
+class FakeUpload {
+  static last: FakeUpload;
+  status = 0;
+  response: unknown = null;
+  responseType = "";
+  headers: Record<string, string> = {};
+  upload: { onprogress?: (event: ProgressEvent) => void } = {};
+  onload?: () => void;
+  onerror?: () => void;
+  constructor() {
+    FakeUpload.last = this;
+  }
+  open() {}
+  setRequestHeader(name: string, value: string) {
+    this.headers[name] = value;
+  }
+  send() {}
+}
+
+it("reports upload progress and returns the stored file", async () => {
+  vi.stubGlobal("XMLHttpRequest", FakeUpload);
+  const progress = vi.fn();
+  const result = cloudUpload("attachments", new Blob(["hello"]), progress);
+  const request = FakeUpload.last;
+  expect(request.headers["x-machdoch-cloud-csrf"]).toBe("test-csrf");
+  request.upload.onprogress?.({
+    loaded: 2,
+    total: 5,
+    lengthComputable: true,
+  } as ProgressEvent);
+  request.status = 201;
+  request.response = { id: "file" };
+  request.onload?.();
+  await expect(result).resolves.toEqual({ id: "file" });
+  expect(progress).toHaveBeenCalledWith(2, 5);
+});
+
+it("explains rejected and interrupted uploads", async () => {
+  vi.stubGlobal("XMLHttpRequest", FakeUpload);
+  const rejected = cloudUpload("attachments", new Blob(["x"]));
+  FakeUpload.last.status = 413;
+  FakeUpload.last.response = { error: "File is too large.", code: "too_large" };
+  FakeUpload.last.onload?.();
+  await expect(rejected).rejects.toMatchObject({
+    message: "File is too large.",
+    status: 413,
+  });
+  const interrupted = cloudUpload("attachments", new Blob(["x"]));
+  FakeUpload.last.onerror?.();
+  await expect(interrupted).rejects.toMatchObject({
+    code: "network_unavailable",
+  });
 });

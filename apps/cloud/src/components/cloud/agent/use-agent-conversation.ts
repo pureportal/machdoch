@@ -51,6 +51,7 @@ export interface AgentConversation {
   pending: boolean;
   error: string;
   olderAvailable: boolean;
+  loadingOlder: boolean;
   loadOlder: () => Promise<void>;
   send: (
     prompt: string,
@@ -80,6 +81,7 @@ export function useAgentConversation(
   const [olderAvailable, setOlderAvailable] = useState(
     initial?.turns.length === 20,
   );
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const sender = useRef(createCommandSender());
   const actions = useRef(createCommandSender());
   const sequence = useRef(0);
@@ -150,7 +152,12 @@ export function useAgentConversation(
     }
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
+    let polling = false;
     const poll = async () => {
+      if (polling) return;
+      polling = true;
+      clearTimeout(timer);
+      let stopped = false;
       try {
         if (!document.hidden) await refresh(abort.signal);
         setError("");
@@ -162,16 +169,23 @@ export function useAgentConversation(
           [403, 404].includes(reason.status)
         ) {
           setDetail(null);
-          return;
+          stopped = true;
         }
+      } finally {
+        polling = false;
       }
-      if (!abort.signal.aborted)
+      if (!stopped && !abort.signal.aborted)
         timer = setTimeout(() => void poll(), active ? 1000 : 5000);
     };
+    const resume = () => {
+      if (!document.hidden) void poll();
+    };
     void poll();
+    document.addEventListener("visibilitychange", resume);
     return () => {
       abort.abort();
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", resume);
       sequence.current++;
     };
   }, [chatId, refresh, active]);
@@ -209,18 +223,26 @@ export function useAgentConversation(
     pending,
     error,
     olderAvailable,
+    loadingOlder,
     async loadOlder() {
       const first = detail?.turns[0];
-      if (!detail || !first) return;
-      const older = await cloudRequest<ChatDetail>(
-        `chats/${detail.chat.id}?beforeSequence=${first.sequence}`,
-      );
-      setOlderAvailable(older.turns.length === 20);
-      setDetail((current) =>
-        current
-          ? { ...current, turns: mergeTurns(current.turns, older.turns) }
-          : current,
-      );
+      if (!detail || !first || loadingOlder) return;
+      setLoadingOlder(true);
+      try {
+        const older = await cloudRequest<ChatDetail>(
+          `chats/${detail.chat.id}?beforeSequence=${first.sequence}`,
+        );
+        setOlderAvailable(older.turns.length === 20);
+        setDetail((current) =>
+          current?.chat.id === older.chat.id
+            ? { ...current, turns: mergeTurns(current.turns, older.turns) }
+            : current,
+        );
+      } catch (reason) {
+        setError((reason as Error).message);
+      } finally {
+        setLoadingOlder(false);
+      }
     },
     async send(prompt, context, attachmentIds) {
       const result = await run(() =>
@@ -235,7 +257,6 @@ export function useAgentConversation(
         }),
       );
       if (!result) return false;
-      sender.current = createCommandSender();
       if (result.chatId !== chatId)
         onCreated(result.chatId, prompt.split("\n", 1)[0]!.slice(0, 120));
       else await refresh().catch(() => undefined);

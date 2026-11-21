@@ -45,7 +45,10 @@ export function BrandLogoField({
           event.preventDefault();
           setDragging(true);
         }}
-        onDragLeave={() => setDragging(false)}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+            setDragging(false);
+        }}
         onDrop={(event) => {
           event.preventDefault();
           setDragging(false);
