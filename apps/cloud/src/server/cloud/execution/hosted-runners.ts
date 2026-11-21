@@ -14,6 +14,9 @@ import { lockExecution } from "./records";
 import type { CloudSandboxRuntime, HostedSandbox } from "./sandbox-runtime";
 
 const restartDelayMs = 30_000;
+const maximumRestartDelayMs = 10 * 60_000;
+const stableRunMs = 5 * 60_000;
+const stopGraceMs = 30_000;
 const hostedRunnerName = "This server";
 const errorLimit = 300;
 
@@ -28,7 +31,22 @@ interface HostedProcess {
   token: string;
   stderr: string;
   stopping: boolean;
+  startedAt: number;
+  failures: number;
   exited: Promise<unknown>;
+}
+
+interface HostedFailure {
+  error: string;
+  failedAt: number;
+  failures: number;
+}
+
+export function hostedRestartDelay(failures: number): number {
+  return Math.min(
+    maximumRestartDelayMs,
+    restartDelayMs * 2 ** Math.max(0, failures - 1),
+  );
 }
 
 function lastLine(output: string): string {
@@ -52,10 +70,7 @@ export function hostedRunnerOrigin(address: string, port: number): string {
 
 export class CloudHostedRunners {
   private readonly processes = new Map<string, HostedProcess>();
-  private readonly failures = new Map<
-    string,
-    { error: string; failedAt: number }
-  >();
+  private readonly failures = new Map<string, HostedFailure>();
   private loop: CloudPeriodicLoop | null = null;
   private origin = "";
 
@@ -188,15 +203,20 @@ export class CloudHostedRunners {
     for (const worker of desired.values()) {
       if (this.processes.has(worker.id)) continue;
       const failure = this.failures.get(worker.id);
-      if (failure && Date.now() - failure.failedAt < restartDelayMs) continue;
+      if (
+        failure &&
+        Date.now() - failure.failedAt < hostedRestartDelay(failure.failures)
+      )
+        continue;
       if (!sandbox) {
         this.failures.set(worker.id, {
           error: "The sandbox on this server is unavailable.",
           failedAt: Date.now(),
+          failures: failure?.failures ?? 1,
         });
         continue;
       }
-      await this.launch(worker, sandbox);
+      await this.launch(worker, sandbox, failure?.failures ?? 0);
       started += 1;
     }
     return started;
@@ -205,6 +225,7 @@ export class CloudHostedRunners {
   private async launch(
     worker: HostedWorker,
     sandbox: HostedSandbox,
+    previousFailures: number,
   ): Promise<void> {
     const stateDirectory = join(machdochDataDirectory, "runners", worker.id);
     await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
@@ -246,6 +267,8 @@ export class CloudHostedRunners {
       token: worker.token,
       stderr: "",
       stopping: false,
+      startedAt: Date.now(),
+      failures: previousFailures,
       exited: once(child, "exit").catch(() => undefined),
     };
     this.processes.set(worker.id, running);
@@ -256,11 +279,16 @@ export class CloudHostedRunners {
     const finish = () => {
       if (this.processes.get(worker.id) !== running) return;
       this.processes.delete(worker.id);
-      if (!running.stopping)
-        this.failures.set(worker.id, {
-          error: lastLine(running.stderr),
-          failedAt: Date.now(),
-        });
+      if (running.stopping) return;
+      const failedAt = Date.now();
+      this.failures.set(worker.id, {
+        error: lastLine(running.stderr),
+        failedAt,
+        failures:
+          failedAt - running.startedAt >= stableRunMs
+            ? 1
+            : running.failures + 1,
+      });
     };
     child.stderr?.on("data", (bytes: Buffer) => record(bytes.toString("utf8")));
     child.once("error", (error) => {
@@ -277,9 +305,12 @@ export class CloudHostedRunners {
     const running = this.processes.get(id);
     if (!running) return;
     running.stopping = true;
-    if (running.child.exitCode === null && running.child.signalCode === null)
+    if (running.child.exitCode === null && running.child.signalCode === null) {
       running.child.kill();
-    await running.exited;
+      const forced = setTimeout(() => running.child.kill("SIGKILL"), stopGraceMs);
+      await running.exited;
+      clearTimeout(forced);
+    }
     this.processes.delete(id);
   }
 }

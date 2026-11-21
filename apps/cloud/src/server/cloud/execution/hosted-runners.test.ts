@@ -16,6 +16,7 @@ import {
   type CloudActor,
 } from "../../../lib/cloud-contract";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
+import { hostedRestartDelay } from "./hosted-runners";
 import { createTestCloudDatabase } from "../test-database";
 import { SettingsCipher } from "../../settings-crypto";
 
@@ -188,3 +189,9 @@ it("runs cloud profiles on this server without setup and keeps them current", as
     force: true,
   });
 }, 30_000);
+
+it("backs off repeated hosted runner crashes up to ten minutes", () => {
+  expect([1, 2, 3, 4, 5, 6, 12].map(hostedRestartDelay)).toEqual([
+    30_000, 60_000, 120_000, 240_000, 480_000, 600_000, 600_000,
+  ]);
+});

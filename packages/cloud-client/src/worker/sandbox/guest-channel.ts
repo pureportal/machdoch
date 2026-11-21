@@ -32,6 +32,15 @@ export class SandboxChannelClosedError extends Error {
   }
 }
 
+export class SandboxStartTimeoutError extends Error {
+  constructor(options?: ErrorOptions) {
+    super(
+      `The sandbox did not start within ${startTimeoutMs / 1000} seconds`,
+      options,
+    );
+  }
+}
+
 export class GuestChannel {
   private buffer: Buffer = Buffer.alloc(0);
   private pending:
@@ -78,27 +87,39 @@ export class GuestChannel {
     signal: AbortSignal,
     repositoryTransport?: RepositoryTransport,
   ): Promise<GuestChannel> {
-    const deadline = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(startTimeoutMs),
-    ]);
-    while (true) {
-      deadline.throwIfAborted();
-      const socket = connect(pipe);
-      try {
-        await once(socket, "connect", { signal: deadline });
-      } catch (error) {
-        socket.destroy();
-        if (
-          !(error instanceof Error) ||
-          !("code" in error) ||
-          !["ENOENT", "ECONNREFUSED"].includes(String(error.code))
-        )
-          throw error;
-        await delay(25, undefined, { signal: deadline });
-        continue;
+    const startup = AbortSignal.timeout(startTimeoutMs);
+    const deadline = AbortSignal.any([signal, startup]);
+    try {
+      while (true) {
+        deadline.throwIfAborted();
+        const socket = connect(pipe);
+        try {
+          await once(socket, "connect", { signal: deadline });
+        } catch (error) {
+          socket.destroy();
+          if (
+            !(error instanceof Error) ||
+            !("code" in error) ||
+            !["ENOENT", "ECONNREFUSED"].includes(String(error.code))
+          )
+            throw error;
+          await delay(25, undefined, { signal: deadline });
+          continue;
+        }
+        return await GuestChannel.fromStream(
+          socket,
+          deadline,
+          repositoryTransport,
+        );
       }
-      return GuestChannel.fromStream(socket, deadline, repositoryTransport);
+    } catch (error) {
+      if (
+        startup.aborted &&
+        !signal.aborted &&
+        !(error instanceof SandboxStartTimeoutError)
+      )
+        throw new SandboxStartTimeoutError({ cause: error });
+      throw error;
     }
   }
 
@@ -111,13 +132,7 @@ export class GuestChannel {
     const startup = AbortSignal.timeout(startTimeoutMs);
     const deadline = AbortSignal.any([signal, startup]);
     const abort = () =>
-      channel.close(
-        startup.aborted
-          ? new Error(
-              `The sandbox did not start within ${startTimeoutMs / 1000} seconds`,
-            )
-          : undefined,
-      );
+      channel.close(startup.aborted ? new SandboxStartTimeoutError() : undefined);
     deadline.addEventListener("abort", abort, { once: true });
     try {
       if (deadline.aborted) abort();

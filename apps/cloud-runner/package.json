@@ -19,7 +19,7 @@
     "verify:kvm-boot": "node scripts/verify-linux-supervisor.mjs --kvm-boot",
     "test:artifacts": "node --import @oxc-node/core/register --test src/artifact-uploader.test.ts",
     "test:recovery": "node --import @oxc-node/core/register --test src/journal.test.ts src/recovery.test.ts",
-    "test:workflow": "node --import @oxc-node/core/register --test src/agent-loop.test.ts src/runner.test.ts"
+    "test:workflow": "node --import @oxc-node/core/register --test src/agent-loop.test.ts src/runner.test.ts src/transient-errors.test.ts"
   },
   "engines": {
     "node": ">=24"

@@ -214,13 +214,17 @@ export class VirtualMachineSandbox {
   private async stop(): Promise<StopReceipt> {
     this.closed = true;
     this.channel?.close();
-    await this.bridge?.close();
     this.supervisor.signal.removeEventListener("abort", this.abort);
     let shutdownError: unknown;
     try {
-      await this.supervisor.close();
+      await this.bridge?.close();
     } catch (error) {
       shutdownError = error;
+    }
+    try {
+      await this.supervisor.close();
+    } catch (error) {
+      shutdownError ??= error;
     }
     const receipt = await readStopReceipt(this.receiptPath, this.environmentId);
     if (!receipt)

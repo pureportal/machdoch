@@ -4,7 +4,10 @@ import { RunnerConnection } from "@machdoch/cloud-client";
 import { RunnerJournal } from "./journal.ts";
 import { LeaseKeeper } from "./lease-keeper.ts";
 import { VirtualMachineSandbox } from "./sandbox/virtual-machine.ts";
-import { SandboxChannelClosedError } from "./sandbox/guest-channel.ts";
+import {
+  SandboxChannelClosedError,
+  SandboxStartTimeoutError,
+} from "./sandbox/guest-channel.ts";
 import type { SandboxConfiguration } from "./sandbox/configuration.ts";
 import {
   guest,
@@ -168,7 +171,13 @@ export class TaskEnvironments {
         );
       } catch (error) {
         await this.close(planned.id);
-        if (attempt > 1 || !(error instanceof SandboxChannelClosedError))
+        if (
+          attempt > 1 ||
+          !(
+            error instanceof SandboxChannelClosedError ||
+            error instanceof SandboxStartTimeoutError
+          )
+        )
           throw error;
       }
     }
