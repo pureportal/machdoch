@@ -133,6 +133,7 @@ const STATUS_REFRESH_MS = 15_000;
 const SCHEDULER_REFRESH_MS = 60_000;
 const MEDIA_REFRESH_MS = 3_000;
 const SNAPSHOT_PUBLISH_DELAY_MS = 250;
+const SNAPSHOT_PUBLISH_MAX_WAIT_MS = 750;
 const PENDING_COMMAND_POLL_MS = 15_000;
 const RALPH_LAUNCH_CONFIRMATION_MS = 2_000;
 const RALPH_LAUNCH_POLL_MS = 75;
@@ -835,6 +836,7 @@ export const useFleetControl = (options: {
   const schedulerWorkspaceRef = useRef(options.activeSession.workspace);
   const ralphWorkspaceRef = useRef(options.activeSession.workspace);
   const lastSnapshotCapturedAtRef = useRef(0);
+  const snapshotPublishDueAtRef = useRef<number | null>(null);
   const snapshotPublishRetryAttemptRef = useRef(0);
   const snapshotPublishRetryTimerRef = useRef<number | null>(null);
   const snapshotPublishAttemptSequenceRef = useRef(0);
@@ -842,6 +844,10 @@ export const useFleetControl = (options: {
   schedulerWorkspaceRef.current = options.activeSession.workspace;
   ralphWorkspaceRef.current = options.activeSession.workspace;
   const fleetPublishingEnabled = fleetEnabled;
+  const fleetPublishingEnabledRef = useRef(fleetPublishingEnabled);
+  fleetPublishingEnabledRef.current = fleetPublishingEnabled;
+  const shellSessionsRef = useRef(options.shellState.sessions);
+  shellSessionsRef.current = options.shellState.sessions;
   const configuredMediaProviderKey = (
     options.runtimeSnapshot?.providerAvailability ?? []
   )
@@ -2309,6 +2315,66 @@ export const useFleetControl = (options: {
     };
   }, [isPrimaryController, refreshMedia, fleetPublishingEnabled]);
 
+  const publishShellSnapshot = useCallback((): Promise<void> => {
+    snapshotPublishDueAtRef.current = null;
+    const snapshot = createShellSnapshot();
+    snapshot.capturedAt = Math.max(
+      snapshot.capturedAt,
+      lastSnapshotCapturedAtRef.current + 1,
+    );
+    lastSnapshotCapturedAtRef.current = snapshot.capturedAt;
+    const sessionIds = shellSessionsRef.current.map(({ id }) => id);
+    const serializedSnapshot = JSON.stringify({
+      snapshot: { ...snapshot, capturedAt: 0 },
+      sessionIds,
+    });
+
+    if (serializedSnapshot === lastPublishedSnapshotRef.current) {
+      return Promise.resolve();
+    }
+
+    const attemptSequence = snapshotPublishAttemptSequenceRef.current + 1;
+    snapshotPublishAttemptSequenceRef.current = attemptSequence;
+    return updateFleetControlShellSnapshot(snapshot, sessionIds)
+      .then(() => {
+        if (
+          !fleetControlMountedRef.current ||
+          attemptSequence !== snapshotPublishAttemptSequenceRef.current
+        ) {
+          return;
+        }
+        lastPublishedSnapshotRef.current = serializedSnapshot;
+        snapshotPublishRetryAttemptRef.current = 0;
+        if (snapshotPublishRetryTimerRef.current !== null) {
+          window.clearTimeout(snapshotPublishRetryTimerRef.current);
+          snapshotPublishRetryTimerRef.current = null;
+        }
+      })
+      .catch((error) => {
+        if (
+          !fleetControlMountedRef.current ||
+          attemptSequence !== snapshotPublishAttemptSequenceRef.current
+        ) {
+          return;
+        }
+        console.error("Failed to publish machdoch.cloud product state", error);
+        snapshotPublishRetryAttemptRef.current += 1;
+        if (snapshotPublishRetryTimerRef.current === null) {
+          const retryDelay = Math.min(
+            10_000,
+            500 *
+              2 ** Math.min(snapshotPublishRetryAttemptRef.current - 1, 5),
+          );
+          snapshotPublishRetryTimerRef.current = window.setTimeout(() => {
+            snapshotPublishRetryTimerRef.current = null;
+            setSnapshotPublishRetrySequence((sequence) => sequence + 1);
+          }, retryDelay);
+        }
+      });
+  }, [createShellSnapshot]);
+  const publishShellSnapshotRef = useRef(publishShellSnapshot);
+  publishShellSnapshotRef.current = publishShellSnapshot;
+
   useEffect(() => {
     if (
       !isPrimaryController ||
@@ -2318,68 +2384,26 @@ export const useFleetControl = (options: {
       return;
     }
 
-    const publishTimer = window.setTimeout(() => {
-      const snapshot = createShellSnapshot();
-      snapshot.capturedAt = Math.max(
-        snapshot.capturedAt,
-        lastSnapshotCapturedAtRef.current + 1,
-      );
-      lastSnapshotCapturedAtRef.current = snapshot.capturedAt;
-      const sessionIds = options.shellState.sessions.map(({ id }) => id);
-      const serializedSnapshot = JSON.stringify({
-        snapshot: { ...snapshot, capturedAt: 0 },
-        sessionIds,
-      });
-
-      if (serializedSnapshot === lastPublishedSnapshotRef.current) {
-        return;
-      }
-
-      const attemptSequence = snapshotPublishAttemptSequenceRef.current + 1;
-      snapshotPublishAttemptSequenceRef.current = attemptSequence;
-      void updateFleetControlShellSnapshot(snapshot, sessionIds)
-        .then(() => {
-          if (
-            !fleetControlMountedRef.current ||
-            attemptSequence !== snapshotPublishAttemptSequenceRef.current
-          ) {
-            return;
-          }
-          lastPublishedSnapshotRef.current = serializedSnapshot;
-          snapshotPublishRetryAttemptRef.current = 0;
-          if (snapshotPublishRetryTimerRef.current !== null) {
-            window.clearTimeout(snapshotPublishRetryTimerRef.current);
-            snapshotPublishRetryTimerRef.current = null;
-          }
-        })
-        .catch((error) => {
-          if (
-            !fleetControlMountedRef.current ||
-            attemptSequence !== snapshotPublishAttemptSequenceRef.current
-          ) {
-            return;
-          }
-          console.error("Failed to publish machdoch.cloud product state", error);
-          snapshotPublishRetryAttemptRef.current += 1;
-          if (snapshotPublishRetryTimerRef.current === null) {
-            const retryDelay = Math.min(
-              10_000,
-              500 *
-                2 ** Math.min(snapshotPublishRetryAttemptRef.current - 1, 5),
-            );
-            snapshotPublishRetryTimerRef.current = window.setTimeout(() => {
-              snapshotPublishRetryTimerRef.current = null;
-              setSnapshotPublishRetrySequence((sequence) => sequence + 1);
-            }, retryDelay);
-          }
-        });
-    }, SNAPSHOT_PUBLISH_DELAY_MS);
+    const now = Date.now();
+    snapshotPublishDueAtRef.current ??= now + SNAPSHOT_PUBLISH_MAX_WAIT_MS;
+    const publishTimer = window.setTimeout(
+      () => {
+        void publishShellSnapshot();
+      },
+      Math.max(
+        0,
+        Math.min(
+          SNAPSHOT_PUBLISH_DELAY_MS,
+          snapshotPublishDueAtRef.current - now,
+        ),
+      ),
+    );
 
     return () => {
       window.clearTimeout(publishTimer);
     };
   }, [
-    createShellSnapshot,
+    publishShellSnapshot,
     isPrimaryController,
     options.hasHydrated,
     snapshotPublishRetrySequence,
@@ -2437,6 +2461,10 @@ export const useFleetControl = (options: {
       try {
         await handleCommandRef.current(command);
         await options.flushPersistence();
+        if (fleetPublishingEnabledRef.current) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+          await publishShellSnapshotRef.current();
+        }
         if (canUseTauriStore()) {
           await acknowledgeFleetControlCommand(command.commandId);
         }
