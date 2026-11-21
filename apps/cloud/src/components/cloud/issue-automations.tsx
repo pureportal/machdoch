@@ -2,13 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { Zap } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type {
   CloudAutomation,
   CloudAutomationRun,
 } from "@/lib/cloud-automation-contract";
-import { cloudRequest } from "./api-client";
+import { CloudRequestError, cloudRequest } from "./api-client";
 import { PropertyMenu } from "./property-menu";
 import { useToast } from "./toast";
 
@@ -20,6 +20,7 @@ export function IssueAutomations({ issueId }: { issueId: string }) {
   const toast = useToast();
   const [automations, setAutomations] = useState<CloudAutomation[]>([]);
   const [running, setRunning] = useState(false);
+  const tracking = useRef<AbortController | null>(null);
   useEffect(() => {
     const abort = new AbortController();
     cloudRequest<CloudAutomation[]>(`automations/manual?issueId=${issueId}`, {
@@ -27,41 +28,78 @@ export function IssueAutomations({ issueId }: { issueId: string }) {
     })
       .then(setAutomations)
       .catch(() => setAutomations([]));
-    return () => abort.abort();
+    return () => {
+      abort.abort();
+      tracking.current?.abort();
+    };
   }, [issueId]);
   if (!automations.length) return null;
+  async function waitForRun(
+    runId: string,
+    signal: AbortSignal,
+  ): Promise<CloudAutomationRun | null> {
+    for (let poll = 0; poll < maximumPolls; poll++) {
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+      if (signal.aborted) return null;
+      const runs = await cloudRequest<CloudAutomationRun[]>(
+        `automations/runs?issueId=${issueId}`,
+        { signal },
+      ).catch((reason: unknown) => {
+        if (
+          reason instanceof CloudRequestError &&
+          ["network_unavailable", "request_timeout"].includes(reason.code)
+        )
+          return null;
+        throw reason;
+      });
+      const current = runs?.find((entry) => entry.id === runId);
+      if (current && !["queued", "running", "waiting"].includes(current.state))
+        return current;
+    }
+    return null;
+  }
   async function run(automation: CloudAutomation) {
+    tracking.current?.abort();
+    const abort = new AbortController();
+    tracking.current = abort;
     setRunning(true);
     try {
       const { runIds } = await cloudRequest<{ runIds: string[] }>(
         `automations/${automation.id}/run`,
-        { method: "POST", key: crypto.randomUUID(), body: { issueId } },
+        {
+          method: "POST",
+          key: crypto.randomUUID(),
+          body: { issueId },
+          signal: abort.signal,
+        },
       );
-      toast(`Running ${automation.name}`);
-      for (let poll = 0; poll < maximumPolls; poll++) {
-        await new Promise((resolve) => setTimeout(resolve, pollMs));
-        const runs = await cloudRequest<CloudAutomationRun[]>(
-          `automations/runs?issueId=${issueId}`,
-        );
-        const current = runs.find((entry) => entry.id === runIds[0]);
-        if (
-          !current ||
-          ["queued", "running", "waiting"].includes(current.state)
-        )
-          continue;
-        toast(
-          current.state === "succeeded"
-            ? `${automation.name} finished`
-            : (current.error ?? `${automation.name} ${current.state}`),
-          current.state === "succeeded" ? undefined : "error",
-        );
-        router.refresh();
+      const [runId] = runIds;
+      if (!runId) {
+        toast(`${automation.name} did not start for this issue.`, "error");
         return;
       }
+      toast(`Running ${automation.name}`);
+      const finished = await waitForRun(runId, abort.signal);
+      if (abort.signal.aborted) return;
+      if (!finished) {
+        toast(`${automation.name} is still running.`);
+        return;
+      }
+      toast(
+        finished.state === "succeeded"
+          ? `${automation.name} finished`
+          : (finished.error ?? `${automation.name} ${finished.state}`),
+        finished.state === "succeeded" ? undefined : "error",
+      );
+      router.refresh();
     } catch (reason) {
-      toast(reason instanceof Error ? reason.message : "Try again.", "error");
+      if (!abort.signal.aborted)
+        toast(reason instanceof Error ? reason.message : "Try again.", "error");
     } finally {
-      setRunning(false);
+      if (tracking.current === abort) {
+        tracking.current = null;
+        setRunning(false);
+      }
     }
   }
   return (

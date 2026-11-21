@@ -8,6 +8,7 @@ import type {
 } from "@machdoch/fleet-protocol/cloud-artifacts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { formatBytes } from "@/lib/cloud-attachment-contract";
 import { cloudRequest } from "./api-client";
 
 export function TaskFiles({
@@ -76,7 +77,7 @@ export function TaskFiles({
           <div className="min-w-0 flex-1">
             <span className="break-words">{file.name}</span>
             <span className="ml-3 text-sm text-muted-foreground">
-              {Math.ceil(file.byteLength / 1024).toLocaleString()} KiB
+              {formatBytes(file.byteLength)}
             </span>
           </div>
           <div className="flex gap-2">

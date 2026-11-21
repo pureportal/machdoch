@@ -1,4 +1,5 @@
 "use client";
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { holderCan } from "@/lib/cloud-permissions";
 import { executionTargetLabels, profileAgentLabel } from "./execution-labels";
 
@@ -41,6 +42,8 @@ export function TaskList({
 }) {
   const [runs, setRuns] = useState(initial);
   const [profiles, setProfiles] = useState<ExecutionProfile[]>([]);
+  const [profilesReady, setProfilesReady] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [projectId, setProjectId] = useState(
@@ -51,31 +54,29 @@ export function TaskList({
   const issueId = issue?.id;
   useEffect(() => {
     const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
     let profilesLoaded = false;
     async function poll() {
       try {
-        if (!document.hidden) {
-          const [tasks, settings] = await Promise.all([
-            cloudRequest<{ runs: CloudRun[] }>(
-              `runs${issueId ? `?issueId=${issueId}` : ""}`,
-              { signal: abort.signal },
-            ),
-            profilesLoaded
-              ? null
-              : cloudRequest<{ profiles: ExecutionProfile[] }>(
-                  "execution-profiles",
-                  { signal: abort.signal },
-                ),
-          ]);
-          if (!abort.signal.aborted) {
-            setRuns(tasks.runs);
-            if (settings) {
-              setProfiles(enabledProfiles(settings.profiles));
-              profilesLoaded = true;
-            }
-            setError("");
+        const [tasks, settings] = await Promise.all([
+          cloudRequest<{ runs: CloudRun[] }>(
+            `runs${issueId ? `?issueId=${issueId}` : ""}`,
+            { signal: abort.signal },
+          ),
+          profilesLoaded
+            ? null
+            : cloudRequest<{ profiles: ExecutionProfile[] }>(
+                "execution-profiles",
+                { signal: abort.signal },
+              ),
+        ]);
+        if (!abort.signal.aborted) {
+          setRuns(tasks.runs);
+          if (settings) {
+            setProfiles(enabledProfiles(settings.profiles));
+            setProfilesReady(true);
+            profilesLoaded = true;
           }
+          setError("");
         }
       } catch (reason) {
         if (abort.signal.aborted) return;
@@ -88,12 +89,11 @@ export function TaskList({
         }
         setError((reason as Error).message);
       }
-      if (!abort.signal.aborted) timer = setTimeout(() => void poll(), 5000);
     }
-    void poll();
+    const stop = pollWhileVisible(poll, 5000);
     return () => {
       abort.abort();
-      clearTimeout(timer);
+      stop();
     };
   }, [issueId]);
   const canStart =
@@ -120,18 +120,21 @@ export function TaskList({
     router.refresh();
   }
   function start() {
+    if (starting) return;
     if (issue && !issue.projectId) {
       setError("Add the issue to a project before starting a task.");
       return;
     }
-    sender.current = createCommandSender();
     if (issue && available.length === 1) {
       setError("");
+      setStarting(true);
       void queue(available[0]!.id, {
         kind: "issue",
         id: issue.id,
         revision: issue.revision,
-      }).catch((reason: Error) => setError(reason.message));
+      })
+        .catch((reason: Error) => setError(reason.message))
+        .finally(() => setStarting(false));
       return;
     }
     setOpen(true);
@@ -150,11 +153,11 @@ export function TaskList({
         {canStart && (
           <Button
             variant={issue ? "outline" : "default"}
-            disabled={dirty}
+            disabled={dirty || starting || !profilesReady}
             onClick={start}
           >
             {issue ? <Bot /> : <Plus />}
-            {issue ? "Start AI task" : "New task"}
+            {starting ? "Starting…" : issue ? "Start AI task" : "New task"}
           </Button>
         )}
       </header>
@@ -181,6 +184,7 @@ export function TaskList({
         onOpenChange={setOpen}
         title="New AI task"
         submitLabel="Start task"
+        pendingLabel="Starting…"
         submitDisabled={!available.length}
         onSubmit={async (form) => {
           const profileId = formText(form, "profileId");

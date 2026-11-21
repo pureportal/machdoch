@@ -39,9 +39,9 @@ export function ExecutionRunners({ profile }: { profile: ExecutionProfile }) {
   const [error, setError] = useState("");
   const request = useRef(0);
 
-  async function load() {
+  async function load({ quiet = false }: { quiet?: boolean } = {}) {
     const current = ++request.current;
-    setLoading(true);
+    if (!quiet) setLoading(true);
     try {
       const result = await cloudRequest<{ workers: ExecutionWorker[] }>(
         `execution-workers?profileId=${profile.id}`,
@@ -62,7 +62,9 @@ export function ExecutionRunners({ profile }: { profile: ExecutionProfile }) {
   const watching = workers?.some((worker) => worker.hosted && worker.enabled);
   useEffect(() => {
     if (!watching) return;
-    const timer = setInterval(() => void load(), 5000);
+    const timer = setInterval(() => {
+      if (!document.hidden) void load({ quiet: true });
+    }, 5000);
     return () => clearInterval(timer);
   }, [watching, profile.id]);
 
