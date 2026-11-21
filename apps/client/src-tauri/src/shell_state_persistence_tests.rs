@@ -4,7 +4,11 @@ use super::{
     ShellStateSnapshot,
 };
 use serde_json::{json, Value};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::PathBuf,
+    time::{Duration, SystemTime},
+};
 
 struct Storage {
     directory: PathBuf,
@@ -96,6 +100,47 @@ async fn activity_inspection_reuses_the_cache_until_another_revision_is_saved() 
     .unwrap();
     assert_eq!(saved, (json!(true), 8));
     assert_eq!(cache.unwrap().revision, 8);
+}
+
+fn set_modified(path: &std::path::Path, seconds_ago: u64) {
+    fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(SystemTime::now() - Duration::from_secs(seconds_ago))
+        .unwrap();
+}
+
+#[tokio::test]
+async fn commits_reuse_the_cache_only_while_the_revision_file_confirms_it() {
+    let storage = Storage::new("commit-cache");
+    set_modified(&storage.snapshot, 20);
+    set_modified(&storage.revision, 10);
+    let mut cache = Some(ShellStateSnapshot {
+        state: json!({"preserved": "original", "cachedOnly": true}),
+        revision: 7,
+    });
+    let reused = storage.patch(&mut cache, 7, "first").await.unwrap();
+    assert!(reused.committed);
+    assert_eq!(storage.load().state["cachedOnly"], true);
+
+    fs::write(
+        &storage.snapshot,
+        serde_json::to_string(&ShellStateSnapshot {
+            state: json!({"external": true}),
+            revision: 8,
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    set_modified(&storage.revision, 5);
+    set_modified(&storage.snapshot, 0);
+    let reloaded = storage.patch(&mut cache, 8, "second").await.unwrap();
+    assert!(reloaded.committed);
+    let saved = storage.load();
+    assert_eq!(saved.state["external"], true);
+    assert_eq!(saved.state["second"], true);
+    assert_eq!(saved.state["first"], Value::Null);
 }
 
 #[test]

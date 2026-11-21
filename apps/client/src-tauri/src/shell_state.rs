@@ -673,23 +673,27 @@ fn persist_snapshot_revision_at_path(
     })
 }
 
+fn read_snapshot_revision_at_path(revision_path: &std::path::Path) -> Result<u64, String> {
+    let raw = fs::read_to_string(revision_path).map_err(|error| {
+        format!(
+            "Failed to read the shell-state revision {}: {error}",
+            revision_path.display()
+        )
+    })?;
+
+    raw.trim().parse::<u64>().map_err(|error| {
+        format!(
+            "Failed to parse the shell-state revision {}: {error}",
+            revision_path.display()
+        )
+    })
+}
+
 fn load_snapshot_revision<R: Runtime>(app_handle: &AppHandle<R>) -> Result<u64, String> {
     let revision_path = snapshot_revision_path(app_handle)?;
 
     if revision_path.exists() {
-        let raw = fs::read_to_string(&revision_path).map_err(|error| {
-            format!(
-                "Failed to read the shell-state revision {}: {error}",
-                revision_path.display()
-            )
-        })?;
-
-        return raw.trim().parse::<u64>().map_err(|error| {
-            format!(
-                "Failed to parse the shell-state revision {}: {error}",
-                revision_path.display()
-            )
-        });
+        return read_snapshot_revision_at_path(&revision_path);
     }
 
     let snapshot = load_snapshot(app_handle, Value::Null)?;
@@ -714,6 +718,41 @@ fn load_snapshot<R: Runtime>(
 ) -> Result<ShellStateSnapshot, String> {
     let snapshot_path = snapshot_path(app_handle)?;
     load_snapshot_at_path(&snapshot_path, fallback)
+}
+
+fn cached_snapshot_is_persisted(
+    snapshot_path: &std::path::Path,
+    revision_path: &std::path::Path,
+    revision: u64,
+) -> bool {
+    let modified = |path: &std::path::Path| fs::metadata(path).and_then(|meta| meta.modified());
+    let (Ok(snapshot_modified), Ok(revision_modified)) =
+        (modified(snapshot_path), modified(revision_path))
+    else {
+        return false;
+    };
+    snapshot_modified < revision_modified
+        && read_snapshot_revision_at_path(revision_path) == Ok(revision)
+}
+
+fn load_snapshot_for_commit(
+    snapshot_path: &std::path::Path,
+    revision_path: &std::path::Path,
+    cached: &mut Option<ShellStateSnapshot>,
+) -> Result<ShellStateSnapshot, String> {
+    if let Some(snapshot) = cached.take_if(|snapshot| {
+        cached_snapshot_is_persisted(snapshot_path, revision_path, snapshot.revision)
+    }) {
+        return Ok(snapshot);
+    }
+    let fallback = if snapshot_path.exists() {
+        Value::Null
+    } else {
+        cached
+            .as_ref()
+            .map_or(Value::Null, |snapshot| snapshot.state.clone())
+    };
+    load_snapshot_at_path(snapshot_path, fallback)
 }
 
 fn load_snapshot_at_path(
@@ -976,23 +1015,27 @@ async fn commit_state_change_at_paths(
     expected_revision: u64,
     prepare_requested: impl FnOnce(&Value) -> Value + Send + 'static,
 ) -> Result<ShellStateCompareAndSwapResponse, String> {
-    // Before the first snapshot is persisted, the cache may contain the
-    // frontend fallback returned by load_shell_state_snapshot. Preserve that
-    // state as the no-file fallback.
-    let fallback = cache
-        .as_ref()
-        .map(|snapshot| snapshot.state.clone())
-        .unwrap_or(Value::Null);
-    let committed = run_snapshot_io(move || {
-        commit_snapshot_with_lock(
+    let cached = cache.take();
+    let (committed, cached) = run_snapshot_io(move || {
+        let had_cache = cached.is_some();
+        let mut cached = cached;
+        let committed = commit_snapshot_with_lock(
             &path,
             expected_revision,
             prepare_requested,
-            || load_snapshot_at_path(&path, fallback),
+            || load_snapshot_for_commit(&path, &revision_path, &mut cached),
             |snapshot| persist_snapshot_at_paths(&path, &revision_path, snapshot),
-        )
+        );
+        if committed.is_err() && had_cache && cached.is_none() {
+            cached =
+                with_cooperative_file_lock(&path, || load_snapshot_at_path(&path, Value::Null))
+                    .ok();
+        }
+        Ok((committed, cached))
     })
     .await?;
+    *cache = cached;
+    let committed = committed?;
     let revision = committed.snapshot.revision;
     let state = (!committed.committed).then(|| committed.snapshot.state.clone());
     *cache = Some(committed.snapshot);
