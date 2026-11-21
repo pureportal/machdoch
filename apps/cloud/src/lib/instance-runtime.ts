@@ -8,6 +8,8 @@ import type { ProductRuntime } from "@machdoch/product-ui";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 import type { SessionComposerText } from "@machdoch/fleet-protocol/session-data";
 
+const snapshotTimeoutMs = 15_000;
+
 export function createInstanceRuntime(
   instanceId: string,
   initialSessionId?: string,
@@ -23,7 +25,14 @@ export function createInstanceRuntime(
     const deadline = Date.now() + 3_000;
     while (true) {
       signal?.throwIfAborted();
-      const payload = await api<unknown>(`${basePath}/snapshot`, { signal });
+      const timeout = AbortSignal.timeout(snapshotTimeoutMs);
+      const payload = await api<unknown>(`${basePath}/snapshot`, {
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      }).catch((reason: unknown) => {
+        if (timeout.aborted && !signal?.aborted)
+          throw new Error("The device is not responding.");
+        throw reason;
+      });
       const result = productSnapshotSchema.safeParse(payload);
       if (!result.success)
         throw new Error("Instance returned incompatible product data.");

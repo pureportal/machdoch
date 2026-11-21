@@ -13,15 +13,46 @@ export interface FleetOperationTransport {
   ): Promise<() => void>;
 }
 
+type FleetOperationRequest = {
+  kind: string;
+  id?: string;
+  command?: string;
+  args?: Record<string, unknown>;
+  offset?: number;
+  after?: number;
+};
+
+const transientStatuses = new Set([408, 429, 502, 503, 504]);
+const retryDelaysMs = [400, 1_000, 2_500];
+const eventPollMs = 750;
+const maximumEventPollMs = 15_000;
+
+function isTransient(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  const status =
+    error && typeof error === "object" && "status" in error
+      ? error.status
+      : undefined;
+  return typeof status === "number" && transientStatuses.has(status);
+}
+
+function pendingDelay(pendingReads: number): number {
+  return Math.min(1_000, 100 * 2 ** Math.floor(pendingReads / 4));
+}
+
+function decodeBase64(content: string): Uint8Array {
+  const binary = atob(content);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++)
+    bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+const wait = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 export function createFleetOperationTransport(
-  send: (request: {
-    kind: string;
-    id?: string;
-    command?: string;
-    args?: Record<string, unknown>;
-    offset?: number;
-    after?: number;
-  }) => Promise<unknown>,
+  send: (request: FleetOperationRequest) => Promise<unknown>,
 ): FleetOperationTransport {
   const listeners = new Map<
     string,
@@ -30,10 +61,20 @@ export function createFleetOperationTransport(
   let cursor = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let polling = false;
+  let eventFailures = 0;
   const exchange = async (
-    request: Parameters<typeof send>[0],
-  ): Promise<OperationResponse> =>
-    operationResponseSchema.parse(await send(request));
+    request: FleetOperationRequest,
+  ): Promise<OperationResponse> => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return operationResponseSchema.parse(await send(request));
+      } catch (error) {
+        const delay = retryDelaysMs[attempt];
+        if (delay === undefined || !isTransient(error)) throw error;
+        await wait(delay);
+      }
+    }
+  };
   const poll = async (): Promise<void> => {
     if (polling || !listeners.size) return;
     polling = true;
@@ -42,14 +83,21 @@ export function createFleetOperationTransport(
       if (response.state !== "events")
         throw new Error("Progress is unavailable.");
       cursor = response.cursor;
+      eventFailures = 0;
       for (const event of response.events)
         for (const listener of listeners.get(event.name) ?? [])
           listener({ payload: event.payload });
     } catch (error) {
-      console.error("Could not refresh remote progress", error);
+      if (eventFailures === 0)
+        console.error("Could not refresh remote progress", error);
+      eventFailures += 1;
     } finally {
       polling = false;
-      if (listeners.size) timer = setTimeout(() => void poll(), 750);
+      if (listeners.size)
+        timer = setTimeout(
+          () => void poll(),
+          Math.min(maximumEventPollMs, eventPollMs * 2 ** eventFailures),
+        );
     }
   };
   return {
@@ -70,7 +118,7 @@ export function createFleetOperationTransport(
             ? new Error(started.error)
             : started.error;
         let content = "";
-        let complete = false;
+        let pendingReads = 0;
         try {
           for (;;) {
             const response = await exchange({
@@ -78,14 +126,12 @@ export function createFleetOperationTransport(
               id,
               offset: content.length,
             });
-            if (response.state === "failed") {
-              complete = true;
+            if (response.state === "failed")
               throw typeof response.error === "string"
                 ? new Error(response.error)
                 : response.error;
-            }
             if (response.state === "pending") {
-              await new Promise<void>((resolve) => setTimeout(resolve, 250));
+              await wait(pendingDelay(pendingReads++));
               continue;
             }
             if (
@@ -94,23 +140,17 @@ export function createFleetOperationTransport(
             )
               throw new Error("Invalid remote response.");
             content += response.chunk;
-            if (content.length === response.total) {
-              complete = true;
-              break;
-            }
+            if (content.length === response.total) break;
           }
-          const bytes = Uint8Array.from(atob(content), (character) =>
-            character.charCodeAt(0),
-          );
           return JSON.parse(
-            new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+            new TextDecoder("utf-8", { fatal: true }).decode(
+              decodeBase64(content),
+            ),
           ) as T;
         } finally {
-          if (complete) {
-            void exchange({ kind: "release", id }).catch((error: unknown) => {
-              console.error("Could not release remote operation", error);
-            });
-          }
+          void exchange({ kind: "release", id }).catch((error: unknown) => {
+            console.error("Could not release remote operation", error);
+          });
         }
       });
     },

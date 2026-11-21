@@ -146,3 +146,16 @@ test("remote diagnostics always projects the requesting client owner and does no
   assert.deepEqual(await runtime.execute("getDiagnostics",{limit:100}),expected);
   const invoked=calls.filter(call=>call.kind==="invoke");assert.deepEqual(invoked.map(call=>call.args?.request),[{operation:"getDiagnostics",input:{owner:`remote:${clientId}`,limit:100}}]);assert.equal(calls.filter(call=>call.kind==="release").length,1);
 });
+
+test("remote reads retry a dropped connection without replaying the operation",async()=>{
+  const calls:RemoteSpeechRequest[]=[];let failed=false;
+  const content=Buffer.from(JSON.stringify({ok:true})).toString("base64");
+  const runtime=createRemoteSpeechRuntime(async request=>{
+    calls.push(request);
+    if(request.kind==="invoke")return {state:"pending"};
+    if(request.kind==="read"&&!failed){failed=true;throw new TypeError("Failed to fetch");}
+    return request.kind==="read"?{state:"complete",chunk:content,offset:0,total:content.length}:{state:"complete",chunk:"",offset:0,total:0};
+  },{clientId,disconnectPolicy:"retain",onDiagnostic:()=>{}});
+  assert.deepEqual(await runtime.execute("settings",{} as never),{ok:true});
+  assert.deepEqual(calls.map(call=>call.kind),["invoke","read","read","release"]);
+});

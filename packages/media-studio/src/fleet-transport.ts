@@ -5,10 +5,13 @@ import {
 } from "@machdoch/fleet-protocol";
 import type { MediaPlatform } from "./tauri/ui/media/media-platform";
 
-const delay = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-const decode = (value: string): Uint8Array<ArrayBuffer> =>
-  Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+const decode = (value: string): Uint8Array<ArrayBuffer> => {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++)
+    bytes[index] = binary.charCodeAt(index);
+  return bytes;
+};
 const encode = (bytes: Uint8Array): string => {
   let value = "";
   for (const byte of bytes) value += String.fromCharCode(byte);
@@ -19,9 +22,16 @@ export interface FleetMediaTransport extends MediaPlatform {
   download(path: string): Promise<void>;
 }
 
+export interface MediaDownloadProgress {
+  name: string;
+  received: number;
+  total: number;
+}
+
 export function createFleetMediaTransport(
   storageKey: string,
   send: (request: MediaRequest) => Promise<unknown>,
+  onDownloadProgress?: (progress: MediaDownloadProgress | null) => void,
 ): FleetMediaTransport {
   const transfers = new Map<
     string,
@@ -95,7 +105,6 @@ export function createFleetMediaTransport(
       const parts: Uint8Array<ArrayBuffer>[] = [];
       let offset = 0;
       for (;;) {
-        await delay(750);
         const chunk = await call<{ data: string; total: number }>(
           "media_read_transfer",
           { id: transfer.id, offset },
@@ -103,6 +112,11 @@ export function createFleetMediaTransport(
         const bytes = decode(chunk.data);
         parts.push(bytes);
         offset += bytes.length;
+        onDownloadProgress?.({
+          name: transfer.name,
+          received: offset,
+          total: chunk.total,
+        });
         if (offset === chunk.total) break;
         if (!bytes.length || offset > chunk.total)
           throw new Error("File download was interrupted.");
@@ -114,6 +128,7 @@ export function createFleetMediaTransport(
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } finally {
+      onDownloadProgress?.(null);
       await removeTransfer(path);
     }
   };

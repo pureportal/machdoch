@@ -28,6 +28,7 @@ describe("Fleet media transport", () => {
       string,
       { command: string; args: Record<string, unknown> }
     >();
+    const progress = vi.fn();
     const transport = createFleetMediaTransport("host", async (request) => {
       if (request.kind === "invoke") {
         const operation = { command: request.command, args: request.args };
@@ -49,7 +50,7 @@ describe("Fleet media transport", () => {
                 : null;
       const chunk = encodeJson(value);
       return { state: "complete", chunk, offset: 0, total: chunk.length };
-    });
+    }, progress);
     const source = await transport.upload(
       new Blob([new Uint8Array([0])]),
       "source.png",
@@ -76,6 +77,10 @@ describe("Fleet media transport", () => {
         .map((operation) => operation.args.direction),
     ).toEqual(["upload", "download"]);
     expect(click).toHaveBeenCalledOnce();
+    expect(progress.mock.calls).toEqual([
+      [{ name: "hero.safetensors", received: 1, total: 1 }],
+      [null],
+    ]);
     expect(
       invoked.filter(
         (operation) => operation.command === "media_remove_transfer",

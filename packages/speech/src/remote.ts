@@ -27,6 +27,28 @@ const supported = new Set([
   "recordPlaybackMetrics",
 ]);
 
+const transientStatuses = new Set([408, 429, 502, 503, 504]);
+const readRetryDelaysMs = [400, 1_000, 2_500];
+const wait = (milliseconds: number) => new Promise<void>(resolve => setTimeout(resolve, milliseconds));
+
+function isTransient(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  const status = error && typeof error === "object" && "status" in error ? error.status : undefined;
+  return typeof status === "number" && transientStatuses.has(status);
+}
+
+async function readWithRetry(transport: RemoteSpeechTransport, request: RemoteSpeechRequest): Promise<RemoteSpeechResponse> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await transport(request);
+    } catch (error) {
+      const delay = readRetryDelaysMs[attempt];
+      if (delay === undefined || !isTransient(error)) throw error;
+      await wait(delay);
+    }
+  }
+}
+
 export function createRemoteSpeechRuntime(transport: RemoteSpeechTransport, options: RemoteSpeechOptions): SpeechRuntime & {
   heartbeat(): Promise<void>;
   disconnect(): Promise<void>;
@@ -45,6 +67,7 @@ export function createRemoteSpeechRuntime(transport: RemoteSpeechTransport, opti
       const deadline = performance.now() + (operation === "assist" ? 20 * 60_000 : operation === "export" || operation === "importProject" || operation === "previewTimeline" || operation === "importAudioTrack" ? 12 * 3600_000 : 60_000);
       let content = "";
       let total: number | undefined;
+      let pendingReads = 0;
       for (;;) {
         if (response.state === "failed") throw new Error(typeof response.error === "string" ? response.error : "Remote speech operation failed. Check the owning device before retrying.");
         if (response.state === "complete") {
@@ -57,9 +80,9 @@ export function createRemoteSpeechRuntime(transport: RemoteSpeechTransport, opti
           }
         } else {
           if (performance.now() >= deadline) throw new Error("Remote speech completion is uncertain. Check Jobs before retrying.");
-          await new Promise<void>(resolve => setTimeout(resolve, 50));
+          await wait(Math.min(1_000, 50 * 2 ** Math.floor(pendingReads++ / 8)));
         }
-        response = await transport({ kind: "read", id, offset: content.length });
+        response = await readWithRetry(transport, { kind: "read", id, offset: content.length });
       }
     } finally {
       if (submitted) {
