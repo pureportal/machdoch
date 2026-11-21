@@ -45,7 +45,7 @@ const executePresenceTool = async () => {
   );
 };
 
-describe.sequential("workspace agent presence", () => {
+describe("workspace agent presence", () => {
   it("reports unknown when the host registry is unavailable", async () => {
     delete process.env.MACHDOCH_RUN_CONTROL_ADDRESS;
     delete process.env.MACHDOCH_WORKSPACE_PRESENCE_TOKEN;

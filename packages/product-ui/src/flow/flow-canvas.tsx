@@ -126,7 +126,7 @@ type CanonicalReactFlowProps<
   ReactFlowProps<NodeType, EdgeType>,
   | "children"
   | "className"
-  | "colorMode"
+  | "forceColorMode"
   | "connectionLineStyle"
   | "connectionLineType"
   | "defaultEdgeOptions"
@@ -191,7 +191,7 @@ export function FlowCanvas<NodeType extends Node, EdgeType extends Edge>({
             className,
           ),
         )}
-        colorMode="dark"
+        forceColorMode="dark"
         connectionLineStyle={{ stroke: "#7dd3fc", strokeWidth: 2 }}
         connectionLineType={ConnectionLineType.SmoothStep}
         defaultEdgeOptions={{

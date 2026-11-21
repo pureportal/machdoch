@@ -51,7 +51,7 @@ afterEach(async () => {
   );
 });
 
-describe.sequential("Fleet project library", () => {
+describe("Fleet project library", () => {
   it("creates empty and Git projects, persists them and deduplicates commands after restart", async () => {
     const { root, library, projectRoot } = await setup();
     const command = {

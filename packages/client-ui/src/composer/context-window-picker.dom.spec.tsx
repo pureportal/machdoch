@@ -36,10 +36,10 @@ it("shows exactly four presets with resolved workspace and model sizes", () => {
       .getAllByRole("radio")
       .map((radio) => radio.closest("label")?.textContent),
   ).toEqual([
-    "Workspace Default272,000 tokens",
-    "Lowest200,000 tokens",
-    "Standard272,000 tokens",
-    "Highest872,000 tokens",
+    "Workspace Default 272,000 tokens",
+    "Lowest 200,000 tokens",
+    "Standard 272,000 tokens",
+    "Highest 872,000 tokens",
   ]);
   expect(screen.queryByRole("slider")).toBeNull();
   expect(screen.queryByRole("spinbutton")).toBeNull();
@@ -153,10 +153,10 @@ it("offers Claude CLI auto-compact sizes for a native 1M model", () => {
       .getAllByRole("radio")
       .map((radio) => radio.closest("label")?.textContent),
   ).toEqual([
-    "Workspace Default400,000 tokens",
-    "Lowest200,000 tokens",
-    "Standard400,000 tokens",
-    "Highest1,000,000 tokens",
+    "Workspace Default 400,000 tokens",
+    "Lowest 200,000 tokens",
+    "Standard 400,000 tokens",
+    "Highest 1,000,000 tokens",
   ]);
 });
 

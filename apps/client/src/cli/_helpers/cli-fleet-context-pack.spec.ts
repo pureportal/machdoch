@@ -168,7 +168,7 @@ const createPackRuntime = async () => {
   };
 };
 
-describe.sequential("Fleet temporary context packs", () => {
+describe("Fleet temporary context packs", () => {
   it.each([
     {
       name: "restores an unset context size after the first task is accepted",

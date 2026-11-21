@@ -1,7 +1,6 @@
 import {
-  applyNodeChanges,
+  NodeChangeset,
   type Connection,
-  type NodeChange,
   type OnNodeDrag,
   type ReactFlowInstance,
   type XYPosition,
@@ -6598,18 +6597,21 @@ export const RalphFlowEditor = ({
     closeCanvasMenu();
   };
 
-  const handleNodesChange = (changes: NodeChange<RalphCanvasNode>[]): void => {
-    const selectedChange = changes.find(
-      (
-        change,
-      ): change is Extract<NodeChange<RalphCanvasNode>, { type: "select" }> =>
-        change.type === "select" && change.selected,
-    );
+  const handleNodesChange = (
+    changes: NodeChangeset<RalphCanvasNode>,
+  ): void => {
+    const selectedChange = changes
+      .getByType("select")
+      .find((change) => change.selected);
     const lockedBlockIds = draftFlowRef.current
       ? createLockedCanvasBlockIdSet(draftFlowRef.current)
       : new Set<string>();
-    const allowedChanges = changes.filter(
-      (change) => !isLockedNodePositionChange(change, lockedBlockIds),
+    const allowedChanges = new NodeChangeset(
+      changes
+        .toArray()
+        .filter(
+          (change) => !isLockedNodePositionChange(change, lockedBlockIds),
+        ),
     );
 
     if (selectedChange) {
@@ -6618,9 +6620,7 @@ export const RalphFlowEditor = ({
       closeCanvasMenu();
     }
 
-    setCanvasNodes((currentNodes) =>
-      applyNodeChanges(allowedChanges, currentNodes),
-    );
+    setCanvasNodes((currentNodes) => allowedChanges.applyTo(currentNodes));
   };
 
   const handleNodeDragStop: OnNodeDrag<RalphCanvasNode> = (

@@ -59,7 +59,7 @@ const startBridge = async (
   return { server, requests };
 };
 
-describe.sequential("Machdoch app control tools", () => {
+describe("Machdoch app control tools", () => {
   it("are offered only to Quick Chat runs with a desktop bridge", () => {
     process.env.MACHDOCH_RUN_CONTROL_ADDRESS = "127.0.0.1:1";
     process.env.MACHDOCH_RUN_CONTROL_TOKEN = "test-token";

@@ -71,6 +71,7 @@ const createMermaidConfig = (theme: MermaidTheme): MermaidConfig => ({
     'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   htmlLabels: false,
   logLevel: "fatal",
+  look: "classic",
   maxEdges: 500,
   maxTextSize: 50_000,
   secure: [...MERMAID_SECURE_CONFIG_KEYS],

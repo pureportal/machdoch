@@ -81,7 +81,7 @@ async function unusedPort(): Promise<number> {
   await new Promise<void>((done) => server.close(() => done()));
   return port;
 }
-describe.sequential("headless project services", () => {
+describe("headless project services", () => {
   it("persists version one migrations once across concurrent snapshots without starting commands", async () => {
     const f = await setup();
     const path = join(f.root, ".machdoch", "run.json");

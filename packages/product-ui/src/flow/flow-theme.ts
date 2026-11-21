@@ -5,7 +5,7 @@ export const FLOW_EDGE_TYPE = "flow";
 
 export const FLOW_CANVAS_MIN_ZOOM = 0.04;
 export const FLOW_CANVAS_MAX_ZOOM = 1.8;
-export const FLOW_CANVAS_FIT_PADDING = 0.2;
+export const FLOW_CANVAS_FIT_PADDING = "8%" as const;
 export const FLOW_CANVAS_FIT_MAX_ZOOM = 1;
 
 export const FLOW_SELECTED_NODE_CLASS_NAME =

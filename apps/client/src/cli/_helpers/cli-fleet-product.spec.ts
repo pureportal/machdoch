@@ -81,7 +81,7 @@ const createCorrectionRuntime = async () => {
   };
 };
 
-describe.sequential("Fleet CLI product runtime", () => {
+describe("Fleet CLI product runtime", () => {
   it("rejects native client mutations without accepting a receipt", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-context-pack-"));
     roots.push(root);

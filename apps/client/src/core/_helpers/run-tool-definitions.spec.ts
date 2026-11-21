@@ -18,7 +18,7 @@ afterEach(() => {
   }
 });
 
-describe.sequential("workspace run tools", () => {
+describe("workspace run tools", () => {
   it("registers only when the desktop control bridge is available", () => {
     delete process.env.MACHDOCH_RUN_CONTROL_ADDRESS;
     delete process.env.MACHDOCH_RUN_CONTROL_TOKEN;

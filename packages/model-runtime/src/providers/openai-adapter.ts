@@ -628,9 +628,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
           }
           case "response.function_call_arguments.done": {
             const name =
-              event.name ??
-              toolNamesByItemId.get(event.item_id) ??
-              "unknown_tool";
+              toolNamesByItemId.get(event.item_id) ?? "unknown_tool";
 
             emitProviderStreamEvent(onStreamEvent, {
               type: "tool-call-done",

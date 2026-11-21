@@ -119,7 +119,7 @@ it("bounds Anthropic output and does not mix an ambient bearer token with the co
   expect(result.text).toBe("Bounded answer");
   const [, options] = request.mock.calls[0]!;
   const headers = new Headers(options?.headers);
-  expect(headers.get("x-api-key")).toBe("explicit-test-key");
-  expect(headers.has("authorization")).toBe(false);
+  expect(headers.get("authorization")).toBe("Bearer explicit-test-key");
+  expect(headers.has("x-api-key")).toBe(false);
   expect(JSON.parse(String(options?.body)).max_tokens).toBe(64);
 });

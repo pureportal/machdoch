@@ -37,7 +37,7 @@ const deferred = <T>() => {
   };
 };
 
-describe.sequential("scheduler fleet", () => {
+describe("scheduler fleet", () => {
   it("a stale service cannot overwrite a replacement owner's token", async () => {
     const testRoot = await mkdtemp(join(tmpdir(), "machdoch-scheduler-owner-"));
     const previousConfigRoot = process.env.MACHDOCH_USER_CONFIG_DIR;

@@ -31,7 +31,7 @@ afterEach(async () => {
   );
 });
 
-describe.sequential("Fleet connection configuration", () => {
+describe("Fleet connection configuration", () => {
   it("shares one strict connection document across status and enablement", async () => {
     const root = await createConfigDirectory();
     const config = {

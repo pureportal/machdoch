@@ -139,7 +139,7 @@ export function WorkspaceResearchPanel({
                   className={`w-full rounded-md p-3 text-left text-sm ${draft?.id === project.id ? "bg-sky-950 text-sky-100" : "hover:bg-slate-900"}`}
                   onClick={() => select(editableProject(project))}
                 >
-                  {project.title}
+                  {project.title}{" "}
                   <span className="mt-1 block text-xs text-slate-500">
                     {project.status}
                   </span>

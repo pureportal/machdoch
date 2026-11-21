@@ -60,7 +60,7 @@ export function ContextWindowForm({
                 checked={selection === option.value}
                 onChange={() => setSelection(option.value)}
               />
-              <span>{option.label}</span>
+              <span>{option.label}</span>{" "}
               {option.tokens !== null && (
                 <span className="app-context-window-token-count">
                   {option.tokens.toLocaleString()} tokens

@@ -102,7 +102,7 @@ export const RalphOverview = ({
           aria-labelledby="ralph-running-heading"
         >
           <h2 id="ralph-running-heading">
-            Running{runs.length > 0 ? <span>{runs.length}</span> : null}
+            Running{runs.length > 0 ? <> <span>{runs.length}</span></> : null}
           </h2>
           {taskError ? (
             <div className="ralph-overview-error" role="alert">

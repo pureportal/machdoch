@@ -25,7 +25,7 @@ import {
 import {
   type Connection,
   type Node,
-  type NodeChange,
+  type NodeChangeset,
   type NodeProps,
   type NodeTypes,
   type OnSelectionChangeParams,
@@ -5134,7 +5134,7 @@ export const MediaFlowView = ({
     const frame = window.requestAnimationFrame(() => {
       void flowInstance.current?.fitView({
         nodes: activeNodes,
-        padding: 0.8,
+        padding: "22%",
         duration: 260,
         maxZoom: 1.15,
       });
@@ -5250,9 +5250,11 @@ export const MediaFlowView = ({
   }, [onLayoutChange, layout, selectedNodeIds]);
 
   const handleNodesChange = useCallback(
-    (changes: NodeChange<MediaCanvasNode>[]): void => {
+    (changes: NodeChangeset<MediaCanvasNode>): void => {
       applyCanvasNodeChanges(changes);
-      const measurements = changes.filter((change): change is Extract<NodeChange<MediaCanvasNode>, { type: "dimensions" }> => change.type === "dimensions" && flowNodesById.has(change.id));
+      const measurements = changes
+        .getByType("dimensions")
+        .filter((change) => flowNodesById.has(change.id));
       if (measurements.length > 0) {
         setNodeSizes((current) => {
           const next = { ...current };
@@ -5268,10 +5270,8 @@ export const MediaFlowView = ({
         });
       }
       const completedPositions = new Map(
-        changes.flatMap((change) =>
-          change.type === "position" &&
-          change.position &&
-          change.dragging !== true
+        changes.getByType("position").flatMap((change) =>
+          change.position && change.dragging !== true
             ? [[change.id, change.position] as const]
             : [],
         ),

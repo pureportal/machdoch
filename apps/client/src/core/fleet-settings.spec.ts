@@ -127,7 +127,7 @@ afterEach(async () => {
   );
 });
 
-describe.sequential("Headless managed settings", () => {
+describe("Headless managed settings", () => {
   it("applies settings through the real runtime without changing local settings", async () => {
     const root = await setup();
     await saveUserApiKey("openai", "local-openai-key");
