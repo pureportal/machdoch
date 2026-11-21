@@ -11,6 +11,7 @@ export default defineConfig({
       "src/session-sidebar-actions.spec.ts",
       "src/recent-composer-models.spec.ts",
       "src/view-visibility.spec.ts",
+      "src/share-structure.spec.ts",
     ],
   },
 });

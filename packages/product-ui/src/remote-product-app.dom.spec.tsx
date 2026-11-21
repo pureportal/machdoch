@@ -1,8 +1,10 @@
-import type {
-  CommandReceipt,
-  ProductCommand,
-  ProductSnapshot,
+import {
+  productSnapshotSchema,
+  type CommandReceipt,
+  type ProductCommand,
+  type ProductSnapshot,
 } from "@machdoch/fleet-protocol";
+import fixture from "../../fleet-protocol/fixtures/desktop-snapshot.json";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { StrictMode, type ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -183,6 +185,127 @@ describe("remote runtime refresh lifecycle", () => {
     startCommand();
     expect(view.commands).toHaveLength(1);
   });
+  it("shows setting changes at once without blocking and reverts failed ones", async () => {
+    const view = harness();
+    view.snapshots[0]!.resolve(
+      productSnapshotSchema.parse(fixture.response.snapshot),
+    );
+    await flush();
+    act(() => {
+      void shell.onCommand({
+        kind: "set-session-model",
+        sessionId: "session-1",
+        provider: "codex",
+        model: "gpt-next",
+      });
+    });
+    expect(shell.snapshot?.shell?.composer?.model).toBe("gpt-next");
+    expect(state().pending).toBe(0);
+    view.commands[0]!.reject(new Error("Model unavailable"));
+    await flush();
+    expect(shell.snapshot?.shell?.composer?.model).toBe("gpt-6");
+    expect(state().commandError).toBe("Model unavailable");
+  });
+  it("opens a recently viewed chat at once while the device switches", async () => {
+    const base = productSnapshotSchema.parse(fixture.response.snapshot);
+    const session = (id: string) => ({
+      ...base.shell!.sessions[0],
+      id,
+      title: id,
+      status: "done",
+      provider: "openai",
+      model: "gpt-6",
+      effectiveMode: "machdoch",
+      createdAt: 1,
+      updatedAt: 2,
+      tags: [],
+      messageCount: 1,
+      promptHistoryCount: 0,
+      attachmentCount: 0,
+    });
+    const showing = (id: string, eventId: number) =>
+      ({
+        ...base,
+        eventId,
+        shell: {
+          ...base.shell!,
+          sessions: [session("first"), session("second")],
+          activeSessionId: id,
+          visibleMessages: [{ id: `${id}-message` }],
+        },
+      }) as unknown as ProductSnapshot;
+    const view = harness();
+    view.snapshots[0]!.resolve(showing("second", 1));
+    await flush();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    view.snapshots[1]!.resolve(showing("first", 2));
+    await flush();
+    act(() => {
+      void shell.onCommand({ kind: "activate-session", sessionId: "second" });
+    });
+    expect(shell.snapshot?.shell?.activeSessionId).toBe("second");
+    expect(shell.snapshot?.shell?.visibleMessages[0]?.id).toBe(
+      "second-message",
+    );
+    expect(state().pending).toBe(0);
+  });
+  it("keeps the rendered snapshot when a poll brings nothing new", async () => {
+    const view = harness();
+    view.snapshots[0]!.resolve(snapshot(1));
+    await flush();
+    const first = shell.snapshot;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    view.snapshots[1]!.resolve({ ...snapshot(1), serverTime: 99 });
+    await flush();
+    expect(shell.snapshot).toBe(first);
+  });
+  it("shows a sent message before the device confirms it", async () => {
+    const ready = productSnapshotSchema.parse(fixture.response.snapshot);
+    ready.shell!.activeSessionId = "session-1";
+    Object.assign(ready.shell!.composer!, {
+      isExecuting: false,
+      promptEnhancementMode: "off",
+      interviewEnabled: false,
+    });
+    const view = harness();
+    view.snapshots[0]!.resolve(ready);
+    await flush();
+    act(() => {
+      void shell.onCommand({
+        kind: "submit-message",
+        sessionId: "session-1",
+        prompt: "Hello",
+        promptEnhancementMode: "off",
+        interviewEnabled: false,
+      });
+    });
+    expect(shell.snapshot?.shell?.visibleMessages.at(-1)).toMatchObject({
+      role: "user",
+      content: "Hello",
+    });
+    expect(state().pending).toBe(1);
+    view.commands[0]!.resolve(receipt);
+    await flush();
+    view.snapshots[1]!.resolve(ready);
+    await flush();
+    expect(shell.snapshot?.shell?.visibleMessages).toHaveLength(0);
+    expect(state().pending).toBe(0);
+  });
+  it("refreshes twice as often while the open chat is replying", async () => {
+    const replying = productSnapshotSchema.parse(fixture.response.snapshot);
+    replying.shell!.composer!.isExecuting = true;
+    const view = harness();
+    view.snapshots[0]!.resolve(replying);
+    await flush();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(750);
+    });
+    expect(view.snapshots).toHaveLength(2);
+  });
   it("refreshes as soon as the browser is back online", async () => {
     const view = harness();
     view.snapshots[0]!.reject(new Error("Offline"));
@@ -221,7 +344,11 @@ describe("remote runtime refresh lifecycle", () => {
     const view = harness();
     const first = startCommand();
     const second = startCommand();
-    view.commands.forEach((request) => request.resolve(receipt));
+    expect(view.commands).toHaveLength(1);
+    view.commands[0]!.resolve(receipt);
+    await flush();
+    expect(view.commands).toHaveLength(2);
+    view.commands[1]!.resolve(receipt);
     await flush();
     expect([first(), second()]).toEqual([undefined, undefined]);
     view.snapshots[0]!.resolve(snapshot(1));
@@ -353,7 +480,11 @@ describe("remote runtime refresh lifecycle", () => {
     const view = harness();
     const first = startCommand();
     const second = startCommand();
-    view.commands.forEach((request) => request.resolve(receipt));
+    expect(view.commands).toHaveLength(1);
+    view.commands[0]!.resolve(receipt);
+    await flush();
+    expect(view.commands).toHaveLength(2);
+    view.commands[1]!.resolve(receipt);
     await flush();
     view.snapshots[0]!.reject(new Error("superseded poll"));
     await flush();
