@@ -14,6 +14,10 @@
   font-family: var(--app-font-sans);
 }
 
+.m-application-content {
+  display: contents;
+}
+
 .m-application-body {
   display: flex;
   width: 100%;

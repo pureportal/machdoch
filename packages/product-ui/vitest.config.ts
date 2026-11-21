@@ -10,6 +10,7 @@ export default defineConfig({
       "src/fleet-operation-transport.spec.ts",
       "src/session-sidebar-actions.spec.ts",
       "src/recent-composer-models.spec.ts",
+      "src/view-visibility.spec.ts",
     ],
   },
 });

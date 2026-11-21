@@ -90,9 +90,8 @@ it("combines workspace and every selected tag while keeping Quick Chat visible",
   fireEvent.change(screen.getByRole("combobox", { name: "Workspace filter" }), {
     target: { value: getSessionProjectId("C:/alpha") },
   });
-  const tagFilter = screen.getByRole("combobox", { name: "Tag filter" });
-  fireEvent.change(tagFilter, { target: { value: "UI" } });
-  fireEvent.change(tagFilter, { target: { value: "Urgent" } });
+  fireEvent.click(screen.getByRole("button", { name: "Tag: UI" }));
+  fireEvent.click(screen.getByRole("button", { name: "Tag: Urgent" }));
   expect(screen.getByText("Matching")).toBeTruthy();
   expect(screen.getByText("Quick Chat")).toBeTruthy();
   expect(screen.queryByText("One tag")).toBeNull();
@@ -120,21 +119,30 @@ it("keeps native group order and a single divider while ranking search matches w
 });
 
 it("filters authoritative unread state and combines it with other selected statuses", () => {
-  renderSessions([
+  const view = renderSessions([
     session("Read", { unread: false }),
     session("Unread", { unread: true }),
     session("Failed", { status: "failed", unread: false }),
   ]);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Status: Unread" }),
+  const titles = () =>
+    [...view.container.querySelectorAll(".m-product-session-title")].map(
+      (title) => title.textContent,
+    );
+  fireEvent.keyDown(
+    screen.getByRole("button", { name: "Session status: Any status" }),
+    { key: "Enter" },
   );
-  expect(screen.getByText("Unread")).toBeTruthy();
-  expect(screen.queryByText("Read")).toBeNull();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Status: Failed" }),
-  );
-  expect(screen.getByText("Failed")).toBeTruthy();
-  expect(screen.getByRole("button", { name: /^Status: done Unread/u })).toBeTruthy();
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Unread" }));
+  expect(titles()).toEqual(["Unread"]);
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Failed" }));
+  expect(titles()).toEqual(expect.arrayContaining(["Unread", "Failed"]));
+  expect(titles()).not.toContain("Read");
+  expect(
+    screen.getByRole("button", {
+      name: "Session status: 2 statuses",
+      hidden: true,
+    }),
+  ).toBeTruthy();
 });
 
 it("highlights finished chats with an unread reply unless they are open or archived", () => {

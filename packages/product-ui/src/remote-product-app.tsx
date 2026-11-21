@@ -99,12 +99,13 @@ export function RemoteProductApp({
         void refreshCoordinator.poll(controller.signal);
       }
     }, snapshotRefreshIntervalMs);
-    const handleVisibilityChange = (): void => {
+    const refreshWhenVisible = (): void => {
       if (document.visibilityState === "visible") {
         void refreshCoordinator.poll(controller.signal);
       }
     };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("online", refreshWhenVisible);
     return () => {
       controller.abort();
       refreshCoordinator.dispose();
@@ -112,7 +113,8 @@ export function RemoteProductApp({
         lifecycleRef.current = null;
       }
       window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("online", refreshWhenVisible);
     };
   }, [runtimeBinding]);
 

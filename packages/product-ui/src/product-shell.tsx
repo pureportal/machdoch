@@ -1,4 +1,5 @@
 import { ApplicationShell } from "./application-shell";
+import type { ApplicationActivity } from "./application-navigation";
 import { MachdochLogo } from "./machdoch-logo";
 import {
   productCommandSchema,
@@ -9,10 +10,8 @@ import {
   LoaderCircle,
   MoreHorizontal,
   PanelLeft,
-  PanelRight,
   RefreshCw,
   Sparkles,
-  TerminalSquare,
   WifiOff,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +19,7 @@ import { DropdownMenu } from "radix-ui";
 import type { ComponentType } from "react";
 import type { RemoteComposerProps } from "./remote-composer-props";
 import type { RemoteConversationProps } from "./conversation";
+import { EmbeddedFrame } from "./embedded-frame";
 import { Inspector } from "./inspector";
 import type { ProductCommandHandler } from "./product-runtime";
 import { ProductRail, type ProductView } from "./product-rail";
@@ -105,6 +105,12 @@ export function ProductShell({
   const [workspaceOpened, setWorkspaceOpened] = useState(
     initialView === "workspaces",
   );
+  const [servicesOpened, setServicesOpened] = useState(
+    initialView === "services",
+  );
+  const [servicesWorkspace, setServicesWorkspace] = useState<string | null>(
+    null,
+  );
   const [pendingPoseChat, setPendingPoseChat] = useState<{
     previousSessionId: string | null;
     hasScene: boolean;
@@ -154,6 +160,7 @@ export function ProductShell({
         event.source === mediaFrameRef.current?.contentWindow &&
         data?.type === "machdoch:open-settings"
       ) {
+        settingsReturnFocus.current = mediaFrameRef.current;
         setSettingsOpen(true);
       } else if (
         event.source === settingsFrameRef.current?.contentWindow &&
@@ -165,6 +172,21 @@ export function ProductShell({
     window.addEventListener("message", receiveSettings);
     return () => window.removeEventListener("message", receiveSettings);
   }, [settingsHref]);
+  const settingsVisible = Boolean(settingsHref) && settingsOpen;
+  const settingsReturnFocus = useRef<HTMLElement | null>(null);
+  const openSettings = (): void => {
+    settingsReturnFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setSettingsOpen(true);
+  };
+  useEffect(() => {
+    if (settingsVisible) return;
+    const target = settingsReturnFocus.current;
+    settingsReturnFocus.current = null;
+    if (target?.isConnected) target.focus();
+  }, [settingsVisible]);
   const compact = useMediaQuery("(max-width: 1100px)");
   const navigationInTopbar = useMediaQuery(
     "(max-width: 900px), (max-height: 500px)",
@@ -181,6 +203,7 @@ export function ProductShell({
     if (view === "instructions") setInstructionsOpened(true);
     if (view === "mcp") setMcpOpened(true);
     if (view === "workspaces") setWorkspaceOpened(true);
+    if (view === "services") setServicesOpened(true);
     setSessionsOpen(false);
     setInspectorOpen(false);
   };
@@ -237,6 +260,8 @@ export function ProductShell({
           ? "chat"
           : requestedView === "workspaces" && !workspaceHref
             ? "chat"
+            : requestedView === "services" && !servicesHref
+              ? "chat"
             : requestedView === "instructions" && !instructionsHref
               ? "chat"
               : requestedView === "mcp" && !mcpHref
@@ -244,6 +269,40 @@ export function ProductShell({
                 : requestedView === "ralph" && !shell?.ralph
                   ? "chat"
                   : requestedView;
+  const chatRunning = listedSessions.some(
+    (session) => session.runningTaskId !== undefined,
+  );
+  const chatCompleted = listedSessions.some(
+    (session) =>
+      session.unread === true &&
+      session.archivedAt === undefined &&
+      !(activeView === "chat" && session.id === shell?.activeSessionId),
+  );
+  const chatActivity: ApplicationActivity = chatRunning
+    ? chatCompleted
+      ? "running-and-completed"
+      : "running"
+    : chatCompleted
+      ? "completed"
+      : "idle";
+  const unreadSessions = listedSessions.filter(
+    (session) => session.unread === true && session.archivedAt === undefined,
+  ).length;
+  const documentTitle = [
+    unreadSessions > 0 ? `(${unreadSessions})` : "",
+    [activeView === "chat" ? activeSession?.title : undefined, instanceName]
+      .filter(Boolean)
+      .join(" · "),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  useEffect(() => {
+    const previous = document.title;
+    document.title = documentTitle;
+    return () => {
+      document.title = previous;
+    };
+  }, [documentTitle]);
   const quickChatActive =
     activeView === "chat" &&
     quickChatSession !== undefined &&
@@ -313,15 +372,17 @@ export function ProductShell({
   const navigation = shell ? (
     <ProductRail
       settingsAvailable={Boolean(settingsHref)}
-      onOpenSettings={() => setSettingsOpen(true)}
+      onOpenSettings={openSettings}
       inspectorOpen={inspectorOpen}
       activeView={activeView}
+      chatActivity={chatActivity}
       mediaAvailable={Boolean(mediaHref)}
       speechAvailable={Boolean(speechHref)}
       schedulerAvailable={Boolean(schedulerHref)}
       instructionsAvailable={Boolean(instructionsHref)}
       mcpAvailable={Boolean(mcpHref)}
       workspaceAvailable={Boolean(workspaceHref)}
+      servicesAvailable={Boolean(servicesHref)}
       ralphAvailable={shell.ralph !== undefined}
       projectsAvailable={shell.projectLibrary !== undefined}
       onSelectView={selectView}
@@ -332,6 +393,19 @@ export function ProductShell({
   return (
     <ApplicationShell
       className="machdoch-product"
+      inert={settingsVisible}
+      overlays={
+        settingsVisible ? (
+          <iframe
+            ref={settingsFrameRef}
+            src={settingsHref}
+            title="Settings"
+            className="m-product-settings-frame"
+            allow="clipboard-read; clipboard-write"
+            onLoad={(event) => event.currentTarget.focus()}
+          />
+        ) : null
+      }
       topbar={
         <header className="m-product-topbar">
           <a
@@ -341,6 +415,19 @@ export function ProductShell({
           >
             <ArrowLeft aria-hidden="true" />
           </a>
+          {shell && compact && activeView === "chat" ? (
+            <button
+              type="button"
+              className="m-product-icon-button"
+              data-active={sessionsOpen}
+              aria-label="Sessions"
+              aria-expanded={sessionsOpen}
+              aria-haspopup="dialog"
+              onClick={() => setSessionsOpen((current) => !current)}
+            >
+              <PanelLeft aria-hidden="true" />
+            </button>
+          ) : null}
           {navigationInTopbar ? navigation : null}
           <div className="m-product-brand" aria-label="Machdoch">
             <MachdochLogo />
@@ -385,16 +472,6 @@ export function ProductShell({
                 <span>Quick Chat</span>
               </button>
             ) : null}
-            {!compact && servicesHref ? (
-              <a
-                href={servicesHref}
-                className="m-product-icon-button"
-                aria-label="Services and previews"
-                title="Services and previews"
-              >
-                <TerminalSquare aria-hidden="true" />
-              </a>
-            ) : null}
             {pendingCommands > 0 ? (
               <LoaderCircle className="m-product-spin" aria-label="Updating" />
             ) : null}
@@ -406,32 +483,6 @@ export function ProductShell({
                 onClick={() => void onRefresh()}
               >
                 <RefreshCw aria-hidden="true" />
-              </button>
-            ) : null}
-            {shell && activeView === "chat" ? (
-              <button
-                type="button"
-                className="m-product-icon-button m-product-sidebar-toggle"
-                data-active={sessionsOpen}
-                aria-label="Sessions"
-                aria-expanded={sessionsOpen}
-                aria-haspopup="dialog"
-                onClick={() => setSessionsOpen((current) => !current)}
-              >
-                <PanelLeft aria-hidden="true" />
-              </button>
-            ) : null}
-            {shell && !navigationInTopbar ? (
-              <button
-                type="button"
-                className="m-product-icon-button m-product-inspector-toggle"
-                data-active={inspectorOpen}
-                aria-label="Activity"
-                aria-expanded={inspectorOpen}
-                aria-haspopup="dialog"
-                onClick={() => setInspectorOpen((current) => !current)}
-              >
-                <PanelRight aria-hidden="true" />
               </button>
             ) : null}
             {compact ? (
@@ -455,14 +506,6 @@ export function ProductShell({
                       <RefreshCw aria-hidden="true" />
                       Refresh
                     </DropdownMenu.Item>
-                    {servicesHref ? (
-                      <DropdownMenu.Item asChild>
-                        <a href={servicesHref}>
-                          <TerminalSquare aria-hidden="true" />
-                          Services and previews
-                        </a>
-                      </DropdownMenu.Item>
-                    ) : null}
                   </DropdownMenu.Content>
                 </DropdownMenu.Portal>
               </DropdownMenu.Root>
@@ -493,15 +536,6 @@ export function ProductShell({
         </>
       }
     >
-      {settingsHref && settingsOpen ? (
-        <iframe
-          ref={settingsFrameRef}
-          src={settingsHref}
-          title="Settings"
-          className="m-product-settings-frame"
-          allow="clipboard-read; clipboard-write"
-        />
-      ) : null}
       {!snapshot ? (
         <main className="m-product-loading" role={error ? "alert" : "status"}>
           {error ? (
@@ -520,7 +554,6 @@ export function ProductShell({
         <div
           className="m-product-layout"
           data-inspector-open={inspectorOpen}
-          data-sessions-open={sessionsOpen}
           data-view={activeView}
         >
           {activeView === "chat" ? (
@@ -652,7 +685,14 @@ export function ProductShell({
           {activeView === "projects" && shell.projectLibrary ? (
             <main className="m-product-feature-main">
               <ProjectLibrary
-                servicesHref={servicesHref}
+                onOpenServices={
+                  servicesHref
+                    ? (projectWorkspace) => {
+                        setServicesWorkspace(projectWorkspace);
+                        selectView("services");
+                      }
+                    : undefined
+                }
                 library={shell.projectLibrary}
                 sessions={listedSessions}
                 pending={commandsBlocked}
@@ -663,133 +703,106 @@ export function ProductShell({
             </main>
           ) : null}
           {speechHref && (speechOpened || activeView === "tts") ? (
-            <main className="m-product-feature-main" hidden={activeView !== "tts"} style={activeView !== "tts" ? { display: "none" } : undefined}>
-              <iframe src={speechHref} title="Text to Speech" className="m-product-media-frame" allow="autoplay; microphone" onLoad={() => setSpeechOpened(true)} />
-            </main>
+            <EmbeddedFrame
+              visible={activeView === "tts"}
+              src={speechHref}
+              title="Text to Speech"
+              allow="autoplay; microphone"
+              onLoad={() => setSpeechOpened(true)}
+            />
           ) : null}
           {mediaHref && mediaOpened ? (
-            <main
-              className="m-product-feature-main"
-              hidden={activeView !== "media"}
-              style={activeView !== "media" ? { display: "none" } : undefined}
-            >
-              <iframe
-                ref={mediaFrameRef}
-                src={mediaHref}
-                title="Media Studio"
-                className="m-product-media-frame"
-                allow="clipboard-read; clipboard-write"
-              />
-            </main>
+            <EmbeddedFrame
+              visible={activeView === "media"}
+              frameRef={mediaFrameRef}
+              src={mediaHref}
+              title="Media Studio"
+              allow="clipboard-read; clipboard-write"
+            />
           ) : null}
           {instructionsHref && instructionsOpened ? (
-            <main
-              className="m-product-feature-main"
-              hidden={activeView !== "instructions"}
-              style={
-                activeView !== "instructions" ? { display: "none" } : undefined
+            <EmbeddedFrame
+              visible={activeView === "instructions"}
+              frameRef={instructionsFrameRef}
+              src={instructionsHref}
+              onLoad={(event) =>
+                event.currentTarget.contentWindow?.postMessage(
+                  {
+                    type: "machdoch:instruction-workspace",
+                    workspace: workspace ?? null,
+                  },
+                  window.location.origin,
+                )
               }
-            >
-              <iframe
-                ref={instructionsFrameRef}
-                src={instructionsHref}
-                onLoad={(event) =>
-                  event.currentTarget.contentWindow?.postMessage(
-                    {
-                      type: "machdoch:instruction-workspace",
-                      workspace: workspace ?? null,
-                    },
-                    window.location.origin,
-                  )
-                }
-                title="Instructions"
-                className="m-product-media-frame"
-                allow="clipboard-read; clipboard-write"
-              />
-            </main>
+              title="Instructions"
+              allow="clipboard-read; clipboard-write"
+            />
           ) : null}
           {mcpHref && mcpOpened ? (
-            <main
-              className="m-product-feature-main"
-              hidden={activeView !== "mcp"}
-              style={activeView !== "mcp" ? { display: "none" } : undefined}
-            >
-              <iframe
-                ref={mcpFrameRef}
-                src={mcpHref}
-                onLoad={(event) =>
-                  event.currentTarget.contentWindow?.postMessage(
-                    {
-                      type: "machdoch:mcp-workspace",
-                      workspace: workspace ?? null,
-                    },
-                    window.location.origin,
-                  )
-                }
-                title="MCP servers"
-                className="m-product-media-frame"
-                allow="clipboard-read; clipboard-write"
-              />
-            </main>
+            <EmbeddedFrame
+              visible={activeView === "mcp"}
+              frameRef={mcpFrameRef}
+              src={mcpHref}
+              onLoad={(event) =>
+                event.currentTarget.contentWindow?.postMessage(
+                  {
+                    type: "machdoch:mcp-workspace",
+                    workspace: workspace ?? null,
+                  },
+                  window.location.origin,
+                )
+              }
+              title="MCP servers"
+              allow="clipboard-read; clipboard-write"
+            />
           ) : null}
           {workspaceHref && workspaceOpened ? (
-            <main
-              className="m-product-feature-main"
-              hidden={activeView !== "workspaces"}
-              style={
-                activeView !== "workspaces" ? { display: "none" } : undefined
+            <EmbeddedFrame
+              visible={activeView === "workspaces"}
+              frameRef={workspaceFrameRef}
+              src={workspaceHref}
+              onLoad={(event) =>
+                event.currentTarget.contentWindow?.postMessage(
+                  {
+                    type: "machdoch:workspace-tools-workspace",
+                    workspace: workspace ?? null,
+                  },
+                  window.location.origin,
+                )
               }
-            >
-              <iframe
-                ref={workspaceFrameRef}
-                src={workspaceHref}
-                onLoad={(event) =>
-                  event.currentTarget.contentWindow?.postMessage(
-                    {
-                      type: "machdoch:workspace-tools-workspace",
-                      workspace: workspace ?? null,
-                    },
-                    window.location.origin,
-                  )
-                }
-                title="Workspace Management"
-                className="m-product-media-frame"
-                allow="clipboard-read; clipboard-write"
-              />
-            </main>
+              title="Workspace Management"
+              allow="clipboard-read; clipboard-write"
+            />
+          ) : null}
+          {servicesHref && servicesOpened ? (
+            <EmbeddedFrame
+              visible={activeView === "services"}
+              src={
+                servicesWorkspace
+                  ? `${servicesHref}${servicesHref.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(servicesWorkspace)}`
+                  : servicesHref
+              }
+              title="Services & previews"
+            />
           ) : null}
           {schedulerHref && schedulerOpened ? (
-            <main
-              className="m-product-feature-main"
-              hidden={activeView !== "scheduler"}
-              style={
-                activeView !== "scheduler" ? { display: "none" } : undefined
+            <EmbeddedFrame
+              visible={activeView === "scheduler"}
+              src={
+                workspace
+                  ? `${schedulerHref}${schedulerHref.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(workspace)}`
+                  : schedulerHref
               }
-            >
-              <iframe
-                src={
-                  workspace
-                    ? `${schedulerHref}${schedulerHref.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(workspace)}`
-                    : schedulerHref
-                }
-                title="Smart Scheduler"
-                className="m-product-media-frame"
-              />
-            </main>
+              title="Smart Scheduler"
+            />
           ) : null}
           {ralphHref && shell.ralph?.editorAvailable && ralphOpened ? (
-            <main
-              className="m-product-feature-main"
-              hidden={activeView !== "ralph"}
-              style={activeView !== "ralph" ? { display: "none" } : undefined}
-            >
-              <iframe
-                src={ralphHref}
-                title="RALPH"
-                className="m-product-media-frame"
-                allow="clipboard-read; clipboard-write"
-              />
-            </main>
+            <EmbeddedFrame
+              visible={activeView === "ralph"}
+              src={ralphHref}
+              title="RALPH"
+              allow="clipboard-read; clipboard-write"
+            />
           ) : null}
           {activeView === "ralph" &&
           shell.ralph &&

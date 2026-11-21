@@ -20,7 +20,7 @@ vi.mock("./responsive-layout", () => ({
 
 afterEach(cleanup);
 
-function setup() {
+function setup(settingsHref?: string, servicesHref?: string) {
   const snapshot = productSnapshotSchema.parse(fixture.response.snapshot);
   snapshot.shell!.sessions = [
     {
@@ -69,6 +69,8 @@ function setup() {
       Conversation={() => null}
       instanceName="Device"
       initialView="chat"
+      settingsHref={settingsHref}
+      servicesHref={servicesHref}
       snapshot={snapshot}
       error={null}
       pendingCommands={0}
@@ -141,4 +143,64 @@ it("shows a recoverable load error and distinguishes an empty result from loadin
   await act(async () => source.resolve());
   await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   expect(screen.getByRole("status").textContent).toBe("No matching sessions");
+});
+
+it("isolates the settings overlay and returns focus when it closes", () => {
+  setup("/settings.html");
+  const opener = screen.getAllByRole("button", { name: "Settings" }).at(-1)!;
+  opener.focus();
+  fireEvent.click(opener);
+  const frame = document.querySelector<HTMLIFrameElement>(
+    ".m-product-settings-frame",
+  )!;
+  expect(frame).toBeTruthy();
+  expect(
+    document.querySelector(".m-application-content")?.hasAttribute("inert"),
+  ).toBe(true);
+  act(() => {
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        source: frame.contentWindow,
+        data: { type: "machdoch:close-settings" },
+      }),
+    );
+  });
+  expect(document.querySelector(".m-product-settings-frame")).toBeNull();
+  expect(
+    document.querySelector(".m-application-content")?.hasAttribute("inert"),
+  ).toBe(false);
+  expect(document.activeElement).toBe(opener);
+});
+
+it("names the browser tab after the open chat and device", () => {
+  setup();
+  expect(document.title).toBe("Existing chat · Device");
+});
+
+it("opens services inside the instance app instead of leaving it", () => {
+  setup(undefined, "/instances/device/runs");
+  fireEvent.click(screen.getByRole("button", { name: "Services & previews" }));
+  const frame = document.querySelector("iframe[title=\"Services & previews\"]")!;
+  expect(frame.getAttribute("src")).toBe("/instances/device/runs");
+  expect(document.querySelector('a[href="/instances/device/runs"]')).toBeNull();
+});
+
+it("tells embedded views when they are hidden", () => {
+  setup(undefined, "/instances/device/runs");
+  fireEvent.click(screen.getByRole("button", { name: "Services & previews" }));
+  const frame = document.querySelector<HTMLIFrameElement>(
+    'iframe[title="Services & previews"]',
+  )!;
+  const post = vi.spyOn(frame.contentWindow!, "postMessage");
+  fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+  expect(post).toHaveBeenLastCalledWith(
+    { type: "machdoch:view-visibility", visible: false },
+    window.location.origin,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Services & previews" }));
+  expect(post).toHaveBeenLastCalledWith(
+    { type: "machdoch:view-visibility", visible: true },
+    window.location.origin,
+  );
 });

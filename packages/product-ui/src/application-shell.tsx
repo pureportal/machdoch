@@ -10,6 +10,7 @@ export function ApplicationShell({
   overlays,
   children,
   className = "",
+  inert = false,
 }: {
   topbar: ReactNode;
   navigation: ReactNode;
@@ -17,15 +18,18 @@ export function ApplicationShell({
   overlays?: ReactNode;
   children: ReactNode;
   className?: string;
+  inert?: boolean;
 }): React.ReactElement {
   useProductViewport();
   return (
     <div className={`m-application-shell ${className}`}>
-      {topbar}
-      {notices}
-      <div className="m-application-body">
-        {navigation}
-        {children}
+      <div className="m-application-content" inert={inert}>
+        {topbar}
+        {notices}
+        <div className="m-application-body">
+          {navigation}
+          {children}
+        </div>
       </div>
       {overlays}
     </div>

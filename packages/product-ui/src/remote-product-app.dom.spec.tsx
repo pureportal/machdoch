@@ -183,6 +183,17 @@ describe("remote runtime refresh lifecycle", () => {
     startCommand();
     expect(view.commands).toHaveLength(1);
   });
+  it("refreshes as soon as the browser is back online", async () => {
+    const view = harness();
+    view.snapshots[0]!.reject(new Error("Offline"));
+    await flush();
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(view.snapshots).toHaveLength(2);
+    view.snapshots[1]!.resolve(snapshot(2));
+    await flush();
+  });
   it("waits for a post-command snapshot when a command finishes during a poll", async () => {
     const view = harness();
     view.snapshots[0]!.resolve(snapshot(1));

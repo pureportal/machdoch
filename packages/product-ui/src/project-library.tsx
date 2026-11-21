@@ -17,7 +17,7 @@ import type { ProductCommandHandler } from "./product-runtime";
 
 export function ProjectLibrary({
   library,
-  servicesHref,
+  onOpenServices,
   sessions,
   pending,
   error,
@@ -25,7 +25,7 @@ export function ProjectLibrary({
   onOpenChat,
 }: {
   library: NonNullable<ProductShell["projectLibrary"]>;
-  servicesHref?: string | undefined;
+  onOpenServices?: ((workspace: string) => void) | undefined;
   sessions: ProductShell["sessions"];
   pending: boolean;
   error: string | null;
@@ -230,13 +230,14 @@ export function ProjectLibrary({
                     : ""}
                 </small>
                 <div className="m-project-actions">
-                  {servicesHref && project.status === "ready" ? (
-                    <a
+                  {onOpenServices && project.status === "ready" ? (
+                    <button
+                      type="button"
                       className="m-product-secondary-button"
-                      href={`${servicesHref}?workspace=${encodeURIComponent(project.workspace)}`}
+                      onClick={() => onOpenServices(project.workspace)}
                     >
                       Services & previews
-                    </a>
+                    </button>
                   ) : null}
                   {project.status === "ready" ? (
                     <>

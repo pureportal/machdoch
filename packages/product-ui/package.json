@@ -10,6 +10,7 @@
     "./utility-palette.css": "./src/utility-palette.css",
     "./composer-controls": "./src/composer-controls.ts",
     ".": "./src/index.ts",
+    "./view-visibility": "./src/view-visibility.ts",
     "./application-shell": "./src/application-shell.tsx",
     "./machdoch-logo": "./src/machdoch-logo.tsx",
     "./styles.css": "./src/styles.css",

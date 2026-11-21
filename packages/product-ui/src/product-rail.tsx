@@ -9,10 +9,12 @@ import {
   Network,
   PanelRight,
   Settings2,
+  TerminalSquare,
   Workflow,
 } from "lucide-react";
 import {
   ApplicationNavigation,
+  type ApplicationActivity,
   type ApplicationNavigationItem,
 } from "./application-navigation";
 
@@ -25,19 +27,22 @@ export type ProductView =
   | "mcp"
   | "workspaces"
   | "ralph"
-  | "projects";
+  | "projects"
+  | "services";
 
 export function ProductRail({
   settingsAvailable,
   onOpenSettings,
   inspectorOpen,
   activeView,
+  chatActivity = "idle",
   mediaAvailable,
   speechAvailable = false,
   schedulerAvailable,
   instructionsAvailable = false,
   mcpAvailable = false,
   workspaceAvailable = false,
+  servicesAvailable = false,
   ralphAvailable,
   projectsAvailable,
   onSelectView,
@@ -47,12 +52,14 @@ export function ProductRail({
   onOpenSettings: () => void;
   inspectorOpen: boolean;
   activeView: ProductView;
+  chatActivity?: ApplicationActivity;
   mediaAvailable: boolean;
   speechAvailable?: boolean;
   schedulerAvailable: boolean;
   instructionsAvailable?: boolean;
   mcpAvailable?: boolean;
   workspaceAvailable?: boolean;
+  servicesAvailable?: boolean;
   ralphAvailable: boolean;
   projectsAvailable: boolean;
   onSelectView: (view: ProductView) => void;
@@ -65,7 +72,13 @@ export function ProductRail({
       icon: FolderKanban,
       available: projectsAvailable,
     },
-    { id: "chat", label: "Chat", icon: MessageSquareText, available: true },
+    {
+      id: "chat",
+      label: "Chat",
+      icon: MessageSquareText,
+      available: true,
+      activity: chatActivity,
+    },
     { id: "ralph", label: "RALPH", icon: Workflow, available: ralphAvailable },
     {
       id: "media",
@@ -99,6 +112,13 @@ export function ProductRail({
       icon: FolderGit2,
       group: "management",
       available: workspaceAvailable,
+    },
+    {
+      id: "services",
+      label: "Services & previews",
+      icon: TerminalSquare,
+      group: "management",
+      available: servicesAvailable,
     },
   ] as const;
   const items: ApplicationNavigationItem[] = views
