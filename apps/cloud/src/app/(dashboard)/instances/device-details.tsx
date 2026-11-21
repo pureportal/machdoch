@@ -42,6 +42,9 @@ export function DeviceDetails({
     status: "current" | "installing";
     version: string;
   } | null>(null);
+  const updateInstalled =
+    update?.status === "installing" &&
+    device.productVersion === update.version;
   return (
     <Dialog
       open
@@ -75,9 +78,11 @@ export function DeviceDetails({
         </dl>
         {update ? (
           <p role="status" className="text-sm text-muted-foreground">
-            {update.status === "installing"
-              ? `Updating to v${update.version}.`
-              : `v${update.version} is the latest version.`}
+            {updateInstalled
+              ? `Updated to v${update.version}.`
+              : update.status === "installing"
+                ? `Updating to v${update.version}.`
+                : `v${update.version} is the latest version.`}
           </p>
         ) : warning ? (
           <p role="status" className="text-sm text-destructive">
@@ -124,7 +129,7 @@ export function DeviceDetails({
               trigger={
                 <Button
                   variant="outline"
-                  disabled={update?.status === "installing"}
+                  disabled={update?.status === "installing" && !updateInstalled}
                 >
                   <Download />
                   Update

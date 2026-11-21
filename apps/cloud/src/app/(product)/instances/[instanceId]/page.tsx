@@ -1,8 +1,5 @@
-import { notFound, redirect } from "next/navigation";
-import { canUseClient } from "@/lib/client-access";
 import { InstanceProduct } from "./instance-product";
-import { requirePageSession } from "@/server/page-auth";
-import { getRuntime } from "@/server/runtime";
+import { requireUsableInstancePage } from "@/server/page-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +10,9 @@ export default async function InstanceProductPage({
   params: Promise<{ instanceId: string }>;
   searchParams: Promise<{ session?: string | string[] }>;
 }): Promise<React.ReactElement> {
-  const viewer = await requirePageSession();
   const { instanceId } = await params;
   const { session } = await searchParams;
-  const instance = await getRuntime().fleetStore.getInstance(instanceId);
-  if (!instance || instance.revokedAt !== null) notFound();
-  if (!canUseClient(viewer, instance)) redirect("/instances");
+  const instance = await requireUsableInstancePage(instanceId);
   return (
     <InstanceProduct
       instanceId={instance.instanceId}

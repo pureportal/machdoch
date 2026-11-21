@@ -12,11 +12,13 @@ import {
   type RunSnapshot,
 } from "@machdoch/fleet-protocol";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { Button } from "@/components/ui/button";
 import { RunConfiguration } from "./run-configuration";
 import { ServiceCard } from "./service-card";
 import { AddServiceForm, type ServiceInput } from "./add-service-form";
 import { ShowMore } from "@/components/show-more";
+import { StandaloneOnly } from "../standalone-only";
 
 type Preview = {
   id: string;
@@ -137,15 +139,7 @@ export function RunsView({
     setStatusError(null);
     setNotice(null);
     setBackend("");
-    let running = false;
-    const poll = async (): Promise<void> => {
-      if (
-        running ||
-        controller.signal.aborted ||
-        document.visibilityState !== "visible"
-      )
-        return;
-      running = true;
+    const stop = pollWhileVisible(async () => {
       try {
         await refresh(controller.signal);
       } catch (reason) {
@@ -155,20 +149,11 @@ export function RunsView({
               ? reason.message
               : "Service status is unavailable.",
           );
-      } finally {
-        running = false;
       }
-    };
-    void poll();
-    const interval = setInterval(() => void poll(), 3000);
-    const visibility = (): void => {
-      void poll();
-    };
-    document.addEventListener("visibilitychange", visibility);
+    }, 3000);
     return () => {
       controller.abort();
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", visibility);
+      stop();
       if (active.current === controller) active.current = null;
     };
   }, [refresh, workspace]);
@@ -349,18 +334,22 @@ export function RunsView({
       <div className="mx-auto grid w-full min-w-0 max-w-6xl gap-5 pb-12">
         <header className="flex min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <Link
-              className="inline-flex min-h-11 items-center gap-2 text-sm"
-              href={`/instances/${encodeURIComponent(instanceId)}`}
-            >
-              <ArrowLeft size={16} /> Back to instance
-            </Link>
+            <StandaloneOnly>
+              <Link
+                className="inline-flex min-h-11 items-center gap-2 text-sm"
+                href={`/instances/${encodeURIComponent(instanceId)}`}
+              >
+                <ArrowLeft size={16} /> Back to instance
+              </Link>
+            </StandaloneOnly>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               Services & previews
             </h1>
-            <p className="break-all text-sm text-muted-foreground">
-              {instanceName}
-            </p>
+            <StandaloneOnly>
+              <p className="break-all text-sm text-muted-foreground">
+                {instanceName}
+              </p>
+            </StandaloneOnly>
           </div>
           <Button
             className="min-h-11"

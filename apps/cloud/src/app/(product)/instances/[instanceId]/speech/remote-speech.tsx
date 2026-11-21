@@ -6,6 +6,7 @@ import { createRemoteSpeechRuntime } from "@machdoch/speech/remote";
 import { speechPlayback,persistPlaybackMetrics,speechPlaybackMetrics } from "@machdoch/speech/playback";
 import { speechRequestSchema, speechResponseSchema } from "@machdoch/fleet-protocol/speech";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
+import { Button } from "@/components/ui/button";
 
 export function RemoteSpeech({ instanceId }: { instanceId: string }): React.ReactElement {
   const [clientId] = useState(() => {
@@ -33,7 +34,30 @@ export function RemoteSpeech({ instanceId }: { instanceId: string }): React.Reac
     return () => { clearInterval(timer); window.removeEventListener("pagehide", stop); stop(); };
   }, [runtime]);
   return <>
-    {error && <div role="alert">{error}<button type="button" onClick={() => { void runtime.heartbeat().then(() => setError(null)).catch(() => setError("Speech connection is unavailable. Reconnect the owning device.")); }}>Reconnect</button></div>}
+    {error && (
+      <div
+        role="alert"
+        className="flex flex-wrap items-center gap-3 border-b border-destructive/40 px-4 py-2 text-sm text-destructive"
+      >
+        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{error}</span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            void runtime
+              .heartbeat()
+              .then(() => setError(null))
+              .catch(() =>
+                setError(
+                  "Speech connection is unavailable. Reconnect the owning device.",
+                ),
+              );
+          }}
+        >
+          Reconnect
+        </Button>
+      </div>
+    )}
     <TextToSpeechStudio runtime={runtime} assetUrl={path => {
       if (!path.startsWith("speech-asset:") && !path.startsWith("speech-export:")) throw new Error("This asset belongs to a different speech runtime.");
       const id = path.slice(path.indexOf(":") + 1);

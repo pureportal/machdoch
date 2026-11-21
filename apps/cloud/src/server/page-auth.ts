@@ -1,10 +1,12 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { canUseClient } from "../lib/client-access";
 import {
   authenticateRequest,
   sessionCookieName,
   type AuthenticatedSession,
 } from "./request-auth";
+import type { FleetInstance } from "./fleet-store";
 import { getRuntime } from "./runtime";
 import { getCloudRuntime } from "./cloud/runtime";
 
@@ -37,4 +39,14 @@ export async function requireManagerPage(): Promise<AuthenticatedSession> {
   const session = await requirePageSession();
   if (!session.manager) redirect("/instances");
   return session;
+}
+
+export async function requireUsableInstancePage(
+  instanceId: string,
+): Promise<FleetInstance> {
+  const viewer = await requirePageSession();
+  const instance = await getRuntime().fleetStore.getInstance(instanceId);
+  if (!instance || instance.revokedAt !== null) notFound();
+  if (!canUseClient(viewer, instance)) redirect("/instances");
+  return instance;
 }
