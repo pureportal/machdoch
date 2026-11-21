@@ -1292,6 +1292,16 @@ export const useChatSessionController = (
   );
   const activeReasoning =
     activeSessionReasoningOverride ?? normalizedEffectiveReasoning;
+  const quickTaskDefaultsRef = useRef({
+    session: state.activeSession,
+    reasoning: activeSessionReasoningOverride,
+  });
+  quickTaskDefaultsRef.current = {
+    session: state.activeSession,
+    reasoning: activeSessionReasoningOverride,
+  };
+  const runtimeSnapshotRef = useRef(runtime.runtimeSnapshot);
+  runtimeSnapshotRef.current = runtime.runtimeSnapshot;
   const isUsingWorkspaceDefaultMode = !activeComposerSession.mode;
   const isUsingWorkspaceDefaultReasoning = !activeSessionReasoningOverride;
   const hasActiveWorkspace = activeComposerSession.workspace !== null;
@@ -1866,7 +1876,10 @@ export const useChatSessionController = (
           existingThinkingMessage?.source?.kind === "thinking"
             ? existingThinkingMessage.source.thinking
             : createInitialThinkingTrace(
-                getEffectiveSessionMode(session.mode, runtime.runtimeSnapshot),
+                getEffectiveSessionMode(
+                  session.mode,
+                  runtimeSnapshotRef.current,
+                ),
               );
         const nextTrace = updater(baseTrace);
 
@@ -1919,7 +1932,6 @@ export const useChatSessionController = (
     },
     [
       applySessionMessageLimit,
-      runtime.runtimeSnapshot,
       state.updateSessionById,
       state.updateSessionByIdTransient,
     ],
@@ -3628,27 +3640,29 @@ export const useChatSessionController = (
       existingQuickTaskSession: ChatSessionRecord | null,
       createdSessionId?: string,
     ): ChatSessionRecord => {
+      const { session: activeSession, reasoning: activeSessionReasoning } =
+        quickTaskDefaultsRef.current;
       const baseSession =
         existingQuickTaskSession ??
         createSession({
           id: createdSessionId ?? crypto.randomUUID(),
           specialSession: QUICK_VOICE_SESSION_KIND,
-          workspace: state.activeSession.workspace,
-          provider: state.activeSession.provider,
-          model: state.activeSession.model,
-          ...(state.activeSession.mode
-            ? { mode: state.activeSession.mode }
+          workspace: activeSession.workspace,
+          provider: activeSession.provider,
+          model: activeSession.model,
+          ...(activeSession.mode
+            ? { mode: activeSession.mode }
             : {}),
-          ...(activeSessionReasoningOverride
-            ? { reasoning: activeSessionReasoningOverride }
+          ...(activeSessionReasoning
+            ? { reasoning: activeSessionReasoning }
             : {}),
-          useGlobalMemory: state.activeSession.useGlobalMemory,
-          uiControlEnabled: state.activeSession.uiControlEnabled,
+          useGlobalMemory: activeSession.useGlobalMemory,
+          uiControlEnabled: activeSession.uiControlEnabled,
         });
       const nextSession: ChatSessionRecord = {
         ...baseSession,
         specialSession: QUICK_VOICE_SESSION_KIND,
-        workspace: baseSession.workspace ?? state.activeSession.workspace,
+        workspace: baseSession.workspace ?? activeSession.workspace,
         provider: baseSession.provider,
         model: baseSession.model,
         sessionMemoryEnabled: false,
@@ -3656,9 +3670,9 @@ export const useChatSessionController = (
         updatedAt: Date.now(),
       };
 
-      const mode = baseSession.mode ?? state.activeSession.mode;
+      const mode = baseSession.mode ?? activeSession.mode;
       const reasoning = normalizeSessionReasoningOverride(
-        baseSession.reasoning ?? activeSessionReasoningOverride,
+        baseSession.reasoning ?? activeSessionReasoning,
         nextSession.provider,
         nextSession.model,
       );
@@ -3680,15 +3694,7 @@ export const useChatSessionController = (
 
       return nextSession;
     },
-    [
-      state.activeSession.mode,
-      state.activeSession.model,
-      state.activeSession.provider,
-      activeSessionReasoningOverride,
-      state.activeSession.uiControlEnabled,
-      state.activeSession.useGlobalMemory,
-      state.activeSession.workspace,
-    ],
+    [],
   );
 
   const updateQuickTaskSession = useCallback(

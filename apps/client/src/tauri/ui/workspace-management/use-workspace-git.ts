@@ -85,6 +85,7 @@ const FOCUS_REFRESH_INTERVAL_MS = 4_000;
 const PREFETCHED_OVERVIEWS = 8;
 const FETCH_ALL_CONCURRENCY = 3;
 const ALL_REPOSITORIES = "";
+const MAX_CACHED_ENTRIES = 64;
 
 const discoveryCache = new Map<string, WorkspaceGitRepositoryDiscovery>();
 const repositoriesStatusCache = new Map<
@@ -93,6 +94,19 @@ const repositoriesStatusCache = new Map<
 >();
 const overviewCache = new Map<string, Snapshot<WorkspaceGitOverview>>();
 const pullRequestCache = new Map<string, WorkspacePullRequestOverview>();
+
+const rememberEntry = <T>(
+  cache: Map<string, T>,
+  key: string,
+  value: T,
+): void => {
+  cache.delete(key);
+  cache.set(key, value);
+  for (const oldest of cache.keys()) {
+    if (cache.size <= MAX_CACHED_ENTRIES) break;
+    cache.delete(oldest);
+  }
+};
 
 const repositoryKey = (repositoryRoot: string): string =>
   createWorkspaceRootKey(repositoryRoot);
@@ -110,7 +124,7 @@ const storeSnapshot = <T>(
   sequence: number,
 ): boolean => {
   if (sequence < (cache.get(key)?.sequence ?? 0)) return false;
-  cache.set(key, { value, sequence });
+  rememberEntry(cache, key, { value, sequence });
   return true;
 };
 
@@ -305,7 +319,7 @@ export function useWorkspaceGit(
         overview,
       );
       if (status && cachedStatus) {
-        repositoriesStatusCache.set(scopeKey, {
+        rememberEntry(repositoriesStatusCache, scopeKey, {
           value: status,
           sequence: Math.max(cachedStatus.sequence, sequence),
         });
@@ -420,7 +434,7 @@ export function useWorkspaceGit(
           refresh: rescan,
         });
         const discovery = discoveryFromStatus(status);
-        discoveryCache.set(scopeKey, discovery);
+        rememberEntry(discoveryCache, scopeKey, discovery);
         if (
           !storeSnapshot(repositoriesStatusCache, scopeKey, status, sequence)
         ) {
@@ -502,7 +516,11 @@ export function useWorkspaceGit(
           root,
           repositoryRoot,
         );
-        pullRequestCache.set(repositoryKey(repositoryRoot), pullRequests);
+        rememberEntry(
+          pullRequestCache,
+          repositoryKey(repositoryRoot),
+          pullRequests,
+        );
         if (requestId === pullRequestRequestRef.current) {
           updateScoped(scopeKey, repositoryRoot, (current) => ({
             ...current,
@@ -539,7 +557,7 @@ export function useWorkspaceGit(
         const discovery = await loadWorkspaceGitRepositories(root, {
           refresh: rescan,
         });
-        discoveryCache.set(scopeKey, discovery);
+        rememberEntry(discoveryCache, scopeKey, discovery);
         const selectedRoot =
           selectWorkspaceGitRepository(
             discovery.repositories,

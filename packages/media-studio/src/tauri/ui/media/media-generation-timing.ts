@@ -4,6 +4,8 @@ import type {
   MediaRunDetail,
 } from "../../../core/media/contracts.js";
 
+const MAX_REGISTERED_FLOWS = 200;
+
 const VARIABLE_INPUTS = new Set([
   "prompt",
   "negativePrompt",
@@ -79,7 +81,12 @@ export class MediaGenerationTiming {
   }
 
   registerFlow(revisionId: string, flow: MediaFlow): void {
+    this.flows.delete(revisionId);
     this.flows.set(revisionId, flow);
+    for (const oldest of this.flows.keys()) {
+      if (this.flows.size <= MAX_REGISTERED_FLOWS) break;
+      this.flows.delete(oldest);
+    }
   }
 
   hasFlow(revisionId: string): boolean {

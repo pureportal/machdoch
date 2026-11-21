@@ -43,6 +43,9 @@ export class CloudClientMonitor {
     const instances = (await this.fleet.fleetStore.listInstances()).filter(
       (instance) => instance.revokedAt === null,
     );
+    const current = new Set(instances.map((instance) => instance.instanceId));
+    for (const instanceId of this.observedAt.keys())
+      if (!current.has(instanceId)) this.observedAt.delete(instanceId);
     let recorded = await this.recordPresence(organizationId, instances);
     for (const instance of instances) {
       if (!this.fleet.gateways.isOnline(instance.instanceId)) continue;

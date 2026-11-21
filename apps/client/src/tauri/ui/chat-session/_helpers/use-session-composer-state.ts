@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -46,11 +47,14 @@ export const useSessionComposerState = (
   const [historyPreview, setHistoryPreviewState] =
     useState<ComposerHistoryPreview | null>(null);
   const historyPreviewRef = useRef<ComposerHistoryPreview | null>(null);
-  const promptHistoryIdentity = JSON.stringify([
-    state.activeSession.id,
-    state.activeSession.promptHistory,
-    state.activeSession.promptContextHistory,
-  ]);
+  const activeSessionId = state.activeSession.id;
+  const promptHistory = state.activeSession.promptHistory;
+  const promptContextHistory = state.activeSession.promptContextHistory;
+  const promptHistoryIdentity = useMemo(
+    () =>
+      JSON.stringify([activeSessionId, promptHistory, promptContextHistory]),
+    [activeSessionId, promptHistory, promptContextHistory],
+  );
   const previousPromptHistoryIdentityRef = useRef(promptHistoryIdentity);
 
   const setHistoryPreview = useCallback(

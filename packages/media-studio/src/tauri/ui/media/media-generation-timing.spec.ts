@@ -201,4 +201,17 @@ describe("generation completion estimates", () => {
       scope: "run",
     });
   });
+
+  it("keeps only recently registered flows", () => {
+    const timing = new MediaGenerationTiming();
+    timing.registerFlow("first", flow);
+    for (let index = 0; index < 200; index++)
+      timing.registerFlow(`revision-${index}`, flow);
+    expect(timing.hasFlow("first")).toBe(false);
+    expect(timing.hasFlow("revision-0")).toBe(true);
+    timing.registerFlow("revision-0", flow);
+    timing.registerFlow("latest", flow);
+    expect(timing.hasFlow("revision-0")).toBe(true);
+    expect(timing.hasFlow("revision-1")).toBe(false);
+  });
 });

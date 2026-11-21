@@ -75,15 +75,23 @@ export const useNewestMessageScroll = ({
   const [showScrollToNewestButton, setShowScrollToNewestButton] =
     useState(false);
   const [showScrollToTopButton, setShowScrollToTopButton] = useState(false);
+  const bottomElementRef = useRef<HTMLDivElement | null>(null);
   const lastScrollMetricsRef = useRef<ScrollViewportMetrics | null>(null);
   const isScrollPinnedToNewestRef = useRef(true);
 
+  const bottomRef = useCallback((element: HTMLDivElement | null): void => {
+    bottomElementRef.current = element;
+    setBottomElement(element);
+  }, []);
+
   const scrollToTop = useCallback((): void => {
-    if (!bottomElement) {
+    const element = bottomElementRef.current;
+
+    if (!element) {
       return;
     }
 
-    const scrollViewport = findScrollViewport(bottomElement);
+    const scrollViewport = findScrollViewport(element);
 
     if (!scrollViewport) {
       return;
@@ -95,14 +103,16 @@ export const useNewestMessageScroll = ({
     isScrollPinnedToNewestRef.current = isPinnedToNewest;
     setShowScrollToNewestButton(!isPinnedToNewest);
     setShowScrollToTopButton(false);
-  }, [bottomElement]);
+  }, []);
 
   const scrollToNewest = useCallback((): void => {
-    if (!bottomElement) {
+    const element = bottomElementRef.current;
+
+    if (!element) {
       return;
     }
 
-    const scrollViewport = findScrollViewport(bottomElement);
+    const scrollViewport = findScrollViewport(element);
 
     if (!scrollViewport) {
       return;
@@ -115,7 +125,7 @@ export const useNewestMessageScroll = ({
     setShowScrollToTopButton(
       scrollViewport.scrollTop > SCROLL_EDGE_THRESHOLD_PX,
     );
-  }, [bottomElement]);
+  }, []);
 
   useLayoutEffect(() => {
     isScrollPinnedToNewestRef.current = true;
@@ -207,7 +217,7 @@ export const useNewestMessageScroll = ({
   }, [bottomElement, contentKey, resetKey]);
 
   return {
-    bottomRef: setBottomElement,
+    bottomRef,
     showScrollToTopButton,
     scrollToTop,
     showScrollToNewestButton,
