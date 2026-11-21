@@ -25,6 +25,7 @@ import { configureRalphSettingsStorage } from "../ui/lib/shell-store";
 import { isConfiguredModelProvider } from "../../core/runtime-contract.generated.js";
 import { createRemoteTaskPlatform } from "../ui/remote-task-platform";
 import type { UserInternalTaskModelSettings } from "../ui/runtime";
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 
 const instanceId = new URLSearchParams(window.location.search).get("instance");
 if (!instanceId) throw new Error("Select a connected instance.");
@@ -38,7 +39,6 @@ function FleetRalph(): React.ReactElement {
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
     const refresh = () =>
       api(`${basePath}/snapshot`, { signal: controller.signal })
         .then(async (value) => {
@@ -92,15 +92,12 @@ function FleetRalph(): React.ReactElement {
         .catch((cause: unknown) => {
           if (!cancelled)
             setError(cause instanceof Error ? cause.message : String(cause));
-        })
-        .finally(() => {
-          if (!cancelled) timer = setTimeout(() => void refresh(), 5_000);
         });
-    void refresh();
+    const stop = pollWhileVisible(refresh, 5_000);
     return () => {
       cancelled = true;
       controller.abort();
-      clearTimeout(timer);
+      stop();
     };
   }, []);
   const shell = snapshot?.shell;

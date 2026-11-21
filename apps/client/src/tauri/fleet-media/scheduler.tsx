@@ -1,5 +1,6 @@
 import "./analytics.js";
 import { useEffect, useMemo, useState } from "react";
+import { LoadError } from "./load-error";
 import { createRoot } from "react-dom/client";
 import {
   SchedulerPanel,
@@ -80,9 +81,7 @@ function FleetScheduler(): React.ReactElement {
     <TooltipProvider delayDuration={300}>
       <CommandProvider activeView="scheduler" runtime="browser">
         {error ? (
-          <div role="alert" className="p-4 text-sm text-rose-300">
-            {error}
-          </div>
+          <LoadError message={error} />
         ) : workspace ? (
           <SchedulerPanel
             workspaceRoot={workspace}

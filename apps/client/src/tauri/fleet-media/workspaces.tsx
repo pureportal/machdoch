@@ -42,6 +42,7 @@ import {
   type UserMemorySettings,
 } from "../ui/runtime";
 import { useRemoteWorkspacePicker } from "./use-remote-workspace-picker";
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 
 const parameters = new URLSearchParams(window.location.search);
 const instanceId = parameters.get("instance");
@@ -214,21 +215,22 @@ function FleetWorkspaces(): React.ReactElement {
   useEffect(() => {
     if (!ready) return;
     let disposed = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = async (): Promise<void> => {
-      try {
-        await loadSnapshot();
-        if (!disposed) setError(null);
-      } catch (cause) {
-        if (!disposed)
-          setError(cause instanceof Error ? cause.message : String(cause));
-      }
-      if (!disposed) timer = setTimeout(() => void refresh(), 2000);
-    };
-    timer = setTimeout(() => void refresh(), 2000);
+    const stop = pollWhileVisible(
+      async () => {
+        try {
+          await loadSnapshot();
+          if (!disposed) setError(null);
+        } catch (cause) {
+          if (!disposed)
+            setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      },
+      2000,
+      { immediate: false },
+    );
     return () => {
       disposed = true;
-      clearTimeout(timer);
+      stop();
     };
   }, [loadSnapshot, ready]);
   useEffect(() => {

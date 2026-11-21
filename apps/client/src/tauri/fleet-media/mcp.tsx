@@ -1,6 +1,7 @@
 import { McpAppsSettings } from "@machdoch/client-ui/mcp-apps/settings";
 import "./analytics.js";
 import { useEffect, useState } from "react";
+import { LoadError } from "./load-error";
 import { createRoot } from "react-dom/client";
 import {
   deviceSettingsRequestSchema,
@@ -134,9 +135,7 @@ function FleetMcp(): React.ReactElement {
     <TooltipProvider delayDuration={300}>
       <CommandProvider activeView="mcp" runtime="browser">
         {error ? (
-          <div role="alert" className="p-4 text-sm text-rose-300">
-            {error}
-          </div>
+          <LoadError message={error} />
         ) : ready && libraryMode ? (
           <div className="p-4">
             <McpAppsSettings

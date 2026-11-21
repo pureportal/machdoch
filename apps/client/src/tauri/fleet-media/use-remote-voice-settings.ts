@@ -4,6 +4,7 @@ import {
   type DeviceVoicePreferences,
 } from "@machdoch/fleet-protocol/device-settings";
 import { invokeDeviceSettingsCommand } from "../ui/device-settings-platform";
+import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 
 type PreferencesChange = Partial<
   Pick<
@@ -36,8 +37,7 @@ export function useRemoteVoiceSettings(): {
   }, []);
   useEffect(() => {
     mounted.current = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = async (): Promise<void> => {
+    const stop = pollWhileVisible(async () => {
       try {
         if (!pending.current) {
           const value = await invokeDeviceSettingsCommand(
@@ -48,14 +48,11 @@ export function useRemoteVoiceSettings(): {
       } catch (cause) {
         if (mounted.current)
           setError(cause instanceof Error ? cause.message : String(cause));
-      } finally {
-        if (mounted.current) timer = setTimeout(() => void refresh(), 2_000);
       }
-    };
-    void refresh();
+    }, 2_000);
     return () => {
       mounted.current = false;
-      clearTimeout(timer);
+      stop();
     };
   }, [apply]);
   const save = useCallback(

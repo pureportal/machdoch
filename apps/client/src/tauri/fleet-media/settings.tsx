@@ -78,6 +78,36 @@ window.addEventListener(
   { once: true },
 );
 
+function closeSettings(): void {
+  if (window.parent === window) {
+    window.location.assign(`/instances/${encodeURIComponent(instanceId!)}`);
+    return;
+  }
+  window.parent.postMessage(
+    { type: "machdoch:close-settings" },
+    window.location.origin,
+  );
+}
+
+function SettingsError({ message }: { message: string }): React.ReactElement {
+  return (
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-4 p-4 text-sm text-rose-300"
+    >
+      <span>{message}</span>
+      <button
+        type="button"
+        autoFocus
+        className="rounded-md border border-slate-700 px-3 py-1.5 text-slate-200 hover:bg-slate-800"
+        onClick={closeSettings}
+      >
+        Close
+      </button>
+    </div>
+  );
+}
+
 function DeviceSettings({
   snapshot,
 }: {
@@ -100,15 +130,13 @@ function DeviceSettings({
         : "openai",
     activeSessionWorkspace: workspaceRoot,
   });
+  const loadError = voice.error || appearance.error;
   const platform = getRemoteWorkspacePlatform();
   if (platform) platform.workspaceRoot = workspaceRoot;
   return (
     <>
-      {(!voice.preferences || !appearance.settings) &&
-      (voice.error || appearance.error) ? (
-        <div role="alert" className="p-4 text-sm text-rose-300">
-          {voice.error ?? appearance.error}
-        </div>
+      {(!voice.preferences || !appearance.settings) && loadError ? (
+        <SettingsError message={loadError} />
       ) : null}
       {voice.preferences && appearance.settings ? (
         <Dialog open>
@@ -123,18 +151,7 @@ function DeviceSettings({
             error={voice.error ?? appearance.error}
             settingsSection={section}
             onSettingsSectionChange={setSection}
-            onClose={() => {
-              if (window.parent === window) {
-                window.location.assign(
-                  `/instances/${encodeURIComponent(instanceId!)}`,
-                );
-                return;
-              }
-              window.parent.postMessage(
-                { type: "machdoch:close-settings" },
-                window.location.origin,
-              );
-            }}
+            onClose={closeSettings}
             appearanceSetup={{
               settings: appearance.settings,
               saving: appearance.saving,
@@ -183,9 +200,7 @@ function FleetSettings(): React.ReactElement {
     <TooltipProvider delayDuration={300}>
       <CommandProvider activeView="settings" runtime="browser">
         {error ? (
-          <div role="alert" className="p-4 text-sm text-rose-300">
-            {error}
-          </div>
+          <SettingsError message={error} />
         ) : snapshot ? (
           snapshot.shell?.workspaceToolsMode === "library" ? <div className="p-4"><McpAppsSettings invoke={(workspaceRoot, input) => invokeWorkspaceTools("run_mcp_app_command", { workspaceRoot, input })} /></div> : <DeviceSettings snapshot={snapshot} />
         ) : (

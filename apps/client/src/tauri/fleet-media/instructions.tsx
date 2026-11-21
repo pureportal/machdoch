@@ -1,5 +1,6 @@
 import "./analytics.js";
 import { useEffect, useState } from "react";
+import { LoadError } from "./load-error";
 import { createRoot } from "react-dom/client";
 import {
   useInstructionManagement,
@@ -126,9 +127,7 @@ function FleetInstructions(): React.ReactElement {
     <TooltipProvider delayDuration={300}>
       <CommandProvider activeView="instructions" runtime="browser">
         {error ? (
-          <div role="alert" className="p-4 text-sm text-rose-300">
-            {error}
-          </div>
+          <LoadError message={error} />
         ) : ready ? (
           <InstructionManager
             setup={setup}
