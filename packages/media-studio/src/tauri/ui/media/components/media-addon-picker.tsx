@@ -381,15 +381,27 @@ export const MediaAddonBrowser = ({
                                 }
                                 step={0.05}
                                 value={selection.denoisingSchedule![key]}
-                                onChange={(event) =>
+                                onChange={(event) => {
+                                  const schedule = selection.denoisingSchedule!;
+                                  const value = event.target.valueAsNumber;
+                                  if (!Number.isFinite(value)) return;
                                   onChangeSelection({
                                     ...selection,
                                     denoisingSchedule: {
-                                      ...selection.denoisingSchedule!,
-                                      [key]: Number(event.target.value),
+                                      ...schedule,
+                                      [key]:
+                                        key === "start"
+                                          ? Math.min(
+                                              Math.max(value, 0),
+                                              schedule.end - 0.05,
+                                            )
+                                          : Math.max(
+                                              Math.min(value, 1),
+                                              schedule.start + 0.05,
+                                            ),
                                     },
-                                  })
-                                }
+                                  });
+                                }}
                                 className="mt-1 h-9 w-full rounded border border-slate-700 bg-slate-950 px-1.5"
                               />
                             </label>

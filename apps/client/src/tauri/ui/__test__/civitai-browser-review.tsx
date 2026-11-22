@@ -11,6 +11,8 @@ import type {
 import { CivitaiBrowserDialog } from "@machdoch/media-studio/tauri/ui/media/components/civitai-browser-dialog.js";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
+import { createMediaModelCatalogSnapshot } from "@machdoch/media-studio/core/media/catalog.js";
+import { getMediaModelAddonCapabilities } from "@machdoch/media-studio/core/media/model-addons.js";
 import "../styles.css";
 
 const state = {
@@ -31,7 +33,12 @@ Object.defineProperty(navigator, "clipboard", {
   },
 });
 
-const model = (id: number, name: string, type = "LORA"): CivitaiModel => ({
+const model = (
+  id: number,
+  name: string,
+  type = "LORA",
+  baseModels: readonly [string, string] = ["SDXL 1.0", "SDXL 1.0"],
+): CivitaiModel => ({
   id,
   name,
   type,
@@ -44,7 +51,7 @@ const model = (id: number, name: string, type = "LORA"): CivitaiModel => ({
   modelVersions: [1, 2].map((version) => ({
     id: id * 10 + version,
     name: version === 1 ? "v2.0" : "v1.0",
-    baseModel: "SDXL 1.0",
+    baseModel: baseModels[version - 1]!,
     publishedAt: "2026-09-10T12:00:00Z",
     trainedWords: ["watercolor", "soft edges"],
     files: [1, 2].map((file) => ({
@@ -78,11 +85,14 @@ const model = (id: number, name: string, type = "LORA"): CivitaiModel => ({
 });
 const models = [
   model(1, "Watercolor Landscapes"),
-  model(2, "Studio XL", "Checkpoint"),
+  model(2, "Studio XL", "Checkpoint", ["Illustrious", "Illustrious"]),
   model(3, "Soft Light", "TextualInversion"),
-  model(4, "Texture Study"),
-  model(5, "Linework"),
-  model(6, "Night Colors"),
+  model(4, "Texture Study for Detailed Fabric and Stone Surfaces", "LORA", [
+    "Flux.1 D",
+    "SDXL 1.0",
+  ]),
+  model(5, "Linework", "LORA", ["Pony", "Pony"]),
+  model(6, "Night Colors", "LORA", ["Flux.1 D", "Flux.1 D"]),
 ];
 const matureModel = { ...model(7, "Mature catalog fixture"), nsfw: true };
 let rejectDownload: ((reason: Error) => void) | null = null;
@@ -160,7 +170,7 @@ mockIPC(
     if (command === "plugin:store|save") return;
     if (command === "media_civitai_options")
       return {
-        modelTypes: ["Checkpoint", "LORA", "LoCon", "TextualInversion"],
+        modelTypes: ["Checkpoint", "LORA", "TextualInversion"],
         baseModels: [
           "Flux.1 S",
           "Flux.1 Krea",
@@ -182,8 +192,19 @@ mockIPC(
             "Krea 2",
             "Wan Video 2.2 TI2V-5B",
           ],
-          LoCon: ["SDXL 1.0", "SD 1.5", "Flux.1 D", "Krea 2"],
           TextualInversion: ["SDXL 1.0", "SD 1.5", "Flux.1 D"],
+        },
+        baseModelArchitectures: {
+          "Flux.1 S": "flux-1",
+          "Flux.1 Krea": "flux-1",
+          "Flux.2 Klein 4B": "flux-2",
+          Illustrious: "stable-diffusion-xl",
+          Pony: "pony",
+          "SDXL 1.0": "stable-diffusion-xl",
+          "SD 1.5": "stable-diffusion-1",
+          "Flux.1 D": "flux-1",
+          "Krea 2": "krea-2",
+          "Wan Video 2.2 TI2V-5B": "wan-2.2-ti2v",
         },
       };
     if (command === "media_civitai_connection") return state.connected;
@@ -341,6 +362,20 @@ mockIPC(
   { shouldMockEvents: true },
 );
 
+const installedModels = createMediaModelCatalogSnapshot({
+  isOpenAiConfigured: false,
+  isLocalFluxInstalled: true,
+})
+  .models.filter((entry) => entry.id === "local:flux-2-klein-4b")
+  .map((entry) => ({
+    ...entry,
+    architecture: "stable-diffusion-xl",
+    addonCapabilities: getMediaModelAddonCapabilities(
+      "local-diffusers",
+      "stable-diffusion-xl",
+    ),
+  }));
+
 function Review() {
   const [open, setOpen] = useState(true);
   return (
@@ -350,6 +385,7 @@ function Review() {
         {open && (
           <CivitaiBrowserDialog
             installedHashes={new Set()}
+            installedModels={installedModels}
             onClose={() => setOpen(false)}
             onImportSampleUrl={async () =>
               ({ asset: { id: "preview" } }) as never

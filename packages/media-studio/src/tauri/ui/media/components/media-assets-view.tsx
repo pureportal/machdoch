@@ -1518,6 +1518,7 @@ export const MediaAssetsView = ({
           onClose={() => setCivitaiOpen(false)}
           initialSource={civitaiSource}
           onImportSampleUrl={onImportSampleUrl}
+          installedModels={catalog.models.filter((model) => model.installed)}
           installedHashes={
             new Set(
               [

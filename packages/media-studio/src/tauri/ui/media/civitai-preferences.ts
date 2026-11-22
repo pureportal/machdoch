@@ -1,5 +1,7 @@
 import {
   CIVITAI_DEFAULT_SEARCH,
+  CIVITAI_PERIODS,
+  CIVITAI_SORTS,
   type CivitaiSearch,
 } from "../../../core/media/civitai.js";
 import {
@@ -29,13 +31,9 @@ export function normalizeCivitaiPreferences(value: unknown): CivitaiSearch {
     stored.contentMode === "mature"
   )
     result.contentMode = stored.contentMode;
-  if (
-    ["Most Downloaded", "Highest Rated", "Newest"].includes(String(stored.sort))
-  )
+  if (CIVITAI_SORTS.includes(String(stored.sort)))
     result.sort = String(stored.sort);
-  if (
-    ["AllTime", "Year", "Month", "Week", "Day"].includes(String(stored.period))
-  )
+  if (CIVITAI_PERIODS.some(([period]) => period === stored.period))
     result.period = String(stored.period);
   return result;
 }

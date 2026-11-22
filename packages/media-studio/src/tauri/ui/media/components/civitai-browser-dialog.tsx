@@ -1,20 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  Download,
-  ImageOff,
-  Settings,
-  LoaderCircle,
-  Search,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { LoaderCircle, Search, Settings, X } from "lucide-react";
+import type { MediaModelDescriptor } from "../../../../core/media/contracts.js";
 import {
   CIVITAI_DEFAULT_SEARCH,
   civitaiModelUrl,
   civitaiRequestedVersion,
-  civitaiVisibleImages,
   isCivitaiLookup,
-  type CivitaiContentMode,
   type CivitaiModel,
   type CivitaiOptions,
   type CivitaiSearch,
@@ -32,31 +23,42 @@ import {
   CivitaiModelDetail,
   type CivitaiImportActions,
 } from "./civitai-model-detail";
-
-import { SearchableSelect } from "../../components/ui/searchable-select";
 import {
   loadCivitaiPreferences,
   saveCivitaiPreferences,
 } from "../civitai-preferences";
 import { MediaImportJobs } from "./media-import-jobs";
 import { CivitaiSettingsPanel } from "./civitai-settings-panel";
+import {
+  CivitaiSearchFilters,
+  civitaiBaseModelsForType,
+} from "./civitai-search-filters";
+import {
+  CivitaiResultCard,
+  CivitaiResultSkeleton,
+} from "./civitai-result-card";
 
-const fieldClass =
-  "h-10 min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus:border-sky-400";
-const numberFormat = new Intl.NumberFormat(undefined, {
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
+const hasNarrowingFilters = (filters: CivitaiSearch): boolean =>
+  Boolean(
+    filters.modelType ||
+      filters.baseModel ||
+      filters.tag ||
+      filters.username ||
+      filters.favorites ||
+      filters.period !== CIVITAI_DEFAULT_SEARCH.period,
+  );
 
 export function CivitaiBrowserDialog({
   onClose,
   initialSource = "",
   installedHashes,
+  installedModels,
   ...importActions
 }: CivitaiImportActions & {
   initialSource?: string;
   onClose: () => void;
   installedHashes: ReadonlySet<string>;
+  installedModels: readonly MediaModelDescriptor[];
 }) {
   const [filters, setFilters] = useState<CivitaiSearch>({
     ...CIVITAI_DEFAULT_SEARCH,
@@ -68,22 +70,21 @@ export function CivitaiBrowserDialog({
     baseModelsByType: {},
     baseModelArchitectures: {},
   });
-  const baseModels = filters.modelType
-    ? (options.baseModelsByType[filters.modelType] ?? [])
-    : options.baseModels;
   const [query, setQuery] = useState(initialSource);
   const [items, setItems] = useState<CivitaiModel[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const results = useRef<CivitaiSearchResults | null>(null);
   const scrollArea = useRef<HTMLDivElement>(null);
+  const resultsScroll = useRef(0);
+  const openedModel = useRef<number | null>(null);
   const loadMore = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<CivitaiModel | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [opening, setOpening] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
-  const [advanced, setAdvanced] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const sequence = useRef(0);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -106,14 +107,6 @@ export function CivitaiBrowserDialog({
           : saved;
         setFilters(restored);
         setQuery(restored.query);
-        setAdvanced(
-          Boolean(
-            restored.tag ||
-            restored.username ||
-            restored.favorites ||
-            restored.period !== "AllTime",
-          ),
-        );
         setReady(true);
       })
       .catch((failure: Error) => {
@@ -169,6 +162,8 @@ export function CivitaiBrowserDialog({
       setItems([]);
       setHasMore(false);
       setSelected(null);
+      resultsScroll.current = 0;
+      if (scrollArea.current) scrollArea.current.scrollTop = 0;
     }
     try {
       if (isCivitaiLookup(request.query)) {
@@ -177,7 +172,6 @@ export function CivitaiBrowserDialog({
           request.contentMode !== "normal",
         );
         if (sequence.current !== requestId) return;
-        if (request.contentMode === "mature" && !model.nsfw) return;
         setItems([model]);
         setSelected(model);
         setSelectedVersion(
@@ -186,11 +180,18 @@ export function CivitaiBrowserDialog({
         setHasMore(false);
       } else {
         if (!append || !results.current) {
-          results.current = new CivitaiSearchResults(request, civitaiRuntime.search);
+          results.current = new CivitaiSearchResults(
+            request,
+            civitaiRuntime.search,
+          );
         }
-        const page = await results.current.next(() => sequence.current === requestId);
+        const page = await results.current.next(
+          () => sequence.current === requestId,
+        );
         if (sequence.current !== requestId) return;
-        setItems((previous) => append ? [...previous, ...page.items] : page.items);
+        setItems((previous) =>
+          append ? [...previous, ...page.items] : page.items,
+        );
         setHasMore(page.hasMore);
       }
     } catch (failure) {
@@ -205,10 +206,9 @@ export function CivitaiBrowserDialog({
     const modelType = options.modelTypes.includes(filters.modelType)
       ? filters.modelType
       : "";
-    const availableBases = modelType
-      ? (options.baseModelsByType[modelType] ?? [])
-      : options.baseModels;
-    const baseModel = availableBases.includes(filters.baseModel)
+    const baseModel = civitaiBaseModelsForType(options, modelType).includes(
+      filters.baseModel,
+    )
       ? filters.baseModel
       : "";
     if (modelType !== filters.modelType || baseModel !== filters.baseModel) {
@@ -220,9 +220,12 @@ export function CivitaiBrowserDialog({
 
   useEffect(() => {
     if (!hasMore || loading || error || selected || !loadMore.current) return;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) void load(filters, true);
-    }, { root: scrollArea.current, rootMargin: "300px" });
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) void load(filters, true);
+      },
+      { root: scrollArea.current, rootMargin: "400px" },
+    );
     observer.observe(loadMore.current);
     return () => observer.disconnect();
   }, [hasMore, loading, error, selected, filters]);
@@ -230,16 +233,8 @@ export function CivitaiBrowserDialog({
   const update = (patch: Partial<CivitaiSearch>) =>
     setFilters((value) => ({ ...value, ...patch, cursor: null }));
 
-  const hasFilters =
-    filters.modelType ||
-    filters.baseModel ||
-    filters.tag ||
-    filters.username ||
-    filters.favorites ||
-    filters.sort !== CIVITAI_DEFAULT_SEARCH.sort ||
-    filters.period !== CIVITAI_DEFAULT_SEARCH.period;
-  const clearFilters = () =>
-    setFilters({
+  const resetFilters = () =>
+    update({
       ...CIVITAI_DEFAULT_SEARCH,
       query: filters.query,
       contentMode: filters.contentMode,
@@ -247,7 +242,9 @@ export function CivitaiBrowserDialog({
 
   const openModel = async (model: CivitaiModel) => {
     const requestId = ++sequence.current;
-    setLoading(true);
+    resultsScroll.current = scrollArea.current?.scrollTop ?? 0;
+    openedModel.current = model.id;
+    setOpening(model.id);
     setError(null);
     try {
       const detail = await civitaiRuntime.getModel(
@@ -261,9 +258,29 @@ export function CivitaiBrowserDialog({
     } catch (failure) {
       if (sequence.current === requestId) setError((failure as Error).message);
     } finally {
-      if (sequence.current === requestId) setLoading(false);
+      if (sequence.current === requestId) setOpening(null);
     }
   };
+
+  const closeModel = () => {
+    setSelected(null);
+    setError(null);
+  };
+
+  useLayoutEffect(() => {
+    const area = scrollArea.current;
+    if (!area) return;
+    area.scrollTop = selected ? 0 : resultsScroll.current;
+    if (!selected && openedModel.current !== null)
+      area
+        .querySelector<HTMLElement>(
+          `[data-model-id="${openedModel.current}"]`,
+        )
+        ?.focus({ preventScroll: true });
+  }, [selected]);
+
+  const mature = filters.contentMode !== "normal";
+  const firstPage = loading && items.length === 0;
 
   return (
     <Dialog
@@ -279,9 +296,14 @@ export function CivitaiBrowserDialog({
           event.preventDefault();
           searchInput.current?.focus();
         }}
-        className="flex h-[min(850px,calc(100dvh-2rem))] flex-col gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-6xl"
+        onEscapeKeyDown={(event) => {
+          if (!selected) return;
+          event.preventDefault();
+          closeModel();
+        }}
+        className="flex h-[min(900px,calc(100dvh-2rem))] flex-col gap-0 overflow-hidden border-slate-700 bg-slate-950 p-0 text-slate-100 sm:max-w-6xl"
       >
-        <DialogHeader className="shrink-0 border-b border-slate-800 px-5 py-4">
+        <DialogHeader className="shrink-0 border-b border-slate-800 px-5 py-3">
           <div className="flex items-center justify-between gap-3">
             <DialogTitle>Civitai</DialogTitle>
             <div className="flex items-center gap-2">
@@ -294,7 +316,7 @@ export function CivitaiBrowserDialog({
                 onClick={() => setConnectionOpen((value) => !value)}
               >
                 <Settings className="h-4 w-4" />
-                Settings
+                {connected ? "API key" : "Connect"}
               </Button>
               <Button
                 type="button"
@@ -308,176 +330,22 @@ export function CivitaiBrowserDialog({
             </div>
           </div>
         </DialogHeader>
-        {!selected && (
-          <form
-            className="shrink-0 space-y-3 border-b border-slate-800 p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              update({ query: query.trim() });
-            }}
-          >
-            <div className="flex gap-2">
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <input
-                  ref={searchInput}
-                  aria-label="Search Civitai"
-                  placeholder="Search models, paste a Civitai link or SHA-256"
-                  className={`${fieldClass} w-full pl-9`}
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </div>
-              <Button type="submit">Search</Button>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <SearchableSelect
-                label="Resource type"
-                className="flex-[1_1_9rem] sm:max-w-48"
-                value={filters.modelType}
-                options={[
-                  { value: "", label: "All types" },
-                  ...options.modelTypes.map((value) => ({
-                    value,
-                    label:
-                      (
-                        {
-                          Checkpoint: "Checkpoint",
-                          LORA: "LoRA",
-                          TextualInversion: "Embedding",
-                        } as Record<string, string>
-                      )[value] ?? value,
-                  })),
-                ]}
-                onChange={(modelType) => {
-                  const models = modelType
-                    ? (options.baseModelsByType[modelType] ?? [])
-                    : options.baseModels;
-                  update({
-                    modelType,
-                    baseModel: models.includes(filters.baseModel)
-                      ? filters.baseModel
-                      : "",
-                  });
-                }}
-              />
-              <SearchableSelect
-                label="Base model"
-                className="flex-[1_1_10rem] sm:max-w-56"
-                value={filters.baseModel}
-                options={[
-                  { value: "", label: "All base models" },
-                  ...baseModels.map((value) => ({ value, label: value })),
-                ]}
-                onChange={(baseModel) => update({ baseModel })}
-              />
-              <SearchableSelect
-                label="Sort Civitai results"
-                className="flex-[1_1_10rem] sm:max-w-48"
-                value={filters.sort}
-                options={["Most Downloaded", "Highest Rated", "Newest"].map(
-                  (value) => ({ value, label: value }),
-                )}
-                onChange={(sort) => update({ sort })}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-expanded={advanced}
-                onClick={() => setAdvanced((value) => !value)}
-              >
-                <SlidersHorizontal className="h-4 w-4" /> Filters
-              </Button>
-              {hasFilters && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={clearFilters}
-                >
-                  Clear filters
-                </Button>
-              )}
-              <select
-                aria-label="Content"
-                className={`${fieldClass} ml-auto flex-[1_1_10rem] sm:max-w-48`}
-                value={filters.contentMode}
-                onChange={(event) =>
-                  update({
-                    contentMode: event.target.value as CivitaiContentMode,
-                  })
-                }
-              >
-                <option value="normal">Normal</option>
-                <option value="all">Normal + Mature</option>
-                <option value="mature">Mature only</option>
-              </select>
-            </div>
-            {advanced && (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <label className="grid gap-1 text-xs text-slate-400">
-                  Period
-                  <SearchableSelect
-                    label="Period"
-                    value={filters.period}
-                    options={[
-                      ["AllTime", "All time"],
-                      ["Year", "Year"],
-                      ["Month", "Month"],
-                      ["Week", "Week"],
-                      ["Day", "Today"],
-                    ].map(([value, label]) => ({ value, label }))}
-                    onChange={(period) => update({ period })}
-                  />
-                </label>
-                <label className="grid gap-1 text-xs text-slate-400">
-                  Tag
-                  <input
-                    className={fieldClass}
-                    key={`tag:${filters.tag}`}
-                    defaultValue={filters.tag}
-                    onBlur={(event) => {
-                      if (event.target.value !== filters.tag)
-                        update({ tag: event.target.value });
-                    }}
-                  />
-                </label>
-                <label className="grid gap-1 text-xs text-slate-400">
-                  Creator
-                  <input
-                    className={fieldClass}
-                    key={`username:${filters.username}`}
-                    defaultValue={filters.username}
-                    onBlur={(event) => {
-                      if (event.target.value !== filters.username)
-                        update({ username: event.target.value });
-                    }}
-                  />
-                </label>
-                <label className="flex items-end gap-2 pb-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={filters.favorites}
-                    onChange={(event) => {
-                      if (!connected) {
-                        setConnectionOpen(true);
-                        return;
-                      }
-                      update({ favorites: event.target.checked });
-                    }}
-                    className="accent-sky-400"
-                  />{" "}
-                  My favorites
-                </label>
-              </div>
-            )}
-          </form>
-        )}
+        <div hidden={selected !== null} className="shrink-0">
+          <CivitaiSearchFilters
+            filters={filters}
+            options={options}
+            query={query}
+            connected={connected}
+            inputRef={searchInput}
+            onQueryChange={setQuery}
+            onChange={update}
+            onRequireConnection={() => setConnectionOpen(true)}
+          />
+        </div>
         <div
           ref={scrollArea}
           className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5"
-          aria-busy={loading}
+          aria-busy={loading || opening !== null}
         >
           {error && (
             <div
@@ -501,92 +369,69 @@ export function CivitaiBrowserDialog({
               key={selected.id}
               model={selected}
               initialVersionId={selectedVersion}
-              mature={filters.contentMode !== "normal"}
+              mature={mature}
+              options={options}
               installedHashes={installedHashes}
-              onBack={() => {
-                setSelected(null);
-                setError(null);
-              }}
+              installedModels={installedModels}
+              onBack={closeModel}
               onOpenSettings={() => setConnectionOpen(true)}
               connectionRevision={refresh}
               {...importActions}
             />
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-                {items.map((model) => {
-                  const version = model.modelVersions[0];
-                  const preview = civitaiVisibleImages(
-                    model,
-                    version,
-                    filters.contentMode !== "normal",
-                  )[0];
-                  const installed = version?.files.some(
-                    (file) =>
-                      file.hashes?.SHA256 &&
-                      installedHashes.has(file.hashes.SHA256.toLowerCase()),
-                  );
-                  return (
-                    <button
-                      key={model.id}
-                      onClick={() => void openModel(model)}
-                      aria-label={`View ${model.name}`}
-                      className="group overflow-hidden rounded-xl border border-slate-800 bg-slate-900/50 text-left transition hover:border-sky-400/60 focus-visible:outline-2 focus-visible:outline-sky-400"
-                    >
-                      <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-slate-900">
-                        {preview ? (
-                          <img
-                            src={preview.url}
-                            alt=""
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                          />
-                        ) : (
-                          <ImageOff className="h-8 w-8 text-slate-600" />
-                        )}
-                        {installed && (
-                          <span className="absolute bottom-2 left-2 rounded-md bg-slate-950/90 px-2 py-1 text-[11px] text-emerald-300">
-                            In library
-                          </span>
-                        )}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {items.map((model) => (
+                  <div key={model.id} className="relative flex">
+                    <CivitaiResultCard
+                      model={model}
+                      mature={mature}
+                      installedHashes={installedHashes}
+                      onOpen={() => void openModel(model)}
+                    />
+                    {opening === model.id && (
+                      <div
+                        role="status"
+                        aria-label={`Opening ${model.name}`}
+                        className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-slate-950/60"
+                      >
+                        <LoaderCircle className="h-6 w-6 animate-spin text-sky-300" />
                       </div>
-                      <div className="space-y-1.5 p-3">
-                        <p className="line-clamp-2 min-h-10 text-sm font-medium text-slate-100">
-                          {model.name}
-                        </p>
-                        <p className="truncate text-xs text-slate-400">
-                          {model.creator?.username ?? model.type}
-                        </p>
-                        <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-400">
-                          <span>{version?.baseModel ?? model.type}</span>
-                          {model.stats?.downloadCount !== null &&
-                            model.stats?.downloadCount !== undefined && (
-                              <span className="flex items-center gap-1">
-                                <Download className="h-3 w-3" />
-                                {numberFormat.format(model.stats.downloadCount)}
-                              </span>
-                            )}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+                    )}
+                  </div>
+                ))}
+                {firstPage &&
+                  Array.from({ length: 10 }, (_, index) => (
+                    <CivitaiResultSkeleton key={index} />
+                  ))}
               </div>
               {loading && (
                 <div
                   role="status"
                   aria-label="Loading Civitai models"
-                  className="flex min-h-40 items-center justify-center gap-2 text-sm text-slate-400"
+                  className={
+                    firstPage
+                      ? "sr-only"
+                      : "flex items-center justify-center py-6 text-slate-400"
+                  }
                 >
-                  <LoaderCircle className="h-5 w-5 animate-spin" /> Loading
-                  models…
+                  <LoaderCircle className="h-5 w-5 animate-spin" />
                 </div>
               )}
               {!loading && !error && !hasMore && items.length === 0 && (
                 <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-sm text-slate-400">
                   <Search className="h-8 w-8 text-slate-600" />
                   <p>No matching models</p>
+                  {hasNarrowingFilters(filters) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={resetFilters}
+                    >
+                      Reset filters
+                    </Button>
+                  )}
                 </div>
               )}
               {hasMore && !loading && !error && (
@@ -596,7 +441,7 @@ export function CivitaiBrowserDialog({
                     variant="outline"
                     onClick={() => void load(filters, true)}
                   >
-                    {items.length === 0 ? "Search more" : "Load more"}
+                    Load more
                   </Button>
                 </div>
               )}
@@ -611,7 +456,7 @@ export function CivitaiBrowserDialog({
             className="border-slate-700 bg-slate-950 text-slate-100 sm:max-w-lg"
           >
             <DialogHeader>
-              <DialogTitle>Civitai settings</DialogTitle>
+              <DialogTitle>Civitai API key</DialogTitle>
             </DialogHeader>
             <CivitaiSettingsPanel
               onChanged={(value) => {

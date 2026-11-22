@@ -14,6 +14,26 @@ const modelRuntimeArchitecture = <T extends string | null>(
   profiles.find((profile) => profile.architecture === architecture)
     ?.baseArchitecture ?? architecture;
 
+const PIPELINE_FAMILIES: Readonly<Record<string, string>> = {
+  pony: "stable-diffusion-xl",
+  "krea-2-raw": "krea-2",
+  "krea-2-turbo": "krea-2",
+  "flux-1-dev": "flux-1",
+  "flux-1-schnell": "flux-1",
+  "flux-2-klein-base-4b": "flux-2",
+  "flux-2-klein-9b": "flux-2",
+  "flux-2-klein-base-9b": "flux-2",
+  "z-image-turbo": "z-image",
+};
+
+export const mediaPipelineArchitecture = (architecture: string): string => {
+  const runtime = modelRuntimeArchitecture(architecture);
+  return PIPELINE_FAMILIES[runtime] ?? runtime;
+};
+
+const addonFamily = (architecture: string): string =>
+  architecture === "pony" ? "pony" : mediaPipelineArchitecture(architecture);
+
 const capability = (
   kind: MediaModelAddonKind,
   targetComponents: MediaModelAddonCapability["targetComponents"],
@@ -90,11 +110,11 @@ const ARCHITECTURE_ADDON_CAPABILITIES: Readonly<
     capability("lora", ["denoiser"], 8, false, true),
     capability("textual-inversion", ["text-encoder"], 16, false, false),
   ],
-  "z-image-turbo": [
-    capability("lora", ["denoiser"], 8, false, true),
+  "wan-2.2-ti2v": [capability("lora", ["denoiser"], 8, false, false)],
+  "wan-2.1-t2v-1.3b": [
+    capability("lora", ["denoiser"], 8, false, false),
     capability("textual-inversion", ["text-encoder"], 16, false, false),
   ],
-  "wan-2.2-ti2v": [capability("lora", ["denoiser"], 8, false, false)],
   "ltx-video": [capability("lora", ["denoiser"], 8, false, false)],
   "cogvideox-2b": [
     capability("lora", ["denoiser"], 8, false, false),
@@ -122,22 +142,9 @@ export const getMediaModelAddonCapabilities = (
     architecture === null
   )
     return [];
-  architecture = modelRuntimeArchitecture(architecture);
   return (
     ARCHITECTURE_ADDON_CAPABILITIES[
-      architecture === "pony"
-        ? "stable-diffusion-xl"
-        : ["krea-2-raw", "krea-2-turbo"].includes(architecture)
-          ? "krea-2"
-          : ["flux-1-dev", "flux-1-schnell"].includes(architecture)
-            ? "flux-1"
-            : [
-                  "flux-2-klein-base-4b",
-                  "flux-2-klein-9b",
-                  "flux-2-klein-base-9b",
-                ].includes(architecture)
-              ? "flux-2"
-              : architecture
+      mediaPipelineArchitecture(architecture) as MediaLocalModelArchitecture
     ] ?? []
   );
 };
@@ -247,16 +254,12 @@ const modelBaseIdentities = (model: MediaModelDescriptor): Set<string> =>
       .filter(Boolean),
   );
 
-const KREA_ARCHITECTURES = ["krea-2", "krea-2-raw", "krea-2-turbo"];
-
 export const mediaModelAcceptsAddonArchitecture = (
   model: MediaModelDescriptor,
   architecture: MediaLocalModelArchitecture,
 ): boolean =>
-  modelRuntimeArchitecture(model.architecture) ===
-    modelRuntimeArchitecture(architecture) ||
-  (KREA_ARCHITECTURES.includes(model.architecture ?? "") &&
-    KREA_ARCHITECTURES.includes(architecture));
+  model.architecture !== null &&
+  addonFamily(model.architecture) === addonFamily(architecture);
 
 export const inspectMediaModelAddonCompatibility = (
   model: MediaModelDescriptor,
@@ -302,13 +305,9 @@ export const inspectMediaModelAddonCompatibility = (
   if (
     addon.kind === "lora" &&
     addon.loraProfile !== null &&
-    [
-      "stable-diffusion-3",
-      "flux-2",
-      "krea-2",
-      "krea-2-raw",
-      "krea-2-turbo",
-    ].includes(modelRuntimeArchitecture(model.architecture) ?? "") &&
+    ["stable-diffusion-3", "flux-2", "krea-2"].includes(
+      addonFamily(model.architecture ?? ""),
+    ) &&
     addon.loraProfile.convolutionTargetCount > 0
   ) {
     return {

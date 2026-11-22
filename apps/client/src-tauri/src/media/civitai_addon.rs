@@ -1063,7 +1063,9 @@ mod tests {
             ("LORA", "Flux.1 D", "Standard", true),
             ("Checkpoint", "SDXL Lightning", "Standard", false),
             ("LORA", "SD 1.5 LCM", "Standard", false),
-            ("LORA", "Flux.2 Klein 4B-base", "Standard", false),
+            ("LORA", "Flux.2 Klein 4B-base", "Standard", true),
+            ("LORA", "ZImageTurbo", "Standard", true),
+            ("LORA", "SD 3.5 Medium", "Standard", false),
         ] {
             let model = serde_json::from_value(serde_json::json!({
                 "id": 1, "name": "Model", "type": model_type

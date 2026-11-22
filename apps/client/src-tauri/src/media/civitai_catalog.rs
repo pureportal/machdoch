@@ -129,15 +129,9 @@ pub(crate) struct CivitaiSearchRequest {
 
 fn search_url(request: &CivitaiSearchRequest) -> MediaResult<reqwest::Url> {
     if (!request.model_type.is_empty()
-        && !civitai_compatibility::MODEL_TYPES.contains(&request.model_type.as_str()))
+        && !civitai_compatibility::FILTER_TYPES.contains(&request.model_type.as_str()))
         || (!request.base_model.is_empty()
-            && !civitai_compatibility::MODEL_TYPES.iter().any(|model_type| {
-                (request.model_type.is_empty() || request.model_type == *model_type)
-                    && civitai_compatibility::supports_resource(
-                        model_type,
-                        Some(&request.base_model),
-                    )
-            }))
+            && !civitai_compatibility::supports_filter(&request.model_type, &request.base_model))
         || !["Highest Rated", "Most Downloaded", "Newest"].contains(&request.sort.as_str())
         || !["AllTime", "Year", "Month", "Week", "Day"].contains(&request.period.as_str())
     {
@@ -170,17 +164,12 @@ fn search_url(request: &CivitaiSearchRequest) -> MediaResult<reqwest::Url> {
             pairs.append_pair(key, value.trim());
         }
     }
-    for model_type in civitai_compatibility::MODEL_TYPES {
-        if request.model_type.is_empty() || request.model_type == *model_type {
-            pairs.append_pair("types", model_type);
-        }
+    for model_type in civitai_compatibility::upstream_types(&request.model_type) {
+        pairs.append_pair("types", model_type);
     }
     for (base_model, _) in civitai_compatibility::BASE_MODELS {
         if (request.base_model.is_empty() || request.base_model.eq_ignore_ascii_case(base_model))
-            && civitai_compatibility::MODEL_TYPES.iter().any(|model_type| {
-                (request.model_type.is_empty() || request.model_type == *model_type)
-                    && civitai_compatibility::supports_resource(model_type, Some(base_model))
-            })
+            && civitai_compatibility::supports_filter(&request.model_type, base_model)
         {
             pairs.append_pair("baseModels", base_model);
         }
@@ -351,7 +340,8 @@ pub(super) async fn search(request: &CivitaiSearchRequest) -> MediaResult<Civita
     }
     items.retain(|model| {
         !model.model_versions.is_empty()
-            && (request.model_type.is_empty() || model.model_type == request.model_type)
+            && (request.model_type.is_empty()
+                || civitai_compatibility::filter_type(&model.model_type) == request.model_type)
     });
     let next_cursor = response
         .pointer("/metadata/nextCursor")
@@ -540,7 +530,8 @@ mod tests {
             ("DoRA", "Wan Video 2.2 TI2V-5B"),
             ("LoCon", "LTXV"),
             ("LORA", "SDXL 1.0 LCM"),
-            ("LORA", "Flux.2 Klein 4B-base"),
+            ("LORA", "Flux.2 Klein 9B"),
+            ("LORA", "SD 3.5 Medium"),
         ] {
             let mut model = fixture_model();
             model.model_type = model_type.into();
@@ -605,11 +596,11 @@ mod tests {
         );
         assert_eq!(
             options.base_models,
-            vec!["Pony", "NoobAI", "Krea 2", "Wan Video 2.2 TI2V-5B"]
+            vec!["NoobAI", "Pony", "Krea 2", "Wan Video 2.2 TI2V-5B"]
         );
         assert_eq!(
             options.base_models_by_type["TextualInversion"],
-            vec!["Pony", "NoobAI"]
+            vec!["NoobAI", "Pony"]
         );
         assert!(options.base_models_by_type["Checkpoint"]
             .contains(&"Wan Video 2.2 TI2V-5B".to_string()));
@@ -673,6 +664,16 @@ mod tests {
             .collect();
         assert_eq!(types, civitai_compatibility::MODEL_TYPES);
         assert!(!url.query_pairs().any(|(_, value)| value == "Pony V7"));
+        request.model_type = "LORA".into();
+        let types: Vec<_> = search_url(&request)
+            .unwrap()
+            .query_pairs()
+            .filter(|(key, _)| key == "types")
+            .map(|(_, value)| value.into_owned())
+            .collect();
+        assert_eq!(types, vec!["LORA", "LoCon"]);
+        request.model_type = "LoCon".into();
+        assert!(search_url(&request).is_err());
         request.model_type = "VAE".into();
         assert!(search_url(&request).is_err());
         request.model_type = "TextualInversion".into();
@@ -711,16 +712,17 @@ mod tests {
         assert_eq!(
             options.base_models_by_type["Checkpoint"],
             vec![
-                "SD 1.5",
                 "SDXL 1.0",
                 "Illustrious",
                 "NoobAI",
                 "Pony",
+                "SD 1.5",
                 "Krea 2",
                 "Wan Video 2.2 TI2V-5B"
             ]
         );
-        for model_type in civitai_compatibility::MODEL_TYPES {
+        assert_eq!(options.model_types, civitai_compatibility::FILTER_TYPES);
+        for model_type in civitai_compatibility::FILTER_TYPES {
             let mut request: CivitaiSearchRequest = serde_json::from_value(serde_json::json!({
                 "query": "", "modelType": model_type, "baseModel": "", "sort": "Newest",
                 "period": "AllTime", "tag": "", "username": "", "contentMode": "normal",
@@ -926,19 +928,21 @@ pub(crate) struct CivitaiOptions {
 }
 
 fn supported_options(enums: CivitaiEnums) -> CivitaiOptions {
-    let model_types: Vec<_> = enums
-        .model_types
-        .into_iter()
-        .filter(|value| civitai_compatibility::MODEL_TYPES.contains(&value.as_str()))
+    let model_types: Vec<String> = civitai_compatibility::FILTER_TYPES
+        .iter()
+        .filter(|filter| enums.model_types.iter().any(|value| value == *filter))
+        .map(|filter| filter.to_string())
         .collect();
-    let base_models: Vec<_> = enums
-        .base_models
-        .into_iter()
-        .filter(|value| {
-            model_types
-                .iter()
-                .any(|model_type| civitai_compatibility::supports_resource(model_type, Some(value)))
+    let base_models: Vec<String> = civitai_compatibility::BASE_MODELS
+        .iter()
+        .map(|(base_model, _)| *base_model)
+        .filter(|base_model| {
+            enums.base_models.iter().any(|value| value == base_model)
+                && model_types
+                    .iter()
+                    .any(|model_type| civitai_compatibility::supports_filter(model_type, base_model))
         })
+        .map(str::to_string)
         .collect();
     let base_models_by_type = model_types
         .iter()
@@ -947,9 +951,7 @@ fn supported_options(enums: CivitaiEnums) -> CivitaiOptions {
                 model_type.clone(),
                 base_models
                     .iter()
-                    .filter(|base_model| {
-                        civitai_compatibility::supports_resource(model_type, Some(base_model))
-                    })
+                    .filter(|base_model| civitai_compatibility::supports_filter(model_type, base_model))
                     .cloned()
                     .collect(),
             )

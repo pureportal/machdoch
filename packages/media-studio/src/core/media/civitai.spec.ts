@@ -19,6 +19,15 @@ describe("Civitai resource selection", () => {
       civitaiImportArchitecture("stable-diffusion-xl", "stable-diffusion-xl"),
     ).toBe("stable-diffusion-xl");
     expect(civitaiImportArchitecture(null, "krea-2")).toBe("krea-2");
+    expect(
+      civitaiImportArchitecture("stable-diffusion-xl", "illustrious-xl"),
+    ).toBe("illustrious-xl");
+    expect(civitaiImportArchitecture("krea-2", "krea-2-turbo")).toBe(
+      "krea-2-turbo",
+    );
+    expect(civitaiImportArchitecture("z-image", "z-image-turbo")).toBe(
+      "z-image-turbo",
+    );
     expect(() => civitaiImportArchitecture("flux-1", "pony")).toThrow(
       "does not match",
     );

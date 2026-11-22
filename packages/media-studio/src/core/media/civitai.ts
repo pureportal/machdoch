@@ -10,6 +10,7 @@ import {
   normalizeMediaCivitaiSampleImageUrl,
   normalizeMediaTriggerWords,
 } from "./asset-metadata.js";
+import { mediaPipelineArchitecture } from "./model-addons.js";
 
 export interface CivitaiPreview {
   url: string;
@@ -91,9 +92,11 @@ export const civitaiImportArchitecture = (
   detected: MediaLocalModelArchitecture | null,
   suggested: MediaLocalModelArchitecture | null,
 ): MediaLocalModelArchitecture | null => {
-  const pipeline = (value: MediaLocalModelArchitecture) =>
-    value === "pony" ? "stable-diffusion-xl" : value;
-  if (detected && suggested && pipeline(detected) !== pipeline(suggested)) {
+  if (
+    detected &&
+    suggested &&
+    mediaPipelineArchitecture(detected) !== mediaPipelineArchitecture(suggested)
+  ) {
     throw new Error(
       "The downloaded model does not match Civitai's base model. Choose another version.",
     );
@@ -123,6 +126,25 @@ export interface CivitaiStorage {
   warning: string | null;
   blockingReason: string | null;
 }
+
+export const CIVITAI_SORTS = ["Most Downloaded", "Highest Rated", "Newest"];
+
+export const CIVITAI_PERIODS: ReadonlyArray<readonly [string, string]> = [
+  ["AllTime", "All time"],
+  ["Year", "Past year"],
+  ["Month", "Past month"],
+  ["Week", "Past week"],
+  ["Day", "Today"],
+];
+
+const CIVITAI_TYPE_LABELS: Readonly<Record<string, string>> = {
+  LORA: "LoRA",
+  LoCon: "LoRA",
+  TextualInversion: "Embedding",
+};
+
+export const civitaiTypeLabel = (modelType: string): string =>
+  CIVITAI_TYPE_LABELS[modelType] ?? modelType;
 
 export const CIVITAI_DEFAULT_SEARCH: CivitaiSearch = {
   query: "",

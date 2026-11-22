@@ -3,6 +3,7 @@ import { useState, useSyncExternalStore, type JSX } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { mediaImportQueue } from "../media-import-queue";
 import { Button } from "../../components/ui/button";
+import { ProgressBar } from "../../components/ui/progress-bar";
 import { civitaiFileSize } from "../../../../core/media/civitai.js";
 
 export const MediaImportJobs = ({
@@ -22,10 +23,11 @@ export const MediaImportJobs = ({
     : jobs;
   const activeCount = visibleJobs.filter((job) => ["queued", "downloading", "importing"].includes(job.status)).length;
   const failedCount = visibleJobs.filter((job) => job.status === "failed").length;
+  if (!visibleJobs.length) return null;
   return (
-    <Popover open={open && visibleJobs.length > 0} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" disabled={!visibleJobs.length} aria-label={`Downloads and imports, ${activeCount} active${failedCount ? `, ${failedCount} failed` : ""}`}>
+        <Button type="button" variant="outline" size="sm" aria-label={`Downloads and imports, ${activeCount} active${failedCount ? `, ${failedCount} failed` : ""}`}>
           {activeCount ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           Downloads
           <span className={failedCount ? "text-rose-300 tabular-nums" : "tabular-nums"}>{activeCount || failedCount || visibleJobs.length}</span>
@@ -97,11 +99,10 @@ export const MediaImportJobs = ({
           ) : null}
           {job.status === "downloading" && Boolean(job.total) ? (
             <div className="w-full space-y-1">
-              <progress
-                aria-label={`Download ${job.label}`}
+              <ProgressBar
+                label={`Download ${job.label}`}
                 value={job.received ?? 0}
-                max={job.total}
-                className="h-1.5 w-full accent-sky-400"
+                max={job.total!}
               />
               <span className="text-slate-400">
                 {civitaiFileSize(job.received ?? 0)} /{" "}

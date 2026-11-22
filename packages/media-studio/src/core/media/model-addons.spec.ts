@@ -367,6 +367,33 @@ describe("media model add-on compatibility", () => {
     },
   );
 
+  it.each([
+    ["flux-1-dev", "flux-1"],
+    ["flux-1-schnell", "flux-1"],
+    ["flux-2-klein-base-4b", "flux-2"],
+    ["z-image-turbo", "z-image"],
+    ["krea-2-turbo", "krea-2"],
+    ["illustrious-xl", "stable-diffusion-xl"],
+  ] as const)(
+    "lets %s models use %s family add-ons",
+    (modelArchitecture, addonArchitecture) => {
+      const model = {
+        ...fluxModel,
+        architecture: modelArchitecture,
+        addonCapabilities: getMediaModelAddonCapabilities(
+          "local-diffusers",
+          modelArchitecture,
+        ),
+      };
+      expect(
+        inspectMediaModelAddonCompatibility(model, {
+          ...addon,
+          architecture: addonArchitecture,
+        }).status,
+      ).toBe("compatible");
+    },
+  );
+
   it("accepts only a high-confidence tensor match for the selected architecture", () => {
     expect(inspectMediaModelAddonCompatibility(fluxModel, addon).status).toBe(
       "compatible",

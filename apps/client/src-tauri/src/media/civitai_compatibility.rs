@@ -2,34 +2,55 @@ use super::model_addon;
 
 pub(super) const MODEL_TYPES: &[&str] = &["Checkpoint", "LORA", "LoCon", "TextualInversion"];
 
+pub(super) const FILTER_TYPES: &[&str] = &["Checkpoint", "LORA", "TextualInversion"];
+
 pub(super) const BASE_MODELS: &[(&str, &str)] = &[
-    ("SD 1.4", "stable-diffusion-1"),
-    ("SD 1.5", "stable-diffusion-1"),
-    ("SD 2.0", "stable-diffusion-2"),
-    ("SD 2.0 768", "stable-diffusion-2"),
-    ("SD 2.1", "stable-diffusion-2"),
-    ("SD 2.1 768", "stable-diffusion-2"),
-    ("SDXL 0.9", "stable-diffusion-xl"),
     ("SDXL 1.0", "stable-diffusion-xl"),
+    ("SDXL 0.9", "stable-diffusion-xl"),
     ("Illustrious", "stable-diffusion-xl"),
     ("NoobAI", "stable-diffusion-xl"),
     ("Pony", "pony"),
-    ("SD 3", "stable-diffusion-3"),
-    ("SD 3.5", "stable-diffusion-3"),
+    ("SD 1.5", "stable-diffusion-1"),
+    ("SD 1.4", "stable-diffusion-1"),
+    ("SD 2.1", "stable-diffusion-2"),
+    ("SD 2.0", "stable-diffusion-2"),
     ("SD 3.5 Large", "stable-diffusion-3"),
-    ("SD 3.5 Medium", "stable-diffusion-3"),
-    ("Flux.1 S", "flux-1"),
+    ("SD 3.5 Large Turbo", "stable-diffusion-3"),
+    ("SD 3.5", "stable-diffusion-3"),
     ("Flux.1 D", "flux-1"),
+    ("Flux.1 S", "flux-1"),
     ("Flux.1 Krea", "flux-1"),
     ("Flux.2 Klein 4B", "flux-2"),
+    ("Flux.2 Klein 4B-base", "flux-2"),
+    ("ZImageTurbo", "z-image-turbo"),
+    ("ZImageBase", "z-image"),
     ("Krea 2", "krea-2"),
-    ("Krea 2 Raw", "krea-2-raw"),
     ("Krea 2 Turbo", "krea-2-turbo"),
-    ("Qwen 2", "qwen-image-2.1"),
     ("Qwen 2.1", "qwen-image-2.1"),
+    ("Qwen 2", "qwen-image-2.1"),
     ("Wan Video 2.2 TI2V-5B", "wan-2.2-ti2v"),
+    ("Wan Video 1.3B t2v", "wan-2.1-t2v-1.3b"),
     ("LTXV", "ltx-video"),
 ];
+
+pub(super) fn filter_type(model_type: &str) -> &str {
+    if model_type == "LoCon" {
+        "LORA"
+    } else {
+        model_type
+    }
+}
+
+pub(super) fn upstream_types(filter: &str) -> impl Iterator<Item = &'static str> + '_ {
+    MODEL_TYPES
+        .iter()
+        .copied()
+        .filter(move |model_type| filter.is_empty() || filter_type(model_type) == filter)
+}
+
+pub(super) fn supports_filter(filter: &str, base_model: &str) -> bool {
+    upstream_types(filter).any(|model_type| supports_resource(model_type, Some(base_model)))
+}
 
 pub(super) fn kind_for_model_type(model_type: &str) -> Option<&'static str> {
     match model_type {
@@ -62,13 +83,12 @@ pub(super) fn supports_resource(model_type: &str, base_model: Option<&str>) -> b
                 | "stable-diffusion-xl"
                 | "pony"
                 | "krea-2"
-                | "krea-2-raw"
                 | "krea-2-turbo"
                 | "qwen-image-2.1"
                 | "wan-2.2-ti2v"
         );
     }
-    if matches!(architecture, "wan-2.2-ti2v" | "ltx-video") {
+    if matches!(architecture, "wan-2.2-ti2v" | "wan-2.1-t2v-1.3b" | "ltx-video") {
         return model_type == "LORA";
     }
     model_addon::capabilities_for_model("local-diffusers", Some(architecture))
@@ -290,7 +310,12 @@ mod tests {
             ("Qwen 2", "qwen-image-2.1"),
             ("SD 3.5 Large", "stable-diffusion-3"),
             ("Wan Video 2.2 TI2V-5B", "wan-2.2-ti2v"),
+            ("Wan Video 1.3B t2v", "wan-2.1-t2v-1.3b"),
             ("LTXV", "ltx-video"),
+            ("ZImageTurbo", "z-image-turbo"),
+            ("ZImageBase", "z-image"),
+            ("Flux.2 Klein 4B-base", "flux-2"),
+            ("SD 3.5 Large Turbo", "stable-diffusion-3"),
         ] {
             assert_eq!(architecture_for_base_model(Some(name)), Some(architecture));
         }
@@ -303,6 +328,10 @@ mod tests {
             "LTXV2",
             "Hunyuan Video",
             "Wan Video 2.2 I2V-A14B",
+            "SD 3",
+            "SD 3.5 Medium",
+            "SD 2.1 768",
+            "Krea 2 Raw",
             "Other",
         ] {
             assert_eq!(architecture_for_base_model(Some(name)), None, "{name}");
@@ -359,17 +388,17 @@ mod tests {
         }
         for base in [
             "SD 2.0",
-            "SD 2.0 768",
             "SD 2.1",
-            "SD 2.1 768",
-            "SD 3",
             "SD 3.5",
             "SD 3.5 Large",
-            "SD 3.5 Medium",
+            "SD 3.5 Large Turbo",
             "Flux.1 S",
             "Flux.1 D",
             "Flux.1 Krea",
             "Flux.2 Klein 4B",
+            "Flux.2 Klein 4B-base",
+            "ZImageTurbo",
+            "ZImageBase",
             "LTXV",
         ] {
             assert!(!supports_resource("Checkpoint", Some(base)), "{base}");
@@ -379,7 +408,7 @@ mod tests {
 
     #[test]
     fn video_runners_accept_standard_loras_only() {
-        for base in ["Wan Video 2.2 TI2V-5B", "LTXV"] {
+        for base in ["Wan Video 2.2 TI2V-5B", "Wan Video 1.3B t2v", "LTXV"] {
             assert!(supports_resource("LORA", Some(base)), "{base}");
             for model_type in ["LoCon", "DoRA", "TextualInversion"] {
                 assert!(
@@ -400,8 +429,9 @@ mod tests {
             "SDXL Hyper",
             "SDXL Turbo",
             "SDXL Distilled",
-            "SD 3.5 Large Turbo",
-            "Flux.2 Klein 4B-base",
+            "SD 3",
+            "SD 3.5 Medium",
+            "Krea 2 Raw",
             "Wan Video 2.2 I2V-A14B",
             "Wan Video 2.2 T2V-A14B",
             "Wan-Alpha",
@@ -413,6 +443,16 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn locon_resources_share_the_lora_filter() {
+        assert_eq!(filter_type("LoCon"), "LORA");
+        assert_eq!(upstream_types("LORA").collect::<Vec<_>>(), vec!["LORA", "LoCon"]);
+        assert_eq!(upstream_types("").count(), MODEL_TYPES.len());
+        assert!(supports_filter("LORA", "SDXL 1.0"));
+        assert!(supports_filter("LORA", "LTXV"));
+        assert!(!supports_filter("Checkpoint", "LTXV"));
     }
 
     #[test]
