@@ -121,11 +121,6 @@ export type TaskThinkingTimelineEvent = z.infer<
 
 const liveText = (max: number) => z.string().max(max);
 const liveCount = z.number().int().nonnegative().safe();
-export const agentLiveProviderSchema = z.enum([
-  "claude-cli",
-  "codex-cli",
-  "copilot-cli",
-]);
 export const agentLiveCapabilitySchema = z.enum([
   "steer",
   "interrupt",
@@ -210,8 +205,8 @@ export const agentLiveNoticeSchema = z.strictObject({
  * carries the full snapshot, so consumers replace rather than merge it.
  */
 export const agentLiveStateSchema = z.strictObject({
-  provider: agentLiveProviderSchema,
-  transport: z.enum(["stream-json", "app-server", "sdk-server", "exec"]),
+  provider: modelProviderSchema,
+  transport: z.enum(["stream-json", "app-server", "sdk-server", "exec", "api"]),
   capabilities: z.array(agentLiveCapabilitySchema).max(8),
   model: liveText(200).optional(),
   fastMode: z.boolean().optional(),

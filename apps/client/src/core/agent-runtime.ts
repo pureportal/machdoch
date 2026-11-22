@@ -33,7 +33,12 @@ import {
   type ExecutorCycleOutcome,
   type ModelDrivenExecutionParams,
   type TaskFinalResponseStatus,
+  resolveQuestionTimeoutMs,
 } from "./_helpers/agent-runtime-types.js";
+import {
+  createAskUserToolSession,
+  type AskUserToolSession,
+} from "./_helpers/ask-user-tool.js";
 import {
   createToolDefinitions,
   executeToolCall,
@@ -2458,6 +2463,47 @@ const shouldAttemptModelExecution = (
   );
 };
 
+const createNativeAskUserSession = (
+  params: ModelDrivenExecutionParams,
+  config: RuntimeConfig,
+): AskUserToolSession | undefined => {
+  const onStateChange = params.onStateChange;
+  const provider = config.provider;
+  if (
+    !onStateChange ||
+    provider === "unconfigured" ||
+    params.conversationContext?.agentFeatures?.liveControl !== true ||
+    params.conversationContext.poseScene ||
+    params.resultProtocol
+  ) {
+    return undefined;
+  }
+  return createAskUserToolSession({
+    provider,
+    model: config.model,
+    questionTimeoutMs: resolveQuestionTimeoutMs(config),
+    publish: (extras) => {
+      void Promise.resolve(
+        onStateChange({
+          task: params.task,
+          mode: config.mode,
+          state: "executing",
+          message:
+            extras.agentLive?.question?.status === "pending"
+              ? "Waiting for your answer."
+              : "Continuing the task.",
+          executedTools: [],
+          outputSections: [],
+          cancellable: true,
+          ...extras,
+        }),
+      ).catch((error: unknown) => {
+        console.error("Could not publish the agent question", error);
+      });
+    },
+  });
+};
+
 export const maybeExecuteModelDrivenTask = async (
   params: ModelDrivenExecutionParams,
 ): Promise<TaskExecutionResult | undefined> => {
@@ -2618,6 +2664,12 @@ export const maybeExecuteModelDrivenTask = async (
           : {}),
       };
     }
+    const askUser = createNativeAskUserSession(params, executionConfig);
+    const additionalToolDefinitions = [
+      ...(params.additionalToolDefinitions ?? []),
+      ...(parallelTool ? [parallelTool.definition] : []),
+      ...(askUser ? [askUser.definition] : []),
+    ];
     const result = await runModelDrivenLoop(
       params.task,
       executionConfig,
@@ -2627,9 +2679,7 @@ export const maybeExecuteModelDrivenTask = async (
       params.imageInputs,
       params.modelAdapter,
       params.monitorModelAdapter,
-      parallelTool
-        ? [...(params.additionalToolDefinitions ?? []), parallelTool.definition]
-        : params.additionalToolDefinitions,
+      additionalToolDefinitions,
       params.systemPromptSections,
       params.structuredOutput,
       params.resultProtocol,
@@ -2640,7 +2690,7 @@ export const maybeExecuteModelDrivenTask = async (
       params.runId ?? `task-${randomUUID()}`,
       instructionPlan,
       instructionReceipts,
-    );
+    ).finally(() => askUser?.close());
     const parallelWorkerFailure = parallelTool?.hasWorkerFailure() ?? false;
     const parallelCompletionBlocker = parallelTool?.getCompletionBlocker();
     return {

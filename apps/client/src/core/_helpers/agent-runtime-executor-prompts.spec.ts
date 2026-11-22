@@ -192,6 +192,26 @@ describe("createExecutorSystemPrompt", () => {
     expect(prompt).toContain("never as proof of attribution");
   });
 
+  it("asks the user instead of blocking when ask_user is available", () => {
+    const withAskUser = createExecutorSystemPrompt(
+      createRuntimeConfig(),
+      createTaskContext(),
+      [createTool("ask_user")],
+      createConversationContext(),
+    );
+    const withoutAskUser = createExecutorSystemPrompt(
+      createRuntimeConfig(),
+      createTaskContext(),
+      [],
+      createConversationContext(),
+    );
+
+    expect(withAskUser).toContain("call `ask_user` instead of guessing");
+    expect(withAskUser).toContain("If the result is `unanswered`");
+    expect(withoutAskUser).not.toContain("ask_user");
+    expect(withoutAskUser).toContain("call `submit_final_response` with status `blocked`");
+  });
+
   it("adds Machdoch state guidance only when the state tools are available", () => {
     const createPrompt = (toolName: string) =>
       createExecutorSystemPrompt(
