@@ -204,6 +204,7 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
             "quickVoiceShortcut",
             "quickVoiceSilenceSeconds",
             "quickVoiceMaxMessages",
+            "shareUserActivity",
         ],
     );
     merge_known_object_members(
@@ -222,6 +223,7 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
             "goalVerificationMinutes",
             "goalBackgroundWaitMinutes",
             "goalUsageWaitMinutes",
+            "questionTimeoutMinutes",
         ],
     );
     merge_known_object_members(

@@ -2378,6 +2378,47 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     },
   );
 
+  it("tells the CLI agent when the message was queued and the user was last active", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot);
+    const now = Date.now();
+    params.preparedConversationContext = {
+      ...params.preparedConversationContext,
+      wasQueued: true,
+      queuedAt: now - 25 * 60_000,
+      userLastActiveAt: now - 90 * 60_000,
+    };
+    params.conversationContext = {
+      ...params.conversationContext,
+      history: params.conversationContext?.history ?? [],
+      agentFeatures: { liveControl: true },
+    };
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+
+    expect(call.child.stdinText).toContain(
+      `Queued before delivery: yes (queued at ${new Date(now - 25 * 60_000).toISOString()}, 25 minutes before delivery)`,
+    );
+    expect(call.child.stdinText).toContain(
+      `User last active on this PC: ${new Date(now - 90 * 60_000).toISOString()}, 90 minutes before delivery`,
+    );
+    const instructions = await readRunScopedSystemInstructions(
+      "codex-cli",
+      call,
+    );
+    expect(instructions).toContain("Ask the user only for a decision");
+    expect(instructions).toContain("A question waits up to 10 minutes");
+    expect(instructions).toContain("If they have been away for a while");
+    expect(instructions).not.toContain("Do not ask the user for permission or clarification");
+
+    writeStructuredAnswer(call, "Delegated answer.");
+    call.child.emit("close", 0, null);
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
   it.each([
     ["codex-cli", "MACHDOCH_CODEX_CLI_PATH", "--image"],
     ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH", "--attachment"],

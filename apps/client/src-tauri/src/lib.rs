@@ -30,6 +30,7 @@ mod shell_state;
 mod sleep_inhibition;
 mod ui_control;
 mod ui_operation;
+mod user_activity;
 mod voice;
 mod speech;
 mod speech_error;

@@ -40,6 +40,8 @@ export const createInteractiveAgentSession = (
     captureEvidence: boolean;
     unattended: boolean;
     backgroundWaitMs?: number | undefined;
+    /** How long a question waits for the user; undefined waits until answered. */
+    questionTimeoutMs?: number | undefined;
     /** Reports the provider's id for this conversation once it has one. */
     onProviderSessionId?: ((sessionId: string) => void) | undefined;
   },

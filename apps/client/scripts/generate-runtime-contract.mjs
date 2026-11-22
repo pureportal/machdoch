@@ -304,6 +304,7 @@ export interface RuntimeAgentLimitOverrides {
   goalVerificationMinutes?: number;
   goalBackgroundWaitMinutes?: number;
   goalUsageWaitMinutes?: number;
+  questionTimeoutMinutes?: number;
 }
 
 export interface RuntimeAgentLimits {
@@ -314,6 +315,7 @@ export interface RuntimeAgentLimits {
   goalVerificationMinutes?: number;
   goalBackgroundWaitMinutes?: number;
   goalUsageWaitMinutes?: number;
+  questionTimeoutMinutes?: number;
 }
 
 export interface WorkspaceConfigFile {
@@ -534,6 +536,7 @@ export interface UserAgentLimitsSettings {
   goalVerificationMinutes: number;
   goalBackgroundWaitMinutes: number;
   goalUsageWaitMinutes: number;
+  questionTimeoutMinutes: number;
 }
 
 export interface UserWorkspaceRunSettings {
@@ -576,6 +579,7 @@ export interface UserDesktopSettings {
   quickVoiceShortcut: string;
   quickVoiceSilenceSeconds: number;
   quickVoiceMaxMessages: number;
+  shareUserActivity: boolean;
 }
 `;
 

@@ -5,6 +5,7 @@ import { loadWorkspaceConfigFile } from "../../core/config.js";
 import { withCooperativeFileLock } from "../../core/_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../../core/_helpers/write-file-atomically.helper.js";
 import {
+  AGENT_LIMIT_BOUNDS,
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
   DEFAULT_USER_DESKTOP_SETTINGS,
   REASONING_MODES,
@@ -118,6 +119,14 @@ export const ADDITIONAL_CONFIG_SETTINGS: readonly AdditionalSetting[] = [
     DEFAULT_USER_DESKTOP_SETTINGS.adaptiveControllerEnabled,
   ),
   booleanSetting(
+    "agent.share-user-activity",
+    "Share last PC activity",
+    "Session defaults",
+    "user",
+    ["desktop", "shareUserActivity"],
+    DEFAULT_USER_DESKTOP_SETTINGS.shareUserActivity,
+  ),
+  booleanSetting(
     "agent-limits.automatic-retries",
     "Automatic retries",
     "Agent",
@@ -146,6 +155,19 @@ export const ADDITIONAL_CONFIG_SETTINGS: readonly AdditionalSetting[] = [
     ["agentLimits", "stopQueueOnFailure"],
     DEFAULT_USER_AGENT_LIMITS_SETTINGS.stopQueueOnFailure,
   ),
+  {
+    setting: "agent-limits.question-timeout-minutes",
+    label: "Question timeout minutes",
+    category: "Agent",
+    scope: "user",
+    path: ["agentLimits", "questionTimeoutMinutes"],
+    kind: "integer",
+    defaultValue: DEFAULT_USER_AGENT_LIMITS_SETTINGS.questionTimeoutMinutes,
+    min: AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.min,
+    max: AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.max,
+    description: "Minutes an agent question waits for an answer; 0 waits until answered",
+    acceptedValues: `${AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.min}..${AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.max}`,
+  },
   booleanSetting(
     "memory.workspace-default",
     "Workspace memory",

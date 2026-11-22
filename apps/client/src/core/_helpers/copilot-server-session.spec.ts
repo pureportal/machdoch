@@ -1,5 +1,5 @@
 import type { AgentLiveState } from "@machdoch/fleet-protocol/task-thinking";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ContentLengthFrameReader,
   CopilotServerSession,
@@ -10,7 +10,10 @@ type Message = Record<string, unknown> & { id?: number | string; method?: string
 
 const SESSION_ID = "session-1";
 
-const createHarness = (input: Partial<ConstructorParameters<typeof CopilotServerSession>[0]> = {}) => {
+const createHarness = (
+  input: Partial<ConstructorParameters<typeof CopilotServerSession>[0]> = {},
+  questionTimeoutMs?: number,
+) => {
   const sent: Message[] = [];
   const reader = new ContentLengthFrameReader();
   const states: AgentLiveState[] = [];
@@ -30,7 +33,7 @@ const createHarness = (input: Partial<ConstructorParameters<typeof CopilotServer
       },
     },
     (state) => states.push(state),
-    { model: "claude-haiku-5.5", captureEvidence: false },
+    { model: "claude-haiku-5.5", captureEvidence: false, questionTimeoutMs },
   );
   const receive = (message: Record<string, unknown>) =>
     session.push(encodeContentLengthFrame({ jsonrpc: "2.0", ...message }));
@@ -148,6 +151,31 @@ describe("CopilotServerSession", () => {
     expect(harness.sent.find((message) => message.id === 7)).toMatchObject({ result: { answer: "Coffee", wasFreeform: false } });
     expect(harness.session.live.getQuestion()?.status).toBe("answered");
     expect(() => harness.session.controls.answer?.(question!.id, { answer: "Tea" })).toThrow("no longer waiting");
+  });
+
+  it("stops waiting for an answer once the question times out", () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({}, 2 * 60_000);
+      disposeAll.push(() => harness.session.dispose());
+      harness.open();
+      harness.receive({ id: 9, method: "userInput.request", params: { question: "Tea or coffee?", choices: ["Tea"] } });
+      const question = harness.session.live.getQuestion();
+
+      harness.session.controls.answer?.(question!.id, { answer: "Tea" });
+      vi.advanceTimersByTime(2 * 60_000);
+      expect(harness.sent.filter((message) => message.id === 9)).toHaveLength(1);
+      expect(harness.session.live.getQuestion()?.status).toBe("answered");
+
+      harness.receive({ id: 10, method: "userInput.request", params: { question: "Milk?", choices: [] } });
+      vi.advanceTimersByTime(2 * 60_000);
+      expect(harness.sent.find((message) => message.id === 10)).toMatchObject({
+        result: { answer: expect.stringContaining("Decide on your own"), wasFreeform: true },
+      });
+      expect(harness.session.live.getQuestion()?.status).toBe("expired");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("marks typed answers as freeform", () => {

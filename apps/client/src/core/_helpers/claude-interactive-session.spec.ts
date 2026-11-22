@@ -12,6 +12,7 @@ const createHarness = (
   unattended = false,
   imageInputs: AgentModelImageInput[] = [],
   turnLimitContinuations?: number | null,
+  questionTimeoutMs?: number,
 ) => {
   const sent: Message[] = [];
   let closed = false;
@@ -33,7 +34,7 @@ const createHarness = (
       },
     },
     () => undefined,
-    { model: "opus", captureEvidence: false, fastMode, unattended },
+    { model: "opus", captureEvidence: false, fastMode, unattended, questionTimeoutMs },
   );
   const receive = (event: Record<string, unknown>) =>
     session.push(`${JSON.stringify(event)}\n`);
@@ -295,6 +296,45 @@ describe("ClaudeInteractiveSession", () => {
         },
       },
     });
+  });
+
+  it("lets Claude decide on its own when a question times out", () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness(false, false, [], undefined, 5 * 60_000);
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive({
+        type: "control_request",
+        request_id: "req-4",
+        request: {
+          subtype: "can_use_tool",
+          tool_name: "AskUserQuestion",
+          input: { questions: [{ question: "Which DB?" }] },
+        },
+      });
+      expect(harness.session.live.getQuestion()).toMatchObject({
+        status: "pending",
+        expiresAt: Date.now() + 5 * 60_000,
+      });
+
+      vi.advanceTimersByTime(5 * 60_000);
+      expect(harness.sent.at(-1)).toMatchObject({
+        response: {
+          request_id: "req-4",
+          response: {
+            behavior: "deny",
+            message: expect.stringContaining("did not answer within 5 minutes"),
+          },
+        },
+      });
+      expect(harness.session.live.getQuestion()?.status).toBe("expired");
+      expect(() =>
+        harness.session.controls.answer?.(harness.session.live.getQuestion()!.id, { q1: "SQLite" }),
+      ).toThrow("no longer waiting");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("lets ordinary tool permission requests through", () => {

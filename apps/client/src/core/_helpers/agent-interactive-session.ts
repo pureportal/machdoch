@@ -134,6 +134,35 @@ export const toEpochMs = (value: unknown): number | undefined => {
 export const UNATTENDED_ANSWER =
   "Nobody can answer during this run. Choose the most reasonable option, note the assumption, and continue.";
 
+/**
+ * Answers a provider's question for the user once it has waited the
+ * configured time, so an unanswered question does not hold the run.
+ */
+export class QuestionTimeout {
+  private timer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(private readonly timeoutMs: number | undefined) {}
+
+  /** Returns when the question expires, or undefined when it waits until answered. */
+  start(onExpire: (answer: string) => void): number | undefined {
+    this.clear();
+    if (this.timeoutMs === undefined) return undefined;
+    const minutes = Math.round(this.timeoutMs / 60_000);
+    const answer = `The user did not answer within ${minutes} minute${minutes === 1 ? "" : "s"}. Decide on your own: choose the most reasonable option, note the assumption, and continue.`;
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      onExpire(answer);
+    }, this.timeoutMs);
+    this.timer.unref();
+    return Date.now() + this.timeoutMs;
+  }
+
+  clear(): void {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+  }
+}
+
 export type RpcId = string | number;
 
 export type JsonRpcIncoming<Meta> =
@@ -206,10 +235,10 @@ export const turnFinishedError = (): AgentControlRequestError =>
 export const staleQuestionError = (): AgentControlRequestError =>
   new AgentControlRequestError("This question is no longer waiting for an answer.");
 
-/** Marks the pending question answered or cancelled in the live state. */
+/** Marks the pending question answered, cancelled or expired in the live state. */
 export const settleLiveQuestion = (
   live: AgentLiveTracker,
-  status: "answered" | "cancelled",
+  status: "answered" | "cancelled" | "expired",
   answers?: Record<string, string>,
 ): void => {
   const question = live.getQuestion();

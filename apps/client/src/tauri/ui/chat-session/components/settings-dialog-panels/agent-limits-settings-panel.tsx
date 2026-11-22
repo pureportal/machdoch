@@ -130,6 +130,12 @@ export const normalizeAgentLimitsDraft = (
       AGENT_LIMIT_BOUNDS.goalUsageWaitMinutes.max,
       DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalUsageWaitMinutes,
     ),
+    questionTimeoutMinutes: clampIntegerSetting(
+      settings.questionTimeoutMinutes,
+      AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.min,
+      AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.questionTimeoutMinutes,
+    ),
   };
 };
 
@@ -148,7 +154,8 @@ export const hasAgentLimitsDraftChanges = (
     left.goalStalledPasses !== right.goalStalledPasses ||
     left.goalVerificationMinutes !== right.goalVerificationMinutes ||
     left.goalBackgroundWaitMinutes !== right.goalBackgroundWaitMinutes ||
-    left.goalUsageWaitMinutes !== right.goalUsageWaitMinutes
+    left.goalUsageWaitMinutes !== right.goalUsageWaitMinutes ||
+    left.questionTimeoutMinutes !== right.questionTimeoutMinutes
   );
 };
 
@@ -571,6 +578,23 @@ export const AgentLimitsSettingsPanel = ({
             onChange={(value) =>
               setDraft({ ...draft, stopQueueOnFailure: value === "on" })
             }
+          />
+        </SettingPanel>
+        <SettingPanel
+          label="Question timeout minutes"
+          detail="0 waits until you answer."
+        >
+          <SettingsNumberInput
+            aria-label="Question timeout minutes"
+            min={AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.min}
+            max={AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.max}
+            step="1"
+            value={draft.questionTimeoutMinutes}
+            disabled={setup.saving}
+            onValueChange={(questionTimeoutMinutes) =>
+              setDraft({ ...draft, questionTimeoutMinutes })
+            }
+            className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
           />
         </SettingPanel>
         <SettingPanel

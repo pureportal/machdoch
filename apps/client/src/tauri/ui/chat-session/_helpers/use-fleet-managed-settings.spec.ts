@@ -202,6 +202,7 @@ const limits = {
   goalVerificationMinutes: 30,
   goalBackgroundWaitMinutes: 120,
   goalUsageWaitMinutes: 360,
+  questionTimeoutMinutes: 10,
 };
 
 const instruction = (

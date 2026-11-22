@@ -559,4 +559,39 @@ describe("createExecutorSystemPrompt", () => {
       ),
     ).toContain("<queued_message>false</queued_message>");
   });
+
+  it("tells the agent when the message was queued and the user was last active", () => {
+    vi.useFakeTimers({ now: Date.UTC(2026, 10, 22, 12, 30) });
+    try {
+      const config = createRuntimeConfig();
+      const taskContext = createTaskContext();
+      const prompt = createExecutorUserPrompt(
+        config,
+        taskContext.task,
+        taskContext,
+        createConversationContext({
+          wasQueued: true,
+          queuedAt: Date.UTC(2026, 10, 22, 12, 18),
+          userLastActiveAt: Date.UTC(2026, 10, 22, 9, 30),
+        }),
+      );
+
+      expect(prompt).toContain(
+        "<queued_at>2026-11-22T12:18:00.000Z, 12 minutes before delivery</queued_at>",
+      );
+      expect(prompt).toContain(
+        "<user_last_active_on_pc>2026-11-22T09:30:00.000Z, 3 hours before delivery</user_last_active_on_pc>",
+      );
+      expect(
+        createExecutorUserPrompt(
+          config,
+          taskContext.task,
+          taskContext,
+          createConversationContext(),
+        ),
+      ).not.toMatch(/<queued_at>|<user_last_active_on_pc>/u);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

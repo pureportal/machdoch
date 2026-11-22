@@ -362,6 +362,7 @@ pub(super) fn normalize_user_desktop_settings_input(
         quick_voice_max_messages: clamp_quick_voice_message_limit(
             settings.quick_voice_max_messages,
         ),
+        share_user_activity: settings.share_user_activity,
     })
 }
 

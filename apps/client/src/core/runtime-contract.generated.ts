@@ -99,7 +99,8 @@ export const DEFAULT_USER_AGENT_LIMITS_SETTINGS = {
   "goalStalledPasses": 3,
   "goalVerificationMinutes": 30,
   "goalBackgroundWaitMinutes": 120,
-  "goalUsageWaitMinutes": 360
+  "goalUsageWaitMinutes": 360,
+  "questionTimeoutMinutes": 10
 } as const satisfies UserAgentLimitsSettings;
 export const AGENT_LIMIT_BOUNDS = {
   "retryAttempts": {
@@ -133,6 +134,10 @@ export const AGENT_LIMIT_BOUNDS = {
   "goalUsageWaitMinutes": {
     "min": 0,
     "max": 10080
+  },
+  "questionTimeoutMinutes": {
+    "min": 0,
+    "max": 1440
   }
 } as const;
 export const DEFAULT_USER_WORKSPACE_RUN_SETTINGS = {
@@ -183,7 +188,8 @@ export const DEFAULT_USER_DESKTOP_SETTINGS = {
   "quickVoiceEnabled": true,
   "quickVoiceShortcut": "CommandOrControl+Alt+V",
   "quickVoiceSilenceSeconds": 1.8,
-  "quickVoiceMaxMessages": 50
+  "quickVoiceMaxMessages": 50,
+  "shareUserActivity": false
 } as const satisfies UserDesktopSettings;
 export const DEFAULT_ANSWER_LANGUAGE = "English";
 export const DESKTOP_SETTING_BOUNDS = {
@@ -286,6 +292,7 @@ export interface RuntimeAgentLimitOverrides {
   goalVerificationMinutes?: number;
   goalBackgroundWaitMinutes?: number;
   goalUsageWaitMinutes?: number;
+  questionTimeoutMinutes?: number;
 }
 
 export interface RuntimeAgentLimits {
@@ -296,6 +303,7 @@ export interface RuntimeAgentLimits {
   goalVerificationMinutes?: number;
   goalBackgroundWaitMinutes?: number;
   goalUsageWaitMinutes?: number;
+  questionTimeoutMinutes?: number;
 }
 
 export interface WorkspaceConfigFile {
@@ -516,6 +524,7 @@ export interface UserAgentLimitsSettings {
   goalVerificationMinutes: number;
   goalBackgroundWaitMinutes: number;
   goalUsageWaitMinutes: number;
+  questionTimeoutMinutes: number;
 }
 
 export interface UserWorkspaceRunSettings {
@@ -558,4 +567,5 @@ export interface UserDesktopSettings {
   quickVoiceShortcut: string;
   quickVoiceSilenceSeconds: number;
   quickVoiceMaxMessages: number;
+  shareUserActivity: boolean;
 }

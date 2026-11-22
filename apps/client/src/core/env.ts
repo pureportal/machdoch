@@ -175,6 +175,11 @@ const normalizeUserAgentLimitsSettings = (
       DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalUsageWaitMinutes,
       AGENT_LIMIT_BOUNDS.goalUsageWaitMinutes,
     ),
+    questionTimeoutMinutes: normalizeBoundedIntegerSetting(
+      settings?.questionTimeoutMinutes,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.questionTimeoutMinutes,
+      AGENT_LIMIT_BOUNDS.questionTimeoutMinutes,
+    ),
   };
 };
 

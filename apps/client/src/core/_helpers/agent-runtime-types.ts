@@ -43,12 +43,13 @@ const normalizePositiveIntegerLimit = (
   return Math.max(1, Math.trunc(value));
 };
 
-const GOAL_LIMIT_KEYS = [
+const CARRIED_LIMIT_KEYS = [
   "goalPasses",
   "goalStalledPasses",
   "goalVerificationMinutes",
   "goalBackgroundWaitMinutes",
   "goalUsageWaitMinutes",
+  "questionTimeoutMinutes",
 ] as const;
 
 export const createDefaultAgentLimits = (): RuntimeAgentLimits => ({
@@ -64,18 +65,19 @@ export const normalizeAgentLimitOverrides = (
     return fallback;
   }
 
-  const goalSettings: Partial<Record<(typeof GOAL_LIMIT_KEYS)[number], number>> =
-    {};
-  for (const key of GOAL_LIMIT_KEYS) {
+  const carriedSettings: Partial<
+    Record<(typeof CARRIED_LIMIT_KEYS)[number], number>
+  > = {};
+  for (const key of CARRIED_LIMIT_KEYS) {
     const value = overrides[key] ?? fallback[key];
-    if (typeof value === "number") goalSettings[key] = value;
+    if (typeof value === "number") carriedSettings[key] = value;
   }
 
   if (overrides?.infinite) {
     return {
       executorTurns: null,
       autopilotExecutorIterations: null,
-      ...goalSettings,
+      ...carriedSettings,
       goalPasses: null,
     };
   }
@@ -90,7 +92,7 @@ export const normalizeAgentLimitOverrides = (
       fallback.autopilotExecutorIterations ??
         DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
     ),
-    ...goalSettings,
+    ...carriedSettings,
   };
 };
 
@@ -127,6 +129,16 @@ export const resolveGoalLimits = (
     usageWaitMs:
       (limits?.goalUsageWaitMinutes ?? defaults.goalUsageWaitMinutes) * 60_000,
   };
+};
+
+/** How long a provider question waits for the user; undefined waits until answered. */
+export const resolveQuestionTimeoutMs = (
+  config: Pick<RuntimeConfig, "agentLimits">,
+): number | undefined => {
+  const minutes =
+    config.agentLimits?.questionTimeoutMinutes ??
+    DEFAULT_USER_AGENT_LIMITS_SETTINGS.questionTimeoutMinutes;
+  return minutes > 0 ? minutes * 60_000 : undefined;
 };
 
 export interface AgentLoopState {

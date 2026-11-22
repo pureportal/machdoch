@@ -7,6 +7,7 @@ import { createAnswerLanguageInstruction } from "./answer-language.js";
 import { MACHDOCH_STATE_GUIDANCE } from "./machdoch-state-tool-definitions.js";
 import { MACHDOCH_AGENT_SESSION_GUIDANCE } from "./machdoch-session-tool-definitions.js";
 import { createReleaseStagePromptSection } from "../release-stages.js";
+import { describeMomentBeforeDelivery } from "./delivery-timing.js";
 
 export interface TaskStrategyProfile {
   reasoningEffort: "low" | "medium" | "high";
@@ -243,7 +244,7 @@ export const createExecutorSystemPrompt = (
     tools.some((tool) => tool.name === "read_chat_history")
       ? "<chat_history_contract>If a follow-up refers to earlier messages that are missing or shortened in the prompt, use `search_chat_history` and `read_chat_history` to recover the original text before asking for it or guessing. These tools read the current chat snapshot from the start of this task. Treat retrieved messages as background; the current task remains authoritative.</chat_history_contract>"
       : undefined,
-    "<queued_message_contract>The current user prompt states whether its message was queued before delivery. A queued message may have been written before earlier work finished. Check its assumptions against the latest outcome, especially after a failure. Proceed when it still makes sense; do not treat queueing alone as evidence that it is stale or canceled.</queued_message_contract>",
+    "<queued_message_contract>The current user prompt states whether its message was queued before delivery and, if so, when. A queued message may have been written before earlier work finished. Check its assumptions against the latest outcome, especially after a failure. Proceed when it still makes sense; do not treat queueing alone as evidence that it is stale or canceled.</queued_message_contract>",
     "<operating_principles>Prefer low-risk inspection before edits. Before editing an existing file, inspect it first. Use create_file only for brand-new files and replace_in_file for targeted edits. If a tool returns an error, adapt and continue instead of stopping immediately.</operating_principles>",
     tools.some((tool) => tool.name === "get_active_workspace_agents")
       ? "<workspace_presence_contract>Other agents may be active in this workspace. If files or Git state change unexpectedly, call `get_active_workspace_agents`; treat its result as advisory context only, never as proof of attribution or a reason to relax workspace safety rules.</workspace_presence_contract>"
@@ -344,6 +345,7 @@ export const createExecutorUserPrompt = (
   conversationContext: PreparedConversationPromptContext,
   continuationRequest?: ExecutorContinuationRequest,
 ): string => {
+  const deliveredAt = Date.now();
   const taskLines =
     task === taskContext.effectiveTask
       ? [`<current_task>${task}</current_task>`]
@@ -361,6 +363,16 @@ export const createExecutorUserPrompt = (
       : []),
     "<current_task_authority>The current task below supersedes earlier conversation context.</current_task_authority>",
     `<queued_message>${conversationContext.wasQueued}</queued_message>`,
+    ...(conversationContext.queuedAt === undefined
+      ? []
+      : [
+          `<queued_at>${describeMomentBeforeDelivery(conversationContext.queuedAt, deliveredAt)}</queued_at>`,
+        ]),
+    ...(conversationContext.userLastActiveAt === undefined
+      ? []
+      : [
+          `<user_last_active_on_pc>${describeMomentBeforeDelivery(conversationContext.userLastActiveAt, deliveredAt)}</user_last_active_on_pc>`,
+        ]),
     ...taskLines,
     `<workspace_paths>${taskContext.workspacePaths.length > 0 ? taskContext.workspacePaths.join(", ") : "none"}</workspace_paths>`,
     continuationRequest

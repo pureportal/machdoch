@@ -2701,6 +2701,12 @@ const normalizeUserAgentLimitsSettings = (
       AGENT_LIMIT_BOUNDS.goalUsageWaitMinutes.max,
       DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalUsageWaitMinutes,
     ),
+    questionTimeoutMinutes: clampIntegerSetting(
+      settings.questionTimeoutMinutes,
+      AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.min,
+      AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.questionTimeoutMinutes,
+    ),
   };
 };
 

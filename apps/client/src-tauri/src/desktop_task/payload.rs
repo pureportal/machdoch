@@ -173,6 +173,28 @@ pub(super) fn enrich_ui_control_conversation_context(
     Ok(Some(conversation_context))
 }
 
+pub(super) fn enrich_user_activity_conversation_context(
+    conversation_context: Option<Value>,
+    user_last_active_at: Option<u64>,
+) -> Result<Option<Value>, String> {
+    let Some(user_last_active_at) = user_last_active_at else {
+        return Ok(conversation_context);
+    };
+    let Some(mut conversation_context) = conversation_context else {
+        return Ok(None);
+    };
+
+    let Value::Object(context_object) = &mut conversation_context else {
+        return Err("Expected the desktop conversation context to be a JSON object.".to_string());
+    };
+    context_object.insert(
+        "userLastActiveAt".to_string(),
+        Value::from(user_last_active_at),
+    );
+
+    Ok(Some(conversation_context))
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -183,8 +205,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_cli_args, cleanup_temporary_file, is_file_change_detection_enabled,
-        write_conversation_context_file, CliCommandOptions,
+        build_cli_args, cleanup_temporary_file, enrich_user_activity_conversation_context,
+        is_file_change_detection_enabled, write_conversation_context_file, CliCommandOptions,
     };
 
     #[cfg(unix)]
@@ -323,5 +345,24 @@ mod tests {
 
         cleanup_temporary_file(Some(&first_path));
         cleanup_temporary_file(Some(&second_path));
+    }
+
+    #[test]
+    fn desktop_context_carries_the_last_user_activity_only_when_known() {
+        let context = json!({ "history": [] });
+
+        assert_eq!(
+            enrich_user_activity_conversation_context(Some(context.clone()), None).unwrap(),
+            Some(context.clone())
+        );
+        assert_eq!(
+            enrich_user_activity_conversation_context(Some(context), Some(1_700_000_000_000))
+                .unwrap(),
+            Some(json!({ "history": [], "userLastActiveAt": 1_700_000_000_000_u64 }))
+        );
+        assert_eq!(
+            enrich_user_activity_conversation_context(None, Some(1)).unwrap(),
+            None
+        );
     }
 }

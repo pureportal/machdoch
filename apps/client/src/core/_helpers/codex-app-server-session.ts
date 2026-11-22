@@ -4,6 +4,7 @@ import { AgentLiveTracker } from "./agent-live-tracker.js";
 import {
   JsonLineSplitter,
   JsonRpcPeer,
+  QuestionTimeout,
   UNATTENDED_ANSWER,
   isRecord,
   mergeOutputUpdate,
@@ -62,12 +63,15 @@ export class CodexAppServerSession implements InteractiveAgentSession {
   private readonly rpc: JsonRpcPeer<{ steerId?: string; steerText?: string }>;
   private threadId: string | undefined;
   private activeTurnId: string | undefined;
-  private pendingQuestion: { requestId: RpcId; questionId: string } | undefined;
+  private pendingQuestion:
+    | { requestId: RpcId; questionId: string; itemIds: string[] }
+    | undefined;
   private terminal = false;
   private inputClosed = false;
   private nextSteer = 1;
   private readonly queuedSteers: { steerId: string; text: string }[] = [];
   private readonly unattended: boolean;
+  private readonly questionTimeout: QuestionTimeout;
   private readonly onProviderSessionId: ((sessionId: string) => void) | undefined;
   private resumeRejected = false;
 
@@ -80,11 +84,13 @@ export class CodexAppServerSession implements InteractiveAgentSession {
       captureEvidence: boolean;
       fastMode?: boolean;
       unattended?: boolean;
+      questionTimeoutMs?: number | undefined;
       onProviderSessionId?: ((sessionId: string) => void) | undefined;
     },
   ) {
     this.output = new CodexCliOutputDecoder(options.captureEvidence);
     this.unattended = options.unattended === true;
+    this.questionTimeout = new QuestionTimeout(options.questionTimeoutMs);
     this.onProviderSessionId = options.onProviderSessionId;
     this.rpc = new JsonRpcPeer((message) => {
       if (!this.inputClosed) this.io.write(`${JSON.stringify(message)}\n`);
@@ -151,6 +157,7 @@ export class CodexAppServerSession implements InteractiveAgentSession {
   }
 
   dispose(): void {
+    this.questionTimeout.clear();
     this.live.close();
   }
 
@@ -190,6 +197,7 @@ export class CodexAppServerSession implements InteractiveAgentSession {
     const pending = this.pendingQuestion;
     if (!pending || pending.questionId !== questionId) throw staleQuestionError();
     this.pendingQuestion = undefined;
+    this.questionTimeout.clear();
     this.rpc.respond(pending.requestId, {
       answers: Object.fromEntries(
         Object.entries(answers).map(([id, answer]) => [id, { answers: [answer] }]),
@@ -202,6 +210,7 @@ export class CodexAppServerSession implements InteractiveAgentSession {
     const pending = this.pendingQuestion;
     if (!pending) return;
     this.pendingQuestion = undefined;
+    this.questionTimeout.clear();
     this.rpc.respondError(pending.requestId, -32800, "The user stopped the turn before answering.");
     settleLiveQuestion(this.live, "cancelled");
   }
@@ -396,8 +405,24 @@ export class CodexAppServerSession implements InteractiveAgentSession {
     }
     this.cancelPendingQuestion();
     const questionId = `codex-${String(id)}`;
-    this.pendingQuestion = { requestId: id, questionId };
-    this.live.setQuestion({ id: questionId, items, status: "pending" });
+    this.pendingQuestion = { requestId: id, questionId, itemIds: items.map((item) => item.id) };
+    const expiresAt = this.questionTimeout.start((answer) => this.expireQuestion(questionId, answer));
+    this.live.setQuestion({
+      id: questionId,
+      items,
+      status: "pending",
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
+    });
+  }
+
+  private expireQuestion(questionId: string, answer: string): void {
+    const pending = this.pendingQuestion;
+    if (!pending || pending.questionId !== questionId) return;
+    this.pendingQuestion = undefined;
+    this.rpc.respond(pending.requestId, {
+      answers: Object.fromEntries(pending.itemIds.map((itemId) => [itemId, { answers: [answer] }])),
+    });
+    settleLiveQuestion(this.live, "expired");
   }
 
   private handleNotification(

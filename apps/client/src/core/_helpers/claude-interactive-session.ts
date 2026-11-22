@@ -7,6 +7,7 @@ import type { AgentLiveQuestion } from "@machdoch/fleet-protocol/task-thinking";
 import { AgentLiveTracker } from "./agent-live-tracker.js";
 import {
   JsonLineSplitter,
+  QuestionTimeout,
   UNATTENDED_ANSWER,
   isRecord,
   mergeOutputUpdate,
@@ -114,6 +115,7 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
   private nextSteer = 1;
   private readonly requestedFastMode: boolean;
   private readonly unattended: boolean;
+  private readonly questionTimeout: QuestionTimeout;
 
   constructor(
     private readonly turn: ClaudeInteractiveTurnInput,
@@ -125,6 +127,7 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
       fastMode?: boolean;
       unattended?: boolean;
       backgroundWaitMs?: number | undefined;
+      questionTimeoutMs?: number | undefined;
     },
   ) {
     this.output = new ClaudeCliOutputDecoder(
@@ -134,6 +137,7 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
     );
     this.requestedFastMode = options.fastMode === true;
     this.unattended = options.unattended === true;
+    this.questionTimeout = new QuestionTimeout(options.questionTimeoutMs);
     this.live = new AgentLiveTracker(
       {
         provider: "claude-cli",
@@ -211,6 +215,7 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
 
   dispose(): void {
     this.cancelLoginRefreshRetry();
+    this.questionTimeout.clear();
     this.live.close();
   }
 
@@ -238,6 +243,7 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
       answerMap[questionText] = answer;
     }
     this.pendingTool = undefined;
+    this.questionTimeout.clear();
     this.reply(pending.requestId, {
       behavior: "allow",
       updatedInput: { ...pending.input, answers: answerMap },
@@ -310,6 +316,7 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
     if (!this.pendingTool) return;
     const pending = this.pendingTool;
     this.pendingTool = undefined;
+    this.questionTimeout.clear();
     if (!this.inputClosed) {
       this.reply(pending.requestId, {
         behavior: "deny",
@@ -475,7 +482,23 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
     this.cancelPendingQuestion();
     const questionId = `claude-${requestId}`;
     this.pendingTool = { requestId, input, questionId, questionTexts };
-    this.live.setQuestion({ id: questionId, items, status: "pending" });
+    const expiresAt = this.questionTimeout.start((answer) =>
+      this.expireQuestion(questionId, answer),
+    );
+    this.live.setQuestion({
+      id: questionId,
+      items,
+      status: "pending",
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
+    });
+  }
+
+  private expireQuestion(questionId: string, answer: string): void {
+    const pending = this.pendingTool;
+    if (!pending || pending.questionId !== questionId) return;
+    this.pendingTool = undefined;
+    this.reply(pending.requestId, { behavior: "deny", message: answer });
+    settleLiveQuestion(this.live, "expired");
   }
 
   private handleControlResponse(event: Record<string, unknown>): void {

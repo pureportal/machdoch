@@ -22,7 +22,8 @@ use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_ENABLED, DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
-    MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES, MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
+    DEFAULT_DESKTOP_SETTING_SHARE_USER_ACTIVITY, MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
+    MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
 };
 
 pub(crate) fn load_user_desktop_launch_preferences() -> Result<UserDesktopLaunchPreferences, String>
@@ -60,6 +61,14 @@ pub(crate) fn load_chat_idle_timeout_minutes() -> Result<u32, String> {
             MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
             MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
         ))
+}
+
+pub(crate) fn load_share_user_activity() -> Result<bool, String> {
+    let (config, _) = load_user_config_file()?;
+    Ok(config
+        .desktop
+        .share_user_activity
+        .unwrap_or(DEFAULT_DESKTOP_SETTING_SHARE_USER_ACTIVITY))
 }
 
 pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>>(
@@ -129,6 +138,10 @@ pub(crate) fn load_user_desktop_settings<R: tauri::Runtime, M: tauri::Manager<R>
                 .quick_voice_max_messages
                 .unwrap_or(DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES),
         ),
+        share_user_activity: config
+            .desktop
+            .share_user_activity
+            .unwrap_or(DEFAULT_DESKTOP_SETTING_SHARE_USER_ACTIVITY),
     })
 }
 
@@ -158,6 +171,7 @@ pub(super) fn save_user_desktop_settings_value<R: tauri::Runtime, M: tauri::Mana
             Some(normalized_settings.quick_voice_silence_seconds);
         config.desktop.quick_voice_max_messages =
             Some(normalized_settings.quick_voice_max_messages);
+        config.desktop.share_user_activity = Some(normalized_settings.share_user_activity);
     })?;
 
     let autolaunch = manager.autolaunch();

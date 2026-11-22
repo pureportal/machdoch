@@ -7,6 +7,7 @@ import type {
 import { AgentLiveTracker } from "./agent-live-tracker.js";
 import {
   JsonRpcPeer,
+  QuestionTimeout,
   UNATTENDED_ANSWER,
   isRecord,
   mergeOutputUpdate,
@@ -124,6 +125,7 @@ export class CopilotServerSession implements InteractiveAgentSession {
   private lastError: string | undefined;
   private modelCalls = 0;
   private readonly unattended: boolean;
+  private readonly questionTimeout: QuestionTimeout;
   private readonly onProviderSessionId: ((sessionId: string) => void) | undefined;
   private resumeRejected = false;
   private readonly usage = {
@@ -141,11 +143,13 @@ export class CopilotServerSession implements InteractiveAgentSession {
       model: string;
       captureEvidence: boolean;
       unattended?: boolean;
+      questionTimeoutMs?: number | undefined;
       onProviderSessionId?: ((sessionId: string) => void) | undefined;
     },
   ) {
     this.output = new CopilotCliOutputDecoder(options.captureEvidence);
     this.unattended = options.unattended === true;
+    this.questionTimeout = new QuestionTimeout(options.questionTimeoutMs);
     this.onProviderSessionId = options.onProviderSessionId;
     this.rpc = new JsonRpcPeer(
       (message) => {
@@ -193,6 +197,7 @@ export class CopilotServerSession implements InteractiveAgentSession {
   dispose(): void {
     if (this.shutdownTimer) clearTimeout(this.shutdownTimer);
     if (this.taskRefreshTimer) clearTimeout(this.taskRefreshTimer);
+    this.questionTimeout.clear();
     this.live.close();
   }
 
@@ -219,11 +224,20 @@ export class CopilotServerSession implements InteractiveAgentSession {
     const answer = Object.values(answers).find((value) => value.trim())?.trim();
     if (!answer) throw new AgentControlRequestError("Type or choose an answer first.", 400);
     this.pendingQuestion = undefined;
+    this.questionTimeout.clear();
     this.rpc.respond(pending.requestId, {
       answer,
       wasFreeform: !pending.choices.includes(answer),
     });
     settleLiveQuestion(this.live, "answered", answers);
+  }
+
+  private expireQuestion(questionId: string, answer: string): void {
+    const pending = this.pendingQuestion;
+    if (!pending || pending.questionId !== questionId) return;
+    this.pendingQuestion = undefined;
+    this.rpc.respond(pending.requestId, { answer, wasFreeform: true });
+    settleLiveQuestion(this.live, "expired");
   }
 
   private stopTask(taskId: string): void {
@@ -239,6 +253,7 @@ export class CopilotServerSession implements InteractiveAgentSession {
     const pending = this.pendingQuestion;
     if (!pending) return;
     this.pendingQuestion = undefined;
+    this.questionTimeout.clear();
     this.rpc.respondError(pending.requestId, -32800, "The user stopped the turn before answering.");
     settleLiveQuestion(this.live, "cancelled");
   }
@@ -423,9 +438,11 @@ export class CopilotServerSession implements InteractiveAgentSession {
     this.cancelPendingQuestion();
     const questionId = `copilot-${String(id)}`;
     this.pendingQuestion = { requestId: id, questionId, choices };
+    const expiresAt = this.questionTimeout.start((answer) => this.expireQuestion(questionId, answer));
     this.live.setQuestion({
       id: questionId,
       status: "pending",
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
       items: [
         {
           id: "answer",

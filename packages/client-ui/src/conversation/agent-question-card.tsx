@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent, type JSX } from "react";
+import { useEffect, useId, useState, type FormEvent, type JSX } from "react";
 import type { AgentLiveQuestion } from "@machdoch/fleet-protocol/task-thinking";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { AgentQuestionIcon } from "./agent-live-icons";
@@ -9,6 +9,28 @@ export interface AgentQuestionCardProps {
   /** Missing when this device cannot answer (for example a remote viewer). */
   onSubmit?: (answers: Record<string, string>) => Promise<void>;
 }
+
+const useSecondsUntil = (expiresAt: number | undefined): number | undefined => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (expiresAt === undefined) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt]);
+  return expiresAt === undefined ? undefined : Math.max(0, Math.ceil((expiresAt - now) / 1_000));
+};
+
+const formatCountdown = (seconds: number): string =>
+  `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+const QUESTION_STATUS_TEXT: Record<
+  Exclude<AgentLiveQuestion["status"], "pending">,
+  { title: string; detail: string }
+> = {
+  answered: { title: "You answered", detail: "The agent continued with your answer." },
+  expired: { title: "No answer", detail: "The agent continued on its own." },
+  cancelled: { title: "Question closed", detail: "The run ended before an answer was sent." },
+};
 
 /** An agent's clarifying question, answered without leaving the chat. */
 export const AgentQuestionCard = ({
@@ -22,6 +44,7 @@ export const AgentQuestionCard = ({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = question.status === "pending";
+  const secondsLeft = useSecondsUntil(pending ? question.expiresAt : undefined);
 
   const answerFor = (itemId: string): string => {
     const typed = other[itemId]?.trim();
@@ -84,10 +107,14 @@ export const AgentQuestionCard = ({
         </span>
         <div className="min-w-0 flex-1">
           <p className="m-0 text-sm font-semibold text-slate-100">
-            {pending ? `${providerLabel} needs your input` : question.status === "answered" ? "You answered" : "Question closed"}
+            {question.status === "pending" ? `${providerLabel} needs your input` : QUESTION_STATUS_TEXT[question.status].title}
           </p>
           <p className="m-0 text-[11px] text-slate-400">
-            {pending ? "The run is paused until you answer." : question.status === "answered" ? "The agent continued with your answer." : "The run ended before an answer was sent."}
+            {question.status !== "pending"
+              ? QUESTION_STATUS_TEXT[question.status].detail
+              : secondsLeft === undefined
+                ? "The run is paused until you answer."
+                : `The agent decides on its own in ${formatCountdown(secondsLeft)}.`}
           </p>
         </div>
       </div>

@@ -55,6 +55,18 @@ export const parseConversationContext = (
         `Invalid conversation context: ${key} must be a boolean.`,
       );
   }
+  for (const key of ["queuedAt", "userLastActiveAt"]) {
+    const timestamp = value[key];
+    if (
+      timestamp !== undefined &&
+      (typeof timestamp !== "number" ||
+        !Number.isFinite(timestamp) ||
+        timestamp < 0)
+    )
+      throw new CliUsageError(
+        `Invalid conversation context: ${key} must be a timestamp.`,
+      );
+  }
   if (value.contextWindow !== undefined && !isContextWindow(value.contextWindow)) throw new CliUsageError("Invalid conversation context size.");
   if (
     value.adaptiveControllerOverride !== undefined &&

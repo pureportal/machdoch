@@ -198,6 +198,10 @@ export interface TaskConversationContext {
   goalMode?: GoalMode;
   goalObjective?: string;
   wasQueued?: boolean;
+  /** When the user queued the message, in Unix milliseconds. */
+  queuedAt?: number;
+  /** When the user last used this PC's input devices, in Unix milliseconds. */
+  userLastActiveAt?: number;
   chatType?: "pose" | "quick";
   poseScene?: import("@machdoch/media-studio/core/media/contracts.js").MediaPoseMap;
   /** What the user saw in the desktop app when sending a Quick Chat message. */

@@ -225,6 +225,8 @@ export interface PreparedConversationPromptContext {
   parallelAgentMode?: ParallelAgentMode;
   adaptivePlan?: AdaptiveExecutionPlan;
   wasQueued: boolean;
+  queuedAt?: number;
+  userLastActiveAt?: number;
   workspace: {
     selection: "selected" | "not-set";
     root?: string;
@@ -747,6 +749,13 @@ export const prepareConversationPromptContext = async (
   return {
     ...(adaptivePlan ? { adaptivePlan } : {}),
     wasQueued: conversationContext?.wasQueued === true,
+    ...(conversationContext?.wasQueued === true &&
+    conversationContext.queuedAt !== undefined
+      ? { queuedAt: conversationContext.queuedAt }
+      : {}),
+    ...(conversationContext?.userLastActiveAt !== undefined
+      ? { userLastActiveAt: conversationContext.userLastActiveAt }
+      : {}),
     workspace,
     ...(releaseStage ? { releaseStage } : {}),
     ...(reasoningLessons.length > 0

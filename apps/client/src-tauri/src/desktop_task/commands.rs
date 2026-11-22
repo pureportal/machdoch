@@ -18,7 +18,8 @@ use super::{
     diagnostics::{format_command_failure, format_timeout_duration},
     payload::{
         build_cli_args, cleanup_temporary_file, enrich_ui_control_conversation_context,
-        is_file_change_detection_enabled, write_conversation_context_file, CliCommandOptions,
+        enrich_user_activity_conversation_context, is_file_change_detection_enabled,
+        write_conversation_context_file, CliCommandOptions,
     },
     process::{join_cli_output_and_cleanup, read_stderr_with_timeout, read_stdout},
     progress::{create_bridge_progress, create_bridge_warning_progress, emit_progress_event},
@@ -222,6 +223,13 @@ pub(super) fn execute_desktop_task(
     let normalized_model = normalize_optional_string(model.as_deref());
     let normalized_reasoning = normalize_optional_string(reasoning.as_deref());
     let conversation_context = enrich_ui_control_conversation_context(conversation_context)?;
+    let user_last_active_at = if crate::runtime_snapshot::load_share_user_activity()? {
+        crate::user_activity::last_input_at_millis()
+    } else {
+        None
+    };
+    let conversation_context =
+        enrich_user_activity_conversation_context(conversation_context, user_last_active_at)?;
     let conversation_context_handoff = crate::workspace_run::enrich_conversation_context(
         &app_handle,
         &normalized_workspace_root,

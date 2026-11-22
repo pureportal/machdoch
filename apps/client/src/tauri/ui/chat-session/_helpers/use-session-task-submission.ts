@@ -577,6 +577,9 @@ export const useSessionTaskSubmission = (options: {
         wasQueued:
           submitOptions.consumedQueuedMessageId !== undefined ||
           submitOptions.queuedMessageRecovery !== undefined,
+        ...(submitOptions.queuedMessageRecovery
+          ? { queuedAt: submitOptions.queuedMessageRecovery.createdAt }
+          : {}),
         ...(submitOptions.appView ? { appView: submitOptions.appView } : {}),
       };
       const nextRunMode = getEffectiveSessionMode(

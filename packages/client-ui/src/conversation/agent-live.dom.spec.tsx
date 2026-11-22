@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AgentLiveQuestion, AgentLiveState } from "@machdoch/fleet-protocol/task-thinking";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentLivePanel, AgentRunStatusButton } from "./agent-live-panel";
@@ -157,6 +157,29 @@ it("answers with typed text and shows the answered state", async () => {
   expect(screen.getByText("You answered")).toBeTruthy();
   expect(screen.getByText("Water")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Send answer" })).toBeNull();
+});
+
+it("counts down to the agent deciding on its own and shows when nobody answered", () => {
+  vi.useFakeTimers({ now: NOW });
+  try {
+    const view = render(
+      <AgentQuestionCard question={{ ...question, expiresAt: NOW + 90_000 }} providerLabel="Claude CLI" onSubmit={vi.fn()} />,
+    );
+    expect(screen.getByText("The agent decides on its own in 1:30.")).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(31_000);
+    });
+    expect(screen.getByText("The agent decides on its own in 0:59.")).toBeTruthy();
+
+    view.rerender(
+      <AgentQuestionCard question={{ ...question, status: "expired", expiresAt: NOW + 90_000 }} providerLabel="Claude CLI" onSubmit={vi.fn()} />,
+    );
+    expect(screen.getByText("No answer")).toBeTruthy();
+    expect(screen.getByText("The agent continued on its own.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Send answer" })).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("formats answers as one message for views that answer by sending a message", () => {

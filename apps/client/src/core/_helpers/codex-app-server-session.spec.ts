@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CodexAppServerSession,
   type CodexAppServerTurnInput,
@@ -13,7 +13,7 @@ type Message = Record<string, unknown> & { id?: number; method?: string; params?
 
 const WORKSPACE = join(process.cwd(), "fixture-workspace");
 
-const createHarness = (input: Partial<CodexAppServerTurnInput> = {}) => {
+const createHarness = (input: Partial<CodexAppServerTurnInput> = {}, questionTimeoutMs?: number) => {
   const sent: Message[] = [];
   let closed = false;
   const session = new CodexAppServerSession(
@@ -27,7 +27,7 @@ const createHarness = (input: Partial<CodexAppServerTurnInput> = {}) => {
       },
     },
     () => undefined,
-    { model: "gpt-6-luna", captureEvidence: false },
+    { model: "gpt-6-luna", captureEvidence: false, questionTimeoutMs },
   );
   const last = (method: string) => [...sent].reverse().find((message) => message.method === method);
   const receive = (message: Record<string, unknown>) => session.push(`${JSON.stringify(message)}\n`);
@@ -209,6 +209,30 @@ describe("CodexAppServerSession", () => {
       { id: "codex-primary", label: "5-hour limit", usedPercent: 20 },
       { id: "codex-secondary", label: "Weekly limit", usedPercent: 50, resetsAt: 1_793_800_000_000, limited: true },
     ]);
+  });
+
+  it("answers a question that times out with a decide-yourself note", () => {
+    vi.useFakeTimers();
+    try {
+      const harness = createHarness({}, 60_000);
+      sessions.push(harness.session);
+      harness.startThread();
+      harness.reply("turn/start", { turn: { id: "turn-1" } });
+      harness.receive({
+        id: 42,
+        method: "item/tool/requestUserInput",
+        params: { questions: [{ id: "lang", question: "Which language?" }] },
+      });
+      expect(harness.session.live.getQuestion()?.expiresAt).toBe(Date.now() + 60_000);
+
+      vi.advanceTimersByTime(60_000);
+      expect(harness.sent.find((message) => message.id === 42)).toMatchObject({
+        result: { answers: { lang: { answers: [expect.stringContaining("within 1 minute.")] } } },
+      });
+      expect(harness.session.live.getQuestion()?.status).toBe("expired");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("asks clarifying questions and fails the turn when it is interrupted", () => {

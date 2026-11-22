@@ -188,7 +188,8 @@ export const agentLiveQuestionItemSchema = z.strictObject({
 export const agentLiveQuestionSchema = z.strictObject({
   id: liveText(200),
   items: z.array(agentLiveQuestionItemSchema).min(1).max(8),
-  status: z.enum(["pending", "answered", "cancelled"]),
+  status: z.enum(["pending", "answered", "cancelled", "expired"]),
+  expiresAt: timestamp.optional(),
   answers: z.record(z.string().max(200), liveText(4_000)).optional(),
 });
 export const agentLiveSteerSchema = z.strictObject({

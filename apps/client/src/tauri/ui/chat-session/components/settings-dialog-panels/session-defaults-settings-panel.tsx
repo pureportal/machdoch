@@ -28,6 +28,7 @@ export const SessionDefaultsSettingsPanel = ({
   const suppressUnmountFlushRef = useRef(false);
   const sessionDefaults = {
     adaptiveControllerEnabled: draft.adaptiveControllerEnabled,
+    shareUserActivity: draft.shareUserActivity,
     aiContextMaxMessages: clampIntegerSetting(
       draft.aiContextMaxMessages,
       DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
@@ -44,6 +45,7 @@ export const SessionDefaultsSettingsPanel = ({
   const dirty =
     sessionDefaults.adaptiveControllerEnabled !==
       setup.settings.adaptiveControllerEnabled ||
+    sessionDefaults.shareUserActivity !== setup.settings.shareUserActivity ||
     sessionDefaults.aiContextMaxMessages !==
       setup.settings.aiContextMaxMessages ||
     sessionDefaults.chatIdleTimeoutMinutes !==
@@ -107,6 +109,19 @@ export const SessionDefaultsSettingsPanel = ({
             disabled={setup.saving}
             onCheckedChange={(checked) =>
               setDraft({ ...draft, adaptiveControllerEnabled: checked })
+            }
+          />
+        </SettingPanel>
+        <SettingPanel
+          label="Share last PC activity"
+          detail="Agents see when you last used your mouse or keyboard."
+        >
+          <SettingsToggle
+            label="Share last PC activity"
+            checked={draft.shareUserActivity}
+            disabled={setup.saving}
+            onCheckedChange={(checked) =>
+              setDraft({ ...draft, shareUserActivity: checked })
             }
           />
         </SettingPanel>
