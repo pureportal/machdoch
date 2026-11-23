@@ -69,7 +69,7 @@ export async function queueGitEvents(
   const scope = automationScope.getStore();
   for (const event of events)
     await sql.query(
-      "INSERT INTO cloud_automation_events (organization_id,id,team_id,issue_id,actor_id,event,depth,origin_automation_id) VALUES ($1,$2,NULL,NULL,$3,$4,$5,$6)",
+      "INSERT INTO cloud_automation_events (organization_id,id,team_id,issue_id,actor_id,event,depth,origin_automation_id,source) VALUES ($1,$2,NULL,NULL,$3,$4,$5,$6,$7)",
       [
         connection.organizationId,
         randomUUID(),
@@ -77,6 +77,7 @@ export async function queueGitEvents(
         JSON.stringify({ kind: "git_event", git: event }),
         scope?.depth ?? 0,
         scope?.automationId ?? null,
+        connection.provider,
       ],
     );
 }

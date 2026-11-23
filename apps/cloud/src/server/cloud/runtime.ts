@@ -15,6 +15,8 @@ import { CloudRecurrencePreview } from "./automation/recurrence";
 import { CloudSchedules } from "./automation/schedules";
 import { CloudScheduleDispatcher } from "./automation/schedule-dispatcher";
 import { CloudAutomations } from "./automation/automations";
+import { CloudLoops } from "./loops/loops";
+import { CloudLoopSources } from "./loops/loop-sources";
 import { CloudAutomationExecutor } from "./automation/automation-executor";
 import { CloudAutomationDispatcher } from "./automation/automation-dispatcher";
 import { CloudProducts } from "./releases/products";
@@ -138,6 +140,8 @@ export interface CloudRuntime {
     service: CloudAutomations;
     dispatcher: CloudAutomationDispatcher;
     loop: CloudPeriodicLoop;
+    loops: CloudLoops;
+    sources: CloudLoopSources;
   };
   pulse: {
     writer: CloudPulse;
@@ -521,6 +525,8 @@ export function createCloudRuntime(
       service: automations,
       dispatcher: automationDispatcher,
       loop: automationLoop,
+      loops: new CloudLoops(database, () => wakeAutomations()),
+      sources: new CloudLoopSources(database, origin, () => wakeAutomations()),
     },
     pulse: { writer: pulse, loop: pulseLoop },
     autopilot: { autopilot, deliveries, loop: autopilotLoop },

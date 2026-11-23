@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { cloudId, revision } from "./cloud-contract";
 import { issueFilterConditionSchema } from "./issue-filter-model";
-import { memoryKeySchema } from "./cloud-automation-contract";
+import {
+  memoryKeySchema,
+  type CloudAutomationRun,
+} from "./cloud-automation-contract";
+import type { AgentStep } from "./cloud-chat-contract";
 
 export const loopPlacements = [
   "automatic",
@@ -10,7 +14,12 @@ export const loopPlacements = [
   "runner_pool",
 ] as const;
 export type LoopPlacement = (typeof loopPlacements)[number];
-export const loopHarnesses = ["machdoch", "codex", "claude", "copilot"] as const;
+export const loopHarnesses = [
+  "machdoch",
+  "codex",
+  "claude",
+  "copilot",
+] as const;
 export type LoopHarness = (typeof loopHarnesses)[number];
 export const loopCapabilities = [
   "repository",
@@ -101,12 +110,21 @@ export const loopContextSourceSchema = z.discriminatedUnion("kind", [
 export type LoopContextSource = z.output<typeof loopContextSourceSchema>;
 export type LoopContextKind = LoopContextSource["kind"];
 
+export interface LoopContextEntry {
+  kind: LoopContextKind;
+  title: string;
+  items: string[];
+}
+
 export const loopConfigSchema = z.strictObject({
   description: z.string().trim().max(2_000).default(""),
   executor: loopExecutorSchema,
   guardrails: loopGuardrailsSchema,
   contextSources: z.array(loopContextSourceSchema).max(20).default([]),
-  trustedSources: z.array(z.enum(loopSources)).max(loopSources.length).default([]),
+  trustedSources: z
+    .array(z.enum(loopSources))
+    .max(loopSources.length)
+    .default([]),
 });
 export type LoopConfig = z.output<typeof loopConfigSchema>;
 export const loopConfigUpdateSchema = z.strictObject({
@@ -231,6 +249,7 @@ export const loopTemplateInstallSchema = z.strictObject({
   providerId: cloudId,
   model: z.string().trim().min(1).max(200),
   documentId: cloudId.nullable().default(null),
+  timeZone: z.string().trim().min(1).max(80).default("UTC"),
 });
 export type LoopTemplateInstall = z.output<typeof loopTemplateInstallSchema>;
 
@@ -239,3 +258,24 @@ export const loopDryRunSchema = z.strictObject({
 });
 
 export const loopKillSchema = z.strictObject({ killed: z.boolean() });
+
+export const loopApprovalSchema = z.strictObject({ approved: z.literal(true) });
+
+export const loopInputAnswerSchema = z.strictObject({
+  value: z.string().trim().min(1).max(4_000),
+});
+
+export interface LoopTranscriptTurn {
+  prompt: string;
+  answer: string;
+  steps: AgentStep[];
+}
+
+export interface CloudLoopRunDetail extends CloudAutomationRun {
+  payload: Record<string, unknown>;
+  resolvedContext: LoopContextEntry[] | null;
+  transcript: LoopTranscriptTurn[];
+  awaitingApproval: boolean;
+  awaitingInput: string | null;
+  approvedByName: string | null;
+}

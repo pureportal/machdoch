@@ -3,6 +3,7 @@ import {
   type AutomationEvent,
 } from "../../../lib/automation-triggers";
 import type { CloudActor } from "../../../lib/cloud-contract";
+import type { LoopRejectionReason } from "../../../lib/cloud-loop-contract";
 import {
   actionNeedsIssue,
   issuelessTriggerKinds,
@@ -16,6 +17,7 @@ import {
   type StoredAutomation,
 } from "./automation-records";
 import { maximumAutomationDepth } from "./automation-events";
+import { recordSourceRejection } from "../loops/loop-sources";
 import { dispatchDueSchedules } from "./automation-schedules";
 import {
   activeRunColumns,
@@ -36,6 +38,7 @@ interface QueuedEvent {
   depth: number;
   originAutomationId: string | null;
   originRunId: string | null;
+  source: string | null;
 }
 
 function eventVariables(event: AutomationEvent): Record<string, unknown> {
@@ -135,10 +138,49 @@ async function listeningAutomations(
   ).rows;
 }
 
+async function sourceAdmitted(
+  sql: CloudSql,
+  queued: QueuedEvent,
+  automation: StoredAutomation,
+): Promise<boolean> {
+  const loop = (
+    await sql.query<{
+      loopsEnabled: boolean;
+      sourceEnabled: boolean;
+      killed: boolean;
+      trusted: boolean;
+    }>(
+      `SELECT COALESCE(st.enabled,true) AS "loopsEnabled",COALESCE(src.enabled,false) AS "sourceEnabled",l.killed_at IS NOT NULL AS killed,
+        EXISTS (SELECT 1 FROM cloud_loop_trusted_sources ts WHERE ts.organization_id=l.organization_id AND ts.loop_id=l.id AND ts.source=$3) AS trusted
+      FROM cloud_loops l LEFT JOIN cloud_loop_settings st ON st.organization_id=l.organization_id
+      LEFT JOIN cloud_loop_sources src ON src.organization_id=l.organization_id AND src.source=$3
+      WHERE l.organization_id=$1 AND l.automation_id=$2`,
+      [queued.organizationId, automation.id, queued.source],
+    )
+  ).rows[0];
+  const reason: LoopRejectionReason | null = !loop?.loopsEnabled
+    ? "loops_disabled"
+    : !loop.sourceEnabled
+      ? "source_disabled"
+      : !loop.trusted
+        ? "untrusted"
+        : loop.killed
+          ? "killed"
+          : null;
+  if (!reason) return true;
+  await recordSourceRejection(sql, {
+    organizationId: queued.organizationId,
+    source: queued.source!,
+    loopId: automation.id,
+    reason,
+  });
+  return false;
+}
+
 async function dispatchEvents(sql: CloudSql): Promise<number> {
   const events = (
     await sql.query<QueuedEvent & Record<string, unknown>>(
-      `SELECT organization_id AS "organizationId",id,team_id AS "teamId",issue_id AS "issueId",actor_id AS "actorId",event,depth,origin_automation_id AS "originAutomationId",origin_run_id AS "originRunId"
+      `SELECT organization_id AS "organizationId",id,team_id AS "teamId",issue_id AS "issueId",actor_id AS "actorId",event,depth,origin_automation_id AS "originAutomationId",origin_run_id AS "originRunId",source
       FROM cloud_automation_events ORDER BY sequence LIMIT ${eventBatchSize} FOR UPDATE SKIP LOCKED`,
     )
   ).rows;
@@ -157,6 +199,8 @@ async function dispatchEvents(sql: CloudSql): Promise<number> {
           queued,
         );
         if (!target) continue;
+        if (queued.source && !(await sourceAdmitted(sql, queued, automation)))
+          continue;
         await insertAutomationRun(sql, queued.organizationId, automation, {
           dedupeKey: `event:${queued.id}`,
           trigger:

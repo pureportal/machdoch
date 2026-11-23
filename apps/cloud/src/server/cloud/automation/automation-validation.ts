@@ -99,7 +99,7 @@ async function requireProducts(
     );
 }
 
-async function requireRepositories(
+export async function requireRepositories(
   sql: CloudSql,
   actor: CloudActor,
   ids: string[],
@@ -154,7 +154,7 @@ async function requireProjects(
     );
 }
 
-async function requireDocument(
+export async function requireDocument(
   sql: CloudSql,
   actor: CloudActor,
   teamId: string,

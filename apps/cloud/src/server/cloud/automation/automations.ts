@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import type { CloudActor } from "../../../lib/cloud-contract";
+import type { CloudActor, CloudTeam } from "../../../lib/cloud-contract";
 import {
   actionNeedsManualIssue,
   type AutomationInput,
@@ -44,7 +44,7 @@ function nextRunAt(input: AutomationInput, enabled: boolean): Date | null {
     : null;
 }
 
-function runRejected(rejection: LoopRejection | null): CloudError {
+export function runRejected(rejection: LoopRejection | null): CloudError {
   return rejection
     ? new CloudError(429, `automation_${rejection.code}`, rejection.reason)
     : new CloudError(409, "automation_duplicate", "This run already started.");
@@ -57,6 +57,36 @@ function requireOwner(automation: CloudAutomation, actor: CloudActor): void {
       "automation_owner_required",
       "Only the automation owner can change it in the browser.",
     );
+}
+
+export async function insertAutomation(
+  sql: CloudSql,
+  actor: CloudActor,
+  team: CloudTeam,
+  input: AutomationInput,
+  enabled: boolean,
+): Promise<string> {
+  await validateAutomation(sql, actor, team, input);
+  const id = randomUUID();
+  await sql.query(
+    `INSERT INTO cloud_automations (organization_id,id,team_id,owner_id,name,trigger_kind,trigger,conditions,actions,daily_limit,next_run_at,enabled)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [
+      actor.organizationId,
+      id,
+      team.id,
+      actor.userId,
+      input.name,
+      input.trigger.kind,
+      JSON.stringify(input.trigger),
+      JSON.stringify(input.conditions),
+      JSON.stringify(input.actions),
+      input.dailyLimit,
+      nextRunAt(input, enabled),
+      enabled,
+    ],
+  );
+  return id;
 }
 
 export class CloudAutomations {
@@ -201,25 +231,7 @@ export class CloudAutomations {
               "automation_limit",
               `This team has reached its limit of ${maximumAutomationsPerTeam} automations.`,
             );
-          await validateAutomation(sql, actor, team, input);
-          const id = randomUUID();
-          await sql.query(
-            `INSERT INTO cloud_automations (organization_id,id,team_id,owner_id,name,trigger_kind,trigger,conditions,actions,daily_limit,next_run_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-            [
-              actor.organizationId,
-              id,
-              team.id,
-              actor.userId,
-              input.name,
-              input.trigger.kind,
-              JSON.stringify(input.trigger),
-              JSON.stringify(input.conditions),
-              JSON.stringify(input.actions),
-              input.dailyLimit,
-              nextRunAt(input, true),
-            ],
-          );
+          const id = await insertAutomation(sql, actor, team, input, true);
           return {
             id,
             webhookUrl:
@@ -515,6 +527,7 @@ export class CloudAutomations {
           actorId: null,
           depth: 0,
           variables: { payload },
+          payload: { payload },
         },
       );
       if (!started.id) throw runRejected(started.rejection);

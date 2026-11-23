@@ -47,6 +47,7 @@ import {
   handleAutomationApi,
   handleAutomationWebhook,
 } from "./automation/automation-api";
+import { handleLoopApi, handleLoopSourceEvent } from "./loops/loop-api";
 import { browserSessionContext } from "./auth/session-context";
 import {
   sessionAccountSchema,
@@ -357,6 +358,8 @@ async function route(
     return handleGitOAuthCallback(runtime, request, path[1] ?? "");
   if (path[0] === "automations" && path[1] === "hooks" && path.length === 3)
     return handleAutomationWebhook(runtime, request, path[2] ?? "");
+  if (path[0] === "loops" && path[1] === "sources" && path.length === 5)
+    return handleLoopSourceEvent(runtime, request, path);
   if (isPublicReleaseRoute(path))
     return handlePublicReleaseApi(runtime, request, path);
   if (isPublicAttachmentRoute(path))
@@ -403,6 +406,7 @@ async function route(
     return handleScheduleApi(runtime, request, actor);
   if (path[0] === "automations")
     return handleAutomationApi(runtime, request, actor);
+  if (path[0] === "loops") return handleLoopApi(runtime, request, actor);
   if (path[0] === "pulse") return handlePulseApi(runtime, request, actor);
   if (releaseRoutePrefixes.has(path[0] ?? ""))
     return handleReleaseApi(runtime, request, actor);
@@ -1063,16 +1067,32 @@ async function route(
       const input = await readBody(request, settingWriteSchema);
       if (input.scope === "user")
         return Response.json(
-          await runtime.settings.setPersonal(actor, key.data, input.key, input.value),
+          await runtime.settings.setPersonal(
+            actor,
+            key.data,
+            input.key,
+            input.value,
+          ),
         );
       if (input.scope === "organization")
         return Response.json(
-          await runtime.settings.setOrganization(actor, key.data, input.key, input.value),
+          await runtime.settings.setOrganization(
+            actor,
+            key.data,
+            input.key,
+            input.value,
+          ),
         );
       if (!input.teamId)
         throw new CloudError(422, "team_required", "Choose a team.");
       return Response.json(
-        await runtime.settings.setTeam(actor, key.data, input.teamId, input.key, input.value),
+        await runtime.settings.setTeam(
+          actor,
+          key.data,
+          input.teamId,
+          input.key,
+          input.value,
+        ),
       );
     }
     if (routeKey === "PATCH sidebar")

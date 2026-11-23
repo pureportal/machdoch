@@ -240,6 +240,105 @@ describe("automation triggers", () => {
       ),
     ).toBe(true);
   });
+
+  it("matches triage, project, cycle, intake, client and release triggers", () => {
+    expect(issueChangeEvents(issue, { ...issue, state: "triage" })).toEqual([
+      { kind: "issue_triaged" },
+    ]);
+    expect(
+      triggerMatchesEvent({ kind: "issue_triaged" }, { kind: "issue_triaged" }),
+    ).toBe(true);
+    const project = {
+      kind: "project_event" as const,
+      event: "completed" as const,
+      projectId: ids.team,
+      projectName: "Cloud",
+    };
+    expect(
+      triggerMatchesEvent(
+        { kind: "project_event", events: ["completed"] },
+        project,
+      ),
+    ).toBe(true);
+    expect(
+      triggerMatchesEvent(
+        { kind: "project_event", events: ["created"] },
+        project,
+      ),
+    ).toBe(false);
+    expect(
+      triggerMatchesEvent(
+        { kind: "cycle_event", events: ["closed"] },
+        {
+          kind: "cycle_event",
+          event: "closed",
+          cycleId: ids.team,
+          cycleName: "C1",
+        },
+      ),
+    ).toBe(true);
+    const alert = {
+      kind: "source_event" as const,
+      source: "sentry" as const,
+      title: "TypeError in checkout",
+      body: "",
+      payload: {},
+    };
+    expect(
+      triggerMatchesEvent(
+        { kind: "source_event", source: "sentry", contains: "typeerror" },
+        alert,
+      ),
+    ).toBe(true);
+    expect(
+      triggerMatchesEvent(
+        { kind: "source_event", source: "grafana", contains: "" },
+        alert,
+      ),
+    ).toBe(false);
+    for (const source of ["email", "teams", "slack"] as const)
+      expect(
+        triggerMatchesEvent(
+          { kind: "source_event", source, contains: "" },
+          { ...alert, source },
+        ),
+      ).toBe(true);
+    const watched = {
+      kind: "client_event" as const,
+      event: "file_changed" as const,
+      instanceId: "desk-1",
+      instanceName: "Desk",
+      path: "src/a.ts",
+    };
+    expect(
+      triggerMatchesEvent(
+        { kind: "client_event", events: ["file_changed"], instanceIds: [] },
+        watched,
+      ),
+    ).toBe(true);
+    expect(
+      triggerMatchesEvent(
+        {
+          kind: "client_event",
+          events: ["device_online"],
+          instanceIds: ["desk-1"],
+        },
+        watched,
+      ),
+    ).toBe(false);
+    expect(
+      triggerMatchesEvent(
+        { kind: "release_event", pipelineIds: [ids.done] },
+        {
+          kind: "release_event",
+          pipelineId: ids.done,
+          releaseId: ids.label,
+          environment: "production",
+          version: "1.2.0",
+        },
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("automation templates", () => {

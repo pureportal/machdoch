@@ -81,7 +81,10 @@ export async function admitAutomationRun(
     placement: row.placement,
     required: row.capabilities,
     repositoryIds: row.repositoryIds,
-    codeAccess: { mode: row.codeAccess, repositoryIds: row.allowedRepositoryIds },
+    codeAccess: {
+      mode: row.codeAccess,
+      repositoryIds: row.allowedRepositoryIds,
+    },
   });
   if (!capability.available && row.loopsEnabled && !row.killed)
     return {

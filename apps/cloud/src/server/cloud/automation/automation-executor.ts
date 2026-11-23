@@ -46,6 +46,8 @@ import {
 import { dryRunDetail } from "../../../lib/loop-outputs";
 import { notifyLoop } from "../notifications";
 import { recordTurnTokens, settleLoopRun } from "../loops/loop-runs";
+import type { LoopContextEntry } from "../../../lib/cloud-loop-contract";
+import { contextText, resolveLoopContext } from "../loops/loop-context";
 import { automationChainActions } from "./automation-chain-actions";
 import { changesSinceLastPost } from "./release-automations";
 import {
@@ -307,6 +309,7 @@ export class CloudAutomationExecutor {
         run.organizationId,
         automation.id,
       ),
+      context: await this.loopContext(run, owner),
       automation: { name: automation.name },
       date: new Date().toISOString().slice(0, 10),
       actor: { name: actor?.name ?? "" },
@@ -325,6 +328,32 @@ export class CloudAutomationExecutor {
         url: `${this.services.origin}/cloud/releases/${release.id}`,
       },
     };
+  }
+
+  private loopContext(run: ActiveRun, owner: CloudActor): Promise<string> {
+    return this.services.database.transaction(async (sql) => {
+      const stored = (
+        await sql.query<{
+          context: LoopContextEntry[] | null;
+          payload: unknown;
+        }>(
+          "SELECT resolved_context AS context,payload FROM cloud_automation_runs WHERE organization_id=$1 AND id=$2",
+          [run.organizationId, run.id],
+        )
+      ).rows[0];
+      if (stored?.context) return contextText(stored.context);
+      const entries = await resolveLoopContext(sql, owner, {
+        organizationId: run.organizationId,
+        id: run.id,
+        automationId: run.automationId,
+        payload: stored?.payload ?? {},
+      });
+      await sql.query(
+        "UPDATE cloud_automation_runs SET resolved_context=$3 WHERE organization_id=$1 AND id=$2",
+        [run.organizationId, run.id, JSON.stringify(entries)],
+      );
+      return contextText(entries);
+    });
   }
 
   private releaseId(run: ActiveRun): string | null {

@@ -74,6 +74,7 @@ export const cloudMigrations = [
   "071-saved-view-scopes.sql",
   "072-release-pipelines.sql",
   "073-loops.sql",
+  "074-loop-trigger-variables.sql",
 ];
 
 export interface CloudSql {

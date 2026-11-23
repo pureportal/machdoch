@@ -129,15 +129,20 @@ export async function insertAutomationRun(
   automation: Pick<StoredAutomation, "id" | "dailyLimit">,
   run: AutomationRunInsert,
 ): Promise<AutomationRunStart> {
-  const admission = await admitAutomationRun(sql, organizationId, automation, run);
+  const admission = await admitAutomationRun(
+    sql,
+    organizationId,
+    automation,
+    run,
+  );
   if (admission.admitted && admission.cancelActive)
     await cancelActiveRuns(sql, organizationId, automation.id);
   const id = randomUUID();
   const inserted = await sql.query<{ id: string }>(
     `INSERT INTO cloud_automation_runs (organization_id,id,automation_id,dedupe_key,trigger,state,issue_id,actor_id,depth,variables,error,finished_at,
-      payload,parent_run_id,origin_run_id,replay_of,dry_run,reserved_cents,deadline_at)
+      payload,parent_run_id,origin_run_id,replay_of,dry_run,reserved_cents,deadline_at,trigger_variables)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $6='skipped' THEN clock_timestamp() END,
-      $12,$13,$14,$15,$16,$17,clock_timestamp()+make_interval(mins=>$18::integer))
+      $12,$13,$14,$15,$16,$17,clock_timestamp()+make_interval(mins=>$18::integer),$10)
     ON CONFLICT (organization_id,automation_id,dedupe_key) DO NOTHING RETURNING id`,
     [
       organizationId,

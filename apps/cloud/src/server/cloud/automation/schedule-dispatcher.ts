@@ -30,7 +30,9 @@ export class CloudScheduleDispatcher {
               unknown
             >
         >(
-          `SELECT ${scheduleColumns},s.organization_id AS "organizationId",floor(extract(epoch FROM clock_timestamp())*1000)::float8 AS now FROM cloud_schedules s JOIN cloud_users u ON u.id=s.owner_id WHERE s.enabled AND s.next_at<=floor(extract(epoch FROM clock_timestamp())*1000) ORDER BY s.next_at,s.id LIMIT 5`,
+          `SELECT ${scheduleColumns},s.organization_id AS "organizationId",floor(extract(epoch FROM clock_timestamp())*1000)::float8 AS now FROM cloud_schedules s JOIN cloud_users u ON u.id=s.owner_id WHERE s.enabled AND s.next_at<=floor(extract(epoch FROM clock_timestamp())*1000)
+          AND NOT EXISTS (SELECT 1 FROM cloud_loops l WHERE l.organization_id=s.organization_id AND l.schedule_id=s.id AND l.killed_at IS NOT NULL)
+          AND COALESCE((SELECT st.enabled FROM cloud_loop_settings st WHERE st.organization_id=s.organization_id),true) ORDER BY s.next_at,s.id LIMIT 5`,
         )
       ).rows;
     });
