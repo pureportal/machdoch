@@ -1,25 +1,10 @@
-import { holderCan } from "@/lib/cloud-permissions";
 import { redirect } from "next/navigation";
-import { ExecutionSettings } from "@/components/cloud/execution-settings";
-import {
-  requireCloudPageSession,
-  requireCloudWorkspace,
-} from "@/server/cloud/page-auth";
+import { legacySettingsHref } from "@/lib/settings-navigation";
 
-export default async function ExecutionPage({
+export default async function LegacyExecutionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { runtime, actor } = await requireCloudPageSession();
-  const workspace = (await requireCloudWorkspace()).workspace;
-  if (!holderCan(workspace.actor, "ai.manage")) redirect("/cloud/tasks");
-  return (
-    <ExecutionSettings
-      workspace={workspace}
-      profiles={await runtime.execution.profiles.list(actor)}
-      providers={(await runtime.aiProviders.list(actor, true)).providers}
-      focusProjectId={(await searchParams).project ?? null}
-    />
-  );
+  redirect(legacySettingsHref("execution", await searchParams));
 }

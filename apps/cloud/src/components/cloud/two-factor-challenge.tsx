@@ -40,7 +40,7 @@ export function TwoFactorChallenge({
         </p>
         <Button onClick={() => location.assign(destination)}>Continue</Button>
         <Button asChild variant="outline">
-          <Link href="/cloud/account?tab=security">Manage two-factor</Link>
+          <Link href="/cloud/settings/security">Manage two-factor</Link>
         </Button>
       </AuthFrame>
     );

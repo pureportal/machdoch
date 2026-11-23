@@ -368,7 +368,7 @@ export function AgentConversation({
           {canConfigure && (
             <>
               {" "}
-              <Link href="/cloud/providers" className="underline">
+              <Link href="/cloud/settings/ai" className="underline">
                 Configure providers
               </Link>
             </>

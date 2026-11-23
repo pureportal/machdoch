@@ -55,7 +55,7 @@ export function ReviewList({ initial }: { initial: CloudReviewInbox }) {
         <div className="cloud-empty">
           <GitPullRequest aria-hidden="true" />
           <p>
-            <Link href="/cloud/account?tab=git">
+            <Link href="/cloud/settings/connected-accounts">
               Link your GitHub or GitLab account
             </Link>{" "}
             to see your reviews.

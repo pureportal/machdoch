@@ -77,8 +77,7 @@ export async function handleGitOAuthCallback(
   const query = new URL(request.url).searchParams;
   const code = query.get("code");
   const state = query.get("state");
-  const target = new URL("/cloud/account", runtime.origin);
-  target.searchParams.set("tab", "git");
+  const target = new URL("/cloud/settings/connected-accounts", runtime.origin);
   if (!code || !state || code.length > 500 || state.length > 100)
     target.searchParams.set("gitError", "denied");
   else

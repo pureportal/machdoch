@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function Page(): never {
-  redirect("/cloud/account");
+  redirect("/cloud/settings/profile");
 }

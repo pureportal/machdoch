@@ -213,7 +213,7 @@ export function AiActivityView({
           )}
           {admin && !mimorii && (
             <Button variant="outline" asChild>
-              <Link href="/cloud/settings?tab=mimorii">Connect Mimorii</Link>
+              <Link href="/cloud/settings/mimorii">Connect Mimorii</Link>
             </Button>
           )}
         </div>
@@ -224,7 +224,7 @@ export function AiActivityView({
           {admin && (
             <>
               {" "}
-              <Link href="/cloud/settings?tab=mimorii">
+              <Link href="/cloud/settings/mimorii">
                 Review the connection
               </Link>
             </>

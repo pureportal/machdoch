@@ -1,7 +1,6 @@
 "use client";
 
 import { EmailSettings } from "./email-settings";
-import { GitSettings } from "./git-settings";
 import { MimoriiSettings } from "./mimorii-settings";
 import { SsoSettings } from "./sso-settings";
 import { InvitationEditor } from "./invitation-editor";
@@ -13,46 +12,36 @@ import { useRouter } from "next/navigation";
 import {
   type CloudAdministration,
   type ManagedMember,
-  type SettingsTab,
 } from "@/lib/cloud-administration-contract";
 import type { CloudActorMember } from "@/lib/cloud-contract";
-import {
-  canGrantRole,
-  holderCan,
-  type CloudPermission,
-} from "@/lib/cloud-permissions";
+import { canGrantRole } from "@/lib/cloud-permissions";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PersonAvatar } from "./person-avatar";
 import { createCommandSender, formText } from "./api-client";
 import { useToast } from "./toast";
 
+export type AdministrationSection =
+  | "branding"
+  | "members"
+  | "invitations"
+  | "roles"
+  | "sso"
+  | "email"
+  | "mimorii";
+
 export function CloudSettings({
   data,
   actor,
-  tab,
+  section,
 }: {
   data: CloudAdministration;
   actor: CloudActorMember;
-  tab: SettingsTab;
+  section: AdministrationSection;
 }) {
-  const can = (...permissions: CloudPermission[]) =>
-    permissions.some((permission) => holderCan(actor, permission));
-  const tabs = (
-    [
-      ["organization", "Organization", can("settings.manage")],
-      ["members", "Members", can("members.manage")],
-      ["roles", "Roles", can("roles.manage", "members.manage")],
-      ["authentication", "Authentication", can("settings.manage")],
-      ["email", "Email", can("settings.manage")],
-      ["git", "Git", can("git.manage")],
-      ["mimorii", "Mimorii", can("settings.manage")],
-    ] satisfies [SettingsTab, string, boolean][]
-  ).filter(([, , visible]) => visible);
   const grantableRoles = data.roles.filter((role) => canGrantRole(actor, role));
   const router = useRouter();
   const toast = useToast();
@@ -68,32 +57,66 @@ export function CloudSettings({
     sender.current = createCommandSender();
   }
   return (
-    <>
-      <header className="cloud-page-header">
-        <h1>Settings</h1>
-      </header>
-      <Tabs
-        defaultValue={
-          tabs.some(([value]) => value === tab) ? tab : tabs[0]?.[0]
-        }
-      >
-        <TabsList aria-label="Organization settings">
-          {tabs.map(([value, label]) => (
-            <TabsTrigger key={value} value={value}>
-              {label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <TabsContent value="organization" className="cloud-settings">
-          <OrganizationBranding organization={data.organization} />
-        </TabsContent>
-        <TabsContent value="members" className="cloud-settings">
+    <div className="cloud-settings">
+      {section === "branding" && (
+        <OrganizationBranding organization={data.organization} />
+      )}
+      {section === "members" && (
+        <section
+          className="cloud-settings-section"
+          aria-labelledby="members-heading"
+        >
+          <header>
+            <h2 id="members-heading">Members</h2>
+          </header>
+          <ul className="cloud-member-list">
+            {data.members.map((person) => (
+              <li key={person.id}>
+                <PersonAvatar name={person.name} />
+                <div>
+                  <strong>{person.name}</strong>
+                  <span>{person.email}</span>
+                </div>
+                <span>{person.active ? person.roleName : "Suspended"}</span>
+                {editable(person) &&
+                  person.twoFactor &&
+                  person.id !== actor.id && (
+                    <Button
+                      variant="outline"
+                      aria-label={`Reset two-factor for ${person.name}`}
+                      onClick={() => {
+                        resetSender();
+                        setResetting(person);
+                      }}
+                    >
+                      Reset two-factor
+                    </Button>
+                  )}
+                {editable(person) && (
+                  <Button
+                    variant="outline"
+                    aria-label={`Edit access for ${person.name}`}
+                    onClick={() => {
+                      resetSender();
+                      setMember(person);
+                    }}
+                  >
+                    Edit access
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {section === "invitations" && (
+        <>
           <section
             className="cloud-settings-section"
-            aria-labelledby="members-heading"
+            aria-labelledby="invitations-heading"
           >
             <header>
-              <h2 id="members-heading">Members</h2>
+              <h2 id="invitations-heading">Pending invitations</h2>
               <Button
                 onClick={() => {
                   setInvitationUrl("");
@@ -104,38 +127,30 @@ export function CloudSettings({
               </Button>
             </header>
             <ul className="cloud-member-list">
-              {data.members.map((person) => (
-                <li key={person.id}>
-                  <PersonAvatar name={person.name} />
+              {data.invitations.map((invitation) => (
+                <li key={invitation.id}>
                   <div>
-                    <strong>{person.name}</strong>
-                    <span>{person.email}</span>
+                    <strong>{invitation.email}</strong>
+                    <span>
+                      Expires{" "}
+                      {new Date(invitation.expiresAt)
+                        .toISOString()
+                        .slice(0, 10)}
+                    </span>
                   </div>
-                  <span>{person.active ? person.roleName : "Suspended"}</span>
-                  {editable(person) &&
-                    person.twoFactor &&
-                    person.id !== actor.id && (
-                      <Button
-                        variant="outline"
-                        aria-label={`Reset two-factor for ${person.name}`}
-                        onClick={() => {
-                          resetSender();
-                          setResetting(person);
-                        }}
-                      >
-                        Reset two-factor
-                      </Button>
-                    )}
-                  {editable(person) && (
+                  <span>{invitation.roleName}</span>
+                  {grantableRoles.some(
+                    (role) => role.key === invitation.role,
+                  ) && (
                     <Button
                       variant="outline"
-                      aria-label={`Edit access for ${person.name}`}
+                      aria-label={`Revoke invitation for ${invitation.email}`}
                       onClick={() => {
                         resetSender();
-                        setMember(person);
+                        setRevoking(invitation.id);
                       }}
                     >
-                      Edit access
+                      Revoke
                     </Button>
                   )}
                 </li>
@@ -154,68 +169,19 @@ export function CloudSettings({
               </Field>
             </section>
           )}
-          {!!data.invitations.length && (
-            <section
-              className="cloud-settings-section"
-              aria-labelledby="invitations-heading"
-            >
-              <header>
-                <h2 id="invitations-heading">Pending invitations</h2>
-              </header>
-              <ul className="cloud-member-list">
-                {data.invitations.map((invitation) => (
-                  <li key={invitation.id}>
-                    <div>
-                      <strong>{invitation.email}</strong>
-                      <span>
-                        Expires{" "}
-                        {new Date(invitation.expiresAt)
-                          .toISOString()
-                          .slice(0, 10)}
-                      </span>
-                    </div>
-                    <span>{invitation.roleName}</span>
-                    {grantableRoles.some(
-                      (role) => role.key === invitation.role,
-                    ) && (
-                      <Button
-                        variant="outline"
-                        aria-label={`Revoke invitation for ${invitation.email}`}
-                        onClick={() => {
-                          resetSender();
-                          setRevoking(invitation.id);
-                        }}
-                      >
-                        Revoke
-                      </Button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </TabsContent>
-        <TabsContent value="roles" className="cloud-settings">
-          <RoleSettings roles={data.roles} actor={actor} />
-        </TabsContent>
-        <TabsContent value="authentication" className="cloud-settings">
-          <SsoSettings
-            members={data.members}
-            owner={actor.owner}
-            grantableRoles={grantableRoles}
-          />
-        </TabsContent>
-        <TabsContent value="email" className="cloud-settings">
-          <EmailSettings owner={actor.owner} />
-        </TabsContent>
-        <TabsContent value="git" className="cloud-settings">
-          <GitSettings />
-        </TabsContent>
-        <TabsContent value="mimorii" className="cloud-settings">
-          <MimoriiSettings />
-        </TabsContent>
-      </Tabs>
-      {inviting && (
+        </>
+      )}
+      {section === "roles" && <RoleSettings roles={data.roles} actor={actor} />}
+      {section === "sso" && (
+        <SsoSettings
+          members={data.members}
+          owner={actor.owner}
+          grantableRoles={grantableRoles}
+        />
+      )}
+      {section === "email" && <EmailSettings owner={actor.owner} />}
+      {section === "mimorii" && <MimoriiSettings />}
+            {inviting && (
         <InvitationEditor
           organizationId={data.organization.id}
           roles={grantableRoles}
@@ -328,6 +294,6 @@ export function CloudSettings({
       >
         <p>The invitation link will stop working.</p>
       </FormDialog>
-    </>
+    </div>
   );
 }

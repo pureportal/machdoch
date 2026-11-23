@@ -216,7 +216,7 @@ export function ExecutionProfileForm({
           </Select>
         ) : (
           <p className="cloud-setup-empty">
-            <Link href="/cloud/settings?tab=git">Connect GitHub or GitLab</Link>{" "}
+            <Link href="/cloud/settings/integrations">Connect GitHub or GitLab</Link>{" "}
             to choose a repository.
           </p>
         )}
@@ -241,7 +241,7 @@ export function ExecutionProfileForm({
             </Select>
           ) : (
             <p className="cloud-setup-empty">
-              <Link href="/cloud/providers">Add an AI provider</Link> to choose
+              <Link href="/cloud/settings/ai">Add an AI provider</Link> to choose
               a model.
             </p>
           )}

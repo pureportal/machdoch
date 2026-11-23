@@ -17,10 +17,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { SavedView } from "@/lib/cloud-view-contract";
 import type { CloudFavorite } from "@/lib/cloud-favorite-contract";
-import {
-  settingsPermissions,
-  type SidebarPreferences,
-} from "@/lib/cloud-sidebar-contract";
+import type { SidebarPreferences } from "@/lib/cloud-sidebar-contract";
+import { settingsHref } from "@/lib/settings-navigation";
 import { pageHelp } from "@/lib/cloud-page-help";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +37,7 @@ import {
   pageNavigation,
 } from "./navigation";
 import { SectionNavigation } from "./section-navigation";
+import { SettingsNavigation } from "./settings-navigation";
 import { PageHelp } from "./page-help";
 import { BrandMark } from "./brand-mark";
 import { BrandFavicon, BrandStyle } from "./brand-theme";
@@ -135,9 +134,7 @@ export function CloudShell({
     () => workspace.teams.map((team) => team.key),
     [workspace.teams],
   );
-  const canOpenSettings = settingsPermissions.some((permission) =>
-    holderCan(workspace.actor, permission),
-  );
+  const inSettings = pathname.startsWith("/cloud/settings");
   const search = useSearchParams();
   const access = sidebarAccess(workspace);
   const section = navigationSection(
@@ -171,7 +168,7 @@ export function CloudShell({
     media.addEventListener("change", close);
     return () => media.removeEventListener("change", close);
   }, []);
-  const navigation = (
+  const appNavigation = (
     <>
       <div className="cloud-sidebar-header">
         <PropertyMenu
@@ -182,17 +179,13 @@ export function CloudShell({
               label: "Customize sidebar",
               icon: <SlidersHorizontal size={14} />,
             },
-            ...(canOpenSettings
-              ? [
-                  {
-                    value: "/cloud/settings",
-                    label: "Settings",
-                    icon: <Settings2 size={14} />,
-                  },
-                ]
-              : []),
             {
-              value: "/cloud/account",
+              value: settingsHref("preferences"),
+              label: "Settings",
+              icon: <Settings2 size={14} />,
+            },
+            {
+              value: settingsHref("profile"),
               label: "Account",
               icon: <UserRound size={14} />,
             },
@@ -242,10 +235,12 @@ export function CloudShell({
       />
       <div className="cloud-sidebar-footer">
         <Link
-          href="/cloud/account"
+          href={settingsHref("profile")}
           onClick={() => setOpen(false)}
           className="cloud-account-link"
-          aria-current={pathname === "/cloud/account" ? "page" : undefined}
+          aria-current={
+            pathname === settingsHref("profile") ? "page" : undefined
+          }
         >
           <PersonAvatar
             name={workspace.actor.name}
@@ -277,6 +272,14 @@ export function CloudShell({
         </p>
       )}
     </>
+  );
+  const navigation = inSettings ? (
+    <SettingsNavigation
+      workspace={workspace}
+      onNavigate={() => setOpen(false)}
+    />
+  ) : (
+    appNavigation
   );
   return (
     <ToastProvider>

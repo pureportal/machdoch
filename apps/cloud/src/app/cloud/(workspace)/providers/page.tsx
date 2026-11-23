@@ -1,18 +1,10 @@
-import { holderCan } from "@/lib/cloud-permissions";
 import { redirect } from "next/navigation";
-import { AiProviderSettings } from "@/components/cloud/provider-settings";
-import {
-  requireCloudPageSession,
-  requireCloudWorkspace,
-} from "@/server/cloud/page-auth";
+import { legacySettingsHref } from "@/lib/settings-navigation";
 
-export default async function ProvidersPage() {
-  const { runtime, actor } = await requireCloudPageSession();
-  const workspace = (await requireCloudWorkspace()).workspace;
-  if (!holderCan(workspace.actor, "ai.manage")) redirect("/cloud/issues");
-  return (
-    <AiProviderSettings
-      settings={await runtime.aiProviders.list(actor, true)}
-    />
-  );
+export default async function LegacyProvidersPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  redirect(legacySettingsHref("providers", await searchParams));
 }

@@ -212,7 +212,7 @@ function ConnectedClients({
       <header className="cloud-project-section-header">
         <h2>Connected clients</h2>
         {administrator && (
-          <Link href="/cloud/execution" prefetch={false}>
+          <Link href="/cloud/settings/execution" prefetch={false}>
             {clients.length ? "Manage" : "Connect"}
           </Link>
         )}

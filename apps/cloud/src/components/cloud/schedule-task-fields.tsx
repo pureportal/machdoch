@@ -244,7 +244,7 @@ export function ScheduleTaskFields({
       {!loading && !error && !profiles.length && (
         <p>
           AI is not set up for this team yet.{" "}
-          <Link className="underline" href="/cloud/execution">
+          <Link className="underline" href="/cloud/settings/execution">
             Set up AI
           </Link>
         </p>

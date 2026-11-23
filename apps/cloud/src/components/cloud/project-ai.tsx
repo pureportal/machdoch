@@ -35,7 +35,7 @@ export function ProjectAi({
       <header className="cloud-project-section-header">
         <h2>AI</h2>
         {administrator && (
-          <Link href={`/cloud/execution?project=${projectId}`} prefetch={false}>
+          <Link href={`/cloud/settings/execution?project=${projectId}`} prefetch={false}>
             {setup ? "Edit" : "Set up"}
           </Link>
         )}

@@ -44,6 +44,7 @@ import {
   requireTeam,
   teamVisibility,
 } from "./access";
+import { requireTeamParent } from "./team-hierarchy";
 
 export const issueSummaryPageSize = 200;
 const issueSummaryOrder: Record<
@@ -208,7 +209,7 @@ export class CloudPlanning {
       ).rows;
       const teams = (
         await sql.query<CloudTeam & Record<string, unknown>>(
-          `SELECT t.id,t.name,t.key,t.visibility,t.estimate_scale AS "estimateScale",t.scale_revision AS "scaleRevision",t.revision
+          `SELECT t.id,t.name,t.key,t.visibility,t.estimate_scale AS "estimateScale",t.scale_revision AS "scaleRevision",t.revision,t.parent_team_id AS "parentId"
         FROM cloud_teams t JOIN cloud_memberships m ON m.organization_id=t.organization_id AND m.user_id=$2 WHERE t.organization_id=$1 AND ${teamVisibility} ORDER BY t.name,t.id FOR SHARE OF t`,
           [actor.organizationId, actor.userId],
         )
@@ -263,8 +264,10 @@ export class CloudPlanning {
         { kind: "team.create", input },
         async () => {
           const id = randomUUID();
+          if (input.parentId)
+            await requireTeamParent(sql, actor, null, input.parentId);
           await sql.query(
-            `INSERT INTO cloud_teams (organization_id,id,name,key,visibility,estimate_scale) VALUES ($1,$2,$3,$4,$5,$6)`,
+            `INSERT INTO cloud_teams (organization_id,id,name,key,visibility,estimate_scale,parent_team_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
             [
               actor.organizationId,
               id,
@@ -272,6 +275,7 @@ export class CloudPlanning {
               input.key,
               input.visibility,
               JSON.stringify(input.estimateScale),
+              input.parentId ?? null,
             ],
           );
           await sql.query(

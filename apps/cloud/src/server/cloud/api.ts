@@ -99,6 +99,7 @@ import {
 import { savedViewInputSchema } from "../../lib/cloud-view-contract";
 import { triageDecisionSchema } from "../../lib/cloud-triage-contract";
 import { sidebarPreferencesSchema } from "../../lib/cloud-sidebar-contract";
+import { settingWriteSchema } from "../../lib/cloud-settings-contract";
 import {
   commentInputSchema,
   commentUpdateSchema,
@@ -514,6 +515,16 @@ async function route(
   }
   if (routeKey === "GET sidebar")
     return Response.json({ preferences: await runtime.sidebar.get(actor) });
+  if (routeKey === "GET settings") {
+    const teamId = url.searchParams.get("teamId");
+    return Response.json({
+      personal: await runtime.settings.personal(actor),
+      organization: await runtime.settings.organization(actor),
+      team: teamId
+        ? await runtime.settings.team(actor, cloudId.parse(teamId))
+        : null,
+    });
+  }
   if (routeKey === "GET triage")
     return Response.json({
       issues: await runtime.triage.list(
@@ -1043,6 +1054,22 @@ async function route(
           input.issueRevision,
         ),
         { status: 201 },
+      );
+    }
+    if (routeKey === "PUT settings") {
+      const input = await readBody(request, settingWriteSchema);
+      if (input.scope === "user")
+        return Response.json(
+          await runtime.settings.setPersonal(actor, key.data, input.key, input.value),
+        );
+      if (input.scope === "organization")
+        return Response.json(
+          await runtime.settings.setOrganization(actor, key.data, input.key, input.value),
+        );
+      if (!input.teamId)
+        throw new CloudError(422, "team_required", "Choose a team.");
+      return Response.json(
+        await runtime.settings.setTeam(actor, key.data, input.teamId, input.key, input.value),
       );
     }
     if (routeKey === "PATCH sidebar")

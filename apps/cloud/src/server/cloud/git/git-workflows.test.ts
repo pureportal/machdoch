@@ -578,7 +578,7 @@ it("lets members sign in with GitLab, rejects reused sign-ins and refreshes expi
   const completed = await callback("code-1", state);
   expect(completed.status).toBe(303);
   expect(completed.headers.get("location")).toBe(
-    "https://cloud.example.test/cloud/account?tab=git",
+    "https://cloud.example.test/cloud/settings/connected-accounts",
   );
   expect(server.callsTo("/oauth/token", "POST")[0]!.body).toEqual({
     client_id: "gitlab-app",
@@ -591,7 +591,7 @@ it("lets members sign in with GitLab, rejects reused sign-ins and refreshes expi
     (await runtime.git.accounts.get(member)).accounts.gitlab,
   ).toMatchObject({ login: "member-gl" });
   expect((await callback("code-1", state)).headers.get("location")).toBe(
-    "https://cloud.example.test/cloud/account?tab=git&gitError=expired",
+    "https://cloud.example.test/cloud/settings/connected-accounts?gitError=expired",
   );
 
   const [linked] = await runtime.git.pullRequests.forIssue(owner, login.id);

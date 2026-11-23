@@ -174,7 +174,7 @@ export class CloudSsoFlows {
       const redirect = flow.authorization_id
         ? `/cloud/authorize?requestId=${flow.authorization_id}`
         : flow.mode === "link"
-          ? "/cloud/account"
+          ? "/cloud/settings/security"
           : "/cloud/issues";
       if (flow.receipt) {
         const users = await sql.query<{ user_id: string }>(

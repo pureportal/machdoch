@@ -279,7 +279,7 @@ export function TaskList({
             {holderCan(workspace.actor, "ai.manage") && (
               <>
                 {" "}
-                <Link className="underline" href="/cloud/execution">
+                <Link className="underline" href="/cloud/settings/execution">
                   Set up AI
                 </Link>
               </>

@@ -177,7 +177,7 @@ export function AccountSessions({ account }: { account: SessionAccount }) {
       )}
       <Link
         className="text-sm underline underline-offset-4"
-        href="/cloud/connections"
+        href="/cloud/settings/security"
       >
         Connected apps
       </Link>

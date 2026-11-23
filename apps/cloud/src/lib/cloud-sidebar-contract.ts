@@ -257,7 +257,7 @@ export const sidebarItems = [
   {
     id: "connections",
     label: "Connected apps",
-    href: "/cloud/connections",
+    href: "/cloud/settings/security",
     group: "workspace",
     placement: "more",
     description: "Apps and MCP clients you allowed to work with your account.",
@@ -265,19 +265,19 @@ export const sidebarItems = [
   {
     id: "providers",
     label: "AI providers",
-    href: "/cloud/providers",
+    href: "/cloud/settings/ai",
     group: "workspace",
     placement: "more",
     permission: "ai.manage",
     tabs: [
       {
-        href: "/cloud/providers",
+        href: "/cloud/settings/ai",
         label: "Providers",
         description:
           "Accounts for AI models, as API keys or signed-in CLIs, that Agent and AI tasks use.",
       },
       {
-        href: "/cloud/execution",
+        href: "/cloud/settings/execution",
         label: "AI setup",
         description:
           "Which repository AI works in for each project, which checks must pass, and whether Autopilot ships changes.",
@@ -287,12 +287,10 @@ export const sidebarItems = [
   {
     id: "settings",
     label: "Settings",
-    href: "/cloud/settings",
+    href: "/cloud/settings/preferences",
     group: "workspace",
     placement: "more",
-    permission: settingsPermissions,
-    description:
-      "Organization, members, roles, sign-in, email and Git settings.",
+    description: "Personal, workspace and team settings.",
   },
 ] as const satisfies readonly ({
   id: string;
@@ -385,8 +383,7 @@ export function canSeeSidebarItem(
 ): boolean {
   if ("integration" in item && !access.git) return false;
   if ("permission" in item) {
-    const required: readonly CloudPermission[] =
-      typeof item.permission === "string" ? [item.permission] : item.permission;
+    const required: readonly CloudPermission[] = [item.permission].flat();
     if (!required.some((permission) => holderCan(access, permission)))
       return false;
   }

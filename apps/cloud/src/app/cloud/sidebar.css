@@ -126,3 +126,25 @@ button.cloud-brand > svg {
 .cloud-sidebar-mobile .cloud-sidebar-header {
   padding-right: 44px;
 }
+.cloud-settings-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px 10px;
+  padding-left: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+.cloud-settings-search input {
+  height: 30px;
+  border: 0;
+  padding-left: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.cloud-settings-search-empty {
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}

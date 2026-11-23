@@ -17,7 +17,7 @@ Reviews match pull requests to the GitHub and GitLab accounts linked on your acc
 Members see their own Agent activity and the tasks of teams they can access.
 `,
   "/cloud/tasks": `
-Open an issue and choose **Delegate**. The menu lists the [execution profiles](/cloud/execution) of the issue's team and project; the profile decides where the task runs, on which repository and with which model.
+Open an issue and choose **Delegate**. The menu lists the [execution profiles](/cloud/settings/execution) of the issue's team and project; the profile decides where the task runs, on which repository and with which model.
 
 A result only counts once the profile's required checks pass. On a linked client, a verified result is added to the local repository as a \`machdoch/…\` branch. The working tree and existing branches stay untouched.
 `,
@@ -51,7 +51,7 @@ To create issues or run AI tasks at fixed times, use [Schedules](/cloud/schedule
   "/cloud/schedules": `
 A schedule either **creates an issue** or **runs an AI task** at set times.
 
-AI task schedules use an [execution profile](/cloud/execution) and stop at **Maximum tasks**, at the **Total token allowance** or when the authorization expires. **Missed dates** decides whether missed occurrences are skipped or caught up.
+AI task schedules use an [execution profile](/cloud/settings/execution) and stop at **Maximum tasks**, at the **Total token allowance** or when the authorization expires. **Missed dates** decides whether missed occurrences are skipped or caught up.
 
 To react to events instead, use [Automations](/cloud/automations).
 `,
@@ -63,14 +63,14 @@ To react to events instead, use [Automations](/cloud/automations).
 Each key links one device.
 `,
   "/settings": `
-Not to be confused with [execution profiles](/cloud/execution), which decide where AI tasks run.
+Not to be confused with [execution profiles](/cloud/settings/execution), which decide where AI tasks run.
 `,
-  "/cloud/connections": `
+  "/cloud/settings/security": `
 Add the **MCP URL** as a remote MCP server in the app, then sign in when it asks. The app appears here once connected.
 
 An app gets the access of your role, never administration permissions. **Disconnect** revokes it.
 `,
-  "/cloud/providers": `
+  "/cloud/settings/ai": `
 - **API key**: requests go directly to the provider's API.
 - **Sign in** (Claude, Codex and Copilot CLIs): Cloud runs the CLI's own login on the server, so no API key is needed.
 
@@ -78,7 +78,7 @@ Agent and sandbox tasks use these providers. Tasks on a linked client use that c
 
 **Daily tokens** and **Parallel requests** limit each provider. **Token usage** shows today's consumption.
 `,
-  "/cloud/execution": `
+  "/cloud/settings/execution": `
 Each project gets one setup: pick the repository and the AI works from the latest commit of its default branch. Checks are suggested from the repository's own scripts.
 
 To hand an issue to AI, choose **Machdoch AI** as its assignee, or use **Assign to AI** on the issue. This also works for many issues at once from the issue list. The AI then:
@@ -100,7 +100,7 @@ With **Check pull requests** on, every new pull request and every new push to it
 
 Tasks wait until a **runner** of the setup picks them up. For a linked client, connect the local checkout with \`machdoch cloud connect\` and start the runner with **Run tasks** in the desktop app or \`machdoch cloud run <connection id>\`.
 
-Sandbox targets use models from [AI providers](/cloud/providers).
+Sandbox targets use models from [AI providers](/cloud/settings/ai).
 `,
 };
 

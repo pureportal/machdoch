@@ -72,6 +72,7 @@ export const teamUpdateSchema = z.strictObject({
   revision,
   name: z.string().trim().min(1).max(120),
   visibility: z.enum(["organization", "private"]),
+  parentId: cloudId.nullable().optional(),
   memberIds: z
     .array(cloudId)
     .max(1000)
@@ -113,14 +114,3 @@ export interface CloudAdministration {
 export type OrganizationUpdate = z.infer<typeof organizationUpdateSchema>;
 export type MemberUpdate = z.infer<typeof memberUpdateSchema>;
 export type TeamUpdate = z.infer<typeof teamUpdateSchema>;
-
-export const settingsTabs = [
-  "organization",
-  "members",
-  "roles",
-  "authentication",
-  "email",
-  "git",
-  "mimorii",
-] as const;
-export type SettingsTab = (typeof settingsTabs)[number];

@@ -1,32 +1,10 @@
-import { holderCan } from "@/lib/cloud-permissions";
 import { redirect } from "next/navigation";
-import { CloudSettings } from "@/components/cloud/settings";
-import { settingsTabs } from "@/lib/cloud-administration-contract";
-import { settingsPermissions } from "@/lib/cloud-sidebar-contract";
-import {
-  requireCloudPageSession,
-  requireCloudWorkspace,
-} from "@/server/cloud/page-auth";
+import { legacySettingsHref } from "@/lib/settings-navigation";
 
-export default async function SettingsPage({
+export default async function LegacySettingsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { runtime, actor } = await requireCloudPageSession();
-  const workspace = (await requireCloudWorkspace()).workspace;
-  if (
-    !settingsPermissions.some((permission) =>
-      holderCan(workspace.actor, permission),
-    )
-  )
-    redirect("/cloud/issues");
-  const requested = (await searchParams).tab;
-  return (
-    <CloudSettings
-      data={await runtime.administration.get(actor)}
-      actor={workspace.actor}
-      tab={settingsTabs.find((entry) => entry === requested) ?? "organization"}
-    />
-  );
+  redirect(legacySettingsHref("settings", await searchParams));
 }

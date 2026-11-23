@@ -284,3 +284,15 @@
 .cloud-check-grid label:has(input:disabled) {
   color: var(--muted-foreground);
 }
+.cloud-setting-form {
+  max-width: 720px;
+}
+.cloud-setting-form > button {
+  justify-self: start;
+}
+.cloud-setting-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}

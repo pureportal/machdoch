@@ -88,7 +88,7 @@ export function IssueDelegate({
       size="sm"
       onClick={() =>
         holderCan(workspace.actor, "ai.manage")
-          ? router.push("/cloud/execution")
+          ? router.push("/cloud/settings/execution")
           : toast(
               issue.projectId
                 ? "Ask an administrator to set up AI for this project."

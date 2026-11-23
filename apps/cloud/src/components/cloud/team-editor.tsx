@@ -58,6 +58,7 @@ export function TeamEditor({
               revision: team.revision,
               name: formText(form, "name"),
               visibility: formText(form, "visibility"),
+              parentId: formText(form, "parentId") || null,
               memberIds: form.getAll("memberIds"),
             },
             "PATCH",
@@ -82,6 +83,22 @@ export function TeamEditor({
           >
             <option value="organization">Organization</option>
             <option value="private">Private</option>
+          </Select>
+        </Field>
+        <Field label="Parent team" htmlFor={`team-parent-${team.id}`}>
+          <Select
+            id={`team-parent-${team.id}`}
+            name="parentId"
+            defaultValue={team.parentId ?? ""}
+          >
+            <option value="">None</option>
+            {workspace.teams
+              .filter((entry) => entry.id !== team.id)
+              .map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.name}
+                </option>
+              ))}
           </Select>
         </Field>
         <fieldset className="cloud-member-picker">

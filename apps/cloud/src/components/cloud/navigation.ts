@@ -125,7 +125,7 @@ export function navigationSection(
 
 export const pageNavigation: NavigationItem[] = [
   { href: "/cloud/triage", label: "Triage", icon: CircleDotDashed },
-  { href: "/cloud/account", label: "Account", icon: CircleUserRound },
+  { href: "/cloud/settings/profile", label: "Account", icon: CircleUserRound },
 ];
 
 export function isNavigationActive(

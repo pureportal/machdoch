@@ -70,6 +70,7 @@ export const cloudMigrations = [
   "067-pull-request-notifications.sql",
   "068-automated-changes.sql",
   "069-automatic-sandbox.sql",
+  "070-settings-scopes.sql",
 ];
 
 export interface CloudSql {

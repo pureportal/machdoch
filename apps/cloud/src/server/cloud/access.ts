@@ -185,7 +185,7 @@ export async function requireTeam(
 ): Promise<CloudTeam> {
   await requireMembership(sql, actor, permission);
   const result = await sql.query<CloudTeam & Record<string, unknown>>(
-    `SELECT t.id, t.name, t.key, t.visibility, t.estimate_scale AS "estimateScale", t.scale_revision AS "scaleRevision", t.revision
+    `SELECT t.id, t.name, t.key, t.visibility, t.estimate_scale AS "estimateScale", t.scale_revision AS "scaleRevision", t.revision, t.parent_team_id AS "parentId"
      FROM cloud_teams t JOIN cloud_memberships m ON m.organization_id = t.organization_id AND m.user_id = $2
      WHERE t.organization_id = $1 AND t.id = $3 AND ${teamVisibility} FOR ${permission ? "UPDATE" : "SHARE"} OF t`,
     [actor.organizationId, actor.userId, teamId],

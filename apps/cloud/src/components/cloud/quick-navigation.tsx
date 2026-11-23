@@ -72,7 +72,7 @@ export function QuickNavigation({
     { label: "Go to", items: navigationFor(access) },
     {
       label: "Personal",
-      items: [{ href: "/cloud/account", label: "Account", icon: UserRound }],
+      items: [{ href: "/cloud/settings/profile", label: "Account", icon: UserRound }],
     },
   ];
   function go(href: string) {

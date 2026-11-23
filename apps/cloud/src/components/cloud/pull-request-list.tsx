@@ -125,7 +125,7 @@ export function PullRequestList({
           <GitPullRequest aria-hidden="true" />
           {manageGit ? (
             <p>
-              <Link href="/cloud/settings?tab=git">
+              <Link href="/cloud/settings/integrations">
                 Connect GitHub or GitLab
               </Link>{" "}
               to follow pull requests.

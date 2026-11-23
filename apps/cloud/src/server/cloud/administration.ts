@@ -20,6 +20,7 @@ import {
   requireRoleGrant,
   requireTeam,
 } from "./access";
+import { requireTeamParent } from "./team-hierarchy";
 import { readRoles } from "./roles";
 import { settingsPermissions } from "../../lib/cloud-sidebar-contract";
 import { organizationColumns } from "./branding";
@@ -373,9 +374,13 @@ export class CloudAdministrationService {
             "INSERT INTO cloud_team_memberships (organization_id,team_id,user_id) SELECT $1,$2,unnest($3::uuid[]) ON CONFLICT DO NOTHING",
             [actor.organizationId, id, input.memberIds],
           );
+          const parentId =
+            input.parentId === undefined ? team.parentId : input.parentId;
+          if (parentId && parentId !== team.parentId)
+            await requireTeamParent(sql, actor, id, parentId);
           await sql.query(
-            "UPDATE cloud_teams SET name=$3,visibility=$4,revision=revision+1 WHERE organization_id=$1 AND id=$2",
-            [actor.organizationId, id, input.name, input.visibility],
+            "UPDATE cloud_teams SET name=$3,visibility=$4,parent_team_id=$5,revision=revision+1 WHERE organization_id=$1 AND id=$2",
+            [actor.organizationId, id, input.name, input.visibility, parentId],
           );
           await recordEvent(
             sql,

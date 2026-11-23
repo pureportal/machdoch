@@ -73,6 +73,7 @@ export const teamInputSchema = z.strictObject({
     ),
   visibility: z.enum(["organization", "private"]),
   estimateScale: estimateScaleSchema,
+  parentId: cloudId.nullable().optional(),
 });
 export const projectStatuses = [
   "backlog",
@@ -200,8 +201,9 @@ export interface CloudActor {
     scope: "cloud:read" | "cloud:write" | "cloud:execute";
   };
 }
-export interface CloudTeam extends TeamInput {
+export interface CloudTeam extends Omit<TeamInput, "parentId"> {
   id: string;
+  parentId: string | null;
   revision: number;
   scaleRevision: number;
 }

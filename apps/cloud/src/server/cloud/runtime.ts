@@ -97,6 +97,7 @@ import { CloudFavorites, CloudIssueSubscriptions } from "./favorites";
 import { CloudInitiatives } from "./initiatives";
 import { CloudTriage } from "./triage";
 import { CloudSidebar } from "./sidebar";
+import { CloudSettingsStore } from "./settings-store";
 import { CloudCliLogins } from "./ai/cli-login";
 import { CloudInferenceStore } from "./ai/inference-store";
 import {
@@ -171,6 +172,7 @@ export interface CloudRuntime {
   initiatives: CloudInitiatives;
   triage: CloudTriage;
   sidebar: CloudSidebar;
+  settings: CloudSettingsStore;
   favorites: CloudFavorites;
   subscriptions: CloudIssueSubscriptions;
   labels: CloudLabels;
@@ -582,6 +584,7 @@ export function createCloudRuntime(
     initiatives,
     triage,
     sidebar: new CloudSidebar(database),
+    settings: new CloudSettingsStore(database),
     favorites: new CloudFavorites(database),
     subscriptions: new CloudIssueSubscriptions(database),
     labels,
