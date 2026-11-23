@@ -23,6 +23,7 @@ export interface AgentModelOption {
 
 export interface ClientTarget {
   instanceId: string;
+  device: string;
   workspace: string;
   label: string;
 }
@@ -87,7 +88,7 @@ export function useAutomationOptions(
         ? cloudRequest<GitRepositoryOption[]>("git/repositories", { signal })
         : Promise.resolve([]),
       cloudRequest<CloudAutomation[]>("automations", { signal }),
-      cloudRequest<CloudDocumentSummary[]>("documents", { signal }),
+      cloudRequest<CloudDocumentSummary[]>("loops/documents", { signal }),
     ])
       .then(
         ([
@@ -111,6 +112,7 @@ export function useAutomationOptions(
               .flatMap((device) =>
                 device.workspaces.map((entry) => ({
                   instanceId: device.instanceId,
+                  device: device.displayName,
                   workspace: entry.root,
                   label: `${device.displayName} · ${entry.label}`,
                 })),

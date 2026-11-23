@@ -191,24 +191,12 @@ export const sidebarItems = [
   },
   {
     id: "automations",
-    label: "Automations",
-    href: "/cloud/automations",
+    label: "Loops",
+    href: "/cloud/loops",
     group: "workspace",
     placement: "show",
-    tabs: [
-      {
-        href: "/cloud/automations",
-        label: "Automations",
-        description:
-          "Rules that act when something happens in a team, such as labeling, assigning, commenting or asking Agent.",
-      },
-      {
-        href: "/cloud/schedules",
-        label: "Schedules",
-        description:
-          "Create issues or run AI tasks on a timetable, such as a nightly dependency check.",
-      },
-    ],
+    description:
+      "Agents and rules that run on events, webhooks or a timetable, in a cloud sandbox or on a linked client.",
   },
   {
     id: "clients",

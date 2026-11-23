@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CloudLoopSummary } from "./cloud-loop-contract";
 import {
+  formatLoopCost,
   groupLoopsByTeam,
   loopSuccessRate,
   type LoopListQuery,
@@ -75,8 +76,8 @@ describe("loop list", () => {
       ["Software Engineering › AlphaNET Cloud", 1],
     ]);
     expect(
-      groupLoopsByTeam(loops, teams, { ...base, scope: "mine" }).map(
-        (group) => group.loops.map((item) => item.id),
+      groupLoopsByTeam(loops, teams, { ...base, scope: "mine" }).map((group) =>
+        group.loops.map((item) => item.id),
       ),
     ).toEqual([["c"], [], ["a"]]);
   });
@@ -115,5 +116,10 @@ describe("loop list", () => {
       75,
     );
     expect(loopSuccessRate(loop({}))).toBeNull();
+  });
+
+  it("formats cost in dollars", () => {
+    expect(formatLoopCost(0)).toBe("$0.00");
+    expect(formatLoopCost(1234)).toBe("$12.34");
   });
 });

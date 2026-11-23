@@ -158,7 +158,7 @@ function row(entry: DeliveryEntry, reference: string): Row {
         tone: automationTones[entry.state] ?? "muted",
         title: entry.name,
         body: entry.detail,
-        href: `/cloud/automations?automation=${entry.automationId}`,
+        href: `/cloud/loops/${entry.automationId}`,
       };
   }
 }

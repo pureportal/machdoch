@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { checkLoopCapabilities } from "./loop-capabilities";
+import { loopCapabilities } from "./cloud-loop-contract";
+import {
+  checkLoopCapabilities,
+  offeredCapabilities,
+} from "./loop-capabilities";
 
 const allCode = { mode: "all" as const, repositoryIds: [] };
 
@@ -79,5 +83,15 @@ describe("loop capabilities", () => {
         codeAccess: { mode: "selected", repositoryIds: [] },
       }),
     ).toEqual({ available: false, reason: "Loops may not access code." });
+  });
+
+  it("offers only the capabilities of the chosen executor", () => {
+    expect(offeredCapabilities("sandbox")).toEqual([
+      "repository",
+      "shell",
+      "browser",
+    ]);
+    expect(offeredCapabilities("client")).toContain("desktop");
+    expect(offeredCapabilities("automatic")).toEqual(loopCapabilities);
   });
 });

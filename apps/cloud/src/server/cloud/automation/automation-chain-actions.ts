@@ -69,7 +69,7 @@ export async function automationChainActions(
     );
     return succeeded(
       `${action.enabled ? "Turned on" : "Paused"} ${target.name}`,
-      "/cloud/automations",
+      `/cloud/loops/${target.id}`,
     );
   }
   if (run.depth + 1 >= maximumAutomationDepth)

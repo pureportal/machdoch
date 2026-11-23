@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { AnalyticsPrivacyControl } from "@machdoch/analytics/privacy-control";
-import type { SettingsAccess, SettingsSectionId } from "@/lib/settings-navigation";
+import type {
+  SettingsAccess,
+  SettingsSectionId,
+} from "@/lib/settings-navigation";
 import { settingsSections, teamSettingsHref } from "@/lib/settings-navigation";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import { holderCan } from "@/lib/cloud-permissions";
@@ -14,6 +17,7 @@ import { ExecutionSettings } from "./execution-settings";
 import { GitAccountSettings } from "./git-accounts";
 import { GitSettings } from "./git-settings";
 import { LabelManager } from "./label-manager";
+import { LoopSettingsPanel } from "./loop-settings";
 import { PersonAvatar } from "./person-avatar";
 import { AiProviderSettings } from "./provider-settings";
 import { PulseInstructionsEditor } from "./pulse-instructions";
@@ -40,8 +44,10 @@ function isAdministrationSection(
   return administrationSections.has(section);
 }
 
-const sectionLinks: Partial<Record<SettingsSectionId, { href: string; label: string }>> = {
-  loops: { href: "/cloud/automations", label: "Open automations" },
+const sectionLinks: Partial<
+  Record<SettingsSectionId, { href: string; label: string }>
+> = {
+  loops: { href: "/cloud/loops", label: "Open loops" },
   initiatives: { href: "/cloud/initiatives", label: "Open initiatives" },
   releases: { href: "/cloud/releases", label: "Open releases" },
 };
@@ -72,6 +78,21 @@ export async function SettingsSectionContent({
         section={section}
       />
     );
+  if (section === "loops" && holderCan(workspace.actor, "ai.manage")) {
+    const [settings, sources, repositories] = await Promise.all([
+      runtime.automations.loops.getSettings(actor),
+      runtime.automations.sources.list(actor),
+      runtime.git.connections.repositories(actor),
+    ]);
+    return (
+      <LoopSettingsPanel
+        workspace={workspace}
+        settings={settings}
+        sources={sources}
+        repositories={repositories}
+      />
+    );
+  }
   switch (section) {
     case "preferences":
       return (
@@ -179,7 +200,9 @@ export async function SettingsSectionContent({
     }
     case "ai":
       return (
-        <AiProviderSettings settings={await runtime.aiProviders.list(actor, true)} />
+        <AiProviderSettings
+          settings={await runtime.aiProviders.list(actor, true)}
+        />
       );
     case "execution": {
       const [profiles, providers] = await Promise.all([
@@ -198,13 +221,19 @@ export async function SettingsSectionContent({
     case "integrations":
       if (writable) return <GitSettings />;
       return (
-        <RepositoryList repositories={await runtime.git.connections.repositories(actor)} />
+        <RepositoryList
+          repositories={await runtime.git.connections.repositories(actor)}
+        />
       );
     case "issue-labels":
       return (
         <TeamRows workspace={workspace}>
           {(team) => (
-            <LabelManager teamId={team.id} teamName={team.name} writable={writable} />
+            <LabelManager
+              teamId={team.id}
+              teamName={team.name}
+              writable={writable}
+            />
           )}
         </TeamRows>
       );
@@ -212,7 +241,10 @@ export async function SettingsSectionContent({
       return (
         <TeamRows workspace={workspace}>
           {(team) => (
-            <Link className="cloud-text-link" href={teamSettingsHref(team.id, "workflow")}>
+            <Link
+              className="cloud-text-link"
+              href={teamSettingsHref(team.id, "workflow")}
+            >
               {settingsSections["workflow-states"].label}
             </Link>
           )}

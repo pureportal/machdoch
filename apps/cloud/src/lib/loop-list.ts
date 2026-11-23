@@ -43,6 +43,10 @@ export function loopSuccessRate(loop: CloudLoopSummary): number | null {
     : null;
 }
 
+export function formatLoopCost(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
 function matchesDate(
   value: string | null,
   condition: IssueFilterCondition,

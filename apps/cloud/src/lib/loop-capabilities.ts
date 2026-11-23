@@ -1,7 +1,9 @@
-import type {
-  CodeAccessMode,
-  LoopCapability,
-  LoopPlacement,
+import {
+  loopCapabilities,
+  type CodeAccessMode,
+  type LoopCapability,
+  type LoopHarness,
+  type LoopPlacement,
 } from "./cloud-loop-contract";
 
 type ConcretePlacement = Exclude<LoopPlacement, "automatic">;
@@ -36,6 +38,21 @@ export const capabilityLabels: Record<LoopCapability, string> = {
   local_files: "Local files",
   gpu: "GPU",
 };
+
+export const harnessLabels: Record<LoopHarness, string> = {
+  machdoch: "Machdoch",
+  codex: "Codex CLI",
+  claude: "Claude Code",
+  copilot: "Copilot CLI",
+};
+
+export function offeredCapabilities(
+  placement: LoopPlacement,
+): readonly LoopCapability[] {
+  return placement === "automatic"
+    ? loopCapabilities
+    : placementCapabilities[placement];
+}
 
 export interface CodeAccess {
   mode: CodeAccessMode;

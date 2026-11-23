@@ -96,7 +96,7 @@ beforeEach(async () => {
       models: ["fixture-model"],
       apiKey: "private-fixture-key",
       maxOutputTokens: 256,
-      dailyTokenBudget: 200000,
+      dailyTokenBudget: 300000,
       maxConcurrentRequests: 4,
     })
   ).id;
@@ -195,7 +195,7 @@ it("preserves private conversation history and rejects concurrent stale messages
 
 it("reserves daily budget atomically and does not refund uncertain provider work", async () => {
   await database.engine.query(
-    "UPDATE cloud_ai_providers SET daily_token_budget=100000 WHERE id=$1",
+    "UPDATE cloud_ai_providers SET daily_token_budget=150000 WHERE id=$1",
     [providerId],
   );
   const first = await runtime.chat.store.submit(
@@ -584,7 +584,7 @@ it("rechecks the budget day before dispatch and expires an unsent request withou
 
 it("checks new-day capacity again at the network boundary", async () => {
   await database.engine.query(
-    "UPDATE cloud_ai_providers SET daily_token_budget=100000 WHERE id=$1",
+    "UPDATE cloud_ai_providers SET daily_token_budget=150000 WHERE id=$1",
     [providerId],
   );
   const old = await runtime.chat.store.submit(member, randomUUID(), message());
@@ -859,7 +859,7 @@ it("retries with an explicitly selected provider while preserving prior request 
     models: ["alternate-model"],
     apiKey: "alternate-key",
     maxOutputTokens: 128,
-    dailyTokenBudget: 200000,
+    dailyTokenBudget: 300000,
     maxConcurrentRequests: 1,
   });
   const retry = await runtime.chat.store.retry(

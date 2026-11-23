@@ -4,7 +4,7 @@ const help: Partial<Record<SidebarPageHref, string>> = {
   "/cloud/pulse": `
 **Write with Agent** posts an update for each chosen project. Agent reads the project's issues and earlier updates and follows the Pulse **Instructions**, which set the TL;DR, health and structure.
 
-To post updates on a timetable, add an [automation](/cloud/automations) with the action **Write project updates**.
+To post updates on a timetable, add a [loop](/cloud/loops) with the action **Write project updates**.
 `,
   "/cloud/reviews": `
 Reviews match pull requests to the GitHub and GitLab accounts linked on your account page. Pull requests you opened appear by what they need next; requests for your review appear until you submit one.
@@ -41,19 +41,10 @@ Add the LinkedIn or Reddit app credentials, copy the shown redirect URL into tha
 
 Posting to LinkedIn company pages needs the Community Management API.
 `,
-  "/cloud/automations": `
-An automation has a **trigger**, optional **conditions** that use the issue filters, and **actions** such as setting fields, commenting, asking Agent or starting an AI task.
+  "/cloud/loops": `
+A loop is an **automation** that reacts to events or webhooks, or a **schedule** that runs at set times. It runs in a cloud sandbox, on a linked client or in a runner pool.
 
-Actions run with the automation owner's permissions. An automation's own changes never trigger it again.
-
-To create issues or run AI tasks at fixed times, use [Schedules](/cloud/schedules).
-`,
-  "/cloud/schedules": `
-A schedule either **creates an issue** or **runs an AI task** at set times.
-
-AI task schedules use an [execution profile](/cloud/settings/execution) and stop at **Maximum tasks**, at the **Total token allowance** or when the authorization expires. **Missed dates** decides whether missed occurrences are skipped or caught up.
-
-To react to events instead, use [Automations](/cloud/automations).
+Actions run with the loop owner's permissions. A loop's own changes never trigger it again. Budgets, code access and trusted sources are set in **Settings → Loops**.
 `,
   "/enrollment": `
 1. Create an enrollment key.

@@ -238,7 +238,7 @@ function ActionResult({ action }: { action: AgentAction }) {
       href={
         result.href ??
         (result.kind === "automation"
-          ? `/cloud/automations?automation=${result.id}`
+          ? `/cloud/loops/${result.id}`
           : `/cloud/${result.kind === "issue" ? "issues" : result.kind === "release" ? "releases" : "projects"}/${result.id}`)
       }
     >

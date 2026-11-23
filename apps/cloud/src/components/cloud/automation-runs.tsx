@@ -6,7 +6,7 @@ import type { CloudAutomationRun } from "@/lib/cloud-automation-contract";
 import { actionKinds, triggerLabel } from "./automation-display";
 import { RelativeTime } from "./relative-time";
 
-const runStateLabels: Record<CloudAutomationRun["state"], string> = {
+export const runStateLabels: Record<CloudAutomationRun["state"], string> = {
   queued: "Queued",
   running: "Running",
   waiting: "Waiting for Agent",
@@ -24,9 +24,11 @@ const stepIcons = {
 export function AutomationRuns({
   runs,
   showAutomation = false,
+  onOpen,
 }: {
   runs: CloudAutomationRun[];
   showAutomation?: boolean;
+  onOpen?: (run: CloudAutomationRun) => void;
 }) {
   if (!runs.length)
     return <p className="cloud-automation-muted">No runs yet.</p>;
@@ -46,8 +48,18 @@ export function AutomationRuns({
               </Link>
             )}
             {run.actorName && <span>{run.actorName}</span>}
+            {run.dryRun && <span>Dry run</span>}
             <span className="cloud-automation-spacer" />
             <RelativeTime value={run.createdAt} />
+            {onOpen && (
+              <button
+                type="button"
+                className="cloud-automation-run-link"
+                onClick={() => onOpen(run)}
+              >
+                Details
+              </button>
+            )}
           </div>
           {run.steps.length > 0 && (
             <ul className="cloud-automation-run-steps">

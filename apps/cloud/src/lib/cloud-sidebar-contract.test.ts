@@ -49,7 +49,7 @@ describe("sidebar preferences", () => {
       git: false,
     });
     expect(ids(member.workspace)).toContain("clients");
-    expect(ids(member.more)).not.toContain("settings");
+    expect(ids(member.more)).toContain("settings");
     expect(member.sections).toEqual({
       favorites: true,
       teams: true,
@@ -199,10 +199,7 @@ describe("sidebar preferences", () => {
     expect(
       canSeeSidebarItem(item("clients"), { ...access.member, git: false }),
     ).toBe(true);
-    expect(hrefs("automations", access.member)).toEqual([
-      "/cloud/automations",
-      "/cloud/schedules",
-    ]);
+    expect(hrefs("automations", access.member)).toEqual(["/cloud/loops"]);
     expect(hrefs("activity", access.member)).toEqual([
       "/cloud/activity",
       "/cloud/tasks",
