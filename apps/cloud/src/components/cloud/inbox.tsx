@@ -31,6 +31,7 @@ const priorityKinds: InboxEntry["kind"][] = [
   "mentioned",
   "loop_input",
   "loop_approval",
+  "sla_breached",
 ];
 const loopKinds: InboxEntry["kind"][] = [
   "loop_input",
@@ -49,9 +50,9 @@ function describe(entry: InboxEntry): string {
     return `${actor} changed the status to ${entry.detail}`;
   if (entry.kind === "pull_request") return entry.detail;
   if (entry.kind === "loop_input") return `Input needed: ${entry.detail}`;
-  if (entry.kind === "loop_approval")
-    return `Approval needed: ${entry.detail}`;
+  if (entry.kind === "loop_approval") return `Approval needed: ${entry.detail}`;
   if (entry.kind === "loop_message") return entry.detail;
+  if (entry.kind === "sla_breached") return "SLA breached";
   return `AI task ${(entry.runState ?? "finished").replaceAll("_", " ")}${entry.detail ? `: ${entry.detail}` : ""}`;
 }
 

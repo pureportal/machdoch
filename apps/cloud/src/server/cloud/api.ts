@@ -36,6 +36,7 @@ import { invitationInputSchema } from "../../lib/cloud-invitation-contract";
 import { recurrencePreviewSchema } from "../../lib/cloud-recurrence-contract";
 import { handleScheduleApi } from "./automation/api";
 import { handlePulseApi } from "./pulse/api";
+import { handleSlaApi } from "./sla-api";
 import { teamResourceInputSchema } from "../../lib/cloud-team-contract";
 import {
   handlePublicReleaseApi,
@@ -408,6 +409,7 @@ async function route(
     return handleAutomationApi(runtime, request, actor);
   if (path[0] === "loops") return handleLoopApi(runtime, request, actor);
   if (path[0] === "pulse") return handlePulseApi(runtime, request, actor);
+  if (path[0] === "slas") return handleSlaApi(runtime, request, actor);
   if (releaseRoutePrefixes.has(path[0] ?? ""))
     return handleReleaseApi(runtime, request, actor);
   if (isAttachmentRoute(path))

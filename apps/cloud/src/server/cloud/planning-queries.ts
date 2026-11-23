@@ -7,6 +7,7 @@ import {
   type IssueFilterCondition,
   type IssueFilterField,
 } from "../../lib/issue-filter-model";
+import { slaAtRiskHours, type SlaState } from "../../lib/issue-sla";
 
 export const cycleColumns = `id,team_id AS "teamId",name,to_char(starts_on,'YYYY-MM-DD') AS "startsOn",to_char(ends_on,'YYYY-MM-DD') AS "endsOn",timezone,capacity,revision,status`;
 
@@ -25,6 +26,7 @@ export const issueSummaryColumns = `i.id, i.team_id AS "teamId", i.identifier, i
   i.estimate, i.estimate_points AS "estimatePoints", to_char(i.due_on, 'YYYY-MM-DD') AS "dueOn", i.archived, i.revision,
   to_char(i.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt",
   to_char(i.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
+  to_char(cloud_issue_sla_due(i.organization_id,i.id) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "slaDueAt",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',l.id,'name',l.name,'color',l.color) ORDER BY lower(l.name),l.id)
     FROM cloud_issue_labels a JOIN cloud_labels l ON l.organization_id=a.organization_id AND l.id=a.label_id
     WHERE a.organization_id=i.organization_id AND a.issue_id=i.id),'[]'::jsonb) AS labels,
@@ -61,6 +63,13 @@ const estimatePredicates: Record<string, string> = {
   none: "i.estimate IS NULL",
   set: "i.estimate IS NOT NULL",
 };
+const slaDue = "cloud_issue_sla_due(i.organization_id,i.id)";
+const slaPredicates: Record<SlaState, string> = {
+  breached: `${slaDue}<=clock_timestamp()`,
+  at_risk: `${slaDue} BETWEEN clock_timestamp() AND clock_timestamp()+interval '${slaAtRiskHours} hours'`,
+  ok: `${slaDue}>clock_timestamp()+interval '${slaAtRiskHours} hours'`,
+  none: `${slaDue} IS NULL`,
+};
 const dateColumns: Partial<Record<IssueFilterField, string>> = {
   due: "i.due_on",
   created: "i.created_at",
@@ -85,8 +94,18 @@ function relatedIssue(
 }
 
 const flagPredicates: Partial<Record<IssueFilterField, string>> = {
-  blocked: relatedIssue("blocks", "target_id", "source_id", ` AND ${openStates}`),
-  blocking: relatedIssue("blocks", "source_id", "target_id", ` AND ${openStates}`),
+  blocked: relatedIssue(
+    "blocks",
+    "target_id",
+    "source_id",
+    ` AND ${openStates}`,
+  ),
+  blocking: relatedIssue(
+    "blocks",
+    "source_id",
+    "target_id",
+    ` AND ${openStates}`,
+  ),
   hasParent: relatedIssue("parent", "target_id", "source_id"),
   hasSubIssues: relatedIssue("parent", "source_id", "target_id"),
   duplicate: relatedIssue("duplicate", "source_id", "target_id"),
@@ -229,6 +248,8 @@ function conditionPredicate(
     }
     case "due":
       return mapped(duePredicates);
+    case "sla":
+      return mapped(slaPredicates);
     case "created":
       return mapped(createdPredicates);
     case "updated":

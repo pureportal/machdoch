@@ -1,10 +1,12 @@
 "use client";
 
+import { AlarmClock } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent, MouseEvent } from "react";
 import type { CloudIssueSummary, CloudWorkspace } from "@/lib/cloud-contract";
 import type { IssueDisplayProperty } from "@/lib/issue-display";
+import { slaState, slaTimeLeft } from "@/lib/issue-sla";
 import type { IssueDensity } from "@/lib/issue-view-options";
 import {
   AssigneeCell,
@@ -251,6 +253,16 @@ function IssueRow({
         {shows("due") && issue.dueOn && (
           <span className="cloud-issue-chip">
             Due {shortDate.format(new Date(issue.dueOn))}
+          </span>
+        )}
+        {issue.slaDueAt && (
+          <span
+            className="cloud-issue-sla"
+            data-state={slaState(issue.slaDueAt, new Date())}
+            suppressHydrationWarning
+          >
+            <AlarmClock aria-hidden size={12} />
+            {slaTimeLeft(issue.slaDueAt, new Date())}
           </span>
         )}
       </span>

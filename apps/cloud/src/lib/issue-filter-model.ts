@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { cloudId, issuePriorities } from "./cloud-contract";
 import { pullRequestStages } from "./git-automation";
+import { slaStates } from "./issue-sla";
 
 export const issueFilterFields = [
   "status",
@@ -26,6 +27,7 @@ export const issueFilterFields = [
   "duplicate",
   "automated",
   "releasedIn",
+  "sla",
 ] as const;
 export type IssueFilterField = (typeof issueFilterFields)[number];
 
@@ -93,6 +95,7 @@ const valueSchemas: Record<IssueFilterField, z.ZodType<string>> = {
   duplicate: flag,
   automated: flag,
   releasedIn: optionalReference,
+  sla: z.enum(slaStates),
 };
 
 const dateFields: readonly IssueFilterField[] = ["due", "created", "updated"];
@@ -186,7 +189,9 @@ export const issueFilterKeys: [IssueFilterKey, ...IssueFilterKey[]] = [
 
 function encodeCondition(condition: IssueFilterCondition): string {
   const head = `${condition.negated ? "!" : ""}${condition.field}${condition.operator ? `.${condition.operator}` : ""}`;
-  return condition.values.length ? `${head}:${condition.values.join(",")}` : head;
+  return condition.values.length
+    ? `${head}:${condition.values.join(",")}`
+    : head;
 }
 
 export function encodeIssueFilter(tree: IssueFilterTree): string {
@@ -259,7 +264,9 @@ export function parseIssueFilterTree(
 ): IssueFilterTree {
   const raw = params[issueFilterParameter];
   const encoded =
-    typeof raw === "string" ? decodeIssueFilter(raw) : { conditions: [], groups: [] };
+    typeof raw === "string"
+      ? decodeIssueFilter(raw)
+      : { conditions: [], groups: [] };
   return {
     conditions: [...legacyConditions(params), ...encoded.conditions],
     groups: encoded.groups,

@@ -34,7 +34,7 @@ const proposedCondition = z.strictObject({
     .max(50)
     .optional()
     .describe(
-      "Names as shown in the workspace: status, label, project, cycle, team, milestone and initiative names; member names or me; none for unset; ai for agent assignee or delegate; current, upcoming or previous for cycles; yes for flags such as blocked.",
+      "Names as shown in the workspace: status, label, project, cycle, team, milestone and initiative names; member names or me; none for unset; ai for agent assignee or delegate; current, upcoming or previous for cycles; breached, at_risk, ok or none for SLA; yes for flags such as blocked.",
     ),
 });
 type ProposedCondition = z.infer<typeof proposedCondition>;
@@ -82,6 +82,7 @@ const fieldNames: Record<IssueFilterField, string> = {
   duplicate: "Duplicate",
   automated: "Created by agent or loop",
   releasedIn: "Released in",
+  sla: "SLA",
 };
 
 function normalized(value: string): string {

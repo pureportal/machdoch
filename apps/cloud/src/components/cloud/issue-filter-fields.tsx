@@ -1,4 +1,5 @@
 import {
+  AlarmClock,
   Ban,
   Bot,
   CalendarClock,
@@ -40,6 +41,7 @@ import {
   type IssueFilterCondition,
   type IssueFilterField,
 } from "@/lib/issue-filter-model";
+import { slaStateLabels, slaStates } from "@/lib/issue-sla";
 import {
   assigneeOptions,
   cycleOptions,
@@ -209,6 +211,15 @@ export function filterFieldDefinitions(
         { value: "month", label: "Due within a month" },
         { value: "none", label: "No due date" },
       ],
+    },
+    {
+      field: "sla",
+      label: "SLA",
+      icon: AlarmClock,
+      options: slaStates.map((state) => ({
+        value: state,
+        label: slaStateLabels[state],
+      })),
     },
     {
       field: "created",

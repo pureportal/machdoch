@@ -97,6 +97,7 @@ import { CloudAgentTools } from "./ai/agent-tools";
 import { CloudAgentActions } from "./ai/agent-actions";
 import { CloudProjectUpdates } from "./project-updates";
 import { CloudPulse } from "./pulse/pulse";
+import { CloudSlas, slaSweepBatchSize } from "./slas";
 import { CloudTeamHomes } from "./team-homes";
 import { CloudFavorites, CloudIssueSubscriptions } from "./favorites";
 import { CloudInitiatives } from "./initiatives";
@@ -145,6 +146,10 @@ export interface CloudRuntime {
   };
   pulse: {
     writer: CloudPulse;
+    loop: CloudPeriodicLoop;
+  };
+  slas: {
+    service: CloudSlas;
     loop: CloudPeriodicLoop;
   };
   activity: {
@@ -418,6 +423,7 @@ export function createCloudRuntime(
     1,
   );
   wakeReleases = () => releaseLoop.wake();
+  const slas = new CloudSlas(database);
   const automationDispatcher = new CloudAutomationDispatcher(
     database,
     new CloudAutomationExecutor({
@@ -529,6 +535,14 @@ export function createCloudRuntime(
       sources: new CloudLoopSources(database, origin, () => wakeAutomations()),
     },
     pulse: { writer: pulse, loop: pulseLoop },
+    slas: {
+      service: slas,
+      loop: new CloudPeriodicLoop(
+        "SLA breaches",
+        () => slas.sweep(),
+        slaSweepBatchSize,
+      ),
+    },
     autopilot: { autopilot, deliveries, loop: autopilotLoop },
     activity: {
       feed: new CloudAiActivity(database),
@@ -698,6 +712,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   await runtime.autopilot.loop.close();
   await runtime.releases.loop.close();
   await runtime.pulse.loop.close();
+  await runtime.slas.loop.close();
   await runtime.activity.exportLoop.close();
   await runtime.git.syncLoop.close();
   await runtime.authentication.mailWorker.close();
@@ -715,6 +730,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.autopilot.loop.start();
   runtime.releases.loop.start();
   runtime.pulse.loop.start();
+  runtime.slas.loop.start();
   runtime.activity.exportLoop.start();
   runtime.git.syncLoop.start();
   if (hostedOrigin) runtime.execution.hostedRunners.start(hostedOrigin);
@@ -741,6 +757,7 @@ export async function closeCloudRuntime(): Promise<void> {
     await current.autopilot.loop.close();
     await current.releases.loop.close();
     await current.pulse.loop.close();
+    await current.slas.loop.close();
     await current.activity.exportLoop.close();
     await current.git.syncLoop.close();
     await current.authentication.mailWorker.close();

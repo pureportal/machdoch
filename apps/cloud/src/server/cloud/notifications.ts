@@ -38,7 +38,7 @@ async function insertNotification(
     issueId: string | null;
     runId: string | null;
     automationRunId?: string;
-    actorId: string;
+    actorId: string | null;
     automation?: string;
     detail: string;
   },
@@ -214,6 +214,32 @@ export async function notifyPullRequestStage(
       runId: null,
       actorId: change.actorId,
       detail: `${change.reference} ${detail}: ${change.title}`,
+    });
+  }
+}
+
+export async function notifySlaBreach(
+  sql: CloudSql,
+  breach: { organizationId: string; issueId: string; teamId: string },
+): Promise<void> {
+  const audience = (
+    await sql.query<{ id: string; subscribed: boolean }>(issueAudience, [
+      breach.organizationId,
+      breach.issueId,
+      nobody,
+    ])
+  ).rows;
+  for (const member of audience) {
+    if (!member.subscribed) continue;
+    await insertNotification(sql, {
+      organizationId: breach.organizationId,
+      userId: member.id,
+      teamId: breach.teamId,
+      kind: "sla_breached",
+      issueId: breach.issueId,
+      runId: null,
+      actorId: null,
+      detail: "",
     });
   }
 }

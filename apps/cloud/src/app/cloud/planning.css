@@ -171,6 +171,41 @@
 .cloud-label-list > [data-archived] {
   opacity: 0.5;
 }
+.cloud-sla-list {
+  display: grid;
+  gap: 2px;
+}
+.cloud-sla-list > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cloud-sla-list > li > :first-child {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+.cloud-sla-list > li > button:first-child:hover {
+  background: var(--accent);
+}
+.cloud-issue-sla {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.cloud-issue-sla[data-state="at_risk"] {
+  color: var(--warning, #d97706);
+}
+.cloud-issue-sla[data-state="breached"] {
+  color: var(--destructive);
+}
 @media (max-width: 1100px) {
   .cloud-project-directory > li {
     grid-template-columns: auto minmax(0, 1fr) minmax(110px, 150px) 28px auto;

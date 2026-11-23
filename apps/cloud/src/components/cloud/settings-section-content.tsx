@@ -23,6 +23,7 @@ import { AiProviderSettings } from "./provider-settings";
 import { PulseInstructionsEditor } from "./pulse-instructions";
 import { AgentInstructionsSetting, ReviewPreferences } from "./setting-forms";
 import { CloudSettings, type AdministrationSection } from "./settings";
+import { SlaManager } from "./sla-manager";
 import { SsoAccount } from "./sso-account";
 
 type PageSession = Awaited<ReturnType<typeof requireCloudPageSession>>;
@@ -230,6 +231,18 @@ export async function SettingsSectionContent({
         <TeamRows workspace={workspace}>
           {(team) => (
             <LabelManager
+              teamId={team.id}
+              teamName={team.name}
+              writable={writable}
+            />
+          )}
+        </TeamRows>
+      );
+    case "slas":
+      return (
+        <TeamRows workspace={workspace}>
+          {(team) => (
+            <SlaManager
               teamId={team.id}
               teamName={team.name}
               writable={writable}

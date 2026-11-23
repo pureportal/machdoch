@@ -12,6 +12,7 @@ export const inboxKinds = [
   "loop_input",
   "loop_approval",
   "loop_message",
+  "sla_breached",
 ] as const;
 export type InboxKind = (typeof inboxKinds)[number];
 
