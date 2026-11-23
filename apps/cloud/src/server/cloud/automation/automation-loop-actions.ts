@@ -296,7 +296,7 @@ async function fanOut(
     return skipped("A loop cannot fan out to itself.");
   if (run.depth + 1 >= maximumAutomationDepth)
     return skipped("The chain of automations is too long.");
-  return services.database.transaction(async (sql) => {
+  const outcome = await services.database.transaction(async (sql) => {
     const target = await readAutomation(sql, owner, action.automationId);
     let state = run.variables.fanOut as FanOutState | undefined;
     if (!state) {
@@ -319,7 +319,10 @@ async function fanOut(
     let active = children.filter((child) =>
       ["queued", "running", "waiting"].includes(child.state),
     ).length;
-    while (active < action.concurrency && state.started < state.issueIds.length) {
+    while (
+      active < action.concurrency &&
+      state.started < state.issueIds.length
+    ) {
       const issueId = state.issueIds[state.started]!;
       const started = await insertAutomationRun(
         sql,
@@ -341,7 +344,7 @@ async function fanOut(
     }
     if (active || state.started < state.issueIds.length) {
       run.variables = { ...run.variables, fanOut: state };
-      return wait();
+      return "waiting" as const;
     }
     const { fanOut: _done, ...rest } = run.variables;
     run.variables = rest;
@@ -350,8 +353,9 @@ async function fanOut(
       state: failed && failed === children.length ? "failed" : "succeeded",
       detail: `Ran ${target.name} on ${state.issueIds.length} ${state.issueIds.length === 1 ? "issue" : "issues"}${failed ? ` · ${failed} failed` : ""}`,
       link: `/cloud/loops/${target.id}`,
-    };
+    } satisfies StepOutcome;
   });
+  return outcome === "waiting" ? wait() : outcome;
 }
 
 async function appendDocumentSection(
