@@ -3,19 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import {
-  Columns3,
-  Layers,
-  LayoutList,
-  Pencil,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { Layers, Pencil, Search, Trash2 } from "lucide-react";
 import { holderCan } from "@/lib/cloud-permissions";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import { savedViewHref, type SavedView } from "@/lib/cloud-view-contract";
 import type { CloudLabel } from "@/lib/cloud-label-contract";
-import { parseIssueFilterConditions } from "@/lib/issue-filter-model";
+import {
+  parseIssueFilterTree,
+  type IssueFilterTree,
+} from "@/lib/issue-filter-model";
 import {
   completedWindows,
   parseIssueViewOptions,
@@ -27,15 +23,37 @@ import { cloudRequest } from "./api-client";
 import { favoritesChangedEvent } from "./events";
 import { FavoriteButton } from "./favorite-button";
 import {
-  conditionOperator,
-  conditionValues,
+  describeCondition,
   filterFieldDefinitions,
+  type FilterFieldDefinition,
 } from "./issue-filter-fields";
 import { issueGroupings, parseGrouping } from "./issue-grouping";
 import { SaveViewDialog } from "./save-view-dialog";
+import { SavedViewIcon } from "./saved-view-icon";
 
-const scopes = { all: "All", mine: "Created by me", shared: "Shared" } as const;
+const scopes = {
+  all: "All",
+  mine: "Created by me",
+  team: "Team",
+  workspace: "Workspace",
+} as const;
 type Scope = keyof typeof scopes;
+
+function filterDescriptions(
+  tree: IssueFilterTree,
+  definitions: FilterFieldDefinition[],
+): string[] {
+  return [
+    ...tree.conditions.map((condition) =>
+      describeCondition(condition, definitions),
+    ),
+    ...tree.groups.map((group) =>
+      group
+        .map((condition) => describeCondition(condition, definitions))
+        .join(" or "),
+    ),
+  ];
+}
 
 function describeFilters(
   view: SavedView,
@@ -54,12 +72,10 @@ function describeFilters(
     filters.group && `By ${issueGroupings[parseGrouping(filters.group)]}`,
     options.completed !== "all" &&
       `Completed: ${completedWindows[options.completed]}`,
-    ...parseIssueFilterConditions(filters).map((condition) => {
-      const definition = definitions.find(
-        (entry) => entry.field === condition.field,
-      );
-      return `${definition?.label ?? condition.field} ${conditionOperator(condition)} ${conditionValues(condition, definition)}`;
-    }),
+    ...filterDescriptions(
+      parseIssueFilterTree(filters as Record<string, string>),
+      definitions,
+    ),
     filters.query && `“${filters.query}”`,
   ]
     .filter(Boolean)
@@ -84,7 +100,8 @@ export function SavedViewList({
   const needle = query.trim().toLowerCase();
   const shown = views.filter(
     (view) =>
-      (scope === "all" || (scope === "mine" ? view.owned : view.shared)) &&
+      (scope === "all" ||
+        (scope === "mine" ? view.owned : view.scope === scope)) &&
       (!needle || view.name.toLowerCase().includes(needle)),
   );
   return (
@@ -131,19 +148,26 @@ export function SavedViewList({
           ) : (
             <ul className="cloud-view-list" aria-label="Saved views">
               {shown.map((view) => {
-                const Layout =
-                  view.filters.view === "board" ? Columns3 : LayoutList;
+                const scopeLabel =
+                  view.scope === "workspace"
+                    ? "Workspace"
+                    : view.scope === "team"
+                      ? workspace.teams.find((team) => team.id === view.teamId)
+                          ?.name
+                      : undefined;
                 return (
                   <li key={view.id}>
-                    <Layout size={15} aria-hidden="true" />
+                    <SavedViewIcon icon={view.icon} size={15} />
                     <Link href={savedViewHref(view)}>
                       <span>{view.name}</span>
                       <span className="cloud-view-filters">
-                        {describeFilters(view, workspace, labels)}
+                        {[view.description, describeFilters(view, workspace, labels)]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
                     </Link>
-                    {view.shared && (
-                      <span className="cloud-view-shared">Shared</span>
+                    {scopeLabel && (
+                      <span className="cloud-view-shared">{scopeLabel}</span>
                     )}
                     <FavoriteButton
                       kind="view"
@@ -173,9 +197,9 @@ export function SavedViewList({
                         }
                         title={`Remove ${view.name}?`}
                         description={
-                          view.shared
-                            ? "It is removed for everyone it is shared with."
-                            : "Links and favorites pointing to it stop working."
+                          view.scope === "personal"
+                            ? "Links and favorites pointing to it stop working."
+                            : "It is removed for everyone it is shared with."
                         }
                         actionLabel="Remove view"
                         onConfirm={async () => {
@@ -205,6 +229,7 @@ export function SavedViewList({
           }}
           filters={editing.filters}
           writable={holderCan(workspace.actor, "issues.edit")}
+          teams={workspace.teams}
           view={editing}
         />
       )}

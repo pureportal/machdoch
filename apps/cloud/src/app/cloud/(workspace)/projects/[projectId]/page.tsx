@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { ProjectDetail } from "@/components/cloud/project-detail";
 import { cloudId } from "@/lib/cloud-contract";
-import { parseIssueFilterConditions } from "@/lib/issue-filter-model";
+import { withoutIssueFilterFields } from "@/lib/issue-filter-editing";
+import { parseIssueFilterTree } from "@/lib/issue-filter-model";
 import { isCloudError } from "@/server/cloud/access";
 import { requireCloudWorkspace } from "@/server/cloud/page-auth";
 
@@ -14,8 +15,9 @@ export default async function ProjectPage({
 }) {
   const id = cloudId.safeParse((await params).projectId);
   if (!id.success) notFound();
-  const conditions = parseIssueFilterConditions(await searchParams).filter(
-    (condition) => condition.field !== "project",
+  const filter = withoutIssueFilterFields(
+    parseIssueFilterTree(await searchParams),
+    ["project"],
   );
   const projectCondition = {
     field: "project" as const,
@@ -41,9 +43,10 @@ export default async function ProjectPage({
       runtime.planning.listIssueSummaries(actor, {
         conditions: [projectCondition],
       }),
-      conditions.length
+      filter.conditions.length || filter.groups.length
         ? runtime.planning.listIssueSummaries(actor, {
-            conditions: [projectCondition, ...conditions],
+            conditions: [projectCondition, ...filter.conditions],
+            groups: filter.groups,
           })
         : null,
       runtime.milestones.list(actor, id.data),

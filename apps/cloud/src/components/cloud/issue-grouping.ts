@@ -229,10 +229,3 @@ export function groupIssues(
     },
   ];
 }
-
-export function groupPoints(group: IssueGroup): number {
-  return group.issues.reduce(
-    (total, issue) => total + (issue.estimatePoints ?? 0),
-    0,
-  );
-}

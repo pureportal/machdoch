@@ -73,6 +73,42 @@
 .cloud-view-bar-spacer {
   flex: 1;
 }
+.cloud-view-bar-name,
+.cloud-view-bar-description {
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+}
+.cloud-view-bar-name {
+  flex: 0 1 220px;
+  font-weight: 600;
+}
+.cloud-view-bar-description {
+  flex: 1 1 280px;
+  color: var(--muted-foreground);
+}
+.cloud-view-bar-name:hover,
+.cloud-view-bar-description:hover {
+  border-color: var(--border);
+}
+.cloud-view-bar-name:focus-visible,
+.cloud-view-bar-description:focus-visible {
+  border-color: var(--ring);
+  background: var(--background);
+  outline: none;
+}
+.cloud-view-bar-text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .cloud-cycle-page {
   display: grid;

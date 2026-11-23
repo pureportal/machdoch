@@ -5,7 +5,7 @@ import {
   type IssueFilters,
   type IssueSort,
 } from "./cloud-contract";
-import { parseIssueFilterConditions } from "./issue-filter-model";
+import { parseIssueFilterTree } from "./issue-filter-model";
 
 type ScopeDefinition = {
   label: string;
@@ -48,7 +48,7 @@ export function issueFiltersFromParameters(
     states: scope.states,
     assignedToActor: scope.assignedToActor,
     teamId: cloudId.safeParse(params.teamId).data,
-    conditions: parseIssueFilterConditions(params),
+    ...parseIssueFilterTree(params),
     query:
       typeof params.query === "string" ? params.query.slice(0, 200) : undefined,
     archived: params.archived === "true",

@@ -23,12 +23,16 @@ import { cloudRequest } from "./api-client";
 import { IssueBoard } from "./issue-board";
 import { IssueBulkBar } from "./issue-bulk-bar";
 import {
+  hasIssueFilters,
   IssueFilterButton,
   IssueFilterChips,
   useIssueFilterState,
 } from "./issue-filters";
 import { IssueDisplayMenu } from "./issue-display-menu";
-import { filterFieldDefinitions } from "./issue-filter-fields";
+import {
+  filterFieldDefinitions,
+  type FilterReferences,
+} from "./issue-filter-fields";
 import { CreateIssue } from "./issue-form";
 import { IssueRows } from "./issue-rows";
 import { issueNavigationKey } from "./issue-header";
@@ -42,6 +46,7 @@ import { useIssueDisplay } from "./use-issue-display";
 import { IssueViewBar } from "./issue-view-bar";
 import { hiddenPropertyList } from "@/lib/issue-display";
 import {
+  pinnedViewHref,
   savedViewHref,
   savedViewParameter,
   viewFilters,
@@ -56,11 +61,15 @@ export function IssueList({
   issues: initial,
   labels,
   views,
+  pinned,
+  references,
 }: {
   workspace: CloudWorkspace;
   issues: CloudIssueSummary[];
   labels: CloudLabel[];
   views: SavedView[];
+  pinned: SavedView[] | null;
+  references: FilterReferences;
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -79,8 +88,8 @@ export function IssueList({
     team ? { kind: "team", id: team.id, label: team.name, title: null } : null,
   );
   const definitions = useMemo(
-    () => filterFieldDefinitions(workspace, labels, teamId),
-    [workspace, labels, teamId],
+    () => filterFieldDefinitions(workspace, labels, teamId, references),
+    [workspace, labels, teamId, references],
   );
   const filters = useIssueFilterState(
     new URLSearchParams(search),
@@ -89,7 +98,7 @@ export function IssueList({
     navigate,
   );
   const singleValue = (field: "project" | "cycle") => {
-    const condition = filters.conditions.find(
+    const condition = filters.tree.conditions.find(
       (entry) => entry.field === field && !entry.negated,
     );
     const value = condition?.values.length === 1 ? condition.values[0] : null;
@@ -170,6 +179,9 @@ export function IssueList({
           view={activeView}
           filters={currentViewFilters}
           writable={writable}
+          teams={workspace.teams}
+          teamId={teamId}
+          pinnedIds={pinned?.map((view) => view.id) ?? null}
         />
       )}
       <div className="cloud-issue-toolbar">
@@ -178,11 +190,23 @@ export function IssueList({
             <Link
               key={entry}
               href={scopeHref(entry)}
-              aria-current={entry === scope ? "page" : undefined}
+              aria-current={
+                entry === scope && !activeView ? "page" : undefined
+              }
             >
               {issueScopes[entry].label}
             </Link>
           ))}
+          {teamId &&
+            pinned?.map((view) => (
+              <Link
+                key={view.id}
+                href={pinnedViewHref(view, teamId)}
+                aria-current={view.id === activeView?.id ? "page" : undefined}
+              >
+                {view.name}
+              </Link>
+            ))}
         </nav>
         <form
           className="cloud-issue-search"
@@ -235,7 +259,7 @@ export function IssueList({
           />
         </div>
       </div>
-      {(filters.conditions.length > 0 ||
+      {(hasIssueFilters(filters) ||
         (!!team && workspace.teams.length > 1)) && (
         <IssueFilterChips
           state={filters}
@@ -309,6 +333,8 @@ export function IssueList({
         onOpenChange={setSavingView}
         filters={currentViewFilters}
         writable={writable}
+        teams={workspace.teams}
+        defaultTeamId={teamId}
         onSaved={(id) =>
           router.push(savedViewHref({ id, filters: currentViewFilters }))
         }

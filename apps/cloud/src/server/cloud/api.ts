@@ -96,7 +96,10 @@ import {
   initiativeInputSchema,
   initiativeUpdateSchema,
 } from "../../lib/cloud-initiative-contract";
-import { savedViewInputSchema } from "../../lib/cloud-view-contract";
+import {
+  pinnedViewsInputSchema,
+  savedViewInputSchema,
+} from "../../lib/cloud-view-contract";
 import { triageDecisionSchema } from "../../lib/cloud-triage-contract";
 import { sidebarPreferencesSchema } from "../../lib/cloud-sidebar-contract";
 import { settingWriteSchema } from "../../lib/cloud-settings-contract";
@@ -1116,6 +1119,20 @@ async function route(
           key.data,
           cloudId.parse(path[1]),
           await readBody(request, savedViewInputSchema),
+        ),
+      );
+    if (
+      method === "PATCH" &&
+      path[0] === "teams" &&
+      path.length === 3 &&
+      path[2] === "pinned-views"
+    )
+      return Response.json(
+        await runtime.views.pin(
+          actor,
+          key.data,
+          cloudId.parse(path[1]),
+          (await readBody(request, pinnedViewsInputSchema)).viewIds,
         ),
       );
     if (

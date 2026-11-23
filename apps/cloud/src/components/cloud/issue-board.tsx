@@ -17,7 +17,8 @@ import {
   StatusCell,
   type ApplyChange,
 } from "./issue-cells";
-import { groupPoints, type IssueGroup } from "./issue-grouping";
+import { issueGroupSummary } from "@/lib/issue-group-summary";
+import type { IssueGroup } from "./issue-grouping";
 import { IssuePriority } from "./issue-priority";
 import { PersonAvatar } from "./person-avatar";
 import { useIssueDisplay } from "./use-issue-display";
@@ -72,173 +73,181 @@ export function IssueBoard({
       : null;
   return (
     <div className="cloud-board" data-density={density}>
-      {groups.map((group) => (
-        <section
-          key={group.id}
-          className="cloud-board-column"
-          aria-label={group.name}
-          data-drop-target={target === group.id || undefined}
-          onDragOver={(event) => {
-            if (!writable || !group.change) return;
-            if (!event.dataTransfer.types.includes(dragType)) return;
-            event.preventDefault();
-            event.dataTransfer.dropEffect = "move";
-            if (target !== group.id) setTarget(group.id);
-          }}
-          onDragLeave={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node))
-              setTarget((current) => (current === group.id ? null : current));
-          }}
-          onDrop={(event) => {
-            setTarget(null);
-            if (!writable || !group.change) return;
-            const issue = issues.find(
-              (entry) => entry.id === event.dataTransfer.getData(dragType),
-            );
-            if (!issue || group.issues.includes(issue)) return;
-            event.preventDefault();
-            apply([issue], group.change);
-          }}
-        >
-          <h2>
-            {group.kind === "state" && (
-              <span className="cloud-state" data-state={group.category} />
-            )}
-            {group.kind === "priority" && (
-              <IssuePriority priority={group.priority!} compact />
-            )}
-            {group.kind === "assignee" && group.id !== "none" && (
-              <PersonAvatar name={group.name} className="cloud-avatar-small" />
-            )}
-            <span className="cloud-board-column-name">{group.name}</span>
-            <span className="cloud-board-count">{group.issues.length}</span>
-            {groupPoints(group) > 0 && (
-              <span className="cloud-board-count">
-                {groupPoints(group)} pts
-              </span>
-            )}
-            {writable && group.change && !group.change.statusCategory && (
-              <span className="cloud-board-column-add">
-                <CreateIssue
-                  workspace={workspace}
-                  teamId={teamForGroup(group)}
-                  defaults={group.change}
-                  compactLabel={`New issue in ${group.name}`}
-                  onCreated={async () => router.refresh()}
+      {groups.map((group) => {
+        const summary = issueGroupSummary(group.issues);
+        return (
+          <section
+            key={group.id}
+            className="cloud-board-column"
+            aria-label={group.name}
+            data-drop-target={target === group.id || undefined}
+            onDragOver={(event) => {
+              if (!writable || !group.change) return;
+              if (!event.dataTransfer.types.includes(dragType)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              if (target !== group.id) setTarget(group.id);
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node))
+                setTarget((current) => (current === group.id ? null : current));
+            }}
+            onDrop={(event) => {
+              setTarget(null);
+              if (!writable || !group.change) return;
+              const issue = issues.find(
+                (entry) => entry.id === event.dataTransfer.getData(dragType),
+              );
+              if (!issue || group.issues.includes(issue)) return;
+              event.preventDefault();
+              apply([issue], group.change);
+            }}
+          >
+            <h2>
+              {group.kind === "state" && (
+                <span className="cloud-state" data-state={group.category} />
+              )}
+              {group.kind === "priority" && (
+                <IssuePriority priority={group.priority!} compact />
+              )}
+              {group.kind === "assignee" && group.id !== "none" && (
+                <PersonAvatar
+                  name={group.name}
+                  className="cloud-avatar-small"
                 />
-              </span>
-            )}
-          </h2>
-          <div className="cloud-board-cards">
-            {group.issues.map((issue) => (
-              <article
-                key={issue.id}
-                className="cloud-board-card"
-                data-issue={issue.id}
-                draggable={writable}
-                onDragStart={(event) => {
-                  event.dataTransfer.setData(dragType, issue.id);
-                  event.dataTransfer.effectAllowed = "move";
-                }}
-              >
-                <div className="cloud-board-card-heading">
-                  {shows("id") && (
-                    <span className="cloud-issue-key">{issue.identifier}</span>
+              )}
+              <span className="cloud-board-column-name">{group.name}</span>
+              <span className="cloud-board-count">{summary.count}</span>
+              {summary.estimate > 0 && (
+                <span className="cloud-board-count">
+                  {summary.estimate} pts
+                </span>
+              )}
+              {writable && group.change && !group.change.statusCategory && (
+                <span className="cloud-board-column-add">
+                  <CreateIssue
+                    workspace={workspace}
+                    teamId={teamForGroup(group)}
+                    defaults={group.change}
+                    compactLabel={`New issue in ${group.name}`}
+                    onCreated={async () => router.refresh()}
+                  />
+                </span>
+              )}
+            </h2>
+            <div className="cloud-board-cards">
+              {group.issues.map((issue) => (
+                <article
+                  key={issue.id}
+                  className="cloud-board-card"
+                  data-issue={issue.id}
+                  draggable={writable}
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData(dragType, issue.id);
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                >
+                  <div className="cloud-board-card-heading">
+                    {shows("id") && (
+                      <span className="cloud-issue-key">
+                        {issue.identifier}
+                      </span>
+                    )}
+                    <RunIndicator issue={issue} />
+                    {shows("pullRequest") && (
+                      <PullRequestIndicator issue={issue} />
+                    )}
+                    {shows("assignee") && (
+                      <AssigneeCell
+                        issue={issue}
+                        workspace={workspace}
+                        writable={writable}
+                        apply={apply}
+                      />
+                    )}
+                  </div>
+                  {issue.parent && (
+                    <Link
+                      className="cloud-board-card-parent"
+                      href={`/cloud/issues/${issue.parent.id}`}
+                      prefetch={false}
+                      draggable={false}
+                    >
+                      <span>{issue.parent.identifier}</span>
+                      <ChevronRight size={11} aria-hidden="true" />
+                      <span>{issue.parent.title}</span>
+                    </Link>
                   )}
-                  <RunIndicator issue={issue} />
-                  {shows("pullRequest") && (
-                    <PullRequestIndicator issue={issue} />
-                  )}
-                  {shows("assignee") && (
-                    <AssigneeCell
-                      issue={issue}
-                      workspace={workspace}
-                      writable={writable}
-                      apply={apply}
-                    />
-                  )}
-                </div>
-                {issue.parent && (
                   <Link
-                    className="cloud-board-card-parent"
-                    href={`/cloud/issues/${issue.parent.id}`}
+                    className="cloud-issue-title"
+                    href={`/cloud/issues/${issue.id}`}
                     prefetch={false}
                     draggable={false}
                   >
-                    <span>{issue.parent.identifier}</span>
-                    <ChevronRight size={11} aria-hidden="true" />
-                    <span>{issue.parent.title}</span>
+                    {issue.title}
                   </Link>
-                )}
-                <Link
-                  className="cloud-issue-title"
-                  href={`/cloud/issues/${issue.id}`}
-                  prefetch={false}
-                  draggable={false}
-                >
-                  {issue.title}
-                </Link>
-                <div className="cloud-board-card-footer">
-                  {shows("status") && (
-                    <StatusCell
-                      issue={issue}
-                      workspace={workspace}
-                      writable={writable}
-                      apply={apply}
-                    />
-                  )}
-                  {shows("priority") && (
-                    <PriorityCell
-                      issue={issue}
-                      writable={writable}
-                      apply={apply}
-                    />
-                  )}
-                  {shows("estimate") && (
-                    <EstimateCell
-                      issue={issue}
-                      workspace={workspace}
-                      writable={writable}
-                      apply={apply}
-                    />
-                  )}
-                  {shows("project") && projectName(issue.projectId) && (
-                    <span className="cloud-board-chip">
-                      <FolderKanban size={11} aria-hidden="true" />
-                      {projectName(issue.projectId)}
-                    </span>
-                  )}
-                  {shows("labels") &&
-                    issue.labels.slice(0, 3).map((label) => (
-                      <span
-                        key={label.id}
-                        className="cloud-issue-label"
-                        data-label-color={label.color}
-                      >
-                        {label.name}
+                  <div className="cloud-board-card-footer">
+                    {shows("status") && (
+                      <StatusCell
+                        issue={issue}
+                        workspace={workspace}
+                        writable={writable}
+                        apply={apply}
+                      />
+                    )}
+                    {shows("priority") && (
+                      <PriorityCell
+                        issue={issue}
+                        writable={writable}
+                        apply={apply}
+                      />
+                    )}
+                    {shows("estimate") && (
+                      <EstimateCell
+                        issue={issue}
+                        workspace={workspace}
+                        writable={writable}
+                        apply={apply}
+                      />
+                    )}
+                    {shows("project") && projectName(issue.projectId) && (
+                      <span className="cloud-board-chip">
+                        <FolderKanban size={11} aria-hidden="true" />
+                        {projectName(issue.projectId)}
                       </span>
-                    ))}
-                  {shows("due") && issue.dueOn && (
-                    <span className="cloud-board-chip">
-                      Due {dateFormat.format(new Date(issue.dueOn))}
+                    )}
+                    {shows("labels") &&
+                      issue.labels.slice(0, 3).map((label) => (
+                        <span
+                          key={label.id}
+                          className="cloud-issue-label"
+                          data-label-color={label.color}
+                        >
+                          {label.name}
+                        </span>
+                      ))}
+                    {shows("due") && issue.dueOn && (
+                      <span className="cloud-board-chip">
+                        Due {dateFormat.format(new Date(issue.dueOn))}
+                      </span>
+                    )}
+                  </div>
+                  {shows("created") && (
+                    <span className="cloud-board-card-created">
+                      Created {dateFormat.format(new Date(issue.createdAt))}
                     </span>
                   )}
-                </div>
-                {shows("created") && (
-                  <span className="cloud-board-card-created">
-                    Created {dateFormat.format(new Date(issue.createdAt))}
-                  </span>
-                )}
-                {shows("updated") && (
-                  <span className="cloud-board-card-created">
-                    Updated {dateFormat.format(new Date(issue.updatedAt))}
-                  </span>
-                )}
-              </article>
-            ))}
-          </div>
-        </section>
-      ))}
+                  {shows("updated") && (
+                    <span className="cloud-board-card-created">
+                      Updated {dateFormat.format(new Date(issue.updatedAt))}
+                    </span>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

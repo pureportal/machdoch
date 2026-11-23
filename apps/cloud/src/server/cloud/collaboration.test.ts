@@ -146,17 +146,26 @@ it("pins own and shared views, and drops favorites of removed views", async () =
   const own = await runtime.views.create(member, randomUUID(), {
     name: "My bugs",
     filters: { assignee: "me" },
-    shared: false,
+    description: "",
+    icon: "bookmark",
+    scope: "personal",
+    teamId: null,
   });
   const shared = await runtime.views.create(owner, randomUUID(), {
     name: "Team board",
     filters: { view: "board" },
-    shared: true,
+    description: "",
+    icon: "bookmark",
+    scope: "workspace",
+    teamId: null,
   });
   const secret = await runtime.views.create(owner, randomUUID(), {
     name: "Owner only",
     filters: {},
-    shared: false,
+    description: "",
+    icon: "bookmark",
+    scope: "personal",
+    teamId: null,
   });
   await runtime.favorites.set(member, {
     kind: "view",

@@ -32,6 +32,7 @@ import { attachmentTools } from "./agent-attachment-tools";
 import { clientTools } from "./agent-client-tools";
 import { taskTools } from "./agent-task-tools";
 import { gitTools } from "./agent-git-tools";
+import { filterTools } from "./agent-filter-tools";
 import { agentTool, type AgentServices, type AgentTool } from "./agent-tool";
 
 export interface AgentToolResult {
@@ -601,6 +602,7 @@ const tools = [
   ...clientTools,
   ...taskTools,
   ...gitTools,
+  ...filterTools,
 ];
 
 function schemaDocument(schema: z.ZodType): Record<string, unknown> {

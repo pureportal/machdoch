@@ -71,6 +71,7 @@ export const cloudMigrations = [
   "068-automated-changes.sql",
   "069-automatic-sandbox.sql",
   "070-settings-scopes.sql",
+  "071-saved-view-scopes.sql",
 ];
 
 export interface CloudSql {

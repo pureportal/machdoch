@@ -26,10 +26,6 @@ import {
 import { isPullRequestEvent } from "@/lib/git-events";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import { automationVariableNames } from "@/lib/automation-text";
-import type {
-  IssueFilterCondition,
-  IssueFilterField,
-} from "@/lib/issue-filter-model";
 import { createCommandSender } from "./api-client";
 import {
   ActionCard,
@@ -38,7 +34,11 @@ import {
 } from "./automation-action-fields";
 import { actionKinds } from "./automation-display";
 import { TriggerFields } from "./automation-trigger-fields";
-import { IssueFilterButton, IssueFilterChips } from "./issue-filters";
+import {
+  IssueFilterButton,
+  IssueFilterChips,
+  useFilterTreeState,
+} from "./issue-filters";
 import { filterFieldDefinitions } from "./issue-filter-fields";
 import { PropertyMenu } from "./property-menu";
 import type { AutomationOptions } from "./use-automation-options";
@@ -99,48 +99,6 @@ function availableVariables(
   });
 }
 
-function useConditionState(
-  conditions: IssueFilterCondition[],
-  onChange: (conditions: IssueFilterCondition[]) => void,
-  definitions: ReturnType<typeof filterFieldDefinitions>,
-) {
-  const condition = (field: IssueFilterField) =>
-    conditions.find((entry) => entry.field === field) ?? null;
-  const setCondition = (
-    field: IssueFilterField,
-    next: { negated: boolean; values: string[] } | null,
-  ) =>
-    onChange([
-      ...conditions.filter((entry) => entry.field !== field),
-      ...(next?.values.length ? [{ field, ...next }] : []),
-    ]);
-  return {
-    conditions,
-    teamId: null,
-    fields: definitions.map((definition) => ({
-      key: definition.field,
-      label: definition.label,
-      icon: definition.icon,
-      options: definition.options,
-      multiple: true,
-    })),
-    selected: (key: string) => condition(key as IssueFilterField)?.values ?? [],
-    toggle: (key: string, value: string) => {
-      const field = key as IssueFilterField;
-      const current = condition(field);
-      const values = current?.values ?? [];
-      const nextValues = values.includes(value)
-        ? values.filter((entry) => entry !== value)
-        : [...values, value];
-      setCondition(field, {
-        negated: current?.negated ?? false,
-        values: nextValues,
-      });
-    },
-    setCondition,
-  };
-}
-
 export function AutomationEditor({
   workspace,
   options,
@@ -172,9 +130,9 @@ export function AutomationEditor({
     labels,
     input.teamId,
   ).filter((definition) => definition.field !== "creator");
-  const conditionState = useConditionState(
-    input.conditions,
-    (conditions) => update({ conditions }),
+  const conditionState = useFilterTreeState(
+    { conditions: input.conditions, groups: [] },
+    (tree) => update({ conditions: tree.conditions }),
     definitions,
   );
   const hasIssue = triggerHasIssue(input.trigger);

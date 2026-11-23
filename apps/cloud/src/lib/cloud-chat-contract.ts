@@ -137,7 +137,8 @@ export interface AgentActionResult {
     | "automation"
     | "client_session"
     | "pull_request"
-    | "task";
+    | "task"
+    | "filter";
   id: string;
   label: string;
   href?: string;
@@ -261,6 +262,10 @@ export type AgentAction = AgentActionBase &
         revision: number | null;
         automation: AutomationInput;
         enabled: boolean;
+      }
+    | {
+        kind: "issue_filter";
+        filter: string;
       }
   );
 export interface ChatTurnAttachment {

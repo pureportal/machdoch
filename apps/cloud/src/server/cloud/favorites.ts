@@ -7,13 +7,13 @@ import type {
 import { CloudError, requireMembership, teamVisibility } from "./access";
 import type { CloudDatabase } from "./database";
 import { readIssue } from "./planning";
+import { savedViewVisible } from "./saved-views";
 import { issueSubscribedClause } from "./subscription-records";
 
 const favoriteEntities = `SELECT i.id,'issue' AS kind,i.identifier||' '||i.title AS label,i.state,i.team_id FROM cloud_issues i WHERE i.organization_id=$1 AND NOT i.archived
   UNION ALL SELECT p.id,'project',p.name,p.status,p.team_id FROM cloud_projects p WHERE p.organization_id=$1
   UNION ALL SELECT c.id,'cycle',c.name,c.status,c.team_id FROM cloud_cycles c WHERE c.organization_id=$1`;
-const visibleView =
-  "SELECT v.id,v.name FROM cloud_saved_views v WHERE v.organization_id=$1 AND (v.user_id=$2 OR v.shared)";
+const visibleView = `SELECT v.id,v.name FROM cloud_saved_views v WHERE v.organization_id=$1 AND ${savedViewVisible("v", "$2")}`;
 
 export class CloudFavorites {
   constructor(private readonly database: CloudDatabase) {}

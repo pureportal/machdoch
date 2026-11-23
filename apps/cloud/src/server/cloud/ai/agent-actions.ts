@@ -1,4 +1,5 @@
 import { automationMarker } from "../../../lib/git-events";
+import { issueFilterParameter } from "../../../lib/issue-filter-model";
 import type { CloudGitPullRequests } from "../git/pull-requests";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import type { AgentAction } from "../../../lib/cloud-chat-contract";
@@ -495,6 +496,13 @@ ${automationMarker}`,
         label: action.projectName,
       };
     }
+    if (action.kind === "issue_filter")
+      return {
+        kind: "filter",
+        id: action.id,
+        label: "Issues",
+        href: `/cloud/issues?${new URLSearchParams({ [issueFilterParameter]: action.filter })}`,
+      };
     const adopted = await this.adoptAttachments(
       actor,
       action.id,

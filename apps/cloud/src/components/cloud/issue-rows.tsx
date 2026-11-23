@@ -15,7 +15,8 @@ import {
   StatusCell,
   type ApplyChange,
 } from "./issue-cells";
-import { groupPoints, type IssueGroup } from "./issue-grouping";
+import { issueGroupSummary } from "@/lib/issue-group-summary";
+import type { IssueGroup } from "./issue-grouping";
 import { IssuePriority } from "./issue-priority";
 import { PersonAvatar } from "./person-avatar";
 import { useIssueDisplay } from "./use-issue-display";
@@ -27,7 +28,7 @@ const shortDate = new Intl.DateTimeFormat("en", {
 });
 
 function GroupHeading({ group }: { group: IssueGroup }) {
-  const points = groupPoints(group);
+  const summary = issueGroupSummary(group.issues);
   return (
     <h2 className="cloud-issue-group">
       {group.kind === "state" && (
@@ -40,9 +41,9 @@ function GroupHeading({ group }: { group: IssueGroup }) {
         <PersonAvatar name={group.name} className="cloud-avatar-small" />
       )}
       <span>{group.name}</span>
-      <span className="cloud-issue-group-count">{group.issues.length}</span>
-      {points > 0 && (
-        <span className="cloud-issue-group-points">{points} pts</span>
+      <span className="cloud-issue-group-count">{summary.count}</span>
+      {summary.estimate > 0 && (
+        <span className="cloud-issue-group-points">{summary.estimate} pts</span>
       )}
     </h2>
   );

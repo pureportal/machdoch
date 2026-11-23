@@ -276,6 +276,7 @@ export interface IssueFilters {
   states?: CloudIssue["state"][];
   assignedToActor?: boolean;
   conditions?: IssueFilterCondition[];
+  groups?: IssueFilterCondition[][];
   sort?: IssueSort;
   reversed?: boolean;
 }

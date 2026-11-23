@@ -388,12 +388,18 @@ describe("saved views", () => {
     await views.create(member, randomUUID(), {
       name: "Mine",
       filters: { scope: "mine" },
-      shared: false,
+      description: "",
+      icon: "bookmark",
+      scope: "personal",
+      teamId: null,
     });
     const shared = await views.create(member, randomUUID(), {
       name: "Team",
       filters: { priority: "urgent" },
-      shared: true,
+      description: "",
+      icon: "bookmark",
+      scope: "workspace",
+      teamId: null,
     });
     expect((await views.list(viewer)).map((view) => view.name)).toEqual([
       "Team",
@@ -402,7 +408,10 @@ describe("saved views", () => {
       views.create(viewer, randomUUID(), {
         name: "Nope",
         filters: {},
-        shared: true,
+        description: "",
+        icon: "bookmark",
+        scope: "workspace",
+        teamId: null,
       }),
     ).rejects.toMatchObject({ status: 403 });
     await expect(views.remove(viewer, shared.id)).rejects.toMatchObject({

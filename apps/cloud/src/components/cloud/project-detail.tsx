@@ -40,6 +40,7 @@ import { IssueBulkBar } from "./issue-bulk-bar";
 import { IssueDisplayMenu } from "./issue-display-menu";
 import { filterFieldDefinitions } from "./issue-filter-fields";
 import {
+  hasIssueFilters,
   IssueFilterButton,
   IssueFilterChips,
   useIssueFilterState,
@@ -392,7 +393,7 @@ export function ProjectDetail({
               layout
             />
           </div>
-          {filters.conditions.length > 0 && (
+          {hasIssueFilters(filters) && (
             <IssueFilterChips
               state={filters}
               definitions={definitions}
@@ -429,7 +430,7 @@ export function ProjectDetail({
           ) : (
             <div className="cloud-empty">
               <p>
-                {filters.conditions.length
+                {hasIssueFilters(filters)
                   ? "No matching issues."
                   : "No issues yet."}
               </p>

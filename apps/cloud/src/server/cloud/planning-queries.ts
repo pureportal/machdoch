@@ -5,6 +5,7 @@ import {
   noneFilterValue,
   aiFilterValue,
   type IssueFilterCondition,
+  type IssueFilterField,
 } from "../../lib/issue-filter-model";
 
 export const cycleColumns = `id,team_id AS "teamId",name,to_char(starts_on,'YYYY-MM-DD') AS "startsOn",to_char(ends_on,'YYYY-MM-DD') AS "endsOn",timezone,capacity,revision,status`;
@@ -60,16 +61,94 @@ const estimatePredicates: Record<string, string> = {
   none: "i.estimate IS NULL",
   set: "i.estimate IS NOT NULL",
 };
+const dateColumns: Partial<Record<IssueFilterField, string>> = {
+  due: "i.due_on",
+  created: "i.created_at",
+  updated: "i.updated_at",
+};
 const issueCreator =
   "(SELECT h.actor_id FROM cloud_issue_history h WHERE h.organization_id=i.organization_id AND h.issue_id=i.id ORDER BY h.revision LIMIT 1)";
+const issueAutomation =
+  "(SELECT h.automation FROM cloud_issue_history h WHERE h.organization_id=i.organization_id AND h.issue_id=i.id ORDER BY h.revision LIMIT 1)";
+const openStates = "o.state NOT IN ('complete','canceled')";
+
+function relatedIssue(
+  kind: string,
+  own: "source_id" | "target_id",
+  other: "source_id" | "target_id",
+  extra = "",
+): string {
+  return `EXISTS (SELECT 1 FROM cloud_issue_relations r JOIN cloud_issues o ON o.organization_id=r.organization_id AND o.id=r.${other}
+    JOIN cloud_teams ot ON ot.organization_id=o.organization_id AND ot.id=o.team_id
+    WHERE r.organization_id=i.organization_id AND r.${own}=i.id AND r.kind='${kind}' AND r.removed_at IS NULL
+    AND cloud_team_visible(ot.organization_id,ot.id,ot.visibility,$2)${extra})`;
+}
+
+const flagPredicates: Partial<Record<IssueFilterField, string>> = {
+  blocked: relatedIssue("blocks", "target_id", "source_id", ` AND ${openStates}`),
+  blocking: relatedIssue("blocks", "source_id", "target_id", ` AND ${openStates}`),
+  hasParent: relatedIssue("parent", "target_id", "source_id"),
+  hasSubIssues: relatedIssue("parent", "source_id", "target_id"),
+  duplicate: relatedIssue("duplicate", "source_id", "target_id"),
+  automated: `${issueAutomation} IS NOT NULL`,
+};
+
+function teamCycle(status: string, order: string): string {
+  return `i.cycle_id=(SELECT c.id FROM cloud_cycles c WHERE c.organization_id=i.organization_id AND c.team_id=i.team_id AND c.status='${status}' ORDER BY ${order},c.id LIMIT 1)`;
+}
+
+const cyclePredicates: Record<string, string> = {
+  current: teamCycle("active", "c.starts_on"),
+  upcoming: teamCycle("planned", "c.starts_on"),
+  previous: teamCycle("closed", "c.ends_on DESC"),
+};
+
+function datePredicate(
+  column: string,
+  condition: IssueFilterCondition,
+  bind: (value: unknown) => string,
+): string {
+  const value = condition.values[0];
+  switch (condition.operator) {
+    case "before":
+      return `${column}<${bind(value)}::date`;
+    case "after":
+      return `${column}>=${bind(value)}::date+1`;
+    default:
+      return column === "i.due_on"
+        ? `i.due_on BETWEEN CURRENT_DATE AND CURRENT_DATE+${bind(Number(value))}::int`
+        : `${column}>=clock_timestamp()-make_interval(days => ${bind(Number(value))}::int)`;
+  }
+}
 
 function conditionPredicate(
   actor: CloudActor,
   condition: IssueFilterCondition,
   bind: (value: unknown) => string,
 ): string {
+  if (condition.operator === "empty")
+    return conditionPredicate(
+      actor,
+      { field: condition.field, negated: false, values: [noneFilterValue] },
+      bind,
+    );
+  const dateColumn = dateColumns[condition.field];
+  if (
+    dateColumn &&
+    (condition.operator === "before" ||
+      condition.operator === "after" ||
+      condition.operator === "within")
+  )
+    return datePredicate(dateColumn, condition, bind);
+  const flagPredicate = flagPredicates[condition.field];
+  if (flagPredicate) return flagPredicate;
   const ids = condition.values
-    .filter((value) => value !== noneFilterValue && value !== aiFilterValue)
+    .filter(
+      (value) =>
+        value !== noneFilterValue &&
+        value !== aiFilterValue &&
+        !Object.hasOwn(cyclePredicates, value),
+    )
     .map((value) => (value === meFilterValue ? actor.userId : value));
   const none = condition.values.includes(noneFilterValue);
   const anyOf = (...predicates: (string | false)[]) =>
@@ -81,6 +160,8 @@ function conditionPredicate(
     );
   const mapped = (predicates: Record<string, string>) =>
     anyOf(...condition.values.map((value) => predicates[value] ?? false));
+  const labelExists = (filter: string) =>
+    `EXISTS (SELECT 1 FROM cloud_issue_labels a WHERE a.organization_id=i.organization_id AND a.issue_id=i.id${filter})`;
   switch (condition.field) {
     case "status":
       return reference("i.status_id");
@@ -90,23 +171,50 @@ function conditionPredicate(
         none && "(i.assignee_id IS NULL AND NOT i.ai_assigned)",
         condition.values.includes(aiFilterValue) && "i.ai_assigned",
       );
+    case "delegate":
+      return anyOf(
+        ids.length > 0 && `i.ai_assigned_by=ANY(${bind(ids)}::uuid[])`,
+        none && "NOT i.ai_assigned",
+        condition.values.includes(aiFilterValue) && "i.ai_assigned",
+      );
     case "creator":
       return reference(issueCreator);
     case "priority":
       return `i.priority=ANY(${bind(condition.values)}::text[])`;
     case "project":
       return reference("i.project_id");
-    case "cycle":
-      return reference("i.cycle_id");
-    case "label":
+    case "team":
+      return reference("i.team_id");
+    case "milestone":
+      return reference("i.milestone_id");
+    case "initiative":
       return anyOf(
         ids.length > 0 &&
-          `EXISTS (SELECT 1 FROM cloud_issue_labels a WHERE a.organization_id=i.organization_id AND a.issue_id=i.id AND a.label_id=ANY(${bind(ids)}::uuid[]))`,
+          `EXISTS (SELECT 1 FROM cloud_initiative_projects ip WHERE ip.organization_id=i.organization_id AND ip.project_id=i.project_id AND ip.initiative_id=ANY(${bind(ids)}::uuid[]))`,
         none &&
-          "NOT EXISTS (SELECT 1 FROM cloud_issue_labels a WHERE a.organization_id=i.organization_id AND a.issue_id=i.id)",
+          "NOT EXISTS (SELECT 1 FROM cloud_initiative_projects ip WHERE ip.organization_id=i.organization_id AND ip.project_id=i.project_id)",
       );
-    case "estimate":
-      return mapped(estimatePredicates);
+    case "cycle":
+      return anyOf(reference("i.cycle_id"), mapped(cyclePredicates));
+    case "label":
+      if (condition.operator === "all")
+        return ids
+          .map((id) => labelExists(` AND a.label_id=${bind(id)}::uuid`))
+          .join(" AND ");
+      return anyOf(
+        ids.length > 0 &&
+          labelExists(` AND a.label_id=ANY(${bind(ids)}::uuid[])`),
+        none && `NOT ${labelExists("")}`,
+      );
+    case "estimate": {
+      const exact = condition.values.filter(
+        (value) => !Object.hasOwn(estimatePredicates, value),
+      );
+      return anyOf(
+        mapped(estimatePredicates),
+        exact.length > 0 && `i.estimate=ANY(${bind(exact)}::text[])`,
+      );
+    }
     case "due":
       return mapped(duePredicates);
     case "created":
@@ -125,7 +233,19 @@ function conditionPredicate(
           "NOT EXISTS (SELECT 1 FROM cloud_git_pull_request_issues gl WHERE gl.organization_id=i.organization_id AND gl.issue_id=i.id)",
       );
     }
+    default:
+      return "";
   }
+}
+
+function conditionClause(
+  actor: CloudActor,
+  condition: IssueFilterCondition,
+  bind: (value: unknown) => string,
+): string | null {
+  const predicate = conditionPredicate(actor, condition, bind);
+  if (!predicate) return null;
+  return `${condition.negated ? "NOT " : ""}COALESCE((${predicate}),false)`;
 }
 
 export function issueFilterSql(
@@ -150,13 +270,15 @@ export function issueFilterSql(
     clauses.push(`i.state=ANY(${bind(filters.states)}::text[])`);
   if (filters.assignedToActor) clauses.push("i.assignee_id=$2");
   for (const condition of filters.conditions ?? []) {
-    const predicate = conditionPredicate(actor, condition, bind);
-    if (!predicate) continue;
-    clauses.push(
-      `${condition.negated ? "NOT " : ""}COALESCE((${predicate}),false)`,
-    );
+    const clause = conditionClause(actor, condition, bind);
+    if (clause) clauses.push(clause);
+  }
+  for (const group of filters.groups ?? []) {
+    const members = group
+      .map((condition) => conditionClause(actor, condition, bind))
+      .filter((clause) => clause !== null);
+    if (members.length) clauses.push(`(${members.join(" OR ")})`);
   }
   return { where: clauses.join(" AND "), parameters };
 }
-
 export const projectColumns = `id,team_id AS "teamId",name,description,status,lead_id AS "leadId",to_char(starts_on,'YYYY-MM-DD') AS "startsOn",to_char(target_on,'YYYY-MM-DD') AS "targetOn",revision`;
