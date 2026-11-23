@@ -20,10 +20,15 @@ export const scheduleFrequencies = [
   "daily",
   "weekdays",
   "weekly",
+  "monthly",
+  "quarterly",
 ] as const;
 export type ScheduleFrequency = (typeof scheduleFrequencies)[number];
 
 const idList = z.array(cloudId).max(50).default([]);
+const httpsUrl = z
+  .url({ protocol: /^https$/, hostname: z.regexes.domain })
+  .max(2_000);
 const template = (maximum: number) => z.string().max(maximum);
 
 const timeZone = z
@@ -39,6 +44,30 @@ const timeZone = z
       return false;
     }
   }, "Choose a valid time zone.");
+
+export const projectEventKinds = ["created", "updated", "completed"] as const;
+export type ProjectEventKind = (typeof projectEventKinds)[number];
+export const cycleEventKinds = ["started", "closed"] as const;
+export type CycleEventKind = (typeof cycleEventKinds)[number];
+export const intakeSources = [
+  "email",
+  "sentry",
+  "grafana",
+  "teams",
+  "slack",
+] as const;
+export type IntakeSource = (typeof intakeSources)[number];
+export const clientEventKinds = ["file_changed", "device_online"] as const;
+export type ClientEventKind = (typeof clientEventKinds)[number];
+export const notifyChannels = ["slack", "teams", "email"] as const;
+export type NotifyChannel = (typeof notifyChannels)[number];
+export const memoryKeySchema = z
+  .string()
+  .trim()
+  .regex(
+    /^[a-z0-9][a-z0-9_.-]{0,63}$/,
+    "Use lowercase letters, digits, dots, dashes or underscores.",
+  );
 
 export const automationTriggerSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("issue_created") }),
@@ -89,6 +118,35 @@ export const automationTriggerSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({ kind: z.literal("webhook") }),
   z.strictObject({ kind: z.literal("manual") }),
+  z.strictObject({ kind: z.literal("issue_triaged") }),
+  z.strictObject({
+    kind: z.literal("project_event"),
+    events: z
+      .array(z.enum(projectEventKinds))
+      .min(1, "Choose at least one event.")
+      .max(projectEventKinds.length),
+  }),
+  z.strictObject({
+    kind: z.literal("cycle_event"),
+    events: z
+      .array(z.enum(cycleEventKinds))
+      .min(1, "Choose at least one event.")
+      .max(cycleEventKinds.length),
+  }),
+  z.strictObject({
+    kind: z.literal("source_event"),
+    source: z.enum(intakeSources),
+    contains: z.string().trim().max(200).default(""),
+  }),
+  z.strictObject({
+    kind: z.literal("client_event"),
+    events: z
+      .array(z.enum(clientEventKinds))
+      .min(1, "Choose at least one event.")
+      .max(clientEventKinds.length),
+    instanceIds: z.array(z.string().trim().min(1).max(240)).max(20).default([]),
+  }),
+  z.strictObject({ kind: z.literal("release_event"), pipelineIds: idList }),
 ]);
 export type AutomationTrigger = z.output<typeof automationTriggerSchema>;
 export type AutomationTriggerKind = AutomationTrigger["kind"];
@@ -222,8 +280,45 @@ export const automationActionSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     kind: z.literal("send_webhook"),
-    url: z.url({ protocol: /^https$/, hostname: z.regexes.domain }).max(2_000),
+    url: httpsUrl,
     body: template(20_000).default(""),
+  }),
+  z.strictObject({
+    kind: z.literal("request_input"),
+    prompt: template(2_000).trim().min(1),
+    key: memoryKeySchema,
+  }),
+  z.strictObject({
+    kind: z.literal("goal"),
+    objective: template(8_000).trim().min(1),
+    successCriteria: template(4_000).trim().min(1),
+    providerId: cloudId,
+    model: z.string().trim().min(1).max(200),
+    maxIterations: z.number().int().min(1).max(10).default(3),
+  }),
+  z.strictObject({
+    kind: z.literal("fan_out"),
+    automationId: cloudId,
+    conditions: z.array(issueFilterConditionSchema).max(10).default([]),
+    concurrency: z.number().int().min(1).max(10).default(3),
+  }),
+  z.strictObject({
+    kind: z.literal("remember"),
+    key: memoryKeySchema,
+    value: template(4_000),
+  }),
+  z.strictObject({
+    kind: z.literal("append_document_section"),
+    documentId: cloudId,
+    heading: template(200).trim().min(1),
+    body: template(50_000).trim().min(1),
+  }),
+  z.strictObject({
+    kind: z.literal("notify"),
+    channel: z.enum(notifyChannels),
+    target: z.string().trim().min(1).max(2_000),
+    subject: template(200).default(""),
+    body: template(20_000).trim().min(1),
   }),
 ]);
 export type AutomationAction = z.output<typeof automationActionSchema>;
@@ -265,11 +360,19 @@ export function triggerHasPullRequest(trigger: AutomationTrigger): boolean {
   );
 }
 
+export const issuelessTriggerKinds = [
+  "release_created",
+  "automation_finished",
+  "project_event",
+  "cycle_event",
+  "source_event",
+  "client_event",
+  "release_event",
+] as const satisfies readonly AutomationTriggerKind[];
+
 export function triggerHasIssue(trigger: AutomationTrigger): boolean {
   if (trigger.kind === "schedule") return trigger.forEachIssue;
-  return (
-    trigger.kind !== "release_created" && trigger.kind !== "automation_finished"
-  );
+  return !(issuelessTriggerKinds as readonly string[]).includes(trigger.kind);
 }
 
 export function actionNeedsIssue(action: AutomationAction): boolean {
@@ -281,6 +384,14 @@ export function actionNeedsIssue(action: AutomationAction): boolean {
 
 export function actionNeedsManualIssue(action: AutomationAction): boolean {
   return actionNeedsIssue(action) || action.kind === "delegate";
+}
+
+export function notifyTargetValid(
+  action: Extract<AutomationAction, { kind: "notify" }>,
+): boolean {
+  return action.channel === "email"
+    ? z.email().max(320).safeParse(action.target).success
+    : httpsUrl.safeParse(action.target).success;
 }
 
 export function actionHasRelease(
@@ -308,8 +419,7 @@ export const automationInputSchema = z
     const hasIssue = triggerHasIssue(input.trigger);
     if (
       !hasIssue &&
-      (input.trigger.kind === "release_created" ||
-        input.trigger.kind === "automation_finished")
+      (issuelessTriggerKinds as readonly string[]).includes(input.trigger.kind)
     )
       input.conditions.forEach((_, index) =>
         context.addIssue({
@@ -342,6 +452,15 @@ export const automationInputSchema = z
             input.trigger.kind === "schedule"
               ? "This action needs an issue. Run the schedule for each matching issue."
               : "This action needs an issue.",
+        });
+      if (action.kind === "notify" && !notifyTargetValid(action))
+        context.addIssue({
+          code: "custom",
+          path: ["actions", index, "target"],
+          message:
+            action.channel === "email"
+              ? "Enter an email address."
+              : "Enter the channel's https incoming webhook address.",
         });
       if (action.kind !== "write_release_posts") return;
       if (!actionHasRelease(input, index))
@@ -423,6 +542,12 @@ export interface CloudAutomationRun {
   steps: AutomationStep[];
   chatId: string | null;
   error: string | null;
+  loopRevision: number | null;
+  tokens: number;
+  costCents: number;
+  dryRun: boolean;
+  replayOf: string | null;
+  parentRunId: string | null;
   createdAt: string;
   finishedAt: string | null;
 }

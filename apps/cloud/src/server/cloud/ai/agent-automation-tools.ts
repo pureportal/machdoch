@@ -19,7 +19,7 @@ import { field, pendingOutput, reference } from "./agent-proposal-helpers";
 import type { CloudAgentSession } from "./agent-tools";
 
 const automationReference = reference.describe("Automation name or ID.");
-const automationLink = (id: string) => `/cloud/automations?automation=${id}`;
+const automationLink = (id: string) => `/cloud/loops/${id}`;
 
 interface AutomationNames {
   statuses: Map<string, string>;
@@ -126,6 +126,18 @@ function describeTrigger(
       return "Its webhook is called";
     case "manual":
       return "Someone runs it";
+    case "issue_triaged":
+      return "An issue enters triage";
+    case "project_event":
+      return `A project is ${trigger.events.join(" or ")}`;
+    case "cycle_event":
+      return `A cycle is ${trigger.events.join(" or ")}`;
+    case "source_event":
+      return `A ${trigger.source} event arrives${trigger.contains ? ` mentioning “${trigger.contains}”` : ""}`;
+    case "client_event":
+      return `A client reports ${trigger.events.map((event) => (event === "file_changed" ? "a file change" : "it came online")).join(" or ")}`;
+    case "release_event":
+      return `A release is deployed${trigger.pipelineIds.length ? ` by ${trigger.pipelineIds.length} pipeline${trigger.pipelineIds.length === 1 ? "" : "s"}` : ""}`;
   }
 }
 
@@ -187,7 +199,18 @@ function describeAction(
     case "git_update_branch":
       return `Update the pull request branch ${gitActor(action.identity)}`;
     case "git_retarget":
-      return `Retarget the stacked pull request onto its merged base ${gitActor(action.identity)}`;
+      return `Retarget the stacked pull request onto its merged base ${gitActor(action.identity)}`;    case "request_input":
+      return `Ask for input and store it as ${action.key}`;
+    case "goal":
+      return `Work toward a goal for up to ${action.maxIterations} iteration${action.maxIterations === 1 ? "" : "s"}`;
+    case "fan_out":
+      return `Run ${names(lookup.automations, [action.automationId])} for each matching issue, ${action.concurrency} at a time`;
+    case "remember":
+      return `Remember ${action.key}`;
+    case "append_document_section":
+      return `Append “${action.heading}” to a document`;
+    case "notify":
+      return `Notify ${action.channel === "email" ? action.target : action.channel[0]!.toUpperCase() + action.channel.slice(1)}`;
   }
 }
 

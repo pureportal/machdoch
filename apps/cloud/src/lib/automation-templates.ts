@@ -3,6 +3,7 @@ import type {
   AutomationAction,
   AutomationInput,
   AutomationTrigger,
+  ScheduleFrequency,
 } from "./cloud-automation-contract";
 import type { GitEventKind } from "./git-events";
 import type { IssueFilterCondition } from "./issue-filter-model";
@@ -103,7 +104,7 @@ function automation(
 
 function schedule(
   context: AutomationTemplateContext,
-  frequency: "daily" | "weekdays" | "weekly",
+  frequency: Exclude<ScheduleFrequency, "hourly">,
   time: string,
   forEachIssue: boolean,
   weekday = 1,

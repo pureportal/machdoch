@@ -37,6 +37,15 @@ import {
   sandboxStatusContext,
 } from "../execution/pull-request-tasks";
 import { automationScope, queueFinishedEvent } from "./automation-events";
+import { executeLoopAction, loopMemory } from "./automation-loop-actions";
+import {
+  consequentialActionKinds,
+  exceedsRunBudget,
+  loopCostCents,
+} from "../../../lib/loop-guardrails";
+import { dryRunDetail } from "../../../lib/loop-outputs";
+import { notifyLoop } from "../notifications";
+import { recordTurnTokens, settleLoopRun } from "../loops/loop-runs";
 import { automationChainActions } from "./automation-chain-actions";
 import { changesSinceLastPost } from "./release-automations";
 import {
@@ -79,10 +88,21 @@ export interface ActiveRun {
   chatId: string | null;
   turnId: string | null;
   agentActorId: string | null;
+  dryRun: boolean;
+  approvedBy: string | null;
 }
 
 export const activeRunColumns = `organization_id AS "organizationId",id,automation_id AS "automationId",trigger,issue_id AS "issueId",actor_id AS "actorId",depth,variables,step,steps,
-  chat_id AS "chatId",turn_id AS "turnId",agent_actor_id AS "agentActorId"`;
+  chat_id AS "chatId",turn_id AS "turnId",agent_actor_id AS "agentActorId",dry_run AS "dryRun",approved_by AS "approvedBy"`;
+
+interface LoopGuard extends Record<string, unknown> {
+  killed: boolean;
+  overdue: boolean;
+  approvalRequired: boolean;
+  tokens: string;
+  rate: number;
+  reservedCents: number;
+}
 
 const humanTriggers = new Set<string>([
   ...gitEventKinds,
@@ -107,7 +127,8 @@ const pullRequestTriggers = new Set<string>([
 ]);
 
 export type StepOutcome =
-  (Omit<AutomationStep, "kind"> & { halt?: true }) | "waiting";
+  | (Omit<AutomationStep, "kind"> & { halt?: true })
+  | "waiting";
 
 export function succeeded(
   detail: string,
@@ -154,8 +175,46 @@ export class CloudAutomationExecutor {
         ),
       )
     ).rows[0];
-    if (!automation?.enabled) {
+    if (!automation?.enabled && !run.dryRun) {
       await this.finish(run, "skipped", "The automation was paused.");
+      return;
+    }
+    if (!automation) {
+      await this.finish(run, "skipped", "The automation was deleted.");
+      return;
+    }
+    const guard = (
+      await this.services.database.transaction((sql) =>
+        sql.query<LoopGuard>(
+          `SELECT l.killed_at IS NOT NULL AS killed,l.approval_required AS "approvalRequired",
+            COALESCE(r.deadline_at<clock_timestamp(),false) AS overdue,r.tokens::text AS tokens,
+            COALESCE(s.cents_per_thousand_tokens,1)::float AS rate,r.reserved_cents AS "reservedCents"
+          FROM cloud_loops l JOIN cloud_automation_runs r ON r.organization_id=l.organization_id AND r.id=$2
+          LEFT JOIN cloud_loop_settings s ON s.organization_id=l.organization_id
+          WHERE l.organization_id=$1 AND l.automation_id=$3`,
+          [run.organizationId, run.id, automation.id],
+        ),
+      )
+    ).rows[0];
+    if (!guard) {
+      await this.finish(run, "skipped", "The loop is unavailable.");
+      return;
+    }
+    if (guard.killed) {
+      await this.finish(run, "skipped", "The loop was stopped.");
+      return;
+    }
+    if (guard.overdue) {
+      await this.finish(run, "failed", "The run exceeded its time limit.");
+      return;
+    }
+    if (
+      exceedsRunBudget(
+        loopCostCents(Number(guard.tokens), guard.rate),
+        guard.reservedCents || null,
+      )
+    ) {
+      await this.finish(run, "failed", "The run exceeded its budget.");
       return;
     }
     const owner = {
@@ -165,8 +224,8 @@ export class CloudAutomationExecutor {
     };
     await this.save(run, { state: run.turnId ? "waiting" : "running" });
     await automationScope.run(
-      { automationId: automation.id, depth: run.depth + 1 },
-      () => this.perform(run, automation, owner),
+      { automationId: automation.id, depth: run.depth + 1, runId: run.id },
+      () => this.perform(run, automation, owner, guard.approvalRequired),
     );
   }
 
@@ -174,12 +233,20 @@ export class CloudAutomationExecutor {
     run: ActiveRun,
     automation: StoredAutomation,
     owner: CloudActor,
+    approvalRequired: boolean,
   ): Promise<void> {
     for (let index = run.step; index < automation.actions.length; index++) {
       const action = automation.actions[index]!;
       let outcome: StepOutcome;
       try {
-        outcome = await this.execute(run, automation, owner, action, index);
+        outcome = await this.execute(
+          run,
+          automation,
+          owner,
+          action,
+          index,
+          approvalRequired,
+        );
       } catch (error) {
         if (!isCloudError(error) || error.status >= 500) throw error;
         run.steps.push({
@@ -235,6 +302,11 @@ export class CloudAutomationExecutor {
       : null;
     return {
       ...run.variables,
+      memory: await loopMemory(
+        this.services,
+        run.organizationId,
+        automation.id,
+      ),
       automation: { name: automation.name },
       date: new Date().toISOString().slice(0, 10),
       actor: { name: actor?.name ?? "" },
@@ -294,11 +366,19 @@ export class CloudAutomationExecutor {
     owner: CloudActor,
     action: AutomationAction,
     index: number,
+    approvalRequired: boolean,
   ): Promise<StepOutcome> {
     const key = (purpose: string) =>
       derivedCommandId(`${run.id}:${index}`, purpose);
     const { planning, issueChanges, labels, comments } = this.services;
     const variables = await this.variables(run, automation, owner);
+    if (run.dryRun) return succeeded(dryRunDetail(action, variables));
+    if (
+      approvalRequired &&
+      !run.approvedBy &&
+      consequentialActionKinds.has(action.kind)
+    )
+      return this.awaitApproval(run, automation, action, variables);
     switch (action.kind) {
       case "set_status": {
         const issueId = this.requireIssue(run);
@@ -372,7 +452,9 @@ export class CloudAutomationExecutor {
         return this.askAgent(run, automation, owner, action, variables, key);
       case "delegate": {
         const pullRequest = variables.pullRequest as
-          { id?: unknown; headSha?: unknown } | null | undefined;
+          | { id?: unknown; headSha?: unknown }
+          | null
+          | undefined;
         if (
           typeof pullRequest?.id === "string" &&
           (pullRequestTriggers.has(run.trigger) || !run.issueId)
@@ -486,6 +568,27 @@ export class CloudAutomationExecutor {
           action,
           key,
         });
+      case "remember":
+      case "request_input":
+      case "goal":
+      case "fan_out":
+      case "append_document_section":
+      case "notify":
+        return executeLoopAction(
+          this.services,
+          {
+            run,
+            automation,
+            owner,
+            variables,
+            key,
+            wait: async () => {
+              await this.save(run, { state: "waiting" });
+              return "waiting";
+            },
+          },
+          action,
+        );
       case "start_client_session":
         return this.startClientSession(run, owner, action, variables, key);
       case "write_release_posts":
@@ -530,6 +633,32 @@ export class CloudAutomationExecutor {
         );
       }
     }
+  }
+
+  private async awaitApproval(
+    run: ActiveRun,
+    automation: StoredAutomation,
+    action: AutomationAction,
+    variables: AutomationVariables,
+  ): Promise<StepOutcome> {
+    if (!run.variables.loopApproval) {
+      await this.services.database.transaction((sql) =>
+        notifyLoop(sql, {
+          organizationId: run.organizationId,
+          userId: automation.ownerId,
+          teamId: automation.teamId,
+          kind: "loop_approval",
+          automationRunId: run.id,
+          issueId: run.issueId,
+          actorId: run.actorId ?? automation.ownerId,
+          automation: automation.name,
+          detail: dryRunDetail(action, variables),
+        }),
+      );
+      run.variables = { ...run.variables, loopApproval: true };
+    }
+    await this.save(run, { state: "waiting" });
+    return "waiting";
   }
 
   private async createIssue(
@@ -646,6 +775,10 @@ export class CloudAutomationExecutor {
       );
     if (["queued", "running", "cancel_requested"].includes(turn.state))
       return "waiting";
+    const turnId = run.turnId;
+    await this.services.database.transaction((sql) =>
+      recordTurnTokens(sql, run.organizationId, run.id, turnId),
+    );
     if (turn.state !== "complete")
       throw new CloudError(
         409,
@@ -929,7 +1062,7 @@ export class CloudAutomationExecutor {
     state: AutomationOutcome,
     error: string | null,
   ): Promise<void> {
-    await this.services.database.transaction(async (sql) => {
+    const { pause } = await this.services.database.transaction(async (sql) => {
       await sql.query(
         `UPDATE cloud_automation_runs SET state=$3,steps=$4,error=$5,turn_id=NULL,updated_at=clock_timestamp(),finished_at=clock_timestamp()
         WHERE organization_id=$1 AND id=$2`,
@@ -941,8 +1074,14 @@ export class CloudAutomationExecutor {
           error?.slice(0, 500) ?? null,
         ],
       );
-      await queueFinishedEvent(sql, run, state, error);
+      if (!run.dryRun) await queueFinishedEvent(sql, run, state, error);
+      return settleLoopRun(sql, run, state);
     });
+    if (pause)
+      await this.disable(
+        run,
+        "Paused after repeated failures. Enable it after fixing the cause.",
+      );
   }
 
   private async disable(run: ActiveRun, error: string): Promise<void> {

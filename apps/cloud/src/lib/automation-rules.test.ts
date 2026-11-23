@@ -9,6 +9,7 @@ import {
 import {
   automationInputSchema,
   type AutomationTrigger,
+  type ScheduleFrequency,
 } from "./cloud-automation-contract";
 
 const ids = {
@@ -26,7 +27,7 @@ const ids = {
 };
 
 function schedule(
-  frequency: "hourly" | "daily" | "weekdays" | "weekly",
+  frequency: ScheduleFrequency,
   time: string,
   timeZone = "UTC",
   weekday = 1,
@@ -42,6 +43,28 @@ function schedule(
 }
 
 describe("nextScheduledRun", () => {
+  it("runs monthly and quarterly on the first of the period", () => {
+    const after = Date.parse("2026-11-12T08:00:00Z");
+    expect(
+      new Date(
+        nextScheduledRun(schedule("monthly", "09:00", "Europe/Berlin"), after),
+      ).toISOString(),
+    ).toBe("2026-12-01T08:00:00.000Z");
+    expect(
+      new Date(
+        nextScheduledRun(schedule("quarterly", "09:00", "UTC"), after),
+      ).toISOString(),
+    ).toBe("2027-01-01T09:00:00.000Z");
+    expect(
+      new Date(
+        nextScheduledRun(
+          schedule("monthly", "09:00", "UTC"),
+          Date.parse("2026-11-01T08:00:00Z"),
+        ),
+      ).toISOString(),
+    ).toBe("2026-11-01T09:00:00.000Z");
+  });
+
   it("runs later the same day when the time has not passed", () => {
     expect(
       new Date(
@@ -149,6 +172,7 @@ describe("renderAutomationText", () => {
 
 describe("automation triggers", () => {
   const issue = {
+    state: "backlog" as const,
     status: { id: ids.triage, revision: 1 },
     priority: "none" as const,
     assigneeId: null,
@@ -158,6 +182,7 @@ describe("automation triggers", () => {
     expect(issueChangeEvents(null, issue)).toEqual([{ kind: "issue_created" }]);
     expect(
       issueChangeEvents(issue, {
+        state: "active",
         status: { id: ids.active, revision: 1 },
         priority: "urgent",
         assigneeId: ids.profile,

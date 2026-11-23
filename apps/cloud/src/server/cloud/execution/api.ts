@@ -69,6 +69,18 @@ export async function handleRunnerApi(
         await readBody(request, clientWorkspaceBindingSchema),
       ),
     );
+  if (endpoint === "/api/v1/runner/file-changed") {
+    const input = await readBody(
+      request,
+      z.strictObject({ path: z.string().trim().min(1).max(1024) }),
+    );
+    return Response.json(
+      await runtime.execution.clientWorkspaces.reportFileChange(
+        token,
+        input.path,
+      ),
+    );
+  }
   if (endpoint === "/api/v1/runner/disconnect") {
     await readBody(request, z.strictObject({}));
     return Response.json(

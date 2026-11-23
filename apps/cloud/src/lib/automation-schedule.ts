@@ -63,6 +63,22 @@ export function nextScheduledRun(
     return start + ((minutes - current + 60) % 60 || 60) * minute;
   }
   const today = localDate(after, trigger.timeZone);
+  if (trigger.frequency === "monthly" || trigger.frequency === "quarterly") {
+    const step = trigger.frequency === "quarterly" ? 3 : 1;
+    const firstMonth =
+      today.getUTCMonth() - (today.getUTCMonth() % step);
+    for (let month = firstMonth; month <= firstMonth + 12; month += step) {
+      const candidate = zonedTime(
+        today.getUTCFullYear(),
+        month,
+        1,
+        hours,
+        minutes,
+        trigger.timeZone,
+      );
+      if (candidate > after) return candidate;
+    }
+  }
   for (let offset = 0; offset <= 8; offset++) {
     const date = new Date(
       Date.UTC(

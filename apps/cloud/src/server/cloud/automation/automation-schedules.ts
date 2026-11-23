@@ -1,5 +1,10 @@
 import type { CloudActor } from "../../../lib/cloud-contract";
 import { nextScheduledRun } from "../../../lib/automation-schedule";
+import type { LoopMissedPolicy } from "../../../lib/cloud-loop-contract";
+import {
+  missedRunGraceMs,
+  missedRunsToStart,
+} from "../../../lib/loop-guardrails";
 import type { CloudSql } from "../database";
 import {
   insertAutomationRun,
@@ -26,7 +31,7 @@ export async function createScheduledRuns(
     : [null];
   const runIds: string[] = [];
   for (const issueId of issueIds) {
-    const runId = await insertAutomationRun(
+    const started = await insertAutomationRun(
       sql,
       owner.organizationId,
       automation,
@@ -39,7 +44,7 @@ export async function createScheduledRuns(
         variables: {},
       },
     );
-    if (runId) runIds.push(runId);
+    if (started.id) runIds.push(started.id);
   }
   return runIds;
 }
@@ -50,21 +55,33 @@ export async function dispatchDueSchedules(sql: CloudSql): Promise<number> {
       StoredAutomation & {
         organizationId: string;
         nextRunAt: Date;
+        missed: LoopMissedPolicy;
       } & Record<string, unknown>
     >(
-      `SELECT ${storedAutomationColumns},organization_id AS "organizationId",next_run_at AS "nextRunAt" FROM cloud_automations
-      WHERE enabled AND trigger_kind='schedule' AND next_run_at<=clock_timestamp() ORDER BY next_run_at,id LIMIT 20 FOR UPDATE SKIP LOCKED`,
+      `SELECT ${storedAutomationColumns},organization_id AS "organizationId",next_run_at AS "nextRunAt",COALESCE((SELECT l.missed FROM cloud_loops l WHERE l.organization_id=a.organization_id AND l.automation_id=a.id),'latest') AS missed
+      FROM cloud_automations a WHERE enabled AND trigger_kind='schedule' AND next_run_at<=clock_timestamp() ORDER BY next_run_at,id LIMIT 20 FOR UPDATE SKIP LOCKED`,
     )
   ).rows;
   for (const automation of due) {
     if (automation.trigger.kind !== "schedule") continue;
-    await createScheduledRuns(
-      sql,
-      { organizationId: automation.organizationId, userId: automation.ownerId },
-      automation,
-      String(automation.nextRunAt.getTime()),
-      null,
-    );
+    if (
+      missedRunsToStart(
+        automation.missed,
+        automation.nextRunAt,
+        new Date(),
+        missedRunGraceMs,
+      )
+    )
+      await createScheduledRuns(
+        sql,
+        {
+          organizationId: automation.organizationId,
+          userId: automation.ownerId,
+        },
+        automation,
+        String(automation.nextRunAt.getTime()),
+        null,
+      );
     await sql.query(
       "UPDATE cloud_automations SET next_run_at=$3 WHERE organization_id=$1 AND id=$2",
       [

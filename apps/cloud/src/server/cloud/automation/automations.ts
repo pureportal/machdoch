@@ -8,6 +8,7 @@ import {
   type CloudAutomationRun,
 } from "../../../lib/cloud-automation-contract";
 import { nextScheduledRun } from "../../../lib/automation-schedule";
+import type { LoopRejection } from "../../../lib/loop-guardrails";
 import {
   checkRevision,
   CloudError,
@@ -41,6 +42,12 @@ function nextRunAt(input: AutomationInput, enabled: boolean): Date | null {
   return enabled && input.trigger.kind === "schedule"
     ? new Date(nextScheduledRun(input.trigger, Date.now()))
     : null;
+}
+
+function runRejected(rejection: LoopRejection | null): CloudError {
+  return rejection
+    ? new CloudError(429, `automation_${rejection.code}`, rejection.reason)
+    : new CloudError(409, "automation_duplicate", "This run already started.");
 }
 
 function requireOwner(automation: CloudAutomation, actor: CloudActor): void {
@@ -418,7 +425,7 @@ export class CloudAutomations {
               "automation_issue_required",
               "Choose an issue to run this automation on.",
             );
-          const runId = await insertAutomationRun(
+          const started = await insertAutomationRun(
             sql,
             actor.organizationId,
             automation,
@@ -431,13 +438,8 @@ export class CloudAutomations {
               variables: {},
             },
           );
-          if (!runId)
-            throw new CloudError(
-              429,
-              "automation_daily_limit",
-              "This automation reached its daily run limit.",
-            );
-          return { runIds: [runId] };
+          if (!started.id) throw runRejected(started.rejection);
+          return { runIds: [started.id] };
         },
       );
     });
@@ -502,7 +504,7 @@ export class CloudAutomations {
             "The issue does not match the automation's conditions.",
           );
       }
-      const runId = await insertAutomationRun(
+      const started = await insertAutomationRun(
         sql,
         owner.organizationId,
         automation,
@@ -515,13 +517,8 @@ export class CloudAutomations {
           variables: { payload },
         },
       );
-      if (!runId)
-        throw new CloudError(
-          429,
-          "automation_daily_limit",
-          "This automation reached its daily run limit.",
-        );
-      return { runId };
+      if (!started.id) throw runRejected(started.rejection);
+      return { runId: started.id };
     });
     this.wake();
     return result;

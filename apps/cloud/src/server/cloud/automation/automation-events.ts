@@ -12,18 +12,19 @@ export const maximumAutomationDepth = 3;
 
 export const automationScope = new AsyncLocalStorage<{
   automationId: string;
+  runId: string;
   depth: number;
 }>();
 
 async function subscribedKinds(
   sql: CloudSql,
   organizationId: string,
-  teamId: string,
+  teamId: string | null,
 ): Promise<Set<string>> {
   return new Set(
     (
       await sql.query<{ trigger_kind: string }>(
-        "SELECT DISTINCT trigger_kind FROM cloud_automations WHERE organization_id=$1 AND team_id=$2 AND enabled",
+        "SELECT DISTINCT trigger_kind FROM cloud_automations WHERE organization_id=$1 AND ($2::uuid IS NULL OR team_id=$2) AND enabled",
         [organizationId, teamId],
       )
     ).rows.map((row) => row.trigger_kind),
@@ -34,21 +35,24 @@ export async function queueAutomationEvents(
   sql: CloudSql,
   input: {
     organizationId: string;
-    teamId: string;
-    issueId: string;
+    teamId: string | null;
+    issueId: string | null;
     actorId: string | null;
     events: AutomationEvent[];
+    source?: string;
   },
   kinds?: Set<string>,
-): Promise<void> {
-  if (!input.events.length) return;
+): Promise<number> {
+  if (!input.events.length) return 0;
   const subscribed =
     kinds ?? (await subscribedKinds(sql, input.organizationId, input.teamId));
   const scope = automationScope.getStore();
+  let queued = 0;
   for (const event of input.events) {
     if (!subscribed.has(event.kind)) continue;
+    queued++;
     await sql.query(
-      "INSERT INTO cloud_automation_events (organization_id,id,team_id,issue_id,actor_id,event,depth,origin_automation_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+      "INSERT INTO cloud_automation_events (organization_id,id,team_id,issue_id,actor_id,event,depth,origin_automation_id,origin_run_id,source) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
       [
         input.organizationId,
         randomUUID(),
@@ -58,9 +62,12 @@ export async function queueAutomationEvents(
         JSON.stringify(event),
         scope?.depth ?? 0,
         scope?.automationId ?? null,
+        scope?.runId ?? null,
+        input.source ?? null,
       ],
     );
   }
+  return queued;
 }
 
 export async function queueIssueChangeEvents(
@@ -125,7 +132,7 @@ export async function queueFinishedEvent(
     error,
   };
   await sql.query(
-    "INSERT INTO cloud_automation_events (organization_id,id,team_id,issue_id,actor_id,event,depth,origin_automation_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+    "INSERT INTO cloud_automation_events (organization_id,id,team_id,issue_id,actor_id,event,depth,origin_automation_id,origin_run_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
     [
       run.organizationId,
       randomUUID(),
@@ -135,6 +142,7 @@ export async function queueFinishedEvent(
       JSON.stringify(event),
       run.depth + 1,
       run.automationId,
+      run.id,
     ],
   );
 }

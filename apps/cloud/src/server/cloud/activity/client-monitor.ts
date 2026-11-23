@@ -12,6 +12,7 @@ import {
   type ClientObservation,
 } from "./client-events";
 import { recordAiActivity } from "./journal";
+import { queueAutomationEvents } from "../automation/automation-events";
 
 const snapshotIntervalMs = 30_000;
 const snapshotTimeoutMs = 10_000;
@@ -81,6 +82,22 @@ export class CloudClientMonitor {
         );
         if (!changed.rows.length) continue;
         await record(sql, organizationId, instance, presenceEvent(online));
+        if (online)
+          await queueAutomationEvents(sql, {
+            organizationId,
+            teamId: null,
+            issueId: null,
+            actorId: null,
+            events: [
+              {
+                kind: "client_event",
+                event: "device_online",
+                instanceId: instance.instanceId,
+                instanceName: instance.displayName,
+                path: null,
+              },
+            ],
+          });
         recorded++;
       }
       return recorded;

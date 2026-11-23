@@ -11,6 +11,7 @@ import {
   type WorkerIdentity,
 } from "./workers";
 import { fenceRun, readRun } from "./records";
+import { queueAutomationEvents } from "../automation/automation-events";
 
 async function registration(
   sql: CloudSql,
@@ -113,6 +114,35 @@ export class CloudClientWorkspaces {
         workspaceId: binding.workspaceId,
       });
       return { ...current, workspaceBinding: binding };
+    });
+  }
+
+  reportFileChange(token: string, path: string): Promise<{ queued: number }> {
+    return this.database.transaction(async (sql) => {
+      const worker = await requireWorker(sql, token);
+      const current = await registration(sql, worker);
+      if (!current.workspaceBinding)
+        throw new CloudError(
+          409,
+          "workspace_not_linked",
+          "Link a workspace before reporting file changes.",
+        );
+      const queued = await queueAutomationEvents(sql, {
+        organizationId: worker.organizationId,
+        teamId: current.profile.teamId,
+        issueId: null,
+        actorId: null,
+        events: [
+          {
+            kind: "client_event",
+            event: "file_changed",
+            instanceId: worker.id,
+            instanceName: current.workspaceBinding.name,
+            path,
+          },
+        ],
+      });
+      return { queued };
     });
   }
 

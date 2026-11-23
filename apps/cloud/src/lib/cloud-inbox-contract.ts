@@ -9,6 +9,9 @@ export const inboxKinds = [
   "task_finished",
   "status_changed",
   "pull_request",
+  "loop_input",
+  "loop_approval",
+  "loop_message",
 ] as const;
 export type InboxKind = (typeof inboxKinds)[number];
 
@@ -40,4 +43,6 @@ export interface InboxEntry {
   runId: string | null;
   runTitle: string | null;
   runState: RunState | null;
+  automationRunId: string | null;
+  loopId: string | null;
 }

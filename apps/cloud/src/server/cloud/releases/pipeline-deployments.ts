@@ -6,6 +6,7 @@ import { touchesPaths } from "../../../lib/release-pipeline-paths";
 import { CloudError, isCloudError, recordEvent } from "../access";
 import { derivedCommandId } from "../command-ids";
 import type { CloudDatabase, CloudSql } from "../database";
+import { queueAutomationEvents } from "../automation/automation-events";
 import type { StoredRepository } from "../git/events";
 import type { GitClient } from "../git/git-client";
 import type { DeploymentEvent } from "../git/webhook-payloads";
@@ -154,6 +155,21 @@ async function insertRelease(
     ON CONFLICT DO NOTHING`,
     [pipeline.organizationId, id, identifiers],
   );
+  await queueAutomationEvents(sql, {
+    organizationId: pipeline.organizationId,
+    teamId: null,
+    issueId: null,
+    actorId: null,
+    events: [
+      {
+        kind: "release_event",
+        pipelineId: pipeline.id,
+        releaseId: id,
+        environment: window.environment,
+        version: deployed.version,
+      },
+    ],
+  });
   return id;
 }
 

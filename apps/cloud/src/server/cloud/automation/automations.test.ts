@@ -224,10 +224,20 @@ it("prevents automations from triggering themselves or looping endlessly", async
   await settle();
   await settle();
   const comments = await runtime.comments.list(owner, issue.id);
-  expect(comments).toHaveLength(7);
+  expect(comments).toHaveLength(5);
   expect(
     comments.filter((comment) => comment.body.startsWith("Echo A: Echo A")),
   ).toEqual([]);
+  expect(
+    comments.filter((comment) =>
+      /^Echo (A|B): Echo (A|B): Echo/.test(comment.body),
+    ),
+  ).toEqual([]);
+  expect(
+    (await runtime.automations.service.runs(owner, { issueId: issue.id }))
+      .filter((run) => run.state === "skipped")
+      .map((run) => run.error),
+  ).toContain("This loop already ran earlier in the same chain.");
 });
 
 it("asks Agent on mentions as the commenter and applies proposals", async () => {

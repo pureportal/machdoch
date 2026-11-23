@@ -41,6 +41,17 @@ export const automationVariableNames = [
   "run.outcome",
   "run.error",
   "automation.name",
+  "project.name",
+  "cycle.name",
+  "source.name",
+  "source.title",
+  "source.body",
+  "client.name",
+  "client.path",
+  "deployment.environment",
+  "deployment.version",
+  "memory",
+  "context",
   "date",
 ] as const;
 

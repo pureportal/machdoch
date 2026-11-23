@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import {
   changeMeasures,
+  memoryKeySchema,
+  notifyTargetValid,
   type AutomationAction,
 } from "@/lib/cloud-automation-contract";
 import { channelKindLabels, channelKinds } from "@/lib/cloud-release-contract";
@@ -21,6 +23,10 @@ import { ChipToggle, VariableMenu } from "./automation-chips";
 import { actionKinds, pullRequestTaskLabels } from "./automation-display";
 import { ClientTargetSelect } from "./automation-client-fields";
 import { GitActionFields, isGitAction } from "./automation-git-action-fields";
+import {
+  isLoopAction,
+  LoopActionFields,
+} from "./automation-loop-action-fields";
 import { TemplateText } from "./automation-template-text";
 import { priorityOptions } from "./issue-properties";
 import type { AutomationOptions } from "./use-automation-options";
@@ -129,6 +135,30 @@ export function defaultAction(
       return { kind, automationId: "" };
     case "set_automation_enabled":
       return { kind, automationId: "", enabled: false };
+    case "request_input":
+      return { kind, prompt: "", key: "answer" };
+    case "goal":
+      return {
+        kind,
+        objective: "",
+        successCriteria: "",
+        providerId: model?.providerId ?? "",
+        model: model?.model ?? "",
+        maxIterations: 3,
+      };
+    case "fan_out":
+      return { kind, automationId: "", conditions: [], concurrency: 3 };
+    case "remember":
+      return { kind, key: "", value: "" };
+    case "append_document_section":
+      return {
+        kind,
+        documentId: context.options.documents[0]?.id ?? "",
+        heading: "{{date}}",
+        body: "",
+      };
+    case "notify":
+      return { kind, channel: "slack", target: "", subject: "", body: "" };
   }
 }
 
@@ -681,6 +711,16 @@ export function ActionCard({
           </Label>
         </>
       )}
+      {isLoopAction(action) && (
+        <LoopActionFields
+          action={action}
+          index={index}
+          options={options}
+          variables={variables}
+          automations={automations}
+          onChange={onChange}
+        />
+      )}
       {isGitAction(action) && (
         <GitActionFields
           action={action}
@@ -804,6 +844,27 @@ export function actionIncomplete(action: AutomationAction): boolean {
       );
     case "prepare_release":
       return !action.productId || !action.version.trim();
+    case "request_input":
+      return (
+        !action.prompt.trim() || !memoryKeySchema.safeParse(action.key).success
+      );
+    case "remember":
+      return !memoryKeySchema.safeParse(action.key).success;
+    case "goal":
+      return (
+        !action.objective.trim() ||
+        !action.successCriteria.trim() ||
+        !action.providerId ||
+        !action.model
+      );
+    case "fan_out":
+      return !action.automationId;
+    case "append_document_section":
+      return (
+        !action.documentId || !action.heading.trim() || !action.body.trim()
+      );
+    case "notify":
+      return !action.body.trim() || !notifyTargetValid(action);
     default:
       return false;
   }

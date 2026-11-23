@@ -9,6 +9,7 @@ import {
   CheckCheck,
   GitPullRequest,
   Inbox as InboxIcon,
+  Repeat,
   X,
 } from "lucide-react";
 import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
@@ -25,7 +26,17 @@ import { useToast } from "./toast";
 
 export const inboxChangedEvent = "machdoch:inbox-changed";
 const pollMs = 20_000;
-const priorityKinds: InboxEntry["kind"][] = ["assigned", "mentioned"];
+const priorityKinds: InboxEntry["kind"][] = [
+  "assigned",
+  "mentioned",
+  "loop_input",
+  "loop_approval",
+];
+const loopKinds: InboxEntry["kind"][] = [
+  "loop_input",
+  "loop_approval",
+  "loop_message",
+];
 type InboxTab = "priority" | "other";
 
 function describe(entry: InboxEntry): string {
@@ -37,10 +48,16 @@ function describe(entry: InboxEntry): string {
   if (entry.kind === "status_changed")
     return `${actor} changed the status to ${entry.detail}`;
   if (entry.kind === "pull_request") return entry.detail;
+  if (entry.kind === "loop_input") return `Input needed: ${entry.detail}`;
+  if (entry.kind === "loop_approval")
+    return `Approval needed: ${entry.detail}`;
+  if (entry.kind === "loop_message") return entry.detail;
   return `AI task ${(entry.runState ?? "finished").replaceAll("_", " ")}${entry.detail ? `: ${entry.detail}` : ""}`;
 }
 
 function entryHref(entry: InboxEntry): string {
+  if (loopKinds.includes(entry.kind) && entry.loopId)
+    return `/cloud/loops/${entry.loopId}?run=${entry.automationRunId}`;
   return entry.kind === "task_finished" && entry.runId
     ? `/cloud/tasks/${entry.runId}`
     : `/cloud/issues/${entry.issueId}`;
@@ -67,7 +84,8 @@ function IssuePreview({ entry }: { entry: InboxEntry }) {
     <article className="cloud-inbox-preview">
       <header>
         <span className="cloud-issue-key">
-          {entry.issueIdentifier ?? "AI task"}
+          {entry.issueIdentifier ??
+            (loopKinds.includes(entry.kind) ? "Loop" : "AI task")}
         </span>
         <Button asChild variant="ghost" size="sm">
           <Link href={entryHref(entry)} prefetch={false}>
@@ -76,7 +94,7 @@ function IssuePreview({ entry }: { entry: InboxEntry }) {
           </Link>
         </Button>
       </header>
-      <h2>{entry.issueTitle ?? entry.runTitle}</h2>
+      <h2>{entry.issueTitle ?? entry.runTitle ?? entry.actor}</h2>
       <p className="cloud-inbox-preview-event">
         <PersonAvatar name={entry.actor ?? "?"} className="cloud-avatar-tiny" />
         {describe(entry)}
@@ -278,6 +296,10 @@ export function Inbox({ initial }: { initial: InboxEntry[] }) {
                     <span className="cloud-icon-tile cloud-inbox-icon">
                       <GitPullRequest size={14} aria-hidden="true" />
                     </span>
+                  ) : loopKinds.includes(entry.kind) ? (
+                    <span className="cloud-icon-tile cloud-inbox-icon">
+                      <Repeat size={14} aria-hidden="true" />
+                    </span>
                   ) : (
                     <PersonAvatar name={entry.actor ?? "?"} />
                   )}
@@ -288,7 +310,9 @@ export function Inbox({ initial }: { initial: InboxEntry[] }) {
                           {entry.issueIdentifier}
                         </span>
                       )}
-                      <span>{entry.issueTitle ?? entry.runTitle}</span>
+                      <span>
+                        {entry.issueTitle ?? entry.runTitle ?? entry.actor}
+                      </span>
                     </span>
                     <span className="cloud-inbox-detail">
                       {describe(entry)}

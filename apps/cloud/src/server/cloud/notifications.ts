@@ -37,14 +37,15 @@ async function insertNotification(
     kind: InboxKind;
     issueId: string | null;
     runId: string | null;
+    automationRunId?: string;
     actorId: string;
     automation?: string;
     detail: string;
   },
 ): Promise<void> {
   await sql.query(
-    `INSERT INTO cloud_notifications (organization_id,id,user_id,team_id,kind,issue_id,run_id,actor_id,automation,detail)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING`,
+    `INSERT INTO cloud_notifications (organization_id,id,user_id,team_id,kind,issue_id,run_id,actor_id,automation,detail,automation_run_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING`,
     [
       entry.organizationId,
       randomUUID(),
@@ -56,8 +57,26 @@ async function insertNotification(
       entry.actorId,
       entry.automation ?? null,
       excerpt(entry.detail),
+      entry.automationRunId ?? null,
     ],
   );
+}
+
+export async function notifyLoop(
+  sql: CloudSql,
+  entry: {
+    organizationId: string;
+    userId: string;
+    teamId: string;
+    kind: "loop_input" | "loop_approval" | "loop_message";
+    automationRunId: string;
+    issueId: string | null;
+    actorId: string;
+    automation: string;
+    detail: string;
+  },
+): Promise<void> {
+  await insertNotification(sql, { ...entry, runId: null });
 }
 
 export async function notifyAssignment(
@@ -233,12 +252,14 @@ export class CloudInbox {
           `SELECT n.id,n.kind,n.detail,n.read_at IS NOT NULL AS read,
              to_char(n.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
              COALESCE(n.automation,author.name) AS actor,n.issue_id AS "issueId",i.identifier AS "issueIdentifier",i.title AS "issueTitle",i.state AS "issueState",
-             n.run_id AS "runId",r.title AS "runTitle",r.state AS "runState"
+             n.run_id AS "runId",r.title AS "runTitle",r.state AS "runState",
+             n.automation_run_id AS "automationRunId",ar.automation_id AS "loopId"
            FROM cloud_notifications n
            JOIN cloud_teams t ON t.organization_id=n.organization_id AND t.id=n.team_id
            JOIN cloud_memberships m ON m.organization_id=n.organization_id AND m.user_id=n.user_id
            LEFT JOIN cloud_issues i ON i.organization_id=n.organization_id AND i.id=n.issue_id
            LEFT JOIN cloud_runs r ON r.organization_id=n.organization_id AND r.id=n.run_id
+           LEFT JOIN cloud_automation_runs ar ON ar.organization_id=n.organization_id AND ar.id=n.automation_run_id
            LEFT JOIN cloud_users author ON author.id=n.actor_id
            WHERE n.organization_id=$1 AND n.user_id=$2 AND n.dismissed_at IS NULL AND ${teamVisibility}
            ORDER BY n.created_at DESC,n.id LIMIT ${pageSize}`,

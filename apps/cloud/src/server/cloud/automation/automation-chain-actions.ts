@@ -88,10 +88,13 @@ export async function automationChainActions(
         actorId: run.actorId,
         depth: run.depth + 1,
         variables: { run: { automation: automation.name } },
+        originRunId: run.id,
       },
     );
-    return started
-      ? succeeded(`Started ${target.name}`, "/cloud/automations")
-      : skipped(`${target.name} reached its daily run limit.`);
+    return started.id
+      ? succeeded(`Started ${target.name}`, "/cloud/loops")
+      : skipped(
+          `${target.name} did not start. ${started.rejection?.reason ?? "It already started for this step."}`,
+        );
   });
 }

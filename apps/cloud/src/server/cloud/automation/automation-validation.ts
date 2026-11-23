@@ -154,6 +154,24 @@ async function requireProjects(
     );
 }
 
+async function requireDocument(
+  sql: CloudSql,
+  actor: CloudActor,
+  teamId: string,
+  id: string,
+): Promise<void> {
+  const found = await sql.query(
+    "SELECT 1 FROM cloud_documents WHERE organization_id=$1 AND team_id=$2 AND id=$3",
+    [actor.organizationId, teamId, id],
+  );
+  if (!found.rows.length)
+    throw new CloudError(
+      422,
+      "document_unavailable",
+      "Choose a document of this team.",
+    );
+}
+
 export async function validateAutomation(
   sql: CloudSql,
   actor: CloudActor,
@@ -221,6 +239,30 @@ export async function validateAutomation(
         break;
       case "send_webhook":
         await requireMembership(sql, actor, "settings.manage");
+        break;
+      case "goal":
+        await requireMembership(sql, actor, "ai.chat");
+        await requireModel(sql, actor, action.providerId, action.model);
+        break;
+      case "fan_out":
+        await requireAutomations(sql, actor, [action.automationId], null);
+        break;
+      case "append_document_section":
+        await requireDocument(sql, actor, team.id, action.documentId);
+        break;
+      case "notify":
+        if (action.channel !== "email") {
+          await requireMembership(sql, actor, "settings.manage");
+          if (
+            !URL.canParse(action.target) ||
+            new URL(action.target).protocol !== "https:"
+          )
+            throw new CloudError(
+              422,
+              "invalid_notify_target",
+              "Enter an HTTPS webhook URL.",
+            );
+        }
         break;
       case "start_client_session":
         await requireClientUse(sql, actor, action.instanceId);

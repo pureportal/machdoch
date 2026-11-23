@@ -5,6 +5,10 @@ import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
   automationOutcomes,
+  clientEventKinds,
+  cycleEventKinds,
+  intakeSources,
+  projectEventKinds,
   scheduleFrequencies,
   type AutomationTrigger,
 } from "@/lib/cloud-automation-contract";
@@ -18,6 +22,10 @@ import { ChipToggle } from "./automation-chips";
 import { priorityOptions } from "./issue-properties";
 import {
   automationOutcomeLabels,
+  clientEventLabels,
+  cycleEventLabels,
+  intakeSourceLabels,
+  projectEventLabels,
   triggerKinds,
   weekdays,
 } from "./automation-display";
@@ -29,6 +37,8 @@ const frequencyLabels = {
   daily: "Every day",
   weekdays: "Every weekday",
   weekly: "Every week",
+  monthly: "Every month",
+  quarterly: "Every quarter",
 } as const;
 
 export function defaultTrigger(
@@ -68,6 +78,16 @@ export function defaultTrigger(
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         forEachIssue: false,
       };
+    case "project_event":
+      return { kind, events: ["completed"] };
+    case "cycle_event":
+      return { kind, events: ["closed"] };
+    case "source_event":
+      return { kind, source: "sentry", contains: "" };
+    case "client_event":
+      return { kind, events: ["device_online"], instanceIds: [] };
+    case "release_event":
+      return { kind, pipelineIds: [] };
     default:
       return { kind } as AutomationTrigger;
   }
@@ -230,6 +250,74 @@ export function TriggerFields({
             }
           />
         </>
+      )}
+      {trigger.kind === "project_event" && (
+        <ChipToggle
+          label="Events"
+          options={projectEventKinds.map((event) => ({
+            value: event,
+            label: projectEventLabels[event],
+          }))}
+          selected={trigger.events}
+          onChange={(events) =>
+            onChange({ ...trigger, events: events as typeof trigger.events })
+          }
+        />
+      )}
+      {trigger.kind === "cycle_event" && (
+        <ChipToggle
+          label="Events"
+          options={cycleEventKinds.map((event) => ({
+            value: event,
+            label: cycleEventLabels[event],
+          }))}
+          selected={trigger.events}
+          onChange={(events) =>
+            onChange({ ...trigger, events: events as typeof trigger.events })
+          }
+        />
+      )}
+      {trigger.kind === "client_event" && (
+        <ChipToggle
+          label="Events"
+          options={clientEventKinds.map((event) => ({
+            value: event,
+            label: clientEventLabels[event],
+          }))}
+          selected={trigger.events}
+          onChange={(events) =>
+            onChange({ ...trigger, events: events as typeof trigger.events })
+          }
+        />
+      )}
+      {trigger.kind === "source_event" && (
+        <div className="cloud-automation-row">
+          <Select
+            aria-label="Source"
+            value={trigger.source}
+            onChange={(event) =>
+              onChange({
+                ...trigger,
+                source: event.target.value as typeof trigger.source,
+              })
+            }
+          >
+            {intakeSources.map((source) => (
+              <option key={source} value={source}>
+                {intakeSourceLabels[source]}
+              </option>
+            ))}
+          </Select>
+          <Input
+            aria-label="Contains"
+            placeholder="Contains text"
+            maxLength={200}
+            value={trigger.contains}
+            onChange={(event) =>
+              onChange({ ...trigger, contains: event.target.value })
+            }
+          />
+        </div>
       )}
       {trigger.kind === "schedule" && (
         <>

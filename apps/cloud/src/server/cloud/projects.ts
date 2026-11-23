@@ -18,6 +18,7 @@ import {
 } from "./access";
 import type { CloudDatabase, CloudSql } from "./database";
 import { projectColumns } from "./planning-queries";
+import { queueAutomationEvents } from "./automation/automation-events";
 
 export async function readProject(
   sql: CloudSql,
@@ -124,6 +125,20 @@ export class CloudProjects {
             ],
           );
           await recordEvent(sql, actor, "project.created", id, 1, {});
+          await queueAutomationEvents(sql, {
+            organizationId: actor.organizationId,
+            teamId: input.teamId,
+            issueId: null,
+            actorId: actor.userId,
+            events: [
+              {
+                kind: "project_event",
+                event: "created",
+                projectId: id,
+                projectName: input.name,
+              },
+            ],
+          });
           return { id };
         },
       );
@@ -178,6 +193,23 @@ export class CloudProjects {
             project.revision + 1,
             {},
           );
+          await queueAutomationEvents(sql, {
+            organizationId: actor.organizationId,
+            teamId: project.teamId,
+            issueId: null,
+            actorId: actor.userId,
+            events: [
+              {
+                kind: "project_event",
+                event:
+                  input.status === "completed" && project.status !== "completed"
+                    ? "completed"
+                    : "updated",
+                projectId: id,
+                projectName: input.name,
+              },
+            ],
+          });
           return { id };
         },
       );

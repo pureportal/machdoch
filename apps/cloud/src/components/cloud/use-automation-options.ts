@@ -6,6 +6,7 @@ import type { ExecutionProfile } from "@machdoch/fleet-protocol/cloud-execution"
 import type { CloudProviderSettings } from "@machdoch/fleet-protocol/cloud-providers";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { CloudAutomation } from "@/lib/cloud-automation-contract";
+import type { CloudDocumentSummary } from "@/lib/cloud-loop-contract";
 import type { GitRepositoryOption } from "@/lib/cloud-git-contract";
 import type { CloudLabel } from "@/lib/cloud-label-contract";
 import type { CloudProduct } from "@/lib/cloud-release-contract";
@@ -29,6 +30,7 @@ export interface ClientTarget {
 export interface AutomationOptions {
   automations: { id: string; name: string; teamId: string }[];
   clients: ClientTarget[];
+  documents: CloudDocumentSummary[];
   labels: CloudLabel[];
   models: AgentModelOption[];
   profiles: ExecutionProfile[];
@@ -44,6 +46,7 @@ export function useAutomationOptions(
   const [options, setOptions] = useState<AutomationOptions>({
     automations: [],
     clients: [],
+    documents: [],
     labels: [],
     models: [],
     profiles: [],
@@ -84,6 +87,7 @@ export function useAutomationOptions(
         ? cloudRequest<GitRepositoryOption[]>("git/repositories", { signal })
         : Promise.resolve([]),
       cloudRequest<CloudAutomation[]>("automations", { signal }),
+      cloudRequest<CloudDocumentSummary[]>("documents", { signal }),
     ])
       .then(
         ([
@@ -94,6 +98,7 @@ export function useAutomationOptions(
           fleet,
           repositories,
           automations,
+          documents,
         ]) =>
           setOptions({
             automations: automations.map(({ id, name, teamId }) => ({
@@ -110,6 +115,7 @@ export function useAutomationOptions(
                   label: `${device.displayName} · ${entry.label}`,
                 })),
               ),
+            documents,
             labels: labels.flat().filter((label) => !label.archived),
             models: providers.providers
               .filter((provider) => provider.enabled)

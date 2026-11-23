@@ -10,6 +10,8 @@ import type { IssueFilterCondition } from "../../../lib/issue-filter-model";
 import { issueFilterSql } from "../planning-queries";
 import { CloudError, teamVisibility } from "../access";
 import type { CloudSql } from "../database";
+import type { LoopRejection } from "../../../lib/loop-guardrails";
+import { admitAutomationRun, cancelActiveRuns } from "../loops/loop-admission";
 
 const timestamp = (column: string) =>
   `to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
@@ -25,7 +27,8 @@ export const automationFrom = `cloud_automations a JOIN cloud_users u ON u.id=a.
   JOIN cloud_memberships m ON m.organization_id=a.organization_id AND m.user_id=$2`;
 
 export const runColumns = `r.id,r.automation_id AS "automationId",a.name AS "automationName",r.trigger,r.state,r.issue_id AS "issueId",i.identifier AS "issueIdentifier",
-  p.name AS "actorName",r.steps,r.chat_id AS "chatId",r.error,${timestamp("r.created_at")} AS "createdAt",${timestamp("r.finished_at")} AS "finishedAt"`;
+  p.name AS "actorName",r.steps,r.chat_id AS "chatId",r.error,r.loop_revision AS "loopRevision",r.tokens::integer AS tokens,r.cost_cents AS "costCents",
+  r.dry_run AS "dryRun",r.replay_of AS "replayOf",r.parent_run_id AS "parentRunId",${timestamp("r.created_at")} AS "createdAt",${timestamp("r.finished_at")} AS "finishedAt"`;
 
 export const runFrom = `cloud_automation_runs r JOIN cloud_automations a ON a.organization_id=r.organization_id AND a.id=r.automation_id
   JOIN cloud_teams t ON t.organization_id=a.organization_id AND t.id=a.team_id
@@ -102,45 +105,69 @@ export async function matchingIssueIds(
   ).rows.map((row) => row.id);
 }
 
+export interface AutomationRunInsert {
+  dedupeKey: string;
+  trigger: string;
+  issueId: string | null;
+  actorId: string | null;
+  depth: number;
+  variables: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+  parentRunId?: string | null;
+  originRunId?: string | null;
+  replayOf?: string | null;
+  dryRun?: boolean;
+}
+
+export type AutomationRunStart =
+  | { id: string; rejection: null }
+  | { id: null; rejection: LoopRejection | null };
+
 export async function insertAutomationRun(
   sql: CloudSql,
   organizationId: string,
   automation: Pick<StoredAutomation, "id" | "dailyLimit">,
-  run: {
-    dedupeKey: string;
-    trigger: string;
-    issueId: string | null;
-    actorId: string | null;
-    depth: number;
-    variables: Record<string, unknown>;
-  },
-): Promise<string | null> {
-  const used = (
-    await sql.query<{ count: number }>(
-      "SELECT count(*)::integer AS count FROM cloud_automation_runs WHERE organization_id=$1 AND automation_id=$2 AND state<>'skipped' AND created_at>clock_timestamp()-interval '1 day'",
-      [organizationId, automation.id],
-    )
-  ).rows[0]!.count;
-  const limited = used >= automation.dailyLimit;
+  run: AutomationRunInsert,
+): Promise<AutomationRunStart> {
+  const admission = await admitAutomationRun(sql, organizationId, automation, run);
+  if (admission.admitted && admission.cancelActive)
+    await cancelActiveRuns(sql, organizationId, automation.id);
   const id = randomUUID();
   const inserted = await sql.query<{ id: string }>(
-    `INSERT INTO cloud_automation_runs (organization_id,id,automation_id,dedupe_key,trigger,state,issue_id,actor_id,depth,variables,error,finished_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $6='skipped' THEN clock_timestamp() END) ON CONFLICT (organization_id,automation_id,dedupe_key) DO NOTHING RETURNING id`,
+    `INSERT INTO cloud_automation_runs (organization_id,id,automation_id,dedupe_key,trigger,state,issue_id,actor_id,depth,variables,error,finished_at,
+      payload,parent_run_id,origin_run_id,replay_of,dry_run,reserved_cents,deadline_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $6='skipped' THEN clock_timestamp() END,
+      $12,$13,$14,$15,$16,$17,clock_timestamp()+make_interval(mins=>$18::integer))
+    ON CONFLICT (organization_id,automation_id,dedupe_key) DO NOTHING RETURNING id`,
     [
       organizationId,
       id,
       automation.id,
       run.dedupeKey,
       run.trigger,
-      limited ? "skipped" : "queued",
+      admission.admitted ? "queued" : "skipped",
       run.issueId,
       run.actorId,
       run.depth,
       JSON.stringify(run.variables),
-      limited ? "The daily run limit was reached." : null,
+      admission.admitted ? null : admission.reason,
+      JSON.stringify(run.payload ?? {}),
+      run.parentRunId ?? null,
+      run.originRunId ?? null,
+      run.replayOf ?? null,
+      run.dryRun ?? false,
+      admission.admitted ? admission.reservedCents : 0,
+      admission.maxDurationMinutes,
     ],
   );
-  return inserted.rows.length && !limited ? id : null;
+  if (!admission.admitted)
+    return {
+      id: null,
+      rejection: { code: admission.code, reason: admission.reason },
+    };
+  return inserted.rows.length
+    ? { id, rejection: null }
+    : { id: null, rejection: null };
 }
 
 export async function readRuns(

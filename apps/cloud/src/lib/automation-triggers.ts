@@ -2,6 +2,10 @@ import type { CloudIssue } from "./cloud-contract";
 import type {
   AutomationOutcome,
   AutomationTrigger,
+  ClientEventKind,
+  CycleEventKind,
+  IntakeSource,
+  ProjectEventKind,
 } from "./cloud-automation-contract";
 import type { PullRequestStage } from "./git-automation";
 import { gitEventMatches, type GitEvent } from "./git-events";
@@ -29,6 +33,40 @@ export type AutomationEvent =
       url: string;
     }
   | { kind: "git_event"; git: GitEvent }
+  | { kind: "issue_triaged" }
+  | {
+      kind: "project_event";
+      event: ProjectEventKind;
+      projectId: string;
+      projectName: string;
+    }
+  | {
+      kind: "cycle_event";
+      event: CycleEventKind;
+      cycleId: string;
+      cycleName: string;
+    }
+  | {
+      kind: "source_event";
+      source: IntakeSource;
+      title: string;
+      body: string;
+      payload: unknown;
+    }
+  | {
+      kind: "client_event";
+      event: ClientEventKind;
+      instanceId: string;
+      instanceName: string;
+      path: string | null;
+    }
+  | {
+      kind: "release_event";
+      pipelineId: string;
+      releaseId: string;
+      environment: string;
+      version: string;
+    }
   | {
       kind: "automation_finished";
       automationId: string;
@@ -40,15 +78,19 @@ export type AutomationEvent =
 
 type IssueSnapshot = Pick<
   CloudIssue,
-  "status" | "priority" | "assigneeId"
+  "state" | "status" | "priority" | "assigneeId"
 > | null;
 
 export function issueChangeEvents(
   previous: IssueSnapshot,
   next: NonNullable<IssueSnapshot>,
 ): AutomationEvent[] {
-  if (!previous) return [{ kind: "issue_created" }];
-  const events: AutomationEvent[] = [];
+  const triaged: AutomationEvent[] =
+    next.state === "triage" && previous?.state !== "triage"
+      ? [{ kind: "issue_triaged" }]
+      : [];
+  if (!previous) return [{ kind: "issue_created" }, ...triaged];
+  const events: AutomationEvent[] = [...triaged];
   if (previous.status.id !== next.status.id)
     events.push({
       kind: "status_changed",
@@ -78,7 +120,38 @@ export function triggerMatchesEvent(
   switch (event.kind) {
     case "issue_created":
     case "assignee_changed":
+    case "issue_triaged":
       return true;
+    case "project_event":
+      return (
+        trigger.kind === "project_event" && trigger.events.includes(event.event)
+      );
+    case "cycle_event":
+      return (
+        trigger.kind === "cycle_event" && trigger.events.includes(event.event)
+      );
+    case "source_event":
+      return (
+        trigger.kind === "source_event" &&
+        trigger.source === event.source &&
+        (!trigger.contains ||
+          `${event.title}\n${event.body}`
+            .toLowerCase()
+            .includes(trigger.contains.toLowerCase()))
+      );
+    case "client_event":
+      return (
+        trigger.kind === "client_event" &&
+        trigger.events.includes(event.event) &&
+        (!trigger.instanceIds.length ||
+          trigger.instanceIds.includes(event.instanceId))
+      );
+    case "release_event":
+      return (
+        trigger.kind === "release_event" &&
+        (!trigger.pipelineIds.length ||
+          trigger.pipelineIds.includes(event.pipelineId))
+      );
     case "status_changed":
       return (
         trigger.kind === "status_changed" &&

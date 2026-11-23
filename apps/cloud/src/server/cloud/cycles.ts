@@ -22,6 +22,7 @@ import type { CloudDatabase, CloudSql } from "./database";
 import { readIssue, recordIssue } from "./planning";
 import { cycleColumns, issueColumns } from "./planning-queries";
 import { lockExecution } from "./execution/records";
+import { queueAutomationEvents } from "./automation/automation-events";
 
 async function readCycle(
   sql: CloudSql,
@@ -254,6 +255,20 @@ export class CloudCycles {
               ? { carryoverCycleId: input.carryoverCycleId }
               : {},
           );
+          await queueAutomationEvents(sql, {
+            organizationId: actor.organizationId,
+            teamId: cycle.teamId,
+            issueId: null,
+            actorId: actor.userId,
+            events: [
+              {
+                kind: "cycle_event",
+                event: input.kind === "start" ? "started" : "closed",
+                cycleId: id,
+                cycleName: cycle.name,
+              },
+            ],
+          });
           return { id };
         },
       );

@@ -5,7 +5,17 @@ import {
   Power,
   Workflow,
   Bot,
+  BookPlus,
+  Brain,
   CalendarClock,
+  CalendarRange,
+  FolderKanban,
+  Goal,
+  Inbox,
+  Bell,
+  Network,
+  PackageCheck,
+  ShieldAlert,
   CirclePlus,
   CircleDashed,
   GitBranch,
@@ -38,6 +48,11 @@ import type {
   AutomationOutcome,
   AutomationTrigger,
   AutomationTriggerKind,
+  ClientEventKind,
+  CycleEventKind,
+  IntakeSource,
+  NotifyChannel,
+  ProjectEventKind,
 } from "@/lib/cloud-automation-contract";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { CloudLabel } from "@/lib/cloud-label-contract";
@@ -124,6 +139,42 @@ export const triggerKinds: {
     group: "Other",
   },
   { kind: "manual", label: "Run manually", icon: Hand, group: "Other" },
+  {
+    kind: "issue_triaged",
+    label: "Issue enters triage",
+    icon: Inbox,
+    group: "Issues",
+  },
+  {
+    kind: "project_event",
+    label: "Project event",
+    icon: FolderKanban,
+    group: "Planning",
+  },
+  {
+    kind: "cycle_event",
+    label: "Cycle event",
+    icon: CalendarRange,
+    group: "Planning",
+  },
+  {
+    kind: "source_event",
+    label: "External source",
+    icon: ShieldAlert,
+    group: "Integrations",
+  },
+  {
+    kind: "client_event",
+    label: "Client event",
+    icon: Laptop,
+    group: "Clients",
+  },
+  {
+    kind: "release_event",
+    label: "Release is deployed",
+    icon: PackageCheck,
+    group: "Releases",
+  },
 ];
 
 export const actionKinds: {
@@ -280,7 +331,79 @@ export const actionKinds: {
     group: "Integrations",
     issue: false,
   },
+  {
+    kind: "notify",
+    label: "Notify",
+    icon: Bell,
+    group: "Integrations",
+    issue: false,
+  },
+  {
+    kind: "request_input",
+    label: "Ask for input",
+    icon: Hand,
+    group: "Flow",
+    issue: false,
+  },
+  {
+    kind: "goal",
+    label: "Work toward goal",
+    icon: Goal,
+    group: "AI",
+    issue: false,
+  },
+  {
+    kind: "fan_out",
+    label: "Run for each issue",
+    icon: Network,
+    group: "Flow",
+    issue: false,
+  },
+  {
+    kind: "remember",
+    label: "Remember",
+    icon: Brain,
+    group: "Flow",
+    issue: false,
+  },
+  {
+    kind: "append_document_section",
+    label: "Append to document",
+    icon: BookPlus,
+    group: "Documents",
+    issue: false,
+  },
 ];
+
+export const intakeSourceLabels: Record<IntakeSource, string> = {
+  email: "Email",
+  sentry: "Sentry",
+  grafana: "Grafana",
+  teams: "Teams",
+  slack: "Slack",
+};
+
+export const projectEventLabels: Record<ProjectEventKind, string> = {
+  created: "Created",
+  updated: "Updated",
+  completed: "Completed",
+};
+
+export const cycleEventLabels: Record<CycleEventKind, string> = {
+  started: "Started",
+  closed: "Closed",
+};
+
+export const clientEventLabels: Record<ClientEventKind, string> = {
+  file_changed: "File changed",
+  device_online: "Device online",
+};
+
+export const notifyChannelLabels: Record<NotifyChannel, string> = {
+  slack: "Slack",
+  teams: "Teams",
+  email: "Email",
+};
 
 export const automationOutcomeLabels: Record<AutomationOutcome, string> = {
   succeeded: "Succeeds",
@@ -452,9 +575,32 @@ export function describeTrigger(
             ? `Daily at ${trigger.time}`
             : trigger.frequency === "weekdays"
               ? `Weekdays at ${trigger.time}`
-              : `${weekdays[trigger.weekday]}s at ${trigger.time}`;
+              : trigger.frequency === "monthly"
+                ? `Monthly on the 1st at ${trigger.time}`
+                : trigger.frequency === "quarterly"
+                  ? `Quarterly on the 1st at ${trigger.time}`
+                  : `${weekdays[trigger.weekday]}s at ${trigger.time}`;
       return trigger.forEachIssue ? `${when} for matching issues` : when;
     }
+    case "project_event":
+      return `Project ${list(
+        trigger.events.map((event) => projectEventLabels[event].toLowerCase()),
+        "",
+      )}`;
+    case "cycle_event":
+      return `Cycle ${list(
+        trigger.events.map((event) => cycleEventLabels[event].toLowerCase()),
+        "",
+      )}`;
+    case "source_event":
+      return trigger.contains
+        ? `${intakeSourceLabels[trigger.source]} mentions “${trigger.contains}”`
+        : `${intakeSourceLabels[trigger.source]} event`;
+    case "client_event":
+      return list(
+        trigger.events.map((event) => clientEventLabels[event]),
+        "",
+      );
     default:
       return (
         triggerKinds.find((entry) => entry.kind === trigger.kind)?.label ?? ""
@@ -541,5 +687,17 @@ export function describeAction(
         ? `Write ${channels} posts after ${action.minimumChanges} ${action.measure === "points" ? "points" : "issues"}`
         : `Write ${channels} posts`;
     }
+    case "request_input":
+      return "Ask for input";
+    case "goal":
+      return "Work toward goal";
+    case "fan_out":
+      return `Run ${automationNames(names, [action.automationId])[0]} for each issue`;
+    case "remember":
+      return `Remember ${action.key}`;
+    case "append_document_section":
+      return `Append “${action.heading}”`;
+    case "notify":
+      return `Notify ${action.channel === "email" ? action.target : notifyChannelLabels[action.channel]}`;
   }
 }

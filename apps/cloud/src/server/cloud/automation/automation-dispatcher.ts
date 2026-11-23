@@ -3,7 +3,10 @@ import {
   type AutomationEvent,
 } from "../../../lib/automation-triggers";
 import type { CloudActor } from "../../../lib/cloud-contract";
-import { actionNeedsIssue } from "../../../lib/cloud-automation-contract";
+import {
+  actionNeedsIssue,
+  issuelessTriggerKinds,
+} from "../../../lib/cloud-automation-contract";
 import { gitEventVariables } from "../../../lib/git-events";
 import type { CloudDatabase, CloudSql } from "../database";
 import {
@@ -32,6 +35,7 @@ interface QueuedEvent {
   event: AutomationEvent;
   depth: number;
   originAutomationId: string | null;
+  originRunId: string | null;
 }
 
 function eventVariables(event: AutomationEvent): Record<string, unknown> {
@@ -55,6 +59,39 @@ function eventVariables(event: AutomationEvent): Record<string, unknown> {
         error: event.error ?? "",
       },
     };
+  if (event.kind === "project_event")
+    return {
+      project: { id: event.projectId, name: event.projectName },
+      event: { kind: event.event },
+    };
+  if (event.kind === "cycle_event")
+    return {
+      cycle: { id: event.cycleId, name: event.cycleName },
+      event: { kind: event.event },
+    };
+  if (event.kind === "source_event")
+    return {
+      source: { name: event.source, title: event.title, body: event.body },
+      payload: JSON.stringify(event.payload),
+    };
+  if (event.kind === "client_event")
+    return {
+      client: {
+        id: event.instanceId,
+        name: event.instanceName,
+        path: event.path ?? "",
+      },
+      event: { kind: event.event },
+    };
+  if (event.kind === "release_event")
+    return {
+      deployment: {
+        id: event.releaseId,
+        pipelineId: event.pipelineId,
+        environment: event.environment,
+        version: event.version,
+      },
+    };
   return {};
 }
 
@@ -64,7 +101,8 @@ async function runIssue(
   automation: StoredAutomation,
   queued: QueuedEvent,
 ): Promise<{ issueId: string | null } | null> {
-  if (queued.event.kind === "automation_finished") return { issueId: null };
+  if ((issuelessTriggerKinds as readonly string[]).includes(queued.event.kind))
+    return { issueId: null };
   if (queued.event.kind !== "git_event")
     return queued.issueId &&
       (await issueMatchesConditions(sql, owner, automation, queued.issueId))
@@ -100,7 +138,7 @@ async function listeningAutomations(
 async function dispatchEvents(sql: CloudSql): Promise<number> {
   const events = (
     await sql.query<QueuedEvent & Record<string, unknown>>(
-      `SELECT organization_id AS "organizationId",id,team_id AS "teamId",issue_id AS "issueId",actor_id AS "actorId",event,depth,origin_automation_id AS "originAutomationId"
+      `SELECT organization_id AS "organizationId",id,team_id AS "teamId",issue_id AS "issueId",actor_id AS "actorId",event,depth,origin_automation_id AS "originAutomationId",origin_run_id AS "originRunId"
       FROM cloud_automation_events ORDER BY sequence LIMIT ${eventBatchSize} FOR UPDATE SKIP LOCKED`,
     )
   ).rows;
@@ -129,6 +167,8 @@ async function dispatchEvents(sql: CloudSql): Promise<number> {
           actorId: queued.actorId,
           depth: queued.depth,
           variables: eventVariables(queued.event),
+          payload: { ...queued.event },
+          originRunId: queued.originRunId,
         });
       }
     }
@@ -152,7 +192,12 @@ export class CloudAutomationDispatcher {
     const runs = (
       await this.database.transaction((sql) =>
         sql.query<ActiveRun & Record<string, unknown>>(
-          `SELECT ${activeRunColumns} FROM cloud_automation_runs WHERE state IN ('queued','running','waiting') ORDER BY updated_at,id LIMIT ${runBatchSize}`,
+          `SELECT ${activeRunColumns} FROM cloud_automation_runs r WHERE state IN ('queued','running','waiting')
+          AND NOT (r.state='queued' AND NOT r.dry_run AND EXISTS (
+            SELECT 1 FROM cloud_loops l JOIN cloud_automation_runs o ON o.organization_id=l.organization_id AND o.automation_id=l.automation_id
+            WHERE l.organization_id=r.organization_id AND l.automation_id=r.automation_id AND l.overlap='queue' AND o.id<>r.id AND NOT o.dry_run
+              AND (o.state IN ('running','waiting') OR (o.state='queued' AND (o.created_at,o.id)<(r.created_at,r.id)))))
+          ORDER BY updated_at,id LIMIT ${runBatchSize}`,
         ),
       )
     ).rows;
