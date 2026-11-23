@@ -54,6 +54,7 @@ const keptValues: Partial<Record<IssueFilterField, readonly string[]>> = {
   project: [noneFilterValue],
   milestone: [noneFilterValue],
   initiative: [noneFilterValue],
+  releasedIn: [noneFilterValue],
   cycle: [noneFilterValue, ...relativeCycleValues],
 };
 
@@ -80,6 +81,7 @@ const fieldNames: Record<IssueFilterField, string> = {
   hasSubIssues: "Has sub-issues",
   duplicate: "Duplicate",
   automated: "Created by agent or loop",
+  releasedIn: "Released in",
 };
 
 function normalized(value: string): string {

@@ -1,3 +1,4 @@
+import { holderCan } from "@/lib/cloud-permissions";
 import { issueFiltersFromParameters } from "@/lib/issue-scopes";
 import { IssueList } from "@/components/cloud/issue-list";
 import { requireCloudWorkspace } from "@/server/cloud/page-auth";
@@ -13,7 +14,7 @@ export default async function IssuesPage({
     filters.teamId && workspace.teams.some((team) => team.id === filters.teamId)
       ? filters.teamId
       : null;
-  const [issues, labels, views, pinned, initiatives, milestones] =
+  const [issues, labels, views, pinned, initiatives, milestones, pipelines] =
     await Promise.all([
       runtime.planning.listIssueSummaries(actor, filters),
       teamId
@@ -21,9 +22,12 @@ export default async function IssuesPage({
         : runtime.labels.listVisible(actor),
       runtime.views.list(actor),
       teamId ? runtime.views.pinned(actor, teamId) : null,
-    runtime.initiatives.list(actor),
-    runtime.milestones.list(actor),
-  ]);
+      runtime.initiatives.list(actor),
+      runtime.milestones.list(actor),
+      holderCan(workspace.actor, "releases.view")
+        ? runtime.releases.pipelines.list(actor, { query: "", archived: false })
+        : [],
+    ]);
   return (
     <IssueList
       workspace={workspace}
@@ -31,7 +35,7 @@ export default async function IssuesPage({
       labels={labels}
       views={views}
       pinned={pinned}
-      references={{ initiatives, milestones }}
+      references={{ initiatives, milestones, pipelines }}
     />
   );
 }

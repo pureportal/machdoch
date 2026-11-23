@@ -213,6 +213,7 @@ export const releaseInputSchema = z.strictObject({
   name: z.string().trim().max(120).default(""),
   since: z.iso.date().nullable().default(null),
   targetDate: z.iso.date().nullable().default(null),
+  issueIds: z.array(cloudId).max(200).optional(),
 });
 export type ReleaseInput = z.output<typeof releaseInputSchema>;
 

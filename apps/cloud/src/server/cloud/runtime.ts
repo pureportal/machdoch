@@ -20,6 +20,9 @@ import { CloudAutomationDispatcher } from "./automation/automation-dispatcher";
 import { CloudProducts } from "./releases/products";
 import { CloudSocial } from "./releases/social-accounts";
 import { CloudReleases } from "./releases/releases";
+import { CloudReleasePipelines } from "./releases/pipelines";
+import { CloudPipelineReleases } from "./releases/pipeline-releases";
+import { CloudPipelineDeployments } from "./releases/pipeline-deployments";
 import { CloudReleaseMedia } from "./releases/release-media";
 import { CloudReleaseStudio } from "./releases/release-studio";
 import { CloudReleasePublisher } from "./releases/release-publisher";
@@ -123,6 +126,9 @@ export interface CloudRuntime {
     products: CloudProducts;
     social: CloudSocial;
     releases: CloudReleases;
+    pipelines: CloudReleasePipelines;
+    pipelineReleases: CloudPipelineReleases;
+    deployments: CloudPipelineDeployments;
     media: CloudReleaseMedia;
     studio: CloudReleaseStudio;
     dispatcher: CloudReleaseDispatcher;
@@ -342,6 +348,7 @@ export function createCloudRuntime(
   const releaseMedia = new CloudReleaseMedia(database);
   let wakeReleases = () => {};
   const releases = new CloudReleases(database, () => wakeReleases());
+  const deployments = new CloudPipelineDeployments(database, issueChanges);
   const studio = new CloudReleaseStudio(
     database,
     releaseMedia,
@@ -490,6 +497,9 @@ export function createCloudRuntime(
       products,
       social,
       releases,
+      pipelines: new CloudReleasePipelines(database),
+      pipelineReleases: new CloudPipelineReleases(database, releases),
+      deployments,
       media: releaseMedia,
       studio,
       dispatcher: releaseDispatcher,
@@ -626,6 +636,7 @@ export function createCloudRuntime(
         options.credentialsCipher ?? null,
         gitSync,
         gitFetch,
+        deployments,
       ),
       oauth: new CloudGitOAuth(
         database,

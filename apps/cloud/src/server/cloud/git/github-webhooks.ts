@@ -3,6 +3,7 @@ import { githubPullRequest, githubPullRequestSchema } from "./github-client";
 import {
   parsedWebhook,
   pushActivities,
+  tagDeployment,
   zeroSha,
   type ParsedWebhook,
   type WebhookActivity,
@@ -76,6 +77,36 @@ const checkSchema = z.object({
   check_suite: z.object({ head_sha: z.string() }).optional(),
 });
 
+const deploymentStatusSchema = z.object({
+  repository,
+  sender: user,
+  deployment_status: z.object({
+    state: z.string(),
+    target_url: z.string().nullable().optional(),
+    environment_url: z.string().nullable().optional(),
+  }),
+  deployment: z.object({
+    id: z.number(),
+    sha: z.string(),
+    ref: z.string(),
+    environment: z.string(),
+  }),
+});
+
+const workflowRunSchema = z.object({
+  action: z.string(),
+  repository,
+  sender: user,
+  workflow_run: z.object({
+    id: z.number(),
+    name: z.string().nullable().optional(),
+    head_sha: z.string(),
+    head_branch: z.string().nullable().optional(),
+    conclusion: z.string().nullable().optional(),
+    html_url: z.string(),
+  }),
+});
+
 const reviewKinds: Record<string, WebhookActivity["kind"]> = {
   approved: "review_approved",
   changes_requested: "review_changes_requested",
@@ -90,12 +121,15 @@ export function parseGitHubWebhook(
     const push = pushSchema.safeParse(payload);
     if (!push.success) return null;
     const data = push.data;
+    const before = data.created ? zeroSha : data.before;
+    const after = data.deleted ? zeroSha : data.after;
     return parsedWebhook(data.repository.id, {
       sender: data.sender?.login ?? null,
+      deployment: tagDeployment(data.ref, after, before === zeroSha),
       activities: pushActivities({
         ref: data.ref,
-        before: data.created ? zeroSha : data.before,
-        after: data.deleted ? zeroSha : data.after,
+        before,
+        after,
         forced: data.forced ?? false,
         compareUrl: data.compare ?? null,
         commits: data.commits.map((commit) => ({
@@ -198,6 +232,47 @@ export function parseGitHubWebhook(
     return sha
       ? parsedWebhook(parsed.data.repository.id, { staleSha: sha })
       : null;
+  }
+  if (event === "deployment_status") {
+    const parsed = deploymentStatusSchema.safeParse(payload);
+    if (!parsed.success || parsed.data.deployment_status.state !== "success")
+      return null;
+    const { deployment, deployment_status: status } = parsed.data;
+    return parsedWebhook(parsed.data.repository.id, {
+      sender: parsed.data.sender?.login ?? null,
+      deployment: {
+        source: "deployment",
+        environment: deployment.environment,
+        version: (/^[0-9a-f]{40}$/.test(deployment.ref)
+          ? deployment.sha.slice(0, 12)
+          : deployment.ref
+        ).slice(0, 40),
+        sha: deployment.sha,
+        externalId: `deployment:${deployment.id}`,
+        url: status.environment_url || status.target_url || null,
+      },
+    });
+  }
+  if (event === "workflow_run") {
+    const parsed = workflowRunSchema.safeParse(payload);
+    if (
+      !parsed.success ||
+      parsed.data.action !== "completed" ||
+      parsed.data.workflow_run.conclusion !== "success"
+    )
+      return null;
+    const run = parsed.data.workflow_run;
+    return parsedWebhook(parsed.data.repository.id, {
+      sender: parsed.data.sender?.login ?? null,
+      deployment: {
+        source: "workflow_run",
+        environment: run.name ?? null,
+        version: run.head_sha.slice(0, 12),
+        sha: run.head_sha,
+        externalId: `workflow_run:${run.id}`,
+        url: run.html_url,
+      },
+    });
   }
   return null;
 }

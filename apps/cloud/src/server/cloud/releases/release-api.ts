@@ -26,6 +26,15 @@ import {
   videoInputSchema,
   visualInputSchema,
 } from "../../../lib/cloud-release-media-contract";
+import {
+  pipelineDeploymentSchema,
+  pipelineInputSchema,
+  pipelineLaunchSchema,
+  pipelineReleaseIssueSchema,
+  pipelineUpdateSchema,
+  releasePolicySchema,
+} from "../../../lib/cloud-release-pipeline-contract";
+import { hashWebhookToken } from "../automation/automations";
 import { CloudError, isCloudError } from "../access";
 import { readBody } from "../request-body";
 import type { CloudRuntime } from "../runtime";
@@ -33,6 +42,7 @@ import type { MediaFile } from "./release-media";
 
 const archiveSchema = z.strictObject({ revision, archived: z.boolean() });
 const networkSchema = z.enum(socialNetworks);
+const webhookTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const captureQuerySchema = z.strictObject({
   name: z.string().trim().min(1).max(200),
   caption: z.string().trim().max(300).default(""),
@@ -80,7 +90,17 @@ export async function handlePublicReleaseApi(
   request: Request,
   path: string[],
 ): Promise<Response> {
-  const { media, studio } = runtime.releases;
+  const { media, studio, deployments } = runtime.releases;
+  if (path[0] === "release-pipelines") {
+    if (request.method !== "POST")
+      return new Response(null, { status: 405, headers: { Allow: "POST" } });
+    return Response.json(
+      await deployments.ingestWebhook(
+        hashWebhookToken(webhookTokenSchema.parse(path[2])),
+        await readBody(request, pipelineDeploymentSchema),
+      ),
+    );
+  }
   if (
     path[0] === "release-media" &&
     path[1] === "public" &&
@@ -121,7 +141,10 @@ export function isPublicReleaseRoute(path: string[]): boolean {
     (path[0] === "release-media" &&
       path[1] === "public" &&
       path.length === 3) ||
-    (path[0] === "release-capture" && path.length === 2)
+    (path[0] === "release-capture" && path.length === 2) ||
+    (path[0] === "release-pipelines" &&
+      path[1] === "hooks" &&
+      path.length === 3)
   );
 }
 
@@ -132,6 +155,9 @@ export const releaseRoutePrefixes = new Set([
   "releases",
   "release-posts",
   "release-media",
+  "release-pipelines",
+  "pipeline-releases",
+  "release-policies",
 ]);
 
 async function socialCallback(
@@ -178,7 +204,15 @@ export async function handleReleaseApi(
   const path = url.pathname.slice("/api/v1/".length).split("/").filter(Boolean);
   const method = request.method;
   const query = Object.fromEntries(url.searchParams);
-  const { products, social, releases, media, studio } = runtime.releases;
+  const {
+    products,
+    social,
+    releases,
+    media,
+    studio,
+    pipelines,
+    pipelineReleases,
+  } = runtime.releases;
   const key = () => cloudId.parse(request.headers.get("idempotency-key"));
   const id = (index: number) => cloudId.parse(path[index]);
   const route = `${method} ${path
@@ -432,6 +466,67 @@ export async function handleReleaseApi(
       );
     case "DELETE release-media/:id":
       await media.remove(actor, id(1));
+      return Response.json({ ok: true });
+    case "GET release-pipelines":
+      return Response.json(
+        await pipelines.list(actor, {
+          query: z.string().max(100).default("").parse(query.query),
+          archived: query.archived === "true",
+        }),
+      );
+    case "POST release-pipelines":
+      return Response.json(
+        await pipelines.create(
+          actor,
+          key(),
+          await readBody(request, pipelineInputSchema),
+        ),
+        { status: 201 },
+      );
+    case "GET release-pipelines/:id":
+      return Response.json(await pipelines.get(actor, id(1)));
+    case "PATCH release-pipelines/:id":
+      return Response.json(
+        await pipelines.update(
+          actor,
+          key(),
+          id(1),
+          await readBody(request, pipelineUpdateSchema),
+        ),
+      );
+    case "POST release-pipelines/:id/webhook":
+      return Response.json(await pipelines.rotateWebhook(actor, id(1)));
+    case "GET pipeline-releases/:id":
+      return Response.json(await pipelineReleases.get(actor, id(1)));
+    case "POST pipeline-releases/:id/issues":
+      await pipelineReleases.addIssue(
+        actor,
+        id(1),
+        (await readBody(request, pipelineReleaseIssueSchema)).issueId,
+      );
+      return Response.json({ ok: true });
+    case "DELETE pipeline-releases/:id/issues/:id":
+      await pipelineReleases.removeIssue(actor, id(1), id(3));
+      return Response.json({ ok: true });
+    case "POST pipeline-releases/:id/launch":
+      return Response.json(
+        await pipelineReleases.createLaunch(
+          actor,
+          key(),
+          id(1),
+          (await readBody(request, pipelineLaunchSchema)).productId,
+        ),
+      );
+    case "GET release-policies/:id":
+      return Response.json({
+        completeOnRelease: await pipelines.releasePolicy(actor, id(1)),
+      });
+    case "PUT release-policies/:id":
+      await pipelines.setReleasePolicy(
+        actor,
+        id(1),
+        (await readBody(request, releasePolicySchema)).completeOnRelease,
+      );
       return Response.json({ ok: true });
   }
   throw new CloudError(404, "not_found", "Release action is unavailable.");

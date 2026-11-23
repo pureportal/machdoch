@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   parsedWebhook,
   pushActivities,
+  tagDeployment,
+  zeroSha,
   type ParsedWebhook,
 } from "./webhook-payloads";
 
@@ -51,8 +53,31 @@ const noteSchema = z.object({
 
 const pipelineSchema = z.object({
   project,
-  object_attributes: z.object({ sha: z.string() }),
+  object_attributes: z.object({
+    id: z.number().optional(),
+    sha: z.string(),
+    ref: z.string().optional(),
+    status: z.string().optional(),
+    tag: z.boolean().optional(),
+    url: z.string().optional(),
+  }),
 });
+
+const deploymentSchema = z.object({
+  project,
+  status: z.string(),
+  deployment_id: z.number(),
+  environment: z.string(),
+  short_sha: z.string().optional(),
+  ref: z.string().optional(),
+  deployable_url: z.string().nullable().optional(),
+  environment_external_url: z.string().nullable().optional(),
+  commit_url: z.string().optional(),
+});
+
+function sha(commitUrl: string | undefined): string | null {
+  return commitUrl?.match(/\/commit\/([0-9a-f]{40})$/)?.[1] ?? null;
+}
 
 export function parseGitLabWebhook(
   event: string,
@@ -64,6 +89,11 @@ export function parseGitLabWebhook(
     const data = parsed.data;
     return parsedWebhook(data.project.id, {
       sender: data.user_username ?? null,
+      deployment: tagDeployment(
+        data.ref,
+        data.after,
+        data.before === zeroSha,
+      ),
       activities: pushActivities({
         ref: data.ref,
         before: data.before,
@@ -138,11 +168,42 @@ export function parseGitLabWebhook(
   }
   if (event === "Pipeline Hook") {
     const parsed = pipelineSchema.safeParse(payload);
-    return parsed.success
-      ? parsedWebhook(parsed.data.project.id, {
-          staleSha: parsed.data.object_attributes.sha,
-        })
-      : null;
+    if (!parsed.success) return null;
+    const pipeline = parsed.data.object_attributes;
+    return parsedWebhook(parsed.data.project.id, {
+      staleSha: pipeline.sha,
+      deployment:
+        pipeline.status === "success" && pipeline.id !== undefined
+          ? {
+              source: "workflow_run",
+              environment: null,
+              version: (pipeline.tag && pipeline.ref
+                ? pipeline.ref
+                : pipeline.sha.slice(0, 12)
+              ).slice(0, 40),
+              sha: pipeline.sha,
+              externalId: `workflow_run:${pipeline.id}`,
+              url: pipeline.url ?? null,
+            }
+          : null,
+    });
+  }
+  if (event === "Deployment Hook") {
+    const parsed = deploymentSchema.safeParse(payload);
+    if (!parsed.success || parsed.data.status !== "success") return null;
+    const data = parsed.data;
+    const commit = sha(data.commit_url);
+    if (!commit) return null;
+    return parsedWebhook(data.project.id, {
+      deployment: {
+        source: "deployment",
+        environment: data.environment,
+        version: (data.ref ?? commit.slice(0, 12)).slice(0, 40),
+        sha: commit,
+        externalId: `deployment:${data.deployment_id}`,
+        url: data.environment_external_url || data.deployable_url || null,
+      },
+    });
   }
   return null;
 }

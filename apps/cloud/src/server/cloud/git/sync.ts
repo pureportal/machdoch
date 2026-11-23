@@ -75,6 +75,7 @@ type LinkedIssue = {
   status_id: string;
   category: AutomationStatus["category"];
   position: number;
+  completes_on_release: boolean;
 };
 
 type TeamStatus = AutomationStatus & { team_id: string; revision: number };
@@ -314,8 +315,9 @@ export class CloudGitSync {
       const issues = references.length
         ? (
             await sql.query<LinkedIssue>(
-              `SELECT i.id,i.identifier,i.team_id,s.id AS status_id,s.category,s.position FROM cloud_issues i
+              `SELECT i.id,i.identifier,i.team_id,s.id AS status_id,s.category,s.position,t.complete_issues_on_release AS completes_on_release FROM cloud_issues i
               JOIN cloud_workflow_statuses s ON s.organization_id=i.organization_id AND s.id=i.status_id
+              JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
               WHERE i.organization_id=$1 AND i.identifier=ANY($2::text[])`,
               [organizationId, references.map((entry) => entry.identifier)],
             )
@@ -323,7 +325,12 @@ export class CloudGitSync {
             const closes = references.some(
               (entry) => entry.identifier === issue.identifier && entry.closes,
             );
-            return { ...issue, closes, completes: closes && intoDefaultBranch };
+            return {
+              ...issue,
+              closes,
+              completes:
+                closes && intoDefaultBranch && !issue.completes_on_release,
+            };
           })
         : [];
       await sql.query(

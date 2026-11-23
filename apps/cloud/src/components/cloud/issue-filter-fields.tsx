@@ -14,6 +14,7 @@ import {
   Milestone,
   Network,
   OctagonAlert,
+  Rocket,
   Signal,
   Tag,
   Target,
@@ -75,6 +76,7 @@ const none = (label: string) => ({
 export interface FilterReferences {
   initiatives: { id: string; name: string }[];
   milestones: { id: string; name: string }[];
+  pipelines: { id: string; name: string }[];
 }
 
 const flag = [{ value: flagFilterValue, label: "Yes" }];
@@ -83,7 +85,11 @@ export function filterFieldDefinitions(
   workspace: CloudWorkspace,
   labels: CloudLabel[],
   teamId: string | null,
-  references: FilterReferences = { initiatives: [], milestones: [] },
+  references: FilterReferences = {
+    initiatives: [],
+    milestones: [],
+    pipelines: [],
+  },
 ): FilterFieldDefinition[] {
   const scope = teamId ?? undefined;
   const multipleTeams = !teamId && workspace.teams.length > 1;
@@ -267,6 +273,18 @@ export function filterFieldDefinitions(
         ...references.initiatives.map((initiative) => ({
           value: initiative.id,
           label: initiative.name,
+        })),
+      ],
+    },
+    {
+      field: "releasedIn",
+      label: "Released in",
+      icon: Rocket,
+      options: [
+        none("Not released"),
+        ...references.pipelines.map((pipeline) => ({
+          value: pipeline.id,
+          label: pipeline.name,
         })),
       ],
     },

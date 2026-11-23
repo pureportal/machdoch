@@ -85,6 +85,11 @@ export interface GitWebhookTarget {
   secret: string;
 }
 
+export interface GitComparison {
+  commits: { sha: string; message: string }[];
+  files: string[];
+}
+
 export interface GitClient {
   readonly mergeMethods: readonly GitMergeMethod[];
   viewer(): Promise<string>;
@@ -103,6 +108,11 @@ export interface GitClient {
     baseRef: string,
     headSha: string,
   ): Promise<{ baseSha: string; mergeBase: string }>;
+  compare(
+    fullName: string,
+    baseSha: string,
+    headSha: string,
+  ): Promise<GitComparison>;
   reviews(fullName: string, number: number): Promise<GitReview[]>;
   files(fullName: string, number: number): Promise<GitPullRequestFile[]>;
   reviewComments(fullName: string, number: number): Promise<GitReviewComment[]>;

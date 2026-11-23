@@ -20,6 +20,7 @@ import {
   type GitChecks,
   type GitClient,
   type GitCommitStatus,
+  type GitComparison,
   type GitPullRequestDraft,
   type GitPullRequestRecord,
   type GitRepositoryRecord,
@@ -36,6 +37,8 @@ export const githubWebhookEvents = [
   "issue_comment",
   "check_run",
   "check_suite",
+  "deployment_status",
+  "workflow_run",
 ];
 
 const repositorySchema = z.object({
@@ -327,6 +330,32 @@ export class GitHubClient implements GitClient {
     return {
       baseSha: compared.base_commit.sha,
       mergeBase: compared.merge_base_commit.sha,
+    };
+  }
+
+  async compare(
+    fullName: string,
+    baseSha: string,
+    headSha: string,
+  ): Promise<GitComparison> {
+    const compared = await this.request(
+      `/repos/${fullName}/compare/${baseSha}...${headSha}`,
+      z.object({
+        commits: z.array(
+          z.object({
+            sha: z.string(),
+            commit: z.object({ message: z.string() }),
+          }),
+        ),
+        files: z.array(z.object({ filename: z.string() })).default([]),
+      }),
+    );
+    return {
+      commits: compared.commits.map((commit) => ({
+        sha: commit.sha,
+        message: commit.commit.message,
+      })),
+      files: compared.files.map((file) => file.filename),
     };
   }
 

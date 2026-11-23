@@ -10,6 +10,7 @@ import {
   ListChecks,
   Megaphone,
   Plus,
+  Workflow,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Field } from "@/components/field";
@@ -140,12 +141,20 @@ export function ReleaseList({
     <>
       <header className="cloud-page-header">
         <h1>Releases</h1>
-        {canWrite && products.length > 0 && (
-          <Button onClick={() => setCreating(true)}>
-            <Plus />
-            New release
+        <div className="cloud-release-actions">
+          <Button variant="outline" asChild>
+            <Link href="/cloud/releases/pipelines">
+              <Workflow />
+              Pipelines
+            </Link>
           </Button>
-        )}
+          {canWrite && products.length > 0 && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus />
+              New release
+            </Button>
+          )}
+        </div>
       </header>
       {products.length > 0 && (
         <div className="cloud-release-filter" role="group" aria-label="Filter">

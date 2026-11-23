@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { isAutomationText, type GitEvent } from "../../../lib/git-events";
 import type { GitProvider } from "../../../lib/git-providers";
 import type { SettingsCipher } from "../../settings-crypto";
+import type { CloudPipelineDeployments } from "../releases/pipeline-deployments";
 import { CloudError } from "../access";
 import type { CloudDatabase, CloudSql } from "../database";
 import {
@@ -102,6 +103,7 @@ export class CloudGitWebhooks {
     private readonly cipher: SettingsCipher | null,
     private readonly sync: CloudGitSync,
     private readonly transport: typeof fetch,
+    private readonly deployments: CloudPipelineDeployments,
   ) {}
 
   async receive(
@@ -184,6 +186,13 @@ export class CloudGitWebhooks {
       await this.sync.store(connection, repository, pullRequest, {
         sender: parsed.sender,
       });
+    if (parsed.deployment)
+      await this.deployments.ingest(
+        connection.organizationId,
+        repository,
+        parsed.deployment,
+        gitClient(connection, this.transport),
+      );
     if (!parsed.activities.length) return;
     await this.database.transaction(async (sql) =>
       queueGitEvents(

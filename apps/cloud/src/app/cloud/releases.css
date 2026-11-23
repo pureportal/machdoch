@@ -971,3 +971,89 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+.cloud-pipeline-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+}
+.cloud-pipeline-search input {
+  height: 30px;
+  width: 220px;
+}
+.cloud-pipeline-table {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--card);
+  font-size: 13px;
+  overflow: hidden;
+}
+.cloud-pipeline-table th,
+.cloud-pipeline-table td {
+  padding: 10px 14px;
+  text-align: left;
+  white-space: nowrap;
+}
+.cloud-pipeline-table thead th {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.cloud-pipeline-table tbody tr > * {
+  border-top: 1px solid var(--border);
+}
+.cloud-pipeline-table tbody tr:hover {
+  background: var(--cloud-hover);
+}
+.cloud-pipeline-table tbody th {
+  display: grid;
+  gap: 2px;
+  font-weight: 600;
+}
+.cloud-pipeline-table tbody th span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 400;
+}
+.cloud-pipeline-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 24px;
+  margin-bottom: 24px;
+  font-size: 13px;
+}
+.cloud-pipeline-fields dt {
+  color: var(--muted-foreground);
+}
+.cloud-pipeline-fields dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.cloud-pipeline-section {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.cloud-pipeline-section h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.cloud-pipeline-issue {
+  display: flex;
+  align-items: center;
+  padding-right: 8px;
+}
+.cloud-pipeline-issue > a {
+  flex: 1;
+  min-width: 0;
+}
+.cloud-pipeline-notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}

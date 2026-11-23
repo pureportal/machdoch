@@ -127,6 +127,23 @@ async function collectItems(
   );
 }
 
+async function insertChosenItems(
+  sql: CloudSql,
+  actor: CloudActor,
+  releaseId: string,
+  issueIds: string[],
+): Promise<void> {
+  await sql.query(
+    `INSERT INTO cloud_release_items (organization_id,release_id,issue_id)
+    SELECT i.organization_id,$2,i.id FROM cloud_issues i
+    JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
+    JOIN cloud_memberships m ON m.organization_id=i.organization_id AND m.user_id=$3
+    WHERE i.organization_id=$1 AND i.id=ANY($4::uuid[]) AND ${teamVisibility}
+    ON CONFLICT DO NOTHING`,
+    [actor.organizationId, releaseId, actor.userId, issueIds],
+  );
+}
+
 async function readItems(
   sql: CloudSql,
   actor: CloudActor,
@@ -379,7 +396,15 @@ export class CloudReleases {
               actor.userId,
             ],
           );
-          await collectItems(sql, actor.organizationId, { id, since }, product);
+          if (input.issueIds)
+            await insertChosenItems(sql, actor, id, input.issueIds);
+          else
+            await collectItems(
+              sql,
+              actor.organizationId,
+              { id, since },
+              product,
+            );
           await ensurePosts(sql, actor.organizationId, {
             id,
             productId: input.productId,

@@ -8,6 +8,15 @@ export interface WebhookActivity extends Partial<
   pullRequestNumber: number | null;
 }
 
+export interface DeploymentEvent {
+  source: "deployment" | "workflow_run" | "tag";
+  environment: string | null;
+  version: string;
+  sha: string;
+  externalId: string;
+  url: string | null;
+}
+
 export interface ParsedWebhook {
   repositoryExternalId: number;
   sender: string | null;
@@ -16,6 +25,7 @@ export interface ParsedWebhook {
   staleSha: string | null;
   staleNumber: number | null;
   activities: WebhookActivity[];
+  deployment: DeploymentEvent | null;
 }
 
 export const zeroSha = "0".repeat(40);
@@ -32,7 +42,25 @@ export function parsedWebhook(
     staleSha: null,
     staleNumber: null,
     activities: [],
+    deployment: null,
     ...fields,
+  };
+}
+
+export function tagDeployment(
+  ref: string,
+  after: string,
+  created: boolean,
+): DeploymentEvent | null {
+  const reference = referenceName(ref);
+  if (reference?.kind !== "tag" || !created || after === zeroSha) return null;
+  return {
+    source: "tag",
+    environment: null,
+    version: reference.name.slice(0, 40),
+    sha: after,
+    externalId: `tag:${reference.name}`,
+    url: null,
   };
 }
 

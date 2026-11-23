@@ -49,6 +49,10 @@ export class FakeGitServer {
       patch: string;
     }[]
   >();
+  readonly comparisons = new Map<
+    string,
+    { commits: { sha: string; message: string }[]; files: string[] }
+  >();
   readonly oauthGrants: {
     code?: string;
     refreshToken?: string;
@@ -224,13 +228,20 @@ export class FakeGitServer {
       });
     const compare =
       /^\/repos\/acme\/app\/compare\/([^.]+)\.\.\.([0-9a-f]{40})$/u.exec(path);
-    if (compare)
+    if (compare) {
+      const comparison = this.comparisons.get(`${compare[1]}...${compare[2]}`);
       return json({
         base_commit: {
           sha: this.branches.get(decodeURIComponent(compare[1]!)) ?? sha(1),
         },
         merge_base_commit: { sha: sha(2) },
+        commits: (comparison?.commits ?? []).map((commit) => ({
+          sha: commit.sha,
+          commit: { message: commit.message },
+        })),
+        files: (comparison?.files ?? []).map((filename) => ({ filename })),
       });
+    }
     const combined =
       /^\/repos\/acme\/app\/commits\/([0-9a-f]{40})\/status$/u.exec(path);
     if (combined)
@@ -283,10 +294,28 @@ export class FakeGitServer {
     return json({ message: "Not Found" }, 404);
   }
 
-  private handleGitLab(method: string, path: string): Response {
+  private handleGitLab(
+    method: string,
+    path: string,
+    query: URLSearchParams,
+  ): Response {
     const json = (value: unknown, status = 200) =>
       Response.json(value, { status });
     const project = `/api/v4/projects/${encodeURIComponent(gitlabProject)}`;
+    if (path === `${project}/repository/compare`) {
+      const comparison = this.comparisons.get(
+        `${query.get("from")}...${query.get("to")}`,
+      );
+      return json({
+        commits: (comparison?.commits ?? []).map((commit) => ({
+          id: commit.sha,
+          title: commit.message.split("\n")[0],
+          message: commit.message,
+          author_name: "octo",
+        })),
+        diffs: (comparison?.files ?? []).map((file) => ({ new_path: file })),
+      });
+    }
     if (path === project)
       return json({
         id: 42,
@@ -355,7 +384,7 @@ export class FakeGitServer {
       );
     }
     return url.host === "gitlab.test"
-      ? this.handleGitLab(method, url.pathname)
+      ? this.handleGitLab(method, url.pathname, url.searchParams)
       : this.handleGitHub(method, url.pathname, body);
   }) as typeof fetch;
 }

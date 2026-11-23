@@ -25,6 +25,7 @@ export const issueFilterFields = [
   "hasSubIssues",
   "duplicate",
   "automated",
+  "releasedIn",
 ] as const;
 export type IssueFilterField = (typeof issueFilterFields)[number];
 
@@ -91,6 +92,7 @@ const valueSchemas: Record<IssueFilterField, z.ZodType<string>> = {
   hasSubIssues: flag,
   duplicate: flag,
   automated: flag,
+  releasedIn: optionalReference,
 };
 
 const dateFields: readonly IssueFilterField[] = ["due", "created", "updated"];

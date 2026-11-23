@@ -18,6 +18,7 @@ import {
   type GitChecks,
   type GitClient,
   type GitCommitStatus,
+  type GitComparison,
   type GitPullRequestDraft,
   type GitPullRequestRecord,
   type GitRepositoryRecord,
@@ -183,6 +184,7 @@ export const gitlabHookEvents = {
   merge_requests_events: true,
   note_events: true,
   pipeline_events: true,
+  deployment_events: true,
 };
 
 export class GitLabClient implements GitClient {
@@ -310,6 +312,27 @@ export class GitLabClient implements GitClient {
       ),
     ]);
     return { baseSha: branch.commit.id, mergeBase: merged.id };
+  }
+
+  async compare(
+    fullName: string,
+    baseSha: string,
+    headSha: string,
+  ): Promise<GitComparison> {
+    const compared = await this.request(
+      `${this.project(fullName)}/repository/compare?from=${baseSha}&to=${headSha}`,
+      z.object({
+        commits: z.array(commitSchema),
+        diffs: z.array(z.object({ new_path: z.string() })).default([]),
+      }),
+    );
+    return {
+      commits: compared.commits.map((commit) => ({
+        sha: commit.id,
+        message: commit.message ?? commit.title,
+      })),
+      files: compared.diffs.map((diff) => diff.new_path),
+    };
   }
 
   async commitStatus(

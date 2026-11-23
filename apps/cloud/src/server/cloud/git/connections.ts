@@ -28,7 +28,7 @@ import { readStatusRules } from "./automations";
 import { gitClient, type GitAccess } from "./git-client";
 import type { OAuthApp } from "./oauth";
 
-export const currentHookVersion = 2;
+export const currentHookVersion = 3;
 
 const timestamp = `'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'`;
 

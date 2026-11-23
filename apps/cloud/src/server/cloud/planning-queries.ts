@@ -194,6 +194,18 @@ function conditionPredicate(
         none &&
           "NOT EXISTS (SELECT 1 FROM cloud_initiative_projects ip WHERE ip.organization_id=i.organization_id AND ip.project_id=i.project_id)",
       );
+    case "releasedIn": {
+      const released = (filter: string) =>
+        `EXISTS (SELECT 1 FROM cloud_pipeline_release_issues ri JOIN cloud_pipeline_releases pr ON pr.organization_id=ri.organization_id AND pr.id=ri.release_id
+          WHERE ri.organization_id=i.organization_id AND ri.issue_id=i.id AND NOT ri.excluded${filter})`;
+      return anyOf(
+        ids.length > 0 &&
+          released(
+            ` AND (pr.pipeline_id=ANY(${bind(ids)}::uuid[]) OR pr.id=ANY(${bind(ids)}::uuid[]))`,
+          ),
+        none && `NOT ${released("")}`,
+      );
+    }
     case "cycle":
       return anyOf(reference("i.cycle_id"), mapped(cyclePredicates));
     case "label":
