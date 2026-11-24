@@ -1,72 +1,64 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{lang}}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      if (document.documentElement.lang === "en") {
+        const preferredLocale =
+          localStorage.getItem("machdoch.landing.locale") ??
+          (navigator.language.toLowerCase().startsWith("de") ? "de" : "en");
+        if (preferredLocale === "de") location.replace("de/" + location.hash);
+      }
+    </script>
     <meta name="theme-color" content="#080d12" />
     <meta name="color-scheme" content="dark" />
-    <meta
-      name="description"
-      content="Machdoch is a local-first AI assistant for Windows and Linux that works with folders, runs tasks, and automates repeatable workflows from the desktop or CLI."
-    />
+    <meta name="description" content="{{metaDescription}}" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
 
-    <title>Machdoch: Local-first AI assistant for desktop and CLI</title>
-    <link rel="canonical" href="__MACHDOCH_CANONICAL_URL__" />
+    <title>{{metaTitle}}</title>
+    <link rel="canonical" href="{{canonicalUrl}}" />
+    <link rel="alternate" hreflang="en" href="{{enUrl}}" />
+    <link rel="alternate" hreflang="de" href="{{deUrl}}" />
+    <link rel="alternate" hreflang="x-default" href="{{enUrl}}" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
-    <meta
-      property="og:title"
-      content="Machdoch: Local-first AI assistant for desktop and CLI"
-    />
-    <meta
-      property="og:description"
-      content="Work with folders, run tasks, and automate repeatable workflows from a Windows or Linux desktop app and CLI."
-    />
+    <meta property="og:title" content="{{metaTitle}}" />
+    <meta property="og:description" content="{{socialDescription}}" />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="__MACHDOCH_SITE_URL__" />
+    <meta property="og:url" content="{{canonicalUrl}}" />
     <meta property="og:site_name" content="Machdoch" />
-    <meta property="og:locale" content="en_US" />
-    <meta property="og:image" content="__MACHDOCH_SOCIAL_IMAGE_URL__" />
+    <meta property="og:locale" content="{{ogLocale}}" />
+    <meta property="og:locale:alternate" content="{{ogLocaleAlternate}}" />
+    <meta property="og:image" content="{{socialImageUrl}}" />
     <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="628" />
-    <meta
-      property="og:image:alt"
-      content="Machdoch workspace view showing a file explorer, editor, and terminal beside the Machdoch wordmark"
-    />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="{{socialImageAlt}}" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta
-      name="twitter:title"
-      content="Machdoch: Local-first AI assistant for desktop and CLI"
-    />
-    <meta
-      name="twitter:description"
-      content="Work with folders, run tasks, and automate repeatable workflows from a Windows or Linux desktop app and CLI."
-    />
-    <meta name="twitter:image" content="__MACHDOCH_SOCIAL_IMAGE_URL__" />
-    <meta
-      name="twitter:image:alt"
-      content="Machdoch workspace view showing a file explorer, editor, and terminal beside the Machdoch wordmark"
-    />
+    <meta name="twitter:title" content="{{metaTitle}}" />
+    <meta name="twitter:description" content="{{socialDescription}}" />
+    <meta name="twitter:image" content="{{socialImageUrl}}" />
+    <meta name="twitter:image:alt" content="{{socialImageAlt}}" />
 
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Machdoch",
-        "description": "A local-first AI assistant for folders, tasks, and repeatable workflows.",
+        "description": "{{schemaDescription}}",
+        "inLanguage": "{{lang}}",
         "applicationCategory": "UtilitiesApplication",
         "operatingSystem": ["Windows", "Linux"],
         "sameAs": "https://github.com/pureportal/machdoch",
-        "screenshot": "__MACHDOCH_SOCIAL_IMAGE_URL__",
+        "screenshot": "{{socialImageUrl}}",
         "featureList": [
-          "Workspace file, command, Git, and browser tools",
-          "Visual repeatable workflows",
-          "Scheduled prompts and workflows",
-          "Image, SVG, and supported video workflows"
+          "{{schemaFeatureFiles}}",
+          "{{schemaFeatureFlows}}",
+          "{{schemaFeatureSchedules}}",
+          "{{schemaFeatureMedia}}"
         ],
         "downloadUrl": [
           "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe",
@@ -81,481 +73,393 @@
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <a class="skip-link" href="#main-content">Skip to content</a>
-    <div class="site-shell" id="top">
-      <header class="site-header">
-        <div class="header-inner page-width">
-          <a class="brand" href="./" aria-label="Machdoch home">
-            <img
-              src="/images/machdoch-logo.svg"
-              width="70"
-              height="70"
-              alt=""
-            />
-            <span>machdoch</span>
-          </a>
-          <nav class="primary-navigation" aria-label="Primary navigation">
-            <a href="#product">Product</a>
-            <a href="#capabilities">Capabilities</a>
-            <a href="#download">Download</a>
+    <a class="skip-link" href="#main-content">{{skipLink}}</a>
+    <header class="site-header">
+      <div class="header-inner page-width">
+        <a class="brand" href="./" aria-label="{{homeLabel}}">
+          <img src="/images/machdoch-logo.svg" width="32" height="32" alt="" />
+          <span>machdoch</span>
+        </a>
+        <nav class="primary-navigation" aria-label="{{primaryNavigation}}">
+          <a href="#product">{{navProduct}}</a>
+          <a href="#trust">{{navTrust}}</a>
+          <a href="https://github.com/pureportal/machdoch">GitHub</a>
+        </nav>
+        <div class="header-actions">
+          <nav class="language-switch" aria-label="{{languageNavigation}}">
+            <a
+              href="{{enHref}}"
+              hreflang="en"
+              lang="en"
+              data-locale="en"
+              {{enCurrent}}
+              >EN</a
+            >
+            <a
+              href="{{deHref}}"
+              hreflang="de"
+              lang="de"
+              data-locale="de"
+              {{deCurrent}}
+              >DE</a
+            >
           </nav>
-          <a
-            class="header-github"
-            href="https://github.com/pureportal/machdoch"
-          >
-            <span>GitHub</span>
-            <svg aria-hidden="true" viewBox="0 0 20 20">
-              <path d="M6 14 14 6M8 6h6v6" />
-            </svg>
+          <a class="button button-primary button-small" href="#download">
+            {{ctaDownload}}
           </a>
         </div>
-      </header>
+      </div>
+    </header>
 
-      <main id="main-content" tabindex="-1">
-        <section class="hero page-width" aria-labelledby="hero-title">
-          <div class="hero-intro">
-            <p class="eyebrow"><span>01</span> Local-first AI assistant</p>
-            <h1 id="hero-title">AI that works <em>with your folders.</em></h1>
+    <main id="main-content" tabindex="-1">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy page-width">
+          <h1 id="hero-title">{{heroTitle}}</h1>
+          <p class="hero-summary">{{heroSummary}}</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#download">
+              {{heroCta}}
+              <svg aria-hidden="true" viewBox="0 0 20 20">
+                <path d="M10 4v11M5.5 10.5 10 15l4.5-4.5" />
+              </svg>
+            </a>
+            <p class="platform-note">{{heroPlatforms}}</p>
           </div>
-          <div class="hero-copy">
-            <p class="hero-summary">
-              In one desktop app, inspect folders, edit files, run commands, and
-              turn repetitive tasks into reusable workflows.
-            </p>
-            <div class="hero-actions">
-              <a class="button button-primary" href="#download">
-                Install Machdoch
-                <svg aria-hidden="true" viewBox="0 0 20 20">
-                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-                </svg>
-              </a>
-              <a class="button button-secondary" href="#product">
-                Explore the app
-              </a>
-            </div>
-            <p class="platform-note">Available for Windows and Linux.</p>
-          </div>
+        </div>
+        <figure class="scene scene-hero page-width">
+          <img
+            src="/images/scene-agent.webp"
+            srcset="
+              /images/scene-agent-768.webp   768w,
+              /images/scene-agent-1280.webp 1280w,
+              /images/scene-agent.webp      1920w
+            "
+            sizes="(min-width: 1360px) 1280px, calc(100vw - 40px)"
+            width="1920"
+            height="1080"
+            alt="{{heroImageAlt}}"
+            fetchpriority="high"
+          />
+        </figure>
+      </section>
 
-          <figure class="hero-product-frame">
-            <div class="window-bar" aria-hidden="true">
-              <span class="window-dot"></span>
-              <span class="window-dot"></span>
-              <span class="window-dot"></span>
-              <strong>Machdoch / Workspace</strong>
-            </div>
-            <picture>
-              <source
-                media="(max-width: 590px)"
-                srcset="/images/app-workspace-mobile.webp"
-              />
-              <img
-                src="/images/app-workspace.webp"
-                width="1330"
-                height="840"
-                alt="Machdoch workspace with a file explorer, README editor, and PowerShell terminal"
-                fetchpriority="high"
-              />
-            </picture>
+      <div class="features page-width" id="product">
+        <section class="feature" id="files" aria-labelledby="files-title">
+          <div class="feature-copy">
+            <h2 id="files-title">{{filesTitle}}</h2>
+            <p>{{filesSummary}}</p>
+          </div>
+          <figure class="scene">
+            <img
+              src="/images/scene-files.webp"
+              srcset="
+                /images/scene-files-768.webp   768w,
+                /images/scene-files-1280.webp 1280w,
+                /images/scene-files.webp      1920w
+              "
+              sizes="(min-width: 1024px) 60vw, calc(100vw - 40px)"
+              width="1920"
+              height="1080"
+              alt="{{filesImageAlt}}"
+              loading="lazy"
+              decoding="async"
+            />
           </figure>
         </section>
 
         <section
-          class="product-story page-width"
-          id="product"
-          aria-labelledby="product-title"
+          class="feature feature-reversed"
+          id="flows"
+          aria-labelledby="flows-title"
         >
-          <div class="story-heading">
-            <p class="section-index"><span>02</span> Task sessions</p>
-            <h2 id="product-title">
-              See each task's progress, not just the answer.
-            </h2>
-            <p class="section-summary">
-              For each task, see its progress, checks, related files, and next
-              action in one place.
-            </p>
+          <div class="feature-copy">
+            <h2 id="flows-title">{{flowsTitle}}</h2>
+            <p>{{flowsSummary}}</p>
           </div>
-          <figure class="story-product-frame">
-            <div class="window-bar window-bar-light" aria-hidden="true">
-              <span class="window-dot"></span>
-              <span class="window-dot"></span>
-              <span class="window-dot"></span>
-              <strong>Machdoch / Task session</strong>
-            </div>
-            <picture>
-              <source
-                media="(max-width: 590px)"
-                srcset="/images/app-task-mobile.webp"
-              />
-              <img
-                src="/images/app-task.webp"
-                width="2640"
-                height="1220"
-                alt="Machdoch task session showing a completed workspace scan, verification check, and related file"
-                decoding="async"
-                loading="lazy"
-              />
-            </picture>
+          <figure class="scene">
+            <img
+              src="/images/scene-flows.webp"
+              srcset="
+                /images/scene-flows-768.webp   768w,
+                /images/scene-flows-1280.webp 1280w,
+                /images/scene-flows.webp      1920w
+              "
+              sizes="(min-width: 1024px) 60vw, calc(100vw - 40px)"
+              width="1920"
+              height="1080"
+              alt="{{flowsImageAlt}}"
+              loading="lazy"
+              decoding="async"
+            />
           </figure>
         </section>
 
-        <section class="capabilities-section" id="capabilities">
-          <div class="capabilities page-width">
-            <div class="section-heading">
-              <p class="section-index"><span>03</span> Capabilities</p>
-              <h2 id="capabilities-title">
-                Tools for files, RALPH flows, schedules, and media.
-              </h2>
-            </div>
-            <div class="capability-list" aria-labelledby="capabilities-title">
-              <article class="capability-item">
-                <span class="capability-number">01</span>
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <path d="M3.5 6.5h6l2 2h9v10h-17z" />
-                  <path d="M3.5 8.5h17" />
-                </svg>
-                <h3>Work with a folder</h3>
-                <p>
-                  Read and edit files, run commands, inspect Git, and automate
-                  an installed browser.
-                </p>
-              </article>
-              <article class="capability-item">
-                <span class="capability-number">02</span>
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <circle cx="6" cy="6" r="2.5" />
-                  <circle cx="18" cy="12" r="2.5" />
-                  <circle cx="6" cy="18" r="2.5" />
-                  <path
-                    d="M8.5 6h2.5a4 4 0 0 1 4 4v0M8.5 18H11a4 4 0 0 0 4-4v0"
-                  />
-                </svg>
-                <h3>Build RALPH flows</h3>
-                <p>
-                  Combine prompts, decisions, checks, and human input in
-                  reusable flows.
-                </p>
-              </article>
-              <article class="capability-item">
-                <span class="capability-number">03</span>
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="8.5" />
-                  <path d="M12 7.5V12l3 2" />
-                </svg>
-                <h3>Schedule prompts and RALPH flows</h3>
-                <p>
-                  Run a prompt or RALPH flow once, on a schedule, or when a
-                  supported event occurs.
-                </p>
-              </article>
-              <article class="capability-item">
-                <span class="capability-number">04</span>
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <rect x="3.5" y="4" width="17" height="16" rx="2" />
-                  <circle cx="9" cy="9" r="1.5" />
-                  <path d="m5.5 17 4.5-4 3 2.5 2.5-2 3 3.5" />
-                </svg>
-                <h3>Create and inspect media</h3>
-                <p>
-                  Generate, edit, organize, inspect, and export images, SVGs,
-                  and supported video assets.
-                </p>
-              </article>
-            </div>
+        <section
+          class="feature"
+          id="schedules"
+          aria-labelledby="schedules-title"
+        >
+          <div class="feature-copy">
+            <h2 id="schedules-title">{{schedulesTitle}}</h2>
+            <p>{{schedulesSummary}}</p>
           </div>
-        </section>
-
-        <section class="app-views page-width" aria-labelledby="app-views-title">
-          <div class="app-views-heading section-heading">
-            <p class="section-index"><span>04</span> Media and schedules</p>
-            <h2 id="app-views-title">
-              Create media and schedule prompts or RALPH flows.
-            </h2>
-          </div>
-          <div class="app-view-grid">
-            <figure class="app-view-card app-view-card-media">
-              <div class="app-view-visual">
-                <img
-                  src="/images/app-media.webp"
-                  width="2494"
-                  height="1380"
-                  alt="Machdoch Media Studio showing two generated cyan glass image variations and generation controls"
-                  decoding="async"
-                  loading="lazy"
-                />
-              </div>
-              <figcaption>
-                <span>01</span>
-                <strong>Media Studio</strong>
-                <p>Generate, compare, edit, and animate images.</p>
-              </figcaption>
-            </figure>
-            <figure class="app-view-card app-view-card-scheduler">
-              <div class="app-view-visual">
-                <img
-                  src="/images/app-scheduler.webp"
-                  width="800"
-                  height="1000"
-                  alt="Machdoch Smart Scheduler create job form showing a daily project review prompt and cron schedule"
-                  decoding="async"
-                  loading="lazy"
-                />
-              </div>
-              <figcaption>
-                <span>02</span>
-                <strong>Smart Scheduler</strong>
-                <p>Schedule prompts and RALPH flows.</p>
-              </figcaption>
-            </figure>
-          </div>
+          <figure class="scene">
+            <img
+              src="/images/scene-scheduler.webp"
+              srcset="
+                /images/scene-scheduler-768.webp   768w,
+                /images/scene-scheduler-1280.webp 1280w,
+                /images/scene-scheduler.webp      1920w
+              "
+              sizes="(min-width: 1024px) 60vw, calc(100vw - 40px)"
+              width="1920"
+              height="1080"
+              alt="{{schedulesImageAlt}}"
+              loading="lazy"
+              decoding="async"
+            />
+          </figure>
         </section>
 
         <section
-          class="local-first-section"
-          aria-labelledby="local-first-title"
+          class="feature feature-reversed"
+          id="media"
+          aria-labelledby="media-title"
         >
-          <div class="local-first page-width">
-            <p class="section-index"><span>05</span> Local-first</p>
-            <h2 id="local-first-title">
-              Most of your work data stays on your computer.
-            </h2>
-            <p>
-              Your workspaces, chat history, memory, saved workflows, schedules,
-              settings, and Media Studio assets are primarily kept on your
-              computer. Cloud providers and integrations receive only the
-              information needed for requests you choose to make.
-            </p>
+          <div class="feature-copy">
+            <h2 id="media-title">{{mediaTitle}}</h2>
+            <p>{{mediaSummary}}</p>
           </div>
+          <figure class="scene">
+            <img
+              src="/images/scene-media.webp"
+              srcset="
+                /images/scene-media-768.webp   768w,
+                /images/scene-media-1280.webp 1280w,
+                /images/scene-media.webp      1920w
+              "
+              sizes="(min-width: 1024px) 60vw, calc(100vw - 40px)"
+              width="1920"
+              height="1080"
+              alt="{{mediaImageAlt}}"
+              loading="lazy"
+              decoding="async"
+            />
+          </figure>
         </section>
+      </div>
 
-        <section
-          class="download page-width"
-          id="download"
-          aria-labelledby="download-title"
+      <section class="trust" id="trust" aria-labelledby="trust-title">
+        <div class="page-width">
+          <h2 id="trust-title">{{trustTitle}}</h2>
+          <ul class="trust-list">
+            <li>
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="3.5" y="4.5" width="17" height="12" rx="2" />
+                <path d="M8.5 20h7M12 16.5V20" />
+              </svg>
+              <h3>{{trustLocalTitle}}</h3>
+              <p>{{trustLocalText}}</p>
+            </li>
+            <li>
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <circle cx="7" cy="7" r="2.5" />
+                <circle cx="17" cy="7" r="2.5" />
+                <circle cx="12" cy="17" r="2.5" />
+                <path d="M8.5 9 11 15M15.5 9 13 15" />
+              </svg>
+              <h3>{{trustProviderTitle}}</h3>
+              <p>{{trustProviderText}}</p>
+            </li>
+            <li>
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M12 3.5 19 6v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" />
+                <path d="m9 12 2 2 4-4" />
+              </svg>
+              <h3>{{trustControlTitle}}</h3>
+              <p>{{trustControlText}}</p>
+            </li>
+            <li>
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M12 4v10M7.5 9.5 12 14l4.5-4.5" />
+                <path d="M4.5 16.5v3h15v-3" />
+              </svg>
+              <h3>{{trustPlatformTitle}}</h3>
+              <p>{{trustPlatformText}}</p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section
+        class="download page-width"
+        id="download"
+        aria-labelledby="download-title"
+      >
+        <div class="download-heading">
+          <img src="/images/machdoch-logo.svg" width="56" height="56" alt="" />
+          <h2 id="download-title">{{downloadTitle}}</h2>
+          <p>{{downloadSummary}}</p>
+        </div>
+        <div
+          class="install-commands"
+          data-copy-succeeded="{{copySucceeded}}"
+          data-copy-failed="{{copyFailed}}"
         >
-          <div class="download-heading">
-            <p class="section-index"><span>06</span> Get Machdoch</p>
-            <div>
-              <h2 id="download-title">Install Machdoch</h2>
-              <p>
-                Copy the command for your system to download and install the
-                latest version.
-              </p>
+          <article
+            class="install-command"
+            aria-labelledby="install-windows-title"
+          >
+            <div class="install-command-heading">
+              <h3 id="install-windows-title">{{installWindowsTitle}}</h3>
+              <button
+                type="button"
+                class="copy-command"
+                data-copy-command="install-windows"
+                aria-controls="install-windows"
+              >
+                {{copyCommand}}
+              </button>
             </div>
-          </div>
-          <div class="install-commands">
-            <article
-              class="install-command"
-              aria-labelledby="install-windows-title"
-            >
-              <div class="install-command-heading">
-                <h3 id="install-windows-title">Windows (x64)</h3>
-                <button
-                  type="button"
-                  class="copy-command"
-                  data-copy-command="install-windows"
-                  aria-controls="install-windows"
-                >
-                  Copy command
-                </button>
-              </div>
-              <p>
-                Open Start, type <strong>PowerShell</strong>, and open
-                <strong>Windows PowerShell</strong>. Paste the command, press
-                Enter, and follow the installer.
-              </p>
-              <pre
-                tabindex="0"
-                aria-label="Windows installation command"
-              ><code id="install-windows">&amp; {
+            <p>{{installWindowsText}}</p>
+            <pre
+              tabindex="0"
+              aria-label="{{installWindowsLabel}}"
+            ><code id="install-windows">&amp; {
   $machdochInstaller = Join-Path $env:TEMP ("machdoch-" + [guid]::NewGuid() + "-setup.exe")
   Invoke-WebRequest "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe" -UseBasicParsing -OutFile $machdochInstaller -ErrorAction Stop
   Start-Process -FilePath $machdochInstaller -Wait
 }</code></pre>
-              <p class="copy-status" role="status"></p>
-            </article>
-            <article
-              class="install-command"
-              aria-labelledby="install-debian-title"
-            >
-              <div class="install-command-heading">
-                <h3 id="install-debian-title">
-                  Ubuntu / Debian (x64 and ARM64)
-                </h3>
-                <button
-                  type="button"
-                  class="copy-command"
-                  data-copy-command="install-debian"
-                  aria-controls="install-debian"
-                >
-                  Copy command
-                </button>
-              </div>
-              <p>
-                Open <strong>Terminal</strong> from your applications menu,
-                paste the command, and press Enter. Enter your computer password
-                if asked; no characters appear as you type.
-              </p>
-              <pre
-                tabindex="0"
-                aria-label="Ubuntu or Debian installation command"
-              ><code id="install-debian">sudo apt update &amp;&amp; sudo apt install -y curl &amp;&amp;
+            <p class="copy-status" role="status"></p>
+          </article>
+          <article
+            class="install-command"
+            aria-labelledby="install-debian-title"
+          >
+            <div class="install-command-heading">
+              <h3 id="install-debian-title">{{installDebianTitle}}</h3>
+              <button
+                type="button"
+                class="copy-command"
+                data-copy-command="install-debian"
+                aria-controls="install-debian"
+              >
+                {{copyCommand}}
+              </button>
+            </div>
+            <p>{{installLinuxText}}</p>
+            <pre
+              tabindex="0"
+              aria-label="{{installDebianLabel}}"
+            ><code id="install-debian">sudo apt update &amp;&amp; sudo apt install -y curl &amp;&amp;
 curl -fL "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-$(dpkg --print-architecture).deb" -o machdoch-linux.deb &amp;&amp;
 sudo apt install -y ./machdoch-linux.deb</code></pre>
-              <p class="copy-status" role="status"></p>
-            </article>
-            <article
-              class="install-command"
-              aria-labelledby="install-fedora-title"
-            >
-              <div class="install-command-heading">
-                <h3 id="install-fedora-title">Fedora / RHEL (x64)</h3>
-                <button
-                  type="button"
-                  class="copy-command"
-                  data-copy-command="install-fedora"
-                  aria-controls="install-fedora"
-                >
-                  Copy command
-                </button>
-              </div>
-              <p>
-                Open <strong>Terminal</strong> from your applications menu,
-                paste the command, and press Enter. Enter your computer password
-                if asked; no characters appear as you type.
-              </p>
-              <pre
-                tabindex="0"
-                aria-label="Fedora or RHEL installation command"
-              ><code id="install-fedora">sudo dnf install -y curl &amp;&amp;
+            <p class="copy-status" role="status"></p>
+          </article>
+          <article
+            class="install-command"
+            aria-labelledby="install-fedora-title"
+          >
+            <div class="install-command-heading">
+              <h3 id="install-fedora-title">{{installFedoraTitle}}</h3>
+              <button
+                type="button"
+                class="copy-command"
+                data-copy-command="install-fedora"
+                aria-controls="install-fedora"
+              >
+                {{copyCommand}}
+              </button>
+            </div>
+            <p>{{installLinuxText}}</p>
+            <pre
+              tabindex="0"
+              aria-label="{{installFedoraLabel}}"
+            ><code id="install-fedora">sudo dnf install -y curl &amp;&amp;
 curl -fL "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-x86_64.rpm" -o machdoch-linux.rpm &amp;&amp;
 sudo dnf install -y ./machdoch-linux.rpm</code></pre>
-              <p class="copy-status" role="status"></p>
-            </article>
-          </div>
-          <p class="install-finish">
-            When installation finishes, open <strong>Machdoch</strong> from your
-            Start or applications menu.
-          </p>
-          <details class="installer-downloads">
-            <summary>Download installers</summary>
-            <div class="download-grid">
-              <a
-                class="download-card"
-                href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe"
-              >
-                <span>
-                  <strong>Windows installer</strong>
-                  <small>x64 &middot; EXE</small>
-                </span>
-                <svg aria-hidden="true" viewBox="0 0 20 20">
-                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-                </svg>
-              </a>
-              <a
-                class="download-card"
-                href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.deb"
-              >
-                <span>
-                  <strong>Debian / Ubuntu</strong>
-                  <small>amd64 &middot; DEB</small>
-                </span>
-                <svg aria-hidden="true" viewBox="0 0 20 20">
-                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-                </svg>
-              </a>
-              <a
-                class="download-card"
-                href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-arm64.deb"
-              >
-                <span>
-                  <strong>Raspberry Pi / ARM64</strong>
-                  <small>64-bit &middot; DEB</small>
-                </span>
-                <svg aria-hidden="true" viewBox="0 0 20 20">
-                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-                </svg>
-              </a>
-              <a
-                class="download-card"
-                href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-x86_64.rpm"
-              >
-                <span>
-                  <strong>Fedora / RHEL</strong>
-                  <small>x86_64 &middot; RPM</small>
-                </span>
-                <svg aria-hidden="true" viewBox="0 0 20 20">
-                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-                </svg>
-              </a>
-              <a
-                class="download-card"
-                href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.AppImage"
-              >
-                <span>
-                  <strong>Linux AppImage</strong>
-                  <small>amd64 &middot; Portable</small>
-                </span>
-                <svg aria-hidden="true" viewBox="0 0 20 20">
-                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-                </svg>
-              </a>
-            </div>
-          </details>
-          <aside class="warning">
-            <strong>Machdoch is under active development.</strong>
-            <span>
-              Features may change quickly. Machdoch mode can edit or delete
-              files, run commands, automate a browser, and control your desktop
-              when enabled. Keep backups, start with nonessential data, and
-              review results.
-            </span>
-          </aside>
-        </section>
-      </main>
-
-      <footer>
-        <div class="footer-inner page-width">
-          <a class="brand" href="./" aria-label="Machdoch home">
-            <img
-              src="/images/machdoch-logo.svg"
-              width="70"
-              height="70"
-              alt=""
-            />
-            <span>machdoch</span>
-          </a>
-          <nav class="footer-navigation" aria-label="Footer navigation">
-            <a href="https://github.com/pureportal/machdoch/releases/latest">
-              Releases
-            </a>
-            <a href="https://github.com/pureportal/machdoch">GitHub</a>
-            <a href="https://pureportal.io/privacy">Privacy policy</a>
-            <details class="analytics-settings">
-              <summary>Analytics</summary>
-              <label
-                ><input
-                  id="analytics-consent"
-                  type="checkbox"
-                  aria-describedby="analytics-description"
-                />
-                Share usage and diagnostics</label
-              >
-              <p id="analytics-description">
-                Allow PurePortal to measure feature use, performance, and errors
-                with Swetrix. You can turn this off here at any time.
-              </p>
-              <p id="analytics-error" role="alert" hidden></p>
-            </details>
-          </nav>
-          <a class="back-to-top" href="#top">
-            Back to top
-            <svg aria-hidden="true" viewBox="0 0 20 20">
-              <path d="M6 10 10 6l4 4M10 6v9" />
-            </svg>
-          </a>
+            <p class="copy-status" role="status"></p>
+          </article>
         </div>
-      </footer>
-    </div>
+        <p class="install-finish">{{installFinish}}</p>
+        <details class="installer-downloads">
+          <summary>{{installersSummary}}</summary>
+          <div class="download-grid">
+            <a
+              class="download-card"
+              href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe"
+            >
+              <strong>{{installerWindows}}</strong>
+              <small>x64 &middot; EXE</small>
+            </a>
+            <a
+              class="download-card"
+              href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.deb"
+            >
+              <strong>{{installerDebian}}</strong>
+              <small>amd64 &middot; DEB</small>
+            </a>
+            <a
+              class="download-card"
+              href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-arm64.deb"
+            >
+              <strong>{{installerArm}}</strong>
+              <small>64-bit &middot; DEB</small>
+            </a>
+            <a
+              class="download-card"
+              href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-x86_64.rpm"
+            >
+              <strong>{{installerFedora}}</strong>
+              <small>x86_64 &middot; RPM</small>
+            </a>
+            <a
+              class="download-card"
+              href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.AppImage"
+            >
+              <strong>{{installerAppImage}}</strong>
+              <small>amd64 &middot; {{installerPortable}}</small>
+            </a>
+          </div>
+        </details>
+        <aside class="warning">
+          <strong>{{warningTitle}}</strong>
+          <span>{{warningText}}</span>
+        </aside>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner page-width">
+        <a class="brand" href="./" aria-label="{{homeLabel}}">
+          <img src="/images/machdoch-logo.svg" width="28" height="28" alt="" />
+          <span>machdoch</span>
+        </a>
+        <nav class="footer-navigation" aria-label="{{footerNavigation}}">
+          <a href="https://github.com/pureportal/machdoch/releases/latest">
+            {{footerReleases}}
+          </a>
+          <a href="https://github.com/pureportal/machdoch">GitHub</a>
+          <a href="{{imprintUrl}}">{{footerImprint}}</a>
+          <a href="{{privacyUrl}}">{{footerPrivacy}}</a>
+          <a href="{{termsUrl}}">{{footerTerms}}</a>
+          <details class="analytics-settings">
+            <summary>{{analyticsSummary}}</summary>
+            <label
+              ><input
+                id="analytics-consent"
+                type="checkbox"
+                aria-describedby="analytics-description"
+                data-blocked-description="{{analyticsBlocked}}"
+              />
+              {{analyticsConsent}}</label
+            >
+            <p id="analytics-description">{{analyticsDescription}}</p>
+            <p id="analytics-error" role="alert" hidden></p>
+          </details>
+        </nav>
+      </div>
+    </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

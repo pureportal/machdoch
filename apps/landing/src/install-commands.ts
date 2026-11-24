@@ -1,5 +1,8 @@
 export function initializeInstallCommands(): void {
-  for (const button of document.querySelectorAll<HTMLButtonElement>(
+  const container = document.querySelector<HTMLElement>(".install-commands")!;
+  const { copySucceeded, copyFailed } = container.dataset;
+
+  for (const button of container.querySelectorAll<HTMLButtonElement>(
     "[data-copy-command]",
   )) {
     const command = document.getElementById(button.dataset.copyCommand!)!;
@@ -13,10 +16,9 @@ export function initializeInstallCommands(): void {
 
       try {
         await navigator.clipboard.writeText(command.textContent!.trim());
-        status.textContent = "Copied.";
+        status.textContent = copySucceeded!;
       } catch {
-        status.textContent =
-          "Could not copy. Select the command and copy it manually.";
+        status.textContent = copyFailed!;
       } finally {
         button.disabled = false;
       }

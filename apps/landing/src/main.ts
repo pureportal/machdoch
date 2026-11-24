@@ -9,6 +9,13 @@ import { initializeInstallCommands } from "./install-commands";
 
 initializeInstallCommands();
 
+for (const link of document.querySelectorAll<HTMLAnchorElement>(
+  "a[data-locale]",
+))
+  link.addEventListener("click", () =>
+    localStorage.setItem("machdoch.landing.locale", link.dataset.locale!),
+  );
+
 for (const element of document.querySelectorAll<HTMLElement>(".download-card"))
   element.dataset.analyticsFeature = "landing.download";
 for (const element of document.querySelectorAll<HTMLElement>(
@@ -46,7 +53,7 @@ const renderConsent = (): void => {
   consent.checked = state.enabled;
   consent.disabled = state.blocked;
   description.textContent = state.blocked
-    ? "Your browser privacy preference disables analytics."
+    ? consent.dataset.blockedDescription!
     : originalDescription;
   error.hidden = !state.error;
   error.textContent = state.error;
