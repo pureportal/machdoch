@@ -9,6 +9,7 @@ import type {
 } from "@/lib/cloud-git-contract";
 import { pullRequestHeader } from "@/lib/pull-request-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAgentPageEntity } from "./agent/agent-shell";
 import { cloudRequest } from "./api-client";
 import { PullRequestActions } from "./pull-request-actions";
 import { PullRequestComposer } from "./pull-request-composer";
@@ -38,6 +39,12 @@ export function PullRequestPage({
     pullRequestTabs.find((entry) => entry === initialTab) ?? "overview",
   );
   const id = initial.id;
+  useAgentPageEntity({
+    kind: "pull_request",
+    id,
+    label: `${initial.repository}#${initial.number}`,
+    title: initial.title,
+  });
   const load = useCallback(
     (signal?: AbortSignal) =>
       cloudRequest<CloudPullRequestDetails>(`pull-requests/${id}`, { signal })

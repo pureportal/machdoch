@@ -143,14 +143,12 @@ async function withStacks(
 function publicPullRequest(
   row: CloudPullRequest & {
     issues?: unknown;
-    repositoryId?: unknown;
     connectionId?: unknown;
     repositoryUrl?: unknown;
   },
 ): CloudPullRequest {
   const {
     issues: _issues,
-    repositoryId: _repository,
     connectionId: _connection,
     repositoryUrl: _url,
     ...pullRequest

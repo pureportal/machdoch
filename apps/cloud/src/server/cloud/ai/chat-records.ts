@@ -5,23 +5,12 @@ import {
   type CloudChat,
   type CloudChatTurn,
 } from "../../../lib/cloud-chat-contract";
-import { CloudError, requireMembership, teamVisibility } from "../access";
+import { CloudError, requireMembership } from "../access";
 import type { CloudSql } from "../database";
+import { chatContextColumn, chatContextSource } from "./chat-context-sources";
 
 const timestamp = (column: string) =>
   `to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
-
-const chatContextColumn = `COALESCE((SELECT jsonb_agg(jsonb_build_object('kind',x.kind,'id',x.entity_id,'label',e.label,'title',e.title,'turnSequence',x.turn_sequence) ORDER BY x.created_at,x.kind,x.entity_id)
-  FROM cloud_chat_context x
-  JOIN LATERAL (
-    SELECT i.identifier AS label,i.title,i.team_id FROM cloud_issues i WHERE x.kind='issue' AND i.organization_id=x.organization_id AND i.id=x.entity_id
-    UNION ALL SELECT p.name,NULL,p.team_id FROM cloud_projects p WHERE x.kind='project' AND p.organization_id=x.organization_id AND p.id=x.entity_id
-    UNION ALL SELECT c.name,NULL,c.team_id FROM cloud_cycles c WHERE x.kind='cycle' AND c.organization_id=x.organization_id AND c.id=x.entity_id
-    UNION ALL SELECT k.name,NULL,k.id FROM cloud_teams k WHERE x.kind='team' AND k.organization_id=x.organization_id AND k.id=x.entity_id
-  ) e ON true
-  JOIN cloud_teams t ON t.organization_id=x.organization_id AND t.id=e.team_id
-  JOIN cloud_memberships m ON m.organization_id=x.organization_id AND m.user_id=$2
-  WHERE x.organization_id=ch.organization_id AND x.chat_id=ch.id AND ${teamVisibility}),'[]'::jsonb)`;
 
 export const chatColumns = `ch.id,ch.title,ch.revision,${timestamp("ch.updated_at")} AS "updatedAt",${chatContextColumn} AS context`;
 export const chatDeadlineSeconds = 300;
@@ -59,24 +48,19 @@ export async function addChatContext(
   context: ChatContextReference[],
 ): Promise<void> {
   for (const entry of context) {
-    const table = {
-      issue: "cloud_issues",
-      project: "cloud_projects",
-      cycle: "cloud_cycles",
-      team: "cloud_teams",
-    }[entry.kind];
-    const teamColumn = entry.kind === "team" ? "e.id" : "e.team_id";
     const visible = await sql.query(
-      `SELECT 1 FROM ${table} e JOIN cloud_teams t ON t.organization_id=e.organization_id AND t.id=${teamColumn}
-      JOIN cloud_memberships m ON m.organization_id=e.organization_id AND m.user_id=$2
-      WHERE e.organization_id=$1 AND e.id=$3 AND ${teamVisibility}`,
+      chatContextSource(entry.kind, {
+        organization: "$1",
+        user: "$2",
+        id: "$3",
+      }),
       [actor.organizationId, actor.userId, entry.id],
     );
     if (!visible.rows.length)
       throw new CloudError(
         404,
         "context_unavailable",
-        `This ${entry.kind} is unavailable. Remove it from the context.`,
+        `This ${entry.kind.replace("_", " ")} is unavailable. Remove it from the context.`,
       );
     await sql.query(
       "INSERT INTO cloud_chat_context (organization_id,chat_id,kind,entity_id,turn_sequence) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",

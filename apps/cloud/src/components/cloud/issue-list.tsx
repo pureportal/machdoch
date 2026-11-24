@@ -84,8 +84,15 @@ export function IssueList({
   const scope = parseIssueScope(search.get("scope"));
   const teamId = search.get("teamId");
   const team = workspace.teams.find((entry) => entry.id === teamId);
+  const activeView = views.find(
+    (view) => view.id === search.get(savedViewParameter),
+  );
   useAgentPageEntity(
-    team ? { kind: "team", id: team.id, label: team.name, title: null } : null,
+    activeView
+      ? { kind: "view", id: activeView.id, label: activeView.name, title: null }
+      : team
+        ? { kind: "team", id: team.id, label: team.name, title: null }
+        : null,
   );
   const definitions = useMemo(
     () => filterFieldDefinitions(workspace, labels, teamId, references),
@@ -108,9 +115,6 @@ export function IssueList({
   };
   const { options, groups } = useIssueGroups(issues, workspace, teamId, search);
   const display = useIssueDisplay();
-  const activeView = views.find(
-    (view) => view.id === search.get(savedViewParameter),
-  );
   const currentViewFilters = {
     ...viewFilters(search),
     hide: hiddenPropertyList(display.hidden),
@@ -190,9 +194,7 @@ export function IssueList({
             <Link
               key={entry}
               href={scopeHref(entry)}
-              aria-current={
-                entry === scope && !activeView ? "page" : undefined
-              }
+              aria-current={entry === scope && !activeView ? "page" : undefined}
             >
               {issueScopes[entry].label}
             </Link>
@@ -259,8 +261,7 @@ export function IssueList({
           />
         </div>
       </div>
-      {(hasIssueFilters(filters) ||
-        (!!team && workspace.teams.length > 1)) && (
+      {(hasIssueFilters(filters) || (!!team && workspace.teams.length > 1)) && (
         <IssueFilterChips
           state={filters}
           definitions={definitions}

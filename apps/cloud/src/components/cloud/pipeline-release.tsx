@@ -13,6 +13,7 @@ import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
 import { holderCan } from "@/lib/cloud-permissions";
 import type { PipelineReleaseDetail } from "@/lib/cloud-release-pipeline-contract";
 import type { CloudProduct } from "@/lib/cloud-release-contract";
+import { useAgentPageEntity } from "./agent/agent-shell";
 import { cloudRequest, createCommandSender, formText } from "./api-client";
 import { RelationPicker } from "./relation-picker";
 import { RelativeTime } from "./relative-time";
@@ -137,6 +138,12 @@ export function PipelineRelease({
   const [launching, setLaunching] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const canWrite = holderCan(workspace.actor, "releases.edit");
+  useAgentPageEntity({
+    kind: "release",
+    id: release.id,
+    label: `${release.pipelineName} ${release.version}`,
+    title: release.environment,
+  });
   async function remove(issueId: string) {
     setRemoving(issueId);
     try {

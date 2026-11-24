@@ -9,8 +9,13 @@ import {
   CircleDot,
   Copy,
   FileText,
+  FolderGit2,
   FolderKanban,
+  GitPullRequest,
+  Layers2,
   LoaderCircle,
+  Megaphone,
+  Repeat,
   Users,
   X,
 } from "lucide-react";
@@ -29,6 +34,12 @@ export const contextIcons: Record<ChatContextKind, typeof CircleDot> = {
   project: FolderKanban,
   cycle: CalendarRange,
   team: Users,
+  pull_request: GitPullRequest,
+  view: Layers2,
+  release: Megaphone,
+  loop: Repeat,
+  document: FileText,
+  repository: FolderGit2,
 };
 
 const entityRoutes: [RegExp, ChatContextKind][] = [
@@ -37,6 +48,12 @@ const entityRoutes: [RegExp, ChatContextKind][] = [
   [/^\/cloud\/projects\/[0-9a-f-]{36}$/i, "project"],
   [/^\/cloud\/cycles\/[0-9a-f-]{36}$/i, "cycle"],
   [/^\/cloud\/initiatives\/[0-9a-f-]{36}$/i, "project"],
+  [/^\/cloud\/pull-requests\/[0-9a-f-]{36}$/i, "pull_request"],
+  [/^\/cloud\/views\/[0-9a-f-]{36}$/i, "view"],
+  [/^\/cloud\/releases\/[0-9a-f-]{36}$/i, "release"],
+  [/^\/cloud\/releases\/pipelines\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/i, "release"],
+  [/^\/cloud\/loops\/[0-9a-f-]{36}$/i, "loop"],
+  [/^\/cloud\/documents\/[0-9a-f-]{36}$/i, "document"],
 ];
 
 const answerComponents = {

@@ -8,6 +8,7 @@ import type { ChatContextEntity } from "../../../lib/cloud-chat-contract";
 import { isCloudError, teamVisibility } from "../access";
 import type { CloudSql } from "../database";
 import { readIssue } from "../planning";
+import { entitySectionBuilders, excerpt } from "./agent-entity-context";
 
 const maximumContextCharacters = 24_000;
 
@@ -44,11 +45,6 @@ Formatting:
 - Reply in the language of the user's latest message.
 
 The JSON user message contains the conversation; work on its latest user entry. Entries with role "tool" contain results of tools you called earlier in this turn.`;
-
-function excerpt(text: string, length: number): string {
-  const compact = text.replace(/\s+/g, " ").trim();
-  return compact.length > length ? `${compact.slice(0, length - 1)}…` : compact;
-}
 
 async function issueSection(
   sql: CloudSql,
@@ -226,6 +222,7 @@ const sectionBuilders = {
   project: projectSection,
   cycle: cycleSection,
   team: teamSection,
+  ...entitySectionBuilders,
 };
 
 export async function agentContext(

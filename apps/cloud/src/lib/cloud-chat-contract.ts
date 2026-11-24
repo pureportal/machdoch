@@ -28,7 +28,18 @@ export const activeChatStates = [
   "running",
   "cancel_requested",
 ] as const;
-export const chatContextKinds = ["issue", "project", "cycle", "team"] as const;
+export const chatContextKinds = [
+  "issue",
+  "project",
+  "cycle",
+  "team",
+  "pull_request",
+  "view",
+  "release",
+  "loop",
+  "document",
+  "repository",
+] as const;
 export type ChatContextKind = (typeof chatContextKinds)[number];
 export const maximumChatContext = 8;
 export const chatContextReferenceSchema = z.strictObject({

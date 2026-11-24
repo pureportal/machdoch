@@ -11,6 +11,7 @@ import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { CloudLoop } from "@/lib/cloud-loop-contract";
 import { holderCan } from "@/lib/cloud-permissions";
 import type { CloudSchedule } from "@/lib/cloud-schedule-contract";
+import { useAgentPageEntity } from "./agent/agent-shell";
 import { createCommandSender } from "./api-client";
 import { LoopAutomationControls } from "./loop-automation-controls";
 import { LoopConfigForm } from "./loop-config-form";
@@ -42,6 +43,12 @@ export function LoopDetail({
   const owned = loop.ownerId === workspace.actor.id;
   const canEdit = holderCan(workspace.actor, "automations.edit");
   const canKill = owned || holderCan(workspace.actor, "teams.manage");
+  useAgentPageEntity({
+    kind: "loop",
+    id: loop.id,
+    label: loop.name,
+    title: null,
+  });
 
   async function setKilled(killed: boolean) {
     setPending(true);

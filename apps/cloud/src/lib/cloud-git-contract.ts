@@ -201,6 +201,7 @@ export interface GitAvailableRepository {
 export interface CloudPullRequest {
   id: string;
   provider: GitProvider;
+  repositoryId: string;
   repository: string;
   number: number;
   title: string;

@@ -69,6 +69,36 @@ const suggestions: Record<ChatContextKind | "workspace", string[]> = {
     "Which issues need attention?",
     "Summarize recent progress",
   ],
+  pull_request: [
+    "Summarize this pull request",
+    "What blocks merging?",
+    "Which issues does this close?",
+  ],
+  view: [
+    "Summarize these issues",
+    "Which of these need attention?",
+    "Group these by assignee",
+  ],
+  release: [
+    "Summarize this release",
+    "Draft release notes",
+    "What changed for customers?",
+  ],
+  loop: [
+    "How has this loop been running?",
+    "Why did the last run fail?",
+    "Suggest improvements",
+  ],
+  document: [
+    "Summarize this document",
+    "What changed recently?",
+    "Turn this into issues",
+  ],
+  repository: [
+    "Which pull requests need review?",
+    "What is open in this repository?",
+    "Which pull requests are stale?",
+  ],
 };
 
 export function AgentConversation({

@@ -50,6 +50,7 @@ function pullRequest(fields: Partial<CloudPullRequest>): CloudPullRequest {
   return {
     id: "p2",
     provider: "github",
+    repositoryId: "r1",
     repository: "acme/app",
     number: 2,
     title: "Refresh sessions",

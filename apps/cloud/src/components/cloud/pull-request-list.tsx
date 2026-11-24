@@ -9,6 +9,7 @@ import type { CloudPullRequestList } from "@/lib/cloud-git-contract";
 import { pullRequestStages, type PullRequestStage } from "@/lib/git-automation";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { useAgentPageEntity } from "./agent/agent-shell";
 import { cloudRequest } from "./api-client";
 import { PullRequestRow } from "./pull-request-row";
 import {
@@ -55,11 +56,9 @@ export function PullRequestList({
   );
   useEffect(() => {
     const abort = new AbortController();
-    const stop = pollWhileVisible(
-      () => load(abort.signal),
-      pollMs,
-      { immediate: false },
-    );
+    const stop = pollWhileVisible(() => load(abort.signal), pollMs, {
+      immediate: false,
+    });
     return () => {
       abort.abort();
       stop();
@@ -68,6 +67,19 @@ export function PullRequestList({
   const repositories = [
     ...new Set(data.pullRequests.map((entry) => entry.pullRequest.repository)),
   ].sort();
+  const selectedRepository = data.pullRequests.find(
+    (entry) => entry.pullRequest.repository === repository,
+  )?.pullRequest;
+  useAgentPageEntity(
+    selectedRepository
+      ? {
+          kind: "repository",
+          id: selectedRepository.repositoryId,
+          label: selectedRepository.repository,
+          title: null,
+        }
+      : null,
+  );
   const authors = [
     ...new Set(
       data.pullRequests.flatMap((entry) =>

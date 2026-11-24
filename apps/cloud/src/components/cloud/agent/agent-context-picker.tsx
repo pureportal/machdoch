@@ -9,7 +9,7 @@ import { PropertyMenu } from "../property-menu";
 import { contextIcons } from "./agent-turn";
 import type { AgentPageEntity } from "./agent-shell";
 
-const groups: Record<ChatContextKind, string> = {
+const groups: Partial<Record<ChatContextKind, string>> = {
   issue: "Recent issues",
   project: "Projects",
   cycle: "Cycles",

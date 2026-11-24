@@ -27,6 +27,7 @@ import type {
   ReleaseMedia,
 } from "@/lib/cloud-release-media-contract";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
+import { useAgentPageEntity } from "./agent/agent-shell";
 import { cloudRequest } from "./api-client";
 import { ReleaseStatusPill } from "./release-display";
 import { ReleaseMediaTab } from "./release-media-tab";
@@ -90,6 +91,12 @@ export function ReleaseStudio({
   );
   const canWrite =
     holderCan(workspace.actor, "releases.edit") && !release.archived;
+  useAgentPageEntity({
+    kind: "release",
+    id: release.id,
+    label: `${product.name} ${release.version}`,
+    title: release.name || null,
+  });
   const refresh = useCallback(async () => {
     const [nextRelease, nextMedia] = await Promise.all([
       cloudRequest<CloudRelease>(`releases/${initial.id}`),
