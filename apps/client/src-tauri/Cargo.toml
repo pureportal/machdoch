@@ -128,6 +128,12 @@ opt-level = 3
 panic = "abort"
 strip = true
 
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 # Model installation and CAS integrity checks deliberately hash multi-gigabyte
 # artifacts. Keep those cryptographic primitives optimized in hot-reload
 # builds; an unoptimized 15.98 GiB recovery pass otherwise takes many minutes.
