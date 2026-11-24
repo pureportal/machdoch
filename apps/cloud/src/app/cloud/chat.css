@@ -139,6 +139,13 @@
   gap: 4px;
   max-width: 88%;
 }
+.cloud-agent-relay {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-agent-relay a {
+  color: inherit;
+}
 .cloud-agent-prompt > p {
   padding: 7px 12px;
   border-radius: 10px;

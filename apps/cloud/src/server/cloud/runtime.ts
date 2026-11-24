@@ -99,6 +99,7 @@ import { CloudChatStore } from "./ai/chat-store";
 import { CloudAgentTools } from "./ai/agent-tools";
 import { CloudAgentActions } from "./ai/agent-actions";
 import { CloudAgentHandoffs } from "./ai/agent-handoffs";
+import { CloudAgentRelays } from "./ai/agent-relays";
 import { CloudProjectStatuses } from "./project-statuses";
 import {
   CloudProjectUpdates,
@@ -226,6 +227,7 @@ export interface CloudRuntime {
     store: CloudChatStore;
     actions: CloudAgentActions;
     handoffs: CloudAgentHandoffs;
+    relays: CloudAgentRelays;
   };
   inference: {
     store: CloudInferenceStore;
@@ -312,6 +314,7 @@ export function createCloudRuntime(
   const attachments = new CloudAttachments(database);
   const clients = new CloudClients(database);
   const chatStore = new CloudChatStore(database, attachments);
+  const agentRelays = new CloudAgentRelays(database, attachments);
   const inference = new CloudInferenceStore(database);
   const mailStore = new CloudMailStore(
     database,
@@ -700,6 +703,7 @@ export function createCloudRuntime(
         workers,
         providers: aiProviders,
       }),
+      relays: agentRelays,
     },
     inference: {
       store: inference,
@@ -728,6 +732,7 @@ export function createCloudRuntime(
         gitSync,
         gitFetch,
         deployments,
+        agentRelays,
       ),
       oauth: new CloudGitOAuth(
         database,

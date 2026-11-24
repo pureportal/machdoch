@@ -135,6 +135,7 @@ import { issueFiltersFromParameters } from "../../lib/issue-scopes";
 import { CredentialValidationError } from "../crypto";
 import { cookieValue } from "../request-auth";
 import { CloudError, isCloudError } from "./access";
+import { relayedPrompt } from "../../lib/agent-relay";
 import {
   cloudCsrfCookie,
   cloudCsrfHeader,
@@ -930,15 +931,21 @@ async function route(
       path[2] === "comments"
     ) {
       const input = await readBody(request, commentInputSchema);
-      return Response.json(
-        await runtime.comments.create(
-          actor,
-          key.data,
-          cloudId.parse(path[1]),
-          input.body,
-        ),
-        { status: 201 },
+      const created = await runtime.comments.create(
+        actor,
+        key.data,
+        cloudId.parse(path[1]),
+        input.body,
       );
+      let agentError: string | null = null;
+      if (relayedPrompt(input.body))
+        try {
+          await runtime.chat.relays.issueComment(actor, created.id);
+        } catch (error) {
+          if (!(error instanceof CloudError)) throw error;
+          agentError = error.message;
+        }
+      return Response.json({ ...created, agentError }, { status: 201 });
     }
     if (method === "PATCH" && path[0] === "comments" && path.length === 2)
       return Response.json(

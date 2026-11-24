@@ -31,6 +31,7 @@ import {
 } from "@/lib/cloud-chat-contract";
 import { Button } from "@/components/ui/button";
 import { AgentHandoffButton, AgentHandoffRun } from "./agent-handoff";
+import { relayLabel } from "@/lib/agent-relay";
 
 export const contextIcons: Record<ChatContextKind, typeof CircleDot> = {
   issue: CircleDot,
@@ -442,6 +443,17 @@ export function AgentTurn({
   return (
     <li className="cloud-agent-turn">
       <div className="cloud-agent-prompt">
+        {turn.relay && (
+          <span className="cloud-agent-relay">
+            {turn.relay.url ? (
+              <a href={turn.relay.url} target="_blank" rel="noopener">
+                {relayLabel(turn.relay)}
+              </a>
+            ) : (
+              relayLabel(turn.relay)
+            )}
+          </span>
+        )}
         <p>{turn.prompt}</p>
         {turn.attachments.length > 0 && (
           <ul className="cloud-agent-attachments" aria-label="Attached files">

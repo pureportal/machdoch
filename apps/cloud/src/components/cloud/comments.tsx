@@ -280,10 +280,14 @@ export function IssueComments({
             setPending(true);
             setError("");
             void postingSender
-              .current(`issues/${issue.id}/comments`, { body })
-              .then(async () => {
+              .current<{ agentError: string | null }>(
+                `issues/${issue.id}/comments`,
+                { body },
+              )
+              .then(async ({ agentError }) => {
                 if (draft.current) draft.current.value = "";
                 postingSender.current = createCommandSender();
+                if (agentError) setError(agentError);
                 if (cursor) setCursor(null);
                 else await refresh();
               })

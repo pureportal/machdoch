@@ -3,6 +3,7 @@ import { isAutomationText, type GitEvent } from "../../../lib/git-events";
 import type { GitProvider } from "../../../lib/git-providers";
 import type { SettingsCipher } from "../../settings-crypto";
 import type { CloudPipelineDeployments } from "../releases/pipeline-deployments";
+import type { CloudAgentRelays } from "../ai/agent-relays";
 import { CloudError } from "../access";
 import type { CloudDatabase, CloudSql } from "../database";
 import { linkPushedCommits } from "./commit-links";
@@ -105,6 +106,7 @@ export class CloudGitWebhooks {
     private readonly sync: CloudGitSync,
     private readonly transport: typeof fetch,
     private readonly deployments: CloudPipelineDeployments,
+    private readonly relays: CloudAgentRelays,
   ) {}
 
   async receive(
@@ -222,5 +224,28 @@ export class CloudGitWebhooks {
         ),
       ),
     );
+    for (const activity of parsed.activities) {
+      if (
+        activity.kind !== "comment_created" ||
+        !activity.comment?.url ||
+        activity.pullRequestNumber === null ||
+        written(activity)
+      )
+        continue;
+      try {
+        await this.relays.pullRequestComment(connection.organizationId, {
+          provider: connection.provider,
+          apiUrl: connection.apiUrl,
+          repositoryId: repository.id,
+          number: activity.pullRequestNumber,
+          login: activity.comment.author,
+          body: activity.comment.body,
+          url: activity.comment.url,
+        });
+      } catch (error) {
+        if (!(error instanceof CloudError)) throw error;
+        console.error("Agent relay rejected", error.code);
+      }
+    }
   }
 }

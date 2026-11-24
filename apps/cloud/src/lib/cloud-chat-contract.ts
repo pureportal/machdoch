@@ -1,5 +1,6 @@
 import type { ReleaseHighlight } from "./cloud-release-contract";
 import type { AgentHandoff } from "./agent-handoff";
+import type { AgentRelay } from "./agent-relay";
 import type { VisualInput } from "./cloud-release-media-contract";
 import { z } from "zod";
 import { cloudId, revision, type IssueInput } from "./cloud-contract";
@@ -336,6 +337,7 @@ export interface CloudChatTurn {
   question: AgentQuestion | null;
   attachments: ChatTurnAttachment[];
   handoffs: AgentHandoff[];
+  relay: AgentRelay | null;
 }
 export interface ChatDetail {
   chat: CloudChat;

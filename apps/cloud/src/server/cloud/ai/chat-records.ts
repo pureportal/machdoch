@@ -26,7 +26,9 @@ export const turnColumns = `id,sequence,provider_id AS "providerId",model,prompt
   'createdAt',${timestamp("h.created_at")}) ORDER BY h.created_at,h.id) FROM cloud_agent_handoffs h
   JOIN cloud_runs r ON r.organization_id=h.organization_id AND r.id=h.run_id
   LEFT JOIN cloud_execution_workers w ON w.organization_id=r.organization_id AND w.id=r.pinned_worker_id
-  WHERE h.organization_id=cloud_chat_turns.organization_id AND h.turn_id=cloud_chat_turns.id),'[]'::jsonb) AS handoffs`;
+  WHERE h.organization_id=cloud_chat_turns.organization_id AND h.turn_id=cloud_chat_turns.id),'[]'::jsonb) AS handoffs,
+  (SELECT jsonb_build_object('source',r.source,'author',r.author,'url',r.external_url) FROM cloud_agent_relays r
+  WHERE r.organization_id=cloud_chat_turns.organization_id AND r.turn_id=cloud_chat_turns.id) AS relay`;
 
 export async function readChat(
   sql: CloudSql,

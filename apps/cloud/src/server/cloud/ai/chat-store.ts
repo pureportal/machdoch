@@ -133,7 +133,7 @@ function historyAnswer(turn: {
     .join("\n\n");
 }
 
-async function reserveMessage(
+export async function reserveMessage(
   sql: CloudSql,
   actor: CloudActor,
   chatId: string,
