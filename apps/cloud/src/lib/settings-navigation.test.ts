@@ -75,6 +75,11 @@ describe("settings navigation", () => {
         group.entries.map((entry) => entry.id),
       ),
     ).toEqual(["sso"]);
+    expect(
+      settingsNavigation(holder("member"), "connector").flatMap((group) =>
+        group.entries.map((entry) => entry.id),
+      ),
+    ).toEqual(["connected-accounts"]);
   });
 
   it("filters by role and marks read-only sections", () => {

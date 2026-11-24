@@ -20,6 +20,7 @@ import { GitAccountSettings } from "./git-accounts";
 import { GitSettings } from "./git-settings";
 import { LabelManager } from "./label-manager";
 import { LoopSettingsPanel } from "./loop-settings";
+import { McpConnectorSettings } from "./mcp-connector-settings";
 import { NotificationSettingsPanel } from "./notification-settings";
 import { PersonAvatar } from "./person-avatar";
 import { AiProviderSettings } from "./provider-settings";
@@ -152,12 +153,15 @@ export async function SettingsSectionContent({
         </div>
       );
     }
-    case "connected-accounts":
+    case "connected-accounts": {
+      const personalization = await runtime.chat.personalization.get(actor);
       return (
         <div className="cloud-settings">
           <GitAccountSettings />
+          <McpConnectorSettings initial={personalization.connectors} />
         </div>
       );
+    }
     case "code-reviews": {
       const personal = await runtime.settings.personal(actor);
       return (
@@ -196,7 +200,7 @@ export async function SettingsSectionContent({
             placement={personal["agent.placement"] ?? "automatic"}
           />
           <AgentPersonalizationSettings
-            personalization={personalization}
+            repositoryIds={personalization.repositoryIds}
             repositories={repositories}
           />
         </div>
