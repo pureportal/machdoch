@@ -9,6 +9,7 @@ import {
   loopHarnesses,
   loopPlacements,
   type LoopHarness,
+  type LoopPlacement,
 } from "./cloud-loop-contract";
 import {
   automaticOrder,
@@ -64,6 +65,40 @@ export interface HandoffOptions {
     kind: CloudProviderKind;
     models: string[];
   }[];
+  defaults: HandoffDefaults;
+}
+
+export interface HandoffDefaults {
+  placement: LoopPlacement | null;
+  harness: LoopHarness | null;
+  model: string | null;
+}
+
+export function handoffWhere(
+  placement: LoopPlacement | null,
+  options: Pick<HandoffOptions, "profiles" | "devices">,
+): string {
+  if (placement === "client") {
+    const device = options.devices[0];
+    return device ? `device:${device.id}` : "automatic";
+  }
+  if (placement === "sandbox" || placement === "runner_pool") {
+    const profile = options.profiles.find(
+      (entry) => entry.target === placementTargets[placement],
+    );
+    return profile ? `profile:${profile.id}` : "automatic";
+  }
+  return "automatic";
+}
+
+export function handoffModel(
+  preferred: string | null,
+  models: string[],
+  fallback: string,
+): string {
+  return preferred && models.includes(preferred)
+    ? preferred
+    : (models[0] ?? fallback);
 }
 
 export type HandoffResolution =

@@ -44,6 +44,9 @@ import {
 import { lockInference, reapInference } from "./inference-records";
 import { agentContext, agentSystemPrompt } from "./agent-context";
 import { agentToolSpecs } from "./agent-tools";
+import { agentInstructions } from "./agent-instructions";
+import { maximumConnectorToolBytes } from "./agent-connectors";
+import { hasConnectors } from "./agent-personalization";
 import { actionActivity, recordAiActivity } from "../activity/journal";
 import type {
   ChatAttachment,
@@ -225,7 +228,8 @@ export async function reserveMessage(
     },
   ]);
   const chat = await readChat(sql, actor, chatId);
-  const systemPrompt = `${agentSystemPrompt}\n\n${await agentContext(sql, actor, chat.context)}`;
+  const instructions = await agentInstructions(sql, actor, chat.context);
+  const systemPrompt = `${agentSystemPrompt}\n\n${instructions ? `${instructions}\n\n` : ""}${await agentContext(sql, actor, chat.context)}`;
   const inputBytes = Buffer.byteLength(userPrompt + systemPrompt, "utf8");
   if (inputBytes > maximumChatInputBytes)
     throw new CloudError(
@@ -237,7 +241,10 @@ export async function reserveMessage(
     (attachment) => attachment.kind === "image",
   ).length;
   const reservation =
-    2 * (inputBytes + agentToolBytes) +
+    2 *
+      (inputBytes +
+        agentToolBytes +
+        ((await hasConnectors(sql, actor)) ? maximumConnectorToolBytes : 0)) +
     2 * provider.maxOutputTokens +
     Math.min(images, maximumModelImages) * imageReservationTokens +
     4096;

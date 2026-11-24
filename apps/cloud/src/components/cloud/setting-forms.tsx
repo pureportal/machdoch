@@ -6,12 +6,20 @@ import {
   type ProjectUpdateCadence,
 } from "@/lib/cloud-contract";
 import type { SettingScope } from "@/lib/cloud-settings-contract";
+import {
+  loopHarnesses,
+  loopPlacements,
+  type LoopHarness,
+  type LoopPlacement,
+} from "@/lib/cloud-loop-contract";
+import { harnessLabels, placementLabels } from "@/lib/loop-capabilities";
 import { projectUpdateCadenceLabels } from "@/lib/project-status";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { createCommandSender, formText } from "./api-client";
 import { MarkdownTextarea } from "./markdown-textarea";
+import { agentModelValue, parseAgentModelValue } from "./use-agent-models";
 import { useToast } from "./toast";
 
 function useSettingWriter() {
@@ -134,6 +142,94 @@ export function AgentInstructionsSetting({
           Save
         </Button>
       )}
+    </form>
+  );
+}
+
+export function AgentDefaultsSetting({
+  providers,
+  model,
+  harness,
+  placement,
+}: {
+  providers: { id: string; name: string; models: string[] }[];
+  model: { providerId: string; model: string } | null;
+  harness: LoopHarness;
+  placement: LoopPlacement;
+}) {
+  const { pending, write } = useSettingWriter();
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    void write([
+      {
+        scope: "user",
+        key: "agent.model",
+        value: parseAgentModelValue(formText(form, "model")),
+      },
+      { scope: "user", key: "agent.harness", value: formText(form, "harness") },
+      {
+        scope: "user",
+        key: "agent.placement",
+        value: formText(form, "placement"),
+      },
+    ]);
+  }
+  return (
+    <form
+      className="cloud-settings-section cloud-setting-form"
+      onSubmit={submit}
+    >
+      <Field label="Model" htmlFor="setting-agent-model">
+        <Select
+          id="setting-agent-model"
+          name="model"
+          defaultValue={
+            model ? agentModelValue(model.providerId, model.model) : ""
+          }
+        >
+          <option value="">{placementLabels.automatic}</option>
+          {providers.flatMap((provider) =>
+            provider.models.map((entry) => (
+              <option
+                key={agentModelValue(provider.id, entry)}
+                value={agentModelValue(provider.id, entry)}
+              >
+                {`${provider.name} · ${entry}`}
+              </option>
+            )),
+          )}
+        </Select>
+      </Field>
+      <Field label="Harness" htmlFor="setting-agent-harness">
+        <Select
+          id="setting-agent-harness"
+          name="harness"
+          defaultValue={harness}
+        >
+          {loopHarnesses.map((entry) => (
+            <option key={entry} value={entry}>
+              {harnessLabels[entry]}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Placement" htmlFor="setting-agent-placement">
+        <Select
+          id="setting-agent-placement"
+          name="placement"
+          defaultValue={placement}
+        >
+          {loopPlacements.map((entry) => (
+            <option key={entry} value={entry}>
+              {placementLabels[entry]}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Button type="submit" disabled={pending}>
+        Save
+      </Button>
     </form>
   );
 }

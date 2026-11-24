@@ -73,6 +73,7 @@ import { cloudConsentSchema } from "../../lib/cloud-oauth-contract";
 import { clientSignInDecisionSchema } from "../../lib/client-sign-in-contract";
 import { handleExecutionApi, handleRunnerApi } from "./execution/api";
 import { handleAiProviderApi } from "./ai/api";
+import { handleAgentPersonalizationApi } from "./ai/personalization-api";
 import { handleChatApi } from "./ai/chat-api";
 import {
   handleAttachmentApi,
@@ -522,6 +523,8 @@ async function route(
     return handleChatApi(runtime, request, actor);
   if (path[0] === "ai-providers")
     return handleAiProviderApi(runtime, request, actor);
+  if (path[0] === "agent-personalization")
+    return handleAgentPersonalizationApi(runtime, request, actor);
   if (
     [
       "execution-profiles",

@@ -12,6 +12,7 @@ import type { requireCloudPageSession } from "@/server/cloud/page-auth";
 import { AccountCredentials } from "./account-credentials";
 import { AccountSessions } from "./account-sessions";
 import { AccountTwoFactor } from "./account-two-factor";
+import { AgentPersonalizationSettings } from "./agent-personalization-settings";
 import { CloudConnections } from "./connections";
 import { CustomerRequestSettings } from "./customer-request-settings";
 import { ExecutionSettings } from "./execution-settings";
@@ -25,6 +26,7 @@ import { AiProviderSettings } from "./provider-settings";
 import { PulseInstructionsEditor } from "./pulse-instructions";
 import { ProjectStatusManager } from "./project-status-manager";
 import {
+  AgentDefaultsSetting,
   AgentInstructionsSetting,
   ProjectUpdateCadenceSetting,
   ReviewPreferences,
@@ -168,8 +170,41 @@ export async function SettingsSectionContent({
       );
     }
     case "agent-personalization": {
-      const [personal, organization, teams] = await Promise.all([
-        runtime.settings.personal(actor),
+      const [personal, personalization, providers, repositories] =
+        await Promise.all([
+          runtime.settings.personal(actor),
+          runtime.chat.personalization.get(actor),
+          runtime.aiProviders.list(actor),
+          holderCan(workspace.actor, "git.view")
+            ? runtime.git.connections.repositories(actor)
+            : [],
+        ]);
+      return (
+        <div className="cloud-settings">
+          <AgentInstructionsSetting
+            label="Instructions"
+            scope="user"
+            initial={personal["agent.instructions"] ?? ""}
+            writable
+          />
+          <AgentDefaultsSetting
+            providers={providers.providers.filter(
+              (provider) => provider.enabled,
+            )}
+            model={personal["agent.model"] ?? null}
+            harness={personal["agent.harness"] ?? "machdoch"}
+            placement={personal["agent.placement"] ?? "automatic"}
+          />
+          <AgentPersonalizationSettings
+            personalization={personalization}
+            repositories={repositories}
+          />
+        </div>
+      );
+    }
+    case "ai": {
+      const [providers, organization, teams] = await Promise.all([
+        runtime.aiProviders.list(actor, true),
         runtime.settings.organization(actor),
         Promise.all(
           workspace.teams.map(async (team) => ({
@@ -180,38 +215,29 @@ export async function SettingsSectionContent({
       ]);
       const teamsWritable = holderCan(workspace.actor, "teams.manage");
       return (
-        <div className="cloud-settings">
-          <AgentInstructionsSetting
-            label="Your instructions"
-            scope="user"
-            initial={personal["agent.instructions"] ?? ""}
-            writable
-          />
-          <AgentInstructionsSetting
-            label={workspace.organization.name}
-            scope="organization"
-            initial={organization["agent.instructions"] ?? ""}
-            writable={holderCan(workspace.actor, "settings.manage")}
-          />
-          {teams.map(({ team, values }) => (
+        <>
+          <AiProviderSettings settings={providers} />
+          <div className="cloud-settings">
             <AgentInstructionsSetting
-              key={team.id}
-              label={team.name}
-              scope="team"
-              teamId={team.id}
-              initial={values["agent.instructions"] ?? ""}
-              writable={teamsWritable}
+              label={`${workspace.organization.name} instructions`}
+              scope="organization"
+              initial={organization["agent.instructions"] ?? ""}
+              writable={holderCan(workspace.actor, "settings.manage")}
             />
-          ))}
-        </div>
+            {teams.map(({ team, values }) => (
+              <AgentInstructionsSetting
+                key={team.id}
+                label={`${team.name} instructions`}
+                scope="team"
+                teamId={team.id}
+                initial={values["agent.instructions"] ?? ""}
+                writable={teamsWritable}
+              />
+            ))}
+          </div>
+        </>
       );
     }
-    case "ai":
-      return (
-        <AiProviderSettings
-          settings={await runtime.aiProviders.list(actor, true)}
-        />
-      );
     case "execution": {
       const [profiles, providers] = await Promise.all([
         runtime.execution.profiles.list(actor),

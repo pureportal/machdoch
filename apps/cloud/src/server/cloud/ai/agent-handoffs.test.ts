@@ -192,7 +192,13 @@ it("offers the conversation's issue, enabled executors, online linked devices an
   ]);
   expect(
     await runtime.chat.handoffs.options(owner, await chatTurn(false)),
-  ).toEqual({ subject: null, profiles: [], devices: [], providers: [] });
+  ).toEqual({
+    subject: null,
+    profiles: [],
+    devices: [],
+    providers: [],
+    defaults: { placement: null, harness: null, model: null },
+  });
 });
 
 it("hands a turn to a cloud sandbox with the chosen harness and model through admission", async () => {

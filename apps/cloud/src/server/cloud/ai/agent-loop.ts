@@ -10,7 +10,7 @@ import type {
   AgentQuestion,
   AgentStep,
 } from "../../../lib/cloud-chat-contract";
-import { agentToolSpecs, type CloudAgentSession } from "./agent-tools";
+import type { CloudAgentSession } from "./agent-tools";
 
 export const maximumAgentRounds = 8;
 const maximumToolCallsPerRound = 8;
@@ -104,7 +104,7 @@ export async function runAgent(options: {
     const finalRound =
       round === maximumAgentRounds ||
       exchangeCharacters > maximumExchangeCharacters;
-    const tools = finalRound ? [] : agentToolSpecs;
+    const tools = finalRound ? [] : options.session.toolSpecs;
     options.signal.throwIfAborted();
     options.onRoundStart();
     const adapter = await options.createAdapter(tools);

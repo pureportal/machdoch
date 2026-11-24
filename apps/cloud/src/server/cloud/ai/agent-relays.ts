@@ -7,6 +7,7 @@ import { CloudError, requireMembership } from "../access";
 import type { CloudAttachments } from "../attachments/attachments";
 import type { CloudDatabase, CloudSql } from "../database";
 import { usersForLogins } from "../git/accounts";
+import { readUserSettings } from "../settings-store";
 import { conversationChats } from "./chat-records";
 import { reserveMessage } from "./chat-store";
 import { lockInference, reapInference } from "./inference-records";
@@ -35,6 +36,14 @@ async function relayModel(
       [actor.organizationId],
     )
   ).rows;
+  const offered = (choice: { providerId: string; model: string }) =>
+    providers.some(
+      (provider) =>
+        provider.id === choice.providerId &&
+        provider.models.includes(choice.model),
+    );
+  const preferred = (await readUserSettings(sql, actor))["agent.model"];
+  if (preferred && offered(preferred)) return preferred;
   const latest = (
     await sql.query<{ providerId: string; model: string }>(
       `SELECT t.provider_id AS "providerId",t.model FROM cloud_chat_turns t
@@ -43,15 +52,7 @@ async function relayModel(
       [actor.organizationId, actor.userId],
     )
   ).rows[0];
-  if (
-    latest &&
-    providers.some(
-      (provider) =>
-        provider.id === latest.providerId &&
-        provider.models.includes(latest.model),
-    )
-  )
-    return latest;
+  if (latest && offered(latest)) return latest;
   const provider = providers.find((entry) => entry.models.length);
   if (!provider)
     throw new CloudError(

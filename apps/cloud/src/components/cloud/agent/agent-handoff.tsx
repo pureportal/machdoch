@@ -9,7 +9,9 @@ import {
   type RunDetail,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import {
+  handoffModel,
   handoffModels,
+  handoffWhere,
   placementTargets,
   type AgentHandoff,
   type HandoffOptions,
@@ -67,6 +69,7 @@ export function AgentHandoffButton({
   const [error, setError] = useState("");
   const [harness, setHarness] = useState<LoopHarness>("machdoch");
   const [model, setModel] = useState("");
+  const [where, setWhere] = useState("automatic");
   const sender = useRef(createCommandSender());
   useEffect(() => {
     if (!open) return;
@@ -77,8 +80,17 @@ export function AgentHandoffButton({
       signal: abort.signal,
     })
       .then((next) => {
+        const nextHarness = next.defaults.harness ?? "machdoch";
         setOptions(next);
-        setModel(handoffModels("machdoch", next)[0] ?? turn.model);
+        setHarness(nextHarness);
+        setWhere(handoffWhere(next.defaults.placement, next));
+        setModel(
+          handoffModel(
+            next.defaults.model,
+            handoffModels(nextHarness, next),
+            turn.model,
+          ),
+        );
       })
       .catch((reason: Error) => {
         if (!abort.signal.aborted) setError(reason.message);
@@ -115,7 +127,7 @@ export function AgentHandoffButton({
           if (!options) return;
           await sender.current("agent-handoffs", {
             turnId: turn.id,
-            ...placementOf(formText(form, "where"), options),
+            ...placementOf(where, options),
             harness,
             model: formText(form, "model"),
             instructions: formText(form, "instructions"),
@@ -146,8 +158,8 @@ export function AgentHandoffButton({
         <Field label="Where" htmlFor={`handoff-where-${turn.id}`}>
           <Select
             id={`handoff-where-${turn.id}`}
-            name="where"
-            defaultValue="automatic"
+            value={where}
+            onChange={(event) => setWhere(event.target.value)}
           >
             <option value="automatic">{placementLabels.automatic}</option>
             {brokeredPlacements.map((placement) => {

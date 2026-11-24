@@ -13,6 +13,8 @@ import type { CloudExecutionProfiles } from "../execution/profiles";
 import type { CloudWorkers } from "../execution/workers";
 import { admitRun } from "../execution/admission";
 import { readTurn } from "./chat-records";
+import { readUserSettings } from "../settings-store";
+import { agentRepositoryScope } from "./agent-personalization";
 
 async function handoffSubject(
   sql: CloudSql,
@@ -76,39 +78,53 @@ export class CloudAgentHandoffs {
   ) {}
 
   async options(actor: CloudActor, turnId: string): Promise<HandoffOptions> {
-    const { subject, projectId } = await this.database.transaction(
-      async (sql) => {
+    const { subject, projectId, repositories, settings } =
+      await this.database.transaction(async (sql) => {
         const subject = await handoffSubject(sql, actor, turnId);
         return {
           subject,
           projectId: subject
             ? (await subjectProject(sql, actor, subject)).projectId
             : null,
+          repositories: await agentRepositoryScope(sql, actor),
+          settings: await readUserSettings(sql, actor),
         };
-      },
-    );
+      });
+    const defaults = {
+      placement: settings["agent.placement"] ?? null,
+      harness: settings["agent.harness"] ?? null,
+      model: settings["agent.model"]?.model ?? null,
+    };
     if (!subject || !projectId)
-      return { subject: null, profiles: [], devices: [], providers: [] };
-    const [profiles, clients, providers] = await Promise.all([
+      return {
+        subject: null,
+        profiles: [],
+        devices: [],
+        providers: [],
+        defaults,
+      };
+    const [allProfiles, clients, providers] = await Promise.all([
       this.services.profiles.list(actor, projectId),
       this.services.workers.listForProject(actor, projectId),
       this.services.providers.list(actor),
     ]);
+    const profiles = allProfiles.filter(
+      (profile) => profile.enabled && repositories.allows(profile.repository),
+    );
     return {
       subject,
-      profiles: profiles
-        .filter((profile) => profile.enabled)
-        .map((profile) => ({
-          id: profile.id,
-          name: profile.name,
-          target: profile.target,
-        })),
+      profiles: profiles.map((profile) => ({
+        id: profile.id,
+        name: profile.name,
+        target: profile.target,
+      })),
       devices: clients
         .filter(
           (client) =>
             client.online &&
             client.workspaceName !== null &&
-            client.profile.target === "client",
+            client.profile.target === "client" &&
+            profiles.some((profile) => profile.id === client.profile.id),
         )
         .map((client) => ({
           id: client.id,
@@ -121,6 +137,7 @@ export class CloudAgentHandoffs {
         kind: provider.provider,
         models: provider.models,
       })),
+      defaults,
     };
   }
 

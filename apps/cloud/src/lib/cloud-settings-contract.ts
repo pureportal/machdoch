@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { projectUpdateCadences } from "./cloud-contract";
+import { cloudId, projectUpdateCadences } from "./cloud-contract";
+import { loopHarnesses, loopPlacements } from "./cloud-loop-contract";
 
 export const settingScopes = ["user", "organization", "team"] as const;
 export type SettingScope = (typeof settingScopes)[number];
@@ -10,6 +11,14 @@ export const userSettingSchemas = {
   "review.diffLayout": z.enum(["unified", "split"]),
   "review.showWhitespace": z.boolean(),
   "agent.instructions": instructions,
+  "agent.model": z
+    .strictObject({
+      providerId: cloudId,
+      model: z.string().trim().min(1).max(160),
+    })
+    .nullable(),
+  "agent.harness": z.enum(loopHarnesses),
+  "agent.placement": z.enum(loopPlacements),
 } as const;
 
 export const organizationSettingSchemas = {

@@ -18,7 +18,7 @@ import { isCloudError } from "../access";
 import { maximumInferenceAnswerBytes } from "./inference-records";
 import { CloudInferenceStore, type ClaimedInference } from "./inference-store";
 import type { CloudAiProviders } from "./providers";
-import type { CloudAgentTools } from "./agent-tools";
+import type { CloudAgentSession, CloudAgentTools } from "./agent-tools";
 import { runAgent, usageTokens, type AgentProgress } from "./agent-loop";
 import type { CloudAttachments } from "../attachments/attachments";
 import {
@@ -218,6 +218,7 @@ export class CloudInferenceWorker {
     let onAbort: (() => void) | undefined;
     let finalTokens: number | null = null;
     let result: Parameters<CloudInferenceStore["finish"]>[3];
+    let session: CloudAgentSession | undefined;
     try {
       const actor = { organizationId, userId: call.actorId };
       const resolved = await this.providers.resolve(
@@ -233,7 +234,7 @@ export class CloudInferenceWorker {
         resolved.cli
           ? createCliModelAdapter(resolved.cli)
           : this.factory(resolved.connection, tools);
-      const session = call.runId
+      session = call.runId
         ? undefined
         : await this.agentTools.open(actor, {
             providerId: call.providerId,
@@ -381,6 +382,7 @@ export class CloudInferenceWorker {
       clearTimeout(deadline);
       clearTimeout(watcher);
       if (onAbort) controller.signal.removeEventListener("abort", onAbort);
+      await session?.close();
     }
     await this.store.finish(organizationId, id, call.executionId, result);
   }

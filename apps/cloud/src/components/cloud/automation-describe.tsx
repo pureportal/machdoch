@@ -6,7 +6,7 @@ import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cloudRequest } from "./api-client";
-import { agentModelValue, storedAgentModel } from "./use-agent-models";
+import { fetchAgentModelPreference } from "./use-agent-models";
 import { useToast } from "./toast";
 import type { AgentModelOption } from "./use-automation-options";
 
@@ -31,25 +31,29 @@ export function AutomationDescribe({
   const [pending, setPending] = useState(false);
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const stored = storedAgentModel();
-    const model =
-      models.find(
-        (entry) => agentModelValue(entry.providerId, entry.model) === stored,
-      ) ?? models[0];
-    if (!model || !text.trim() || pending) return;
+    if (!models.length || !text.trim() || pending) return;
     setPending(true);
-    void cloudRequest<{ chatId: string }>("chats", {
-      method: "POST",
-      key: crypto.randomUUID(),
-      body: {
-        chatId: null,
-        revision: null,
-        providerId: model.providerId,
-        model: model.model,
-        prompt: automationRequestPrompt(text),
-        context: [{ kind: "team", id: teamId }],
-      },
-    })
+    void fetchAgentModelPreference()
+      .then((preference) => {
+        const model =
+          models.find(
+            (entry) =>
+              entry.providerId === preference?.providerId &&
+              entry.model === preference.model,
+          ) ?? models[0]!;
+        return cloudRequest<{ chatId: string }>("chats", {
+          method: "POST",
+          key: crypto.randomUUID(),
+          body: {
+            chatId: null,
+            revision: null,
+            providerId: model.providerId,
+            model: model.model,
+            prompt: automationRequestPrompt(text),
+            context: [{ kind: "team", id: teamId }],
+          },
+        });
+      })
       .then((submission) => router.push(`/cloud/chat/${submission.chatId}`))
       .catch((reason: Error) => {
         toast(reason.message, "error");

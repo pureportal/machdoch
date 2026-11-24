@@ -33,7 +33,12 @@ export const taskTools: AgentTool[] = [
         );
       const profiles = (
         await session.services.profiles.list(session.actor, issue.projectId)
-      ).filter((profile) => profile.enabled && profile.target !== "client");
+      ).filter(
+        (profile) =>
+          profile.enabled &&
+          profile.target !== "client" &&
+          session.repositories.allows(profile.repository),
+      );
       if (!profiles.length)
         throw new AgentLookupError(
           `The project of ${issue.identifier} has no repository set up for AI tasks.`,

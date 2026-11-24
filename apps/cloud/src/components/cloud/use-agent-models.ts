@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import type { CloudProviderSettings } from "@machdoch/fleet-protocol/cloud-providers";
+import {
+  defaultAgentModel,
+  type AgentModelPreference,
+} from "@/lib/agent-personalization";
 import { cloudRequest } from "./api-client";
 
 export interface AgentModelChoice {
@@ -10,8 +14,6 @@ export interface AgentModelChoice {
   model: string;
   label: string;
 }
-
-const storageKey = "machdoch.cloud.agent.model";
 
 export function agentModelValue(providerId: string, model: string): string {
   return `${providerId}::${model}`;
@@ -25,22 +27,13 @@ export function parseAgentModelValue(
   return providerId && model ? { providerId, model } : null;
 }
 
-export function storedAgentModel(): string | null {
-  try {
-    const value: unknown = JSON.parse(
-      localStorage.getItem(storageKey) ?? "null",
-    );
-    return value &&
-      typeof value === "object" &&
-      "providerId" in value &&
-      "model" in value &&
-      typeof value.providerId === "string" &&
-      typeof value.model === "string"
-      ? agentModelValue(value.providerId, value.model)
-      : null;
-  } catch {
-    return null;
-  }
+export async function fetchAgentModelPreference(
+  signal?: AbortSignal,
+): Promise<AgentModelPreference | null> {
+  const settings = await cloudRequest<{
+    personal: { "agent.model"?: AgentModelPreference | null };
+  }>("settings", { signal });
+  return settings.personal["agent.model"] ?? null;
 }
 
 export function useAgentModels(enabled: boolean): {
@@ -58,27 +51,30 @@ export function useAgentModels(enabled: boolean): {
   useEffect(() => {
     if (!enabled) return;
     const abort = new AbortController();
-    cloudRequest<CloudProviderSettings>("ai-providers", {
-      signal: abort.signal,
-    })
-      .then((settings) => {
-        const choices = settings.providers
-          .filter((provider) => provider.enabled)
-          .flatMap((provider) =>
-            provider.models.map((model) => ({
-              value: agentModelValue(provider.id, model),
-              providerId: provider.id,
-              model,
-              label: `${provider.name} · ${model}`,
-            })),
-          );
-        const stored = storedAgentModel();
+    Promise.all([
+      cloudRequest<CloudProviderSettings>("ai-providers", {
+        signal: abort.signal,
+      }),
+      fetchAgentModelPreference(abort.signal),
+    ])
+      .then(([settings, preference]) => {
+        const providers = settings.providers.filter(
+          (provider) => provider.enabled,
+        );
+        const preferred = defaultAgentModel(providers, preference);
+        const choices = providers.flatMap((provider) =>
+          provider.models.map((model) => ({
+            value: agentModelValue(provider.id, model),
+            providerId: provider.id,
+            model,
+            label: `${provider.name} · ${model}`,
+          })),
+        );
         setState({
           choices,
-          preferred:
-            choices.find((choice) => choice.value === stored)?.value ??
-            choices[0]?.value ??
-            "",
+          preferred: preferred
+            ? agentModelValue(preferred.providerId, preferred.model)
+            : "",
           loaded: true,
           error: "",
         });

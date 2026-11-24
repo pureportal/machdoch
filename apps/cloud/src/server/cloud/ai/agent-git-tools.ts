@@ -24,8 +24,14 @@ async function resolvePullRequest(
   reference: string,
 ): Promise<CloudPullRequest> {
   const { actor, services } = session;
-  if (z.uuid().safeParse(reference).success)
-    return services.pullRequests.get(actor, reference);
+  if (z.uuid().safeParse(reference).success) {
+    const pullRequest = await services.pullRequests.get(actor, reference);
+    if (!session.repositories.allowsId(pullRequest.repositoryId))
+      throw new AgentLookupError(
+        `${pullRequest.repository} is not in your allowed repositories.`,
+      );
+    return pullRequest;
+  }
   const match = /^(.+)#(\d+)$/u.exec(reference);
   if (!match)
     throw new AgentLookupError(
@@ -37,6 +43,7 @@ async function resolvePullRequest(
     await services.pullRequests.list(actor, undefined)
   ).pullRequests.find(
     (entry) =>
+      session.repositories.allowsId(entry.pullRequest.repositoryId) &&
       entry.pullRequest.repository.toLowerCase() === repository &&
       entry.pullRequest.number === number,
   );
@@ -95,19 +102,20 @@ export const gitTools: AgentTool[] = [
       "List open and recently closed GitHub pull requests and GitLab merge requests of connected repositories, with their stage, checks, review decision, branches and stack. Optionally filter by stage.",
     schema: z.strictObject({ stage: z.enum(pullRequestStages).optional() }),
     async run(session, input) {
-      const list = await session.services.pullRequests.list(
-        session.actor,
-        input.stage,
+      const pullRequests = (
+        await session.services.pullRequests.list(session.actor, input.stage)
+      ).pullRequests.filter((entry) =>
+        session.repositories.allowsId(entry.pullRequest.repositoryId),
       );
       return {
         output: {
-          pullRequests: list.pullRequests.slice(0, 100).map((entry) => ({
+          pullRequests: pullRequests.slice(0, 100).map((entry) => ({
             ...summary(entry.pullRequest),
             issues: entry.issues.map((issue) => issue.identifier),
           })),
         },
-        label: `Found ${list.pullRequests.length} pull request${list.pullRequests.length === 1 ? "" : "s"}`,
-        entities: list.pullRequests.map((entry) => entity(entry.pullRequest)),
+        label: `Found ${pullRequests.length} pull request${pullRequests.length === 1 ? "" : "s"}`,
+        entities: pullRequests.map((entry) => entity(entry.pullRequest)),
       };
     },
   }),

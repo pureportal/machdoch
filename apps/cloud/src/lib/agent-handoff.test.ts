@@ -39,6 +39,7 @@ const options: HandoffOptions = {
       models: ["claude-sonnet-4.5"],
     },
   ],
+  defaults: { placement: null, harness: null, model: null },
 };
 
 function choice(overrides: Partial<HandoffChoice>): HandoffChoice {

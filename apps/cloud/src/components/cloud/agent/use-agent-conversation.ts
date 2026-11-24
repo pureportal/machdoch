@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CloudProviderSettings } from "@machdoch/fleet-protocol/cloud-providers";
+import { defaultAgentModel } from "@/lib/agent-personalization";
 import type {
   AgentAction,
   ChatContextReference,
@@ -15,8 +16,8 @@ import {
   createCommandSender,
 } from "../api-client";
 import { triageChangedEvent } from "../events";
+import { fetchAgentModelPreference } from "../use-agent-models";
 
-const modelStorageKey = "machdoch.cloud.agent.model";
 const activeStates = ["queued", "running", "cancel_requested"];
 
 function mergeTurns(
@@ -30,15 +31,6 @@ function mergeTurns(
   return [...merged.values()].sort(
     (left, right) => left.sequence - right.sequence,
   );
-}
-
-function storedModel(): { providerId: string; model: string } | null {
-  try {
-    const value = JSON.parse(localStorage.getItem(modelStorageKey) ?? "null");
-    return value && typeof value.providerId === "string" ? value : null;
-  } catch {
-    return null;
-  }
 }
 
 export interface AgentConversation {
@@ -92,10 +84,13 @@ export function useAgentConversation(
   useEffect(() => {
     const abort = new AbortController();
     const load = () =>
-      cloudRequest<CloudProviderSettings>("ai-providers", {
-        signal: abort.signal,
-      })
-        .then((next) => {
+      Promise.all([
+        cloudRequest<CloudProviderSettings>("ai-providers", {
+          signal: abort.signal,
+        }),
+        fetchAgentModelPreference(abort.signal),
+      ])
+        .then(([next, preference]) => {
           setSettings(next);
           setSelection((current) => {
             const valid = (choice: { providerId: string; model: string }) =>
@@ -105,13 +100,12 @@ export function useAgentConversation(
                   provider.models.includes(choice.model),
               );
             if (valid(current)) return current;
-            const stored = storedModel();
-            if (stored && valid(stored)) return stored;
-            const provider = next.providers[0];
-            return {
-              providerId: provider?.id ?? "",
-              model: provider?.models[0] ?? "",
-            };
+            return (
+              defaultAgentModel(next.providers, preference) ?? {
+                providerId: "",
+                model: "",
+              }
+            );
           });
         })
         .catch((reason: Error) => {
@@ -193,10 +187,6 @@ export function useAgentConversation(
 
   const selectModel = useCallback((providerId: string, model: string) => {
     setSelection({ providerId, model });
-    localStorage.setItem(
-      modelStorageKey,
-      JSON.stringify({ providerId, model }),
-    );
   }, []);
 
   async function run<T>(operation: () => Promise<T>): Promise<T | null> {

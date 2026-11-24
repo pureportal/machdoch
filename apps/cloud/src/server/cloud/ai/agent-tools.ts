@@ -36,6 +36,11 @@ import { taskTools } from "./agent-task-tools";
 import { gitTools } from "./agent-git-tools";
 import { filterTools } from "./agent-filter-tools";
 import { agentTool, type AgentServices, type AgentTool } from "./agent-tool";
+import type { AgentConnectorTools } from "./agent-connectors";
+import type {
+  AgentRepositoryScope,
+  CloudAgentPersonalization,
+} from "./agent-personalization";
 
 export interface AgentToolResult {
   output: string;
@@ -663,7 +668,17 @@ export class CloudAgentSession {
     readonly actor: CloudActor,
     readonly workspace: AgentWorkspace,
     readonly model: AgentConversationModel,
+    readonly repositories: AgentRepositoryScope,
+    private readonly connectors: AgentConnectorTools,
   ) {}
+
+  get toolSpecs(): AgentModelToolSpec[] {
+    return [...agentToolSpecs, ...this.connectors.specs];
+  }
+
+  close(): Promise<void> {
+    return this.connectors.close();
+  }
 
   async resolveIssue(referenceValue: string) {
     const value = referenceValue.trim();
@@ -692,6 +707,15 @@ export class CloudAgentSession {
         ? { entities: entities.slice(0, maximumStepEntities) }
         : {}),
     });
+    if (!tool && this.connectors.has(call.name)) {
+      const outcome = await this.connectors.call(call.name, call.arguments);
+      return {
+        output: outcome.output,
+        isError: outcome.isError,
+        terminal: false,
+        step: step(outcome.label, outcome.isError),
+      };
+    }
     if (!tool)
       return {
         output: serialize({ error: `Unknown tool ${call.name}.` }),
@@ -747,17 +771,26 @@ export class CloudAgentSession {
 }
 
 export class CloudAgentTools {
-  constructor(private readonly services: AgentServices) {}
+  constructor(
+    private readonly services: AgentServices,
+    private readonly personalization: CloudAgentPersonalization,
+  ) {}
 
   async open(
     actor: CloudActor,
     model: AgentConversationModel,
   ): Promise<CloudAgentSession> {
+    const [workspace, repositories] = await Promise.all([
+      this.services.planning.workspace(actor),
+      this.personalization.repositoryScope(actor),
+    ]);
     return new CloudAgentSession(
       this.services,
       actor,
-      new AgentWorkspace(actor, await this.services.planning.workspace(actor)),
+      new AgentWorkspace(actor, workspace),
       model,
+      repositories,
+      await this.personalization.openConnectors(actor),
     );
   }
 }

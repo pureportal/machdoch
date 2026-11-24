@@ -100,6 +100,8 @@ import { CloudAgentTools } from "./ai/agent-tools";
 import { CloudAgentActions } from "./ai/agent-actions";
 import { CloudAgentHandoffs } from "./ai/agent-handoffs";
 import { CloudAgentRelays } from "./ai/agent-relays";
+import { CloudAgentPersonalization } from "./ai/agent-personalization";
+import { connectMcp, type McpConnect } from "./ai/agent-connectors";
 import { CloudProjectStatuses } from "./project-statuses";
 import {
   CloudProjectUpdates,
@@ -228,6 +230,7 @@ export interface CloudRuntime {
     actions: CloudAgentActions;
     handoffs: CloudAgentHandoffs;
     relays: CloudAgentRelays;
+    personalization: CloudAgentPersonalization;
   };
   inference: {
     store: CloudInferenceStore;
@@ -305,6 +308,7 @@ export function createCloudRuntime(
     gitCacheDirectory?: string;
     candidatePush?: typeof pushCandidate;
     sandboxLocation?: () => Promise<HostSandboxLocation>;
+    mcpConnect?: McpConnect;
   } = {},
 ): CloudRuntime {
   const aiProviders = new CloudAiProviders(
@@ -315,6 +319,11 @@ export function createCloudRuntime(
   const clients = new CloudClients(database);
   const chatStore = new CloudChatStore(database, attachments);
   const agentRelays = new CloudAgentRelays(database, attachments);
+  const agentPersonalization = new CloudAgentPersonalization(
+    database,
+    options.credentialsCipher ?? null,
+    options.mcpConnect ?? connectMcp,
+  );
   const inference = new CloudInferenceStore(database);
   const mailStore = new CloudMailStore(
     database,
@@ -530,28 +539,31 @@ export function createCloudRuntime(
     1,
   );
   wakeAutomations = () => automationLoop.wake();
-  const agentTools = new CloudAgentTools({
-    planning,
-    projects,
-    cycles,
-    relations,
-    comments,
-    labels,
-    milestones,
-    projectUpdates,
-    initiatives,
-    triage,
-    runs,
-    pullRequests,
-    releases,
-    products,
-    releaseMedia,
-    automations,
-    providers: aiProviders,
-    profiles: executionProfiles,
-    attachments,
-    clients,
-  });
+  const agentTools = new CloudAgentTools(
+    {
+      planning,
+      projects,
+      cycles,
+      relations,
+      comments,
+      labels,
+      milestones,
+      projectUpdates,
+      initiatives,
+      triage,
+      runs,
+      pullRequests,
+      releases,
+      products,
+      releaseMedia,
+      automations,
+      providers: aiProviders,
+      profiles: executionProfiles,
+      attachments,
+      clients,
+    },
+    agentPersonalization,
+  );
   return {
     releases: {
       products,
@@ -704,6 +716,7 @@ export function createCloudRuntime(
         providers: aiProviders,
       }),
       relays: agentRelays,
+      personalization: agentPersonalization,
     },
     inference: {
       store: inference,
