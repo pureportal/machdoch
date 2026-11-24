@@ -109,8 +109,45 @@ fn child_process_supervision_test_entrypoint() {
             let priority = unsafe { libc::getpriority(libc::PRIO_PROCESS, 0) };
             fs::write(report_path, priority.to_string()).expect("priority should be recorded");
         }
+        Ok("report-console") => {
+            let report_path = env::var_os(TEST_DESCENDANT_PID_PATH_ENV)
+                .map(PathBuf::from)
+                .expect("console report path should be provided");
+            let console = fs::OpenOptions::new().write(true).open("CONOUT$").is_ok();
+            fs::write(report_path, if console { "console" } else { "none" })
+                .expect("console state should be recorded");
+        }
         _ => {}
     }
+}
+
+#[cfg(target_os = "windows")]
+fn reported_console(
+    spawn: fn(&mut Command) -> Result<SupervisedChild, super::SupervisedChildSpawnError>,
+) -> String {
+    let report_path = TestPath::new();
+    let mut command = test_child_command("report-console");
+    command
+        .env(TEST_DESCENDANT_PID_PATH_ENV, &report_path.0)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let mut child = spawn(&mut command).expect("console test child should start");
+    let status = child.wait().expect("console test child should exit");
+    assert!(status.success());
+    fs::read_to_string(&report_path.0).expect("console state should be readable")
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn console_free_children_start_without_a_console_host() {
+    assert_eq!(
+        reported_console(SupervisedChild::spawn_without_console_with_required_isolation),
+        "none"
+    );
+    assert_eq!(
+        reported_console(SupervisedChild::spawn_with_required_isolation),
+        "console"
+    );
 }
 
 #[test]

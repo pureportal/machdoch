@@ -21,10 +21,6 @@ use windows::{
     Win32::{
         Foundation::{CloseHandle, HANDLE},
         System::{
-            Diagnostics::ToolHelp::{
-                CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD,
-                THREADENTRY32,
-            },
             JobObjects::{
                 AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicAccountingInformation,
                 JobObjectCpuRateControlInformation, JobObjectExtendedLimitInformation,
@@ -36,8 +32,7 @@ use windows::{
                 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PRIORITY_CLASS,
             },
             Threading::{
-                GetActiveProcessorCount, OpenThread, ResumeThread, ALL_PROCESSOR_GROUPS,
-                BELOW_NORMAL_PRIORITY_CLASS, THREAD_SUSPEND_RESUME,
+                GetActiveProcessorCount, ALL_PROCESSOR_GROUPS, BELOW_NORMAL_PRIORITY_CLASS,
             },
         },
     },
@@ -50,6 +45,14 @@ const CREATE_SUSPENDED: u32 = 0x00000004;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+#[cfg(target_os = "windows")]
+const DETACHED_PROCESS: u32 = 0x00000008;
+
+#[derive(Clone, Copy)]
+enum ChildConsole {
+    Hidden,
+    Detached,
+}
 
 const TERMINATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 #[cfg(unix)]
@@ -186,7 +189,7 @@ impl SupervisedChild {
             )));
         }
         let cpu_rate = requested_rate.min(10000) as u32;
-        Self::spawn_with_job_requirement(command, true, |job| {
+        Self::spawn_with_job_requirement(command, true, ChildConsole::Hidden, |job| {
             let mut information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
             information.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
                 | JOB_OBJECT_LIMIT_JOB_MEMORY
@@ -217,13 +220,19 @@ impl SupervisedChild {
         })
     }
     pub fn spawn(command: &mut Command) -> Result<Self, SupervisedChildSpawnError> {
-        Self::spawn_with_job_requirement(command, false, |_| Ok(()))
+        Self::spawn_with_job_requirement(command, false, ChildConsole::Hidden, |_| Ok(()))
     }
 
     pub fn spawn_with_required_isolation(
         command: &mut Command,
     ) -> Result<Self, SupervisedChildSpawnError> {
-        Self::spawn_with_job_requirement(command, true, |_| Ok(()))
+        Self::spawn_with_job_requirement(command, true, ChildConsole::Hidden, |_| Ok(()))
+    }
+
+    pub fn spawn_without_console_with_required_isolation(
+        command: &mut Command,
+    ) -> Result<Self, SupervisedChildSpawnError> {
+        Self::spawn_with_job_requirement(command, true, ChildConsole::Detached, |_| Ok(()))
     }
 
     /// Spawns an isolated child whose whole process tree runs below normal CPU priority.
@@ -238,7 +247,7 @@ impl SupervisedChild {
                 Ok(())
             });
         }
-        Self::spawn_with_job_requirement(command, true, |job| {
+        Self::spawn_with_job_requirement(command, true, ChildConsole::Hidden, |job| {
             #[cfg(target_os = "windows")]
             unsafe {
                 let mut information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
@@ -280,9 +289,10 @@ impl SupervisedChild {
     fn spawn_with_job_requirement(
         command: &mut Command,
         require_job: bool,
+        console: ChildConsole,
         configure_job: impl FnOnce(&ChildProcessJob) -> Result<(), String>,
     ) -> Result<Self, SupervisedChildSpawnError> {
-        configure_supervised_child_process_group(command);
+        configure_supervised_child_process_group(command, console);
         let mut child = command.spawn().map_err(SupervisedChildSpawnError::Spawn)?;
         let job = match assign_child_process_to_kill_on_close_job(&child) {
             Ok(job) => Some(job),
@@ -485,52 +495,38 @@ pub fn configure_child_process_group(command: &mut Command) {
     }
 }
 
-fn configure_supervised_child_process_group(command: &mut Command) {
+fn configure_supervised_child_process_group(command: &mut Command, console: ChildConsole) {
     configure_child_process_group(command);
 
     #[cfg(target_os = "windows")]
     {
-        command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED);
+        let console_flag = match console {
+            ChildConsole::Hidden => CREATE_NO_WINDOW,
+            ChildConsole::Detached => DETACHED_PROCESS,
+        };
+        command.creation_flags(console_flag | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = console;
     }
 }
 
 #[cfg(target_os = "windows")]
+#[link(name = "ntdll")]
+extern "system" {
+    fn NtResumeProcess(process_handle: HANDLE) -> i32;
+}
+
+#[cfg(target_os = "windows")]
 fn resume_suspended_child(child: &Child) -> Result<(), String> {
-    unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
-            .map_err(|error| format!("Failed to inspect the suspended child process: {error}"))?;
-        let mut entry = THREADENTRY32 {
-            dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
-            ..Default::default()
-        };
-        let mut current = Thread32First(snapshot, &mut entry);
-        let mut result = Err("Failed to find the suspended child process thread".to_string());
-
-        while current.is_ok() {
-            if entry.th32OwnerProcessID == child.id() {
-                result = OpenThread(THREAD_SUSPEND_RESUME, false, entry.th32ThreadID)
-                    .map_err(|error| {
-                        format!("Failed to open the suspended child process thread: {error}")
-                    })
-                    .and_then(|thread_handle| {
-                        let resume_result = ResumeThread(thread_handle);
-                        let _ = CloseHandle(thread_handle);
-                        if resume_result == u32::MAX {
-                            Err(format!(
-                                "Failed to resume the isolated child process: {}",
-                                windows::core::Error::from_win32()
-                            ))
-                        } else {
-                            Ok(())
-                        }
-                    });
-                break;
-            }
-            current = Thread32Next(snapshot, &mut entry);
-        }
-
-        let _ = CloseHandle(snapshot);
-        result
+    let status = unsafe { NtResumeProcess(HANDLE(child.as_raw_handle())) };
+    if status < 0 {
+        Err(format!(
+            "Failed to resume the isolated child process: NTSTATUS {status:#010x}"
+        ))
+    } else {
+        Ok(())
     }
 }
 
