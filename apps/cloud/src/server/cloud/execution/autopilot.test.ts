@@ -434,6 +434,91 @@ it("takes an issue assigned to AI through review, pull request and merge", async
   );
 }, 60_000);
 
+it("auto merges through the merge queue only after required checks and code owners approve", async () => {
+  const issue = await aiIssue("Use a formal German greeting");
+  await runtime.autopilot.autopilot.tick();
+  const { claim, worker } = await claimTask();
+  await review(worker, claim, 1, {
+    decision: "approve",
+    summary: "Only the German value changed.",
+    findings: [],
+  });
+  await runtime.execution.leases.finish(worker, finish(claim));
+  server.branchRules.push(
+    {
+      type: "required_status_checks",
+      parameters: { required_status_checks: [{ context: "build" }] },
+    },
+    {
+      type: "pull_request",
+      parameters: {
+        required_approving_review_count: 1,
+        require_code_owner_review: true,
+      },
+    },
+    { type: "merge_queue" },
+  );
+  server.files.set(
+    ".github/CODEOWNERS",
+    "*  @acme-bot\n/locales/  @acme/i18n\n",
+  );
+  server.teams.set("acme/i18n", ["lena"]);
+  server.pullFiles.set(1, [
+    {
+      filename: "locales/de.json",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch,
+    },
+  ]);
+  server.checkRuns.set(candidate, [
+    { name: "build", status: "in_progress", conclusion: null },
+    { name: "lint", status: "completed", conclusion: "failure" },
+  ]);
+  const delivery = async () =>
+    (await runtime.execution.runs.get(owner, claim.runId)).delivery;
+
+  await deliver();
+  expect(await delivery()).toMatchObject({
+    state: "merging",
+    reason: "Waiting for repository checks.",
+  });
+  server.checkRuns.set(candidate, [
+    { name: "build", status: "completed", conclusion: "success" },
+    { name: "lint", status: "completed", conclusion: "failure" },
+  ]);
+  await deliver();
+  expect(await delivery()).toMatchObject({
+    reason: "Waiting for 1 more approval.",
+  });
+  server.reviews.set(1, [{ login: "mia", state: "APPROVED" }]);
+  await deliver();
+  expect(await delivery()).toMatchObject({
+    reason: "Waiting for a code owner review from @acme/i18n.",
+  });
+  server.reviews.set(1, [
+    { login: "mia", state: "APPROVED" },
+    { login: "lena", state: "APPROVED" },
+  ]);
+  await deliver();
+  expect(await delivery()).toMatchObject({
+    state: "merging",
+    reason: "In the merge queue.",
+  });
+  expect(server.mergeQueue.has(1)).toBe(true);
+  expect(server.callsTo("/repos/acme/app/pulls/1/merge")).toEqual([]);
+
+  const pullRequest = server.github.get(1)!;
+  server.update(pullRequest, { state: "merged" });
+  await deliver();
+  expect(await delivery()).toMatchObject({ state: "merged" });
+  expect(server.branches.has(pullRequest.headRef)).toBe(false);
+  expect((await runtime.planning.getIssue(owner, issue.id)).state).toBe(
+    "complete",
+  );
+}, 60_000);
+
 it("leaves weakened tests and sensitive areas for a person", async () => {
   const issue = await aiIssue("Speed up the suite");
   await runtime.autopilot.autopilot.tick();

@@ -76,3 +76,8 @@ export async function gitRequest<T>(
   if (!response.ok) throw failure(provider, response.status, payload);
   return schema.parse(payload);
 }
+
+export function absentAsNull(error: unknown): null {
+  if (error instanceof CloudError && error.status === 404) return null;
+  throw error;
+}

@@ -27,6 +27,7 @@ import {
 import { gitEvent, queueGitEvents, type StoredRepository } from "../git/events";
 import { repositoryAuthorization } from "../git/repository-access";
 import type { CloudGitSync } from "../git/sync";
+import { mergeReadiness } from "../git/merge-readiness";
 import { pushCandidate } from "./candidate-push";
 import { sandboxStatusContext } from "./pull-request-tasks";
 
@@ -516,7 +517,11 @@ export class CloudDeliveries {
         delivery.pull_request_number!,
       );
       await this.sync.store(connection, repository, fresh);
-      if (fresh.state === "merged") return await this.merged(delivery, run);
+      if (fresh.state === "merged") {
+        if (delivery.state === "merging")
+          await this.removeBranch(connection, repository, delivery.branch);
+        return await this.merged(delivery, run);
+      }
       if (fresh.state === "closed")
         return await this.update(delivery, "closed", {
           reason: "The pull request was closed.",
@@ -538,22 +543,34 @@ export class CloudDeliveries {
           attempts: delivery.attempts + 1,
           retryInSeconds: 15,
         });
-      const checks = await client.checks(
+      const readiness = await mergeReadiness(
+        client,
         repository.fullName,
-        fresh.number,
-        fresh.headSha,
+        fresh,
       );
-      if (checks.conclusion === "failure")
+      if (readiness.action === "block")
         return await this.update(delivery, "needs_person", {
-          reason: "Repository checks failed on the pull request.",
+          reason: readiness.reason,
         });
-      if (checks.conclusion === "pending" || fresh.mergeable === null) {
+      if (readiness.action === "wait" || fresh.mergeable === null) {
         if (delivery.attempts >= checksWaitAttempts)
           return await this.update(delivery, "needs_person", {
-            reason: "Repository checks did not finish within four hours.",
+            reason:
+              "The pull request was not ready to merge within four hours.",
           });
         return await this.update(delivery, "merging", {
-          reason: "Waiting for repository checks.",
+          reason:
+            readiness.action === "wait"
+              ? readiness.reason
+              : "Waiting for repository checks.",
+          attempts: delivery.attempts + 1,
+          retryInSeconds: 60,
+        });
+      }
+      if (readiness.action === "enqueue") {
+        await client.enqueue(repository.fullName, fresh.number, fresh.headSha);
+        return await this.update(delivery, "merging", {
+          reason: "In the merge queue.",
           attempts: delivery.attempts + 1,
           retryInSeconds: 60,
         });

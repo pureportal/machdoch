@@ -10,6 +10,7 @@ import type {
   GitReviewComment,
   GitReviewInput,
 } from "../../../lib/cloud-git-contract";
+import type { GitMergePolicy } from "../../../lib/auto-merge";
 import { checksState, type CheckRunState } from "../../../lib/git-automation";
 import { CloudError } from "../access";
 import {
@@ -24,7 +25,7 @@ import {
   type GitRepositoryRecord,
   type GitWebhookTarget,
 } from "./git-client";
-import { gitRequest, type GitRequestInit } from "./git-http";
+import { absentAsNull, gitRequest, type GitRequestInit } from "./git-http";
 
 const projectSchema = z.object({
   id: z.number(),
@@ -510,6 +511,50 @@ export class GitLabClient implements GitClient {
         body: { sha: input.headSha, squash: input.method === "squash" },
       },
     );
+  }
+
+  async mergePolicy(fullName: string, branch: string): Promise<GitMergePolicy> {
+    const [project, protection] = await Promise.all([
+      this.request(
+        this.project(fullName),
+        z.object({ merge_trains_enabled: z.boolean().optional() }),
+      ),
+      this.request(
+        `${this.project(fullName)}/protected_branches/${encodeURIComponent(branch)}`,
+        z.object({ code_owner_approval_required: z.boolean().optional() }),
+      ).catch(absentAsNull),
+    ]);
+    return {
+      requiredChecks: [],
+      requiredApprovals: 0,
+      codeOwnerReviews: protection?.code_owner_approval_required === true,
+      mergeQueue: project.merge_trains_enabled === true,
+    };
+  }
+
+  async enqueue(
+    fullName: string,
+    number: number,
+    headSha: string,
+  ): Promise<void> {
+    const path = `${this.project(fullName)}/merge_trains/merge_requests/${number}`;
+    const queued = await this.request(path, z.object({ id: z.number() })).catch(
+      absentAsNull,
+    );
+    if (queued) return;
+    await this.request(path, z.unknown(), {
+      method: "POST",
+      body: { sha: headSha },
+    });
+  }
+
+  async teamMembers(team: string): Promise<string[]> {
+    return (
+      await this.request(
+        `/groups/${encodeURIComponent(team)}/members/all?per_page=100`,
+        z.array(z.object({ username: z.string() })),
+      )
+    ).map((member) => member.username);
   }
 
   async updateBranch(

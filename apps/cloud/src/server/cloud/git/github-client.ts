@@ -9,6 +9,7 @@ import type {
   GitReviewComment,
   GitReviewInput,
 } from "../../../lib/cloud-git-contract";
+import type { GitMergePolicy } from "../../../lib/auto-merge";
 import {
   checkRunState,
   checksState,
@@ -27,7 +28,7 @@ import {
   type GitWebhookTarget,
 } from "./git-client";
 import { CloudError } from "../access";
-import { gitRequest, type GitRequestInit } from "./git-http";
+import { absentAsNull, gitRequest, type GitRequestInit } from "./git-http";
 
 export const githubWebhookEvents = [
   "push",
@@ -47,6 +48,33 @@ const repositorySchema = z.object({
   private: z.boolean(),
   default_branch: z.string(),
   html_url: z.string(),
+});
+
+const branchRulesSchema = z.array(
+  z.object({
+    type: z.string(),
+    parameters: z
+      .object({
+        required_status_checks: z
+          .array(z.object({ context: z.string() }))
+          .optional(),
+        required_approving_review_count: z.number().optional(),
+        require_code_owner_review: z.boolean().optional(),
+      })
+      .optional(),
+  }),
+);
+
+const branchSchema = z.object({
+  protected: z.boolean(),
+  protection: z
+    .object({
+      required_status_checks: z
+        .object({ contexts: z.array(z.string()) })
+        .nullable()
+        .optional(),
+    })
+    .optional(),
 });
 
 export const githubPullRequestSchema = z.object({
@@ -203,20 +231,45 @@ export class GitHubClient implements GitClient {
     schema: z.ZodType<T>,
     init: GitRequestInit = {},
   ): Promise<T> {
-    return gitRequest(
-      "github",
-      this.transport,
-      `${this.access.apiUrl}${path}`,
-      schema,
-      {
-        ...init,
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${this.access.token}`,
-          "X-GitHub-Api-Version": "2022-11-28",
-        },
+    return this.send(`${this.access.apiUrl}${path}`, schema, init);
+  }
+
+  private send<T>(
+    url: string,
+    schema: z.ZodType<T>,
+    init: GitRequestInit = {},
+  ): Promise<T> {
+    return gitRequest("github", this.transport, url, schema, {
+      ...init,
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${this.access.token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
       },
+    });
+  }
+
+  private async graphql<T>(
+    query: string,
+    variables: Record<string, unknown>,
+    schema: z.ZodType<T>,
+  ): Promise<T> {
+    const result = await this.send(
+      `${this.access.apiUrl.replace(/\/v3\/?$/u, "")}/graphql`,
+      z.object({
+        data: schema.nullable().optional(),
+        errors: z.array(z.object({ message: z.string() })).optional(),
+      }),
+      { method: "POST", body: { query, variables } },
     );
+    if (result.errors?.length || !result.data)
+      throw new CloudError(
+        502,
+        "git_request",
+        result.errors?.[0]?.message.slice(0, 300) ??
+          "GitHub answered without data.",
+      );
+    return result.data;
   }
 
   async viewer(): Promise<string> {
@@ -283,6 +336,94 @@ export class GitHubClient implements GitClient {
         body: { merge_method: input.method, sha: input.headSha },
       },
     );
+  }
+
+  async mergePolicy(fullName: string, branch: string): Promise<GitMergePolicy> {
+    const ref = branch.split("/").map(encodeURIComponent).join("/");
+    const [rules, current] = await Promise.all([
+      this.request(
+        `/repos/${fullName}/rules/branches/${ref}`,
+        branchRulesSchema,
+      ),
+      this.request(`/repos/${fullName}/branches/${ref}`, branchSchema),
+    ]);
+    const classic = current.protected
+      ? await this.request(
+          `/repos/${fullName}/branches/${ref}/protection/required_pull_request_reviews`,
+          z.object({
+            required_approving_review_count: z.number().optional(),
+            require_code_owner_reviews: z.boolean().optional(),
+          }),
+        ).catch(absentAsNull)
+      : null;
+    const pullRequestRules = rules.flatMap((rule) =>
+      rule.type === "pull_request" && rule.parameters ? [rule.parameters] : [],
+    );
+    return {
+      requiredChecks: [
+        ...new Set([
+          ...(current.protection?.required_status_checks?.contexts ?? []),
+          ...rules.flatMap(
+            (rule) =>
+              rule.parameters?.required_status_checks?.map(
+                (check) => check.context,
+              ) ?? [],
+          ),
+        ]),
+      ],
+      requiredApprovals: Math.max(
+        classic?.required_approving_review_count ?? 0,
+        ...pullRequestRules.map(
+          (parameters) => parameters.required_approving_review_count ?? 0,
+        ),
+      ),
+      codeOwnerReviews:
+        classic?.require_code_owner_reviews === true ||
+        pullRequestRules.some(
+          (parameters) => parameters.require_code_owner_review === true,
+        ),
+      mergeQueue: rules.some((rule) => rule.type === "merge_queue"),
+    };
+  }
+
+  async enqueue(
+    fullName: string,
+    number: number,
+    headSha: string,
+  ): Promise<void> {
+    const [owner, name] = fullName.split("/");
+    const { repository } = await this.graphql(
+      "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){id isInMergeQueue}}}",
+      { owner, name, number },
+      z.object({
+        repository: z.object({
+          pullRequest: z.object({
+            id: z.string(),
+            isInMergeQueue: z.boolean(),
+          }),
+        }),
+      }),
+    );
+    if (repository.pullRequest.isInMergeQueue) return;
+    await this.graphql(
+      "mutation($id:ID!,$head:GitObjectID!){enqueuePullRequest(input:{pullRequestId:$id,expectedHeadOid:$head}){mergeQueueEntry{id}}}",
+      { id: repository.pullRequest.id, head: headSha },
+      z.object({
+        enqueuePullRequest: z.object({
+          mergeQueueEntry: z.object({ id: z.string() }),
+        }),
+      }),
+    );
+  }
+
+  async teamMembers(team: string): Promise<string[]> {
+    const [organization, slug] = team.split("/");
+    return (
+      await this.request(
+        `/orgs/${encodeURIComponent(organization!)}/teams/${encodeURIComponent(slug!)}/members?per_page=100`,
+        z.array(z.object({ login: z.string() })),
+      )
+    ).map((member) => member.login);
   }
 
   async checks(

@@ -53,6 +53,14 @@ export class FakeGitServer {
     string,
     { commits: { sha: string; message: string }[]; files: string[] }
   >();
+  readonly branchRules: unknown[] = [];
+  readonly checkRuns = new Map<
+    string,
+    { name: string; status: string; conclusion: string | null }[]
+  >();
+  readonly reviews = new Map<number, { login: string; state: string }[]>();
+  readonly teams = new Map<string, string[]>();
+  readonly mergeQueue = new Set<number>();
   readonly oauthGrants: {
     code?: string;
     refreshToken?: string;
@@ -166,6 +174,29 @@ export class FakeGitServer {
     );
   }
 
+  private githubGraphql(body: unknown): Response {
+    const request = body as {
+      query: string;
+      variables: { number?: number; id?: string };
+    };
+    if (request.query.startsWith("mutation")) {
+      this.mergeQueue.add(Number(request.variables.id!.replace("PR_", "")));
+      return Response.json({
+        data: { enqueuePullRequest: { mergeQueueEntry: { id: "MQE_1" } } },
+      });
+    }
+    return Response.json({
+      data: {
+        repository: {
+          pullRequest: {
+            id: `PR_${request.variables.number}`,
+            isInMergeQueue: this.mergeQueue.has(request.variables.number!),
+          },
+        },
+      },
+    });
+  }
+
   private handleGitHub(method: string, path: string, body: unknown): Response {
     const json = (value: unknown, status = 200) =>
       Response.json(value, { status });
@@ -222,10 +253,23 @@ export class FakeGitServer {
     }
     if (/^\/repos\/acme\/app\/commits\/[0-9a-f]{40}\/check-runs$/u.test(path))
       return json({
-        check_runs: [
+        check_runs: this.checkRuns.get(path.split("/")[5]!) ?? [
           { name: "unit", status: "completed", conclusion: "success" },
         ],
       });
+    if (path === "/repos/acme/app/rules/branches/main")
+      return json(this.branchRules);
+    if (path === "/repos/acme/app/branches/main")
+      return json({ name: "main", protected: false });
+    const team = /^\/orgs\/([^/]+)\/teams\/([^/]+)\/members$/u.exec(path);
+    if (team)
+      return json(
+        (this.teams.get(`${team[1]}/${team[2]}`) ?? []).map((login) => ({
+          login,
+        })),
+      );
+    if (path === "/graphql" && method === "POST")
+      return this.githubGraphql(body);
     const compare =
       /^\/repos\/acme\/app\/compare\/([^.]+)\.\.\.([0-9a-f]{40})$/u.exec(path);
     if (compare) {
@@ -290,7 +334,17 @@ export class FakeGitServer {
     if (match[2] === "files")
       return json(this.pullFiles.get(change.number) ?? []);
     if (match[2] === "reviews" && method === "POST") return json({ id: 3 });
-    if (["reviews", "comments", "commits"].includes(match[2])) return json([]);
+    if (match[2] === "reviews")
+      return json(
+        (this.reviews.get(change.number) ?? []).map((review, index) => ({
+          id: index + 1,
+          user: { login: review.login },
+          state: review.state,
+          body: "",
+          submitted_at: this.later(),
+        })),
+      );
+    if (["comments", "commits"].includes(match[2])) return json([]);
     return json({ message: "Not Found" }, 404);
   }
 

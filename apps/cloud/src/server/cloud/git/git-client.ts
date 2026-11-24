@@ -14,6 +14,7 @@ import type {
   GitChecksState,
   PullRequestState,
 } from "../../../lib/git-automation";
+import type { GitMergePolicy } from "../../../lib/auto-merge";
 import type { GitProvider } from "../../../lib/git-providers";
 import { GitHubClient } from "./github-client";
 import { GitLabClient } from "./gitlab-client";
@@ -122,6 +123,9 @@ export interface GitClient {
   ): Promise<GitConversationEntry[]>;
   commits(fullName: string, number: number): Promise<GitCommit[]>;
   merge(fullName: string, number: number, input: GitMergeInput): Promise<void>;
+  mergePolicy(fullName: string, branch: string): Promise<GitMergePolicy>;
+  enqueue(fullName: string, number: number, headSha: string): Promise<void>;
+  teamMembers(team: string): Promise<string[]>;
   updateBranch(
     fullName: string,
     number: number,
