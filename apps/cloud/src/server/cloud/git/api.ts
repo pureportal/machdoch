@@ -2,13 +2,16 @@ import { z } from "zod";
 import { cloudId, type CloudActor } from "../../../lib/cloud-contract";
 import {
   gitAccountInputSchema,
+  type CloudIssueGitActivity,
   gitCommentInputSchema,
   gitConnectionInputSchema,
   gitMergeInputSchema,
   gitProviderSchema,
   gitRepositoryInputSchema,
+  gitRepositoryTeamInputSchema,
   gitRetargetInputSchema,
   gitReviewInputSchema,
+  gitReviewSettingsInputSchema,
   gitRevisionSchema,
   gitStatusRuleInputSchema,
   gitUpdateBranchInputSchema,
@@ -157,6 +160,26 @@ async function handleGitSettings(
   }
   if (path.length === 2 && path[1] === "repositories" && method === "GET")
     return Response.json(await connections.repositories(actor));
+  if (path.length === 2 && path[1] === "settings" && method === "PUT")
+    return Response.json(
+      await runtime.git.reviewSettings.set(
+        actor,
+        await readBody(request, gitReviewSettingsInputSchema),
+      ),
+    );
+  if (
+    path.length === 4 &&
+    path[1] === "repositories" &&
+    path[3] === "team" &&
+    method === "PUT"
+  ) {
+    await runtime.git.reviewSettings.setRepositoryTeam(
+      actor,
+      cloudId.parse(path[2]),
+      (await readBody(request, gitRepositoryTeamInputSchema)).teamId,
+    );
+    return Response.json({ ok: true });
+  }
   if (path.length === 2 && path[1] === "status-rules" && method === "PUT") {
     await statusRules.set(
       actor,
@@ -264,6 +287,10 @@ async function handlePullRequests(
         (await readBody(request, gitRetargetInputSchema)).baseRef,
       ),
     );
+  if (route === "POST issue") {
+    await readBody(request, z.strictObject({}));
+    return Response.json(await pullRequests.createIssue(actor, id));
+  }
   if (route === "POST comments")
     return Response.json(
       await pullRequests.comment(
@@ -305,7 +332,11 @@ export async function handleGitApi(
                 actor,
                 cloudId.parse(path[1]),
               ),
-            })
+              commits: await runtime.git.pullRequests.issueCommits(
+                actor,
+                cloudId.parse(path[1]),
+              ),
+            } satisfies CloudIssueGitActivity)
           : path[0] === "issues" &&
               path[2] === "delivery" &&
               path.length === 3 &&

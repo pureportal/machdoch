@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  CirclePlus,
   GitMerge,
   GitPullRequestArrow,
   MessageSquareCode,
@@ -64,6 +65,7 @@ export function PullRequestActions({
   );
   const [updating, setUpdating] = useState(false);
   const [retargeting, setRetargeting] = useState(false);
+  const [creatingIssue, setCreatingIssue] = useState(false);
   const [updateRequested, setUpdateRequested] = useState(false);
   const { pullRequest } = details;
   const open = pullRequest.state === "open";
@@ -106,9 +108,31 @@ export function PullRequestActions({
     !conflicts &&
     !updateRequested;
   const retargetTo = details.canMerge ? pullRequest.stack?.retargetTo : null;
-  if (!tasks.length && !details.canMerge) return null;
+  if (!tasks.length && !details.canMerge && !details.issueSuggestion)
+    return null;
   return (
     <div className="cloud-pull-request-actions">
+      {details.issueSuggestion && (
+        <Button
+          variant="outline"
+          size="sm"
+          aria-busy={creatingIssue}
+          disabled={creatingIssue}
+          onClick={() => {
+            setCreatingIssue(true);
+            void cloudRequest(`pull-requests/${pullRequest.id}/issue`, {
+              method: "POST",
+              body: {},
+            })
+              .then(onUpdated)
+              .catch((reason: Error) => toast(reason.message, "error"))
+              .finally(() => setCreatingIssue(false));
+          }}
+        >
+          <CirclePlus />
+          Create issue
+        </Button>
+      )}
       {tasks.map((entry) => (
         <ClientLaunch
           key={entry.task}

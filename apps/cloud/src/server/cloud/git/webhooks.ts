@@ -5,6 +5,7 @@ import type { SettingsCipher } from "../../settings-crypto";
 import type { CloudPipelineDeployments } from "../releases/pipeline-deployments";
 import { CloudError } from "../access";
 import type { CloudDatabase, CloudSql } from "../database";
+import { linkPushedCommits } from "./commit-links";
 import {
   gitConnectionByWebhook,
   type GitConnectionRecord,
@@ -133,7 +134,7 @@ export class CloudGitWebhooks {
       provider === "github"
         ? parseGitHubWebhook(headers.event, payload)
         : parseGitLabWebhook(headers.event, payload);
-    const repository = await this.database.transaction(async (sql) => {
+    const delivered = await this.database.transaction(async (sql) => {
       const fresh = await sql.query(
         "INSERT INTO cloud_git_deliveries (provider,delivery_id,organization_id,event,connection_id) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (provider,delivery_id) DO NOTHING RETURNING delivery_id",
         [
@@ -176,9 +177,19 @@ export class CloudGitWebhooks {
           "UPDATE cloud_git_pull_requests SET signals_synced_at=NULL WHERE organization_id=$1 AND repository_id=$2 AND base_ref=$3 AND state='open'",
           [connection.organizationId, stored.id, branch],
         );
-      return stored;
+      return {
+        stored,
+        steps: await linkPushedCommits(
+          sql,
+          connection,
+          stored,
+          parsed.activities,
+        ),
+      };
     });
-    if (!repository || !parsed) return;
+    if (!delivered || !parsed) return;
+    const repository = delivered.stored;
+    await this.sync.applySteps(connection, delivered.steps);
     const pullRequest =
       parsed.pullRequest ??
       (parsed.fetchPullRequest

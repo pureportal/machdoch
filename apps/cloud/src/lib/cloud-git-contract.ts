@@ -105,6 +105,7 @@ export interface GitRepository {
   defaultBranch: string;
   webhook: boolean;
   syncedAt: string | null;
+  teamId: string | null;
 }
 
 export interface GitConnection {
@@ -119,6 +120,7 @@ export interface GitConnection {
   enabledBy: string | null;
   connectedAt: string;
   syncedAt: string | null;
+  lastDeliveryAt: string | null;
   lastError: string | null;
   webhookUrl: string;
   webhookSecret: string;
@@ -133,9 +135,31 @@ export interface GitTeamStatusRules {
   rules: Record<GitStatusEvent, string | null>;
 }
 
+export interface GitReviewSettings {
+  reviewGuides: boolean;
+  mergeIssues: boolean;
+  commitLinks: boolean;
+  revision: number;
+}
+
+export const gitReviewSettingsInputSchema = z.strictObject({
+  reviewGuides: z.boolean(),
+  mergeIssues: z.boolean(),
+  commitLinks: z.boolean(),
+  revision: z.number().int().min(0),
+});
+export type GitReviewSettingsInput = z.infer<
+  typeof gitReviewSettingsInputSchema
+>;
+
+export const gitRepositoryTeamInputSchema = z.strictObject({
+  teamId: cloudId.nullable(),
+});
+
 export interface GitAdministration {
   connections: GitConnection[];
   automations: GitTeamStatusRules[];
+  settings: GitReviewSettings;
   credentialStorageAvailable: boolean;
 }
 
@@ -284,6 +308,21 @@ export interface GitCommit {
   committedAt: string | null;
 }
 
+export interface GitIssueCommit {
+  sha: string;
+  repository: string;
+  message: string;
+  author: string;
+  url: string | null;
+  closes: boolean;
+  linkedAt: string;
+}
+
+export interface CloudIssueGitActivity {
+  pullRequests: CloudPullRequest[];
+  commits: GitIssueCommit[];
+}
+
 export interface CloudPullRequestDetails {
   pullRequest: CloudPullRequest;
   body: string;
@@ -297,6 +336,7 @@ export interface CloudPullRequestDetails {
   conversation: GitConversationEntry[];
   commits: GitCommit[];
   issues: CloudLinkedIssue[];
+  issueSuggestion: boolean;
   canMerge: boolean;
   actingAs: string;
   mergeMethods: GitMergeMethod[];

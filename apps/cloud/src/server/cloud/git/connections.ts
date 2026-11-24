@@ -26,6 +26,7 @@ import type { CloudDatabase, CloudSql } from "../database";
 import { readStatusRules } from "./automations";
 import { gitClient, type GitAccess } from "./git-client";
 import type { OAuthApp } from "./oauth";
+import { gitReviewSettings } from "./review-settings";
 
 export const currentHookVersion = 3;
 
@@ -234,7 +235,8 @@ export class CloudGitConnections {
           `SELECT c.id,c.provider,c.api_url AS "apiUrl",c.account,c.token_prefix AS "tokenPrefix",c.automate,c.code_access AS "codeAccess",
           c.revision,c.oauth_client_id AS "oauthClientId",u.name AS "enabledBy",
           to_char(c.connected_at AT TIME ZONE 'UTC',${timestamp}) AS "connectedAt",
-          to_char(c.synced_at AT TIME ZONE 'UTC',${timestamp}) AS "syncedAt",c.last_error AS "lastError"
+          to_char(c.synced_at AT TIME ZONE 'UTC',${timestamp}) AS "syncedAt",c.last_error AS "lastError",
+          (SELECT to_char(max(d.received_at) AT TIME ZONE 'UTC',${timestamp}) FROM cloud_git_deliveries d WHERE d.organization_id=c.organization_id AND d.connection_id=c.id) AS "lastDeliveryAt"
           FROM cloud_git_connections c LEFT JOIN cloud_users u ON u.id=c.actor_id
           WHERE c.organization_id=$1 ORDER BY c.provider,c.connected_at,c.id`,
           [actor.organizationId],
@@ -251,7 +253,7 @@ export class CloudGitConnections {
         const repositories = (
           await sql.query<GitRepository & Record<string, unknown>>(
             `SELECT id,full_name AS "fullName",private,default_branch AS "defaultBranch",hook_id IS NOT NULL AS webhook,
-            to_char(synced_at AT TIME ZONE 'UTC',${timestamp}) AS "syncedAt"
+            to_char(synced_at AT TIME ZONE 'UTC',${timestamp}) AS "syncedAt",team_id AS "teamId"
             FROM cloud_git_repositories WHERE organization_id=$1 AND connection_id=$2 ORDER BY lower(full_name)`,
             [actor.organizationId, row.id],
           )
@@ -269,6 +271,7 @@ export class CloudGitConnections {
         automations: connections.length
           ? await readStatusRules(sql, actor.organizationId)
           : [],
+        settings: await gitReviewSettings(sql, actor.organizationId),
         credentialStorageAvailable: this.cipher !== null,
       };
     });

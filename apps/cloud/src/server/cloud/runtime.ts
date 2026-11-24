@@ -78,6 +78,7 @@ import { CloudGitAccounts } from "./git/accounts";
 import { CloudGitHubSignIn } from "./git/github-sign-in";
 import { CloudRoles } from "./roles";
 import { CloudGitStatusRules } from "./git/automations";
+import { CloudGitReviewSettings } from "./git/review-settings";
 import { CloudGitConnections } from "./git/connections";
 import { CloudGitPullRequests } from "./git/pull-requests";
 import { CloudIssueDelivery } from "./git/issue-delivery";
@@ -231,6 +232,7 @@ export interface CloudRuntime {
     accounts: CloudGitAccounts;
     gitHubSignIn: CloudGitHubSignIn;
     statusRules: CloudGitStatusRules;
+    reviewSettings: CloudGitReviewSettings;
     sync: CloudGitSync;
     webhooks: CloudGitWebhooks;
     oauth: CloudGitOAuth;
@@ -692,6 +694,7 @@ export function createCloudRuntime(
         gitAccounts,
       ),
       statusRules: new CloudGitStatusRules(database),
+      reviewSettings: new CloudGitReviewSettings(database),
       sync: gitSync,
       webhooks: new CloudGitWebhooks(
         database,

@@ -147,6 +147,15 @@ it("carries existing task allocations into the usage ledger and settles them wit
           "utf8",
         ),
       );
+    // Project creation also needs project statuses; the rest of that migration runs in order below.
+    const projectStatusesMigration = "076-project-statuses-updates.sql";
+    const [projectStatuses, laterProjectChanges] = (
+      await readFile(
+        new URL(`../migrations/${projectStatusesMigration}`, import.meta.url),
+        "utf8",
+      )
+    ).split(/(?=ALTER TABLE cloud_project_updates)/);
+    await engine.exec(projectStatuses!);
     const fixture = await createScheduleFixture(database);
     const { runtime, actor, teamId } = fixture;
     const data = scheduledTaskInput(fixture);
@@ -273,6 +282,10 @@ it("carries existing task allocations into the usage ledger and settles them wit
       cloudMigrations.indexOf("022-schedule-lifecycle.sql"),
     )) {
       if (currentCodeMigrations.includes(migration)) continue;
+      if (migration === projectStatusesMigration) {
+        await engine.exec(laterProjectChanges!);
+        continue;
+      }
       await engine.exec(
         await readFile(
           new URL(`../migrations/${migration}`, import.meta.url),

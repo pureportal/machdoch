@@ -1,11 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
-  automationTarget,
   pullRequestAutomationEvent,
   pullRequestStage,
   reviewDecision,
-  type AutomationStatus,
-  type GitStatusEvent,
   type GitChecksState,
   type GitReviewDecision,
   type PullRequestStage,
@@ -20,7 +17,6 @@ import { pullRequestReferences } from "../../../lib/git-links";
 import type { GitProvider } from "../../../lib/git-providers";
 import type { SettingsCipher } from "../../settings-crypto";
 import { CloudError, isCloudError } from "../access";
-import { derivedCommandId } from "../command-ids";
 import type { CloudDatabase, CloudSql } from "../database";
 import type { CloudIssueChanges } from "../issue-changes";
 import { queueAutomationEvents } from "../automation/automation-events";
@@ -32,6 +28,14 @@ import {
   type GitConnectionRecord,
 } from "./connections";
 import { gitEvent, queueGitEvents, type StoredRepository } from "./events";
+import { recordMergedWork, unlinkedMergedPullRequest } from "./merge-issues";
+import { gitReviewSettings } from "./review-settings";
+import {
+  automationSteps,
+  linkedIssueSelect,
+  type AutomationStep,
+  type LinkedIssue,
+} from "./status-steps";
 
 const syncIntervalMinutes = 5;
 const openPullRequestRefreshMinutes = 2;
@@ -67,74 +71,6 @@ type StoredPullRequest = {
   updated_at: Date;
   signals_synced_at: Date | null;
 };
-
-type LinkedIssue = {
-  id: string;
-  identifier: string;
-  team_id: string;
-  status_id: string;
-  category: AutomationStatus["category"];
-  position: number;
-  completes_on_release: boolean;
-};
-
-type TeamStatus = AutomationStatus & { team_id: string; revision: number };
-
-interface AutomationStep {
-  issueId: string;
-  status: { id: string; revision: number };
-  key: string;
-  reference: string;
-}
-
-async function automationSteps(
-  sql: CloudSql,
-  organizationId: string,
-  pullRequestId: string,
-  reference: string,
-  event: GitStatusEvent | null,
-  issues: (LinkedIssue & { completes: boolean })[],
-): Promise<AutomationStep[]> {
-  if (!event || !issues.length) return [];
-  const teamIds = [...new Set(issues.map((issue) => issue.team_id))];
-  const statuses = (
-    await sql.query<TeamStatus & Record<string, unknown>>(
-      "SELECT id,team_id,category,position,archived,revision FROM cloud_workflow_statuses WHERE organization_id=$1 AND team_id=ANY($2::uuid[])",
-      [organizationId, teamIds],
-    )
-  ).rows;
-  const rules = new Map(
-    (
-      await sql.query<{ team_id: string; status_id: string | null }>(
-        "SELECT team_id,status_id FROM cloud_git_status_rules WHERE organization_id=$1 AND team_id=ANY($2::uuid[]) AND event=$3",
-        [organizationId, teamIds, event],
-      )
-    ).rows.map((row) => [row.team_id, row.status_id]),
-  );
-  return issues.flatMap((issue) => {
-    if (event === "merged" && !issue.completes) return [];
-    const team = statuses.filter((status) => status.team_id === issue.team_id);
-    const target = automationTarget(event, rules.get(issue.team_id), team, {
-      id: issue.status_id,
-      category: issue.category,
-      position: issue.position,
-      archived: false,
-    }) as TeamStatus | null;
-    return target
-      ? [
-          {
-            issueId: issue.id,
-            status: { id: target.id, revision: target.revision },
-            key: derivedCommandId(
-              `${pullRequestId}:${event}`,
-              `git-status:${issue.id}`,
-            ),
-            reference,
-          },
-        ]
-      : [];
-  });
-}
 
 export function eventPullRequest(
   id: string,
@@ -224,42 +160,43 @@ export class CloudGitSync {
     const { signals, emit = true } = options;
     const state = pullRequest.state;
     const draft = pullRequest.draft;
-    const { id, steps } = await this.database.transaction(async (sql) => {
-      const organizationId = connection.organizationId;
-      const previous = (
-        await sql.query<StoredPullRequest>(
-          `SELECT id,state,draft,head_sha,mergeable_state,checks,review,stage,updated_at,signals_synced_at
+    const { id, steps, mergedUnlinked } = await this.database.transaction(
+      async (sql) => {
+        const organizationId = connection.organizationId;
+        const previous = (
+          await sql.query<StoredPullRequest>(
+            `SELECT id,state,draft,head_sha,mergeable_state,checks,review,stage,updated_at,signals_synced_at
           FROM cloud_git_pull_requests WHERE organization_id=$1 AND repository_id=$2 AND number=$3 FOR UPDATE`,
-          [organizationId, repository.id, pullRequest.number],
-        )
-      ).rows[0];
-      const id = previous?.id ?? randomUUID();
-      const headChanged = previous?.head_sha !== pullRequest.headSha;
-      const changed =
-        !previous ||
-        headChanged ||
-        previous.state !== state ||
-        previous.updated_at.getTime() !== Date.parse(pullRequest.updatedAt);
-      const checks =
-        signals?.checks ?? (headChanged ? null : (previous?.checks ?? null));
-      const review = signals?.review ?? previous?.review ?? null;
-      const mergeableState =
-        pullRequest.mergeableState ??
-        (headChanged ? null : (previous?.mergeable_state ?? null));
-      const stage = pullRequestStage({
-        state,
-        draft,
-        mergeableState,
-        checks,
-        review,
-      });
-      const signalsSyncedAt = signals
-        ? new Date()
-        : state === "open" && changed
-          ? null
-          : (previous?.signals_synced_at ?? null);
-      await sql.query(
-        `INSERT INTO cloud_git_pull_requests (organization_id,id,repository_id,number,title,url,state,draft,author,head_ref,head_sha,base_ref,
+            [organizationId, repository.id, pullRequest.number],
+          )
+        ).rows[0];
+        const id = previous?.id ?? randomUUID();
+        const headChanged = previous?.head_sha !== pullRequest.headSha;
+        const changed =
+          !previous ||
+          headChanged ||
+          previous.state !== state ||
+          previous.updated_at.getTime() !== Date.parse(pullRequest.updatedAt);
+        const checks =
+          signals?.checks ?? (headChanged ? null : (previous?.checks ?? null));
+        const review = signals?.review ?? previous?.review ?? null;
+        const mergeableState =
+          pullRequest.mergeableState ??
+          (headChanged ? null : (previous?.mergeable_state ?? null));
+        const stage = pullRequestStage({
+          state,
+          draft,
+          mergeableState,
+          checks,
+          review,
+        });
+        const signalsSyncedAt = signals
+          ? new Date()
+          : state === "open" && changed
+            ? null
+            : (previous?.signals_synced_at ?? null);
+        await sql.query(
+          `INSERT INTO cloud_git_pull_requests (organization_id,id,repository_id,number,title,url,state,draft,author,head_ref,head_sha,base_ref,
           mergeable_state,additions,deletions,changed_files,checks,review,stage,merged_at,updated_at,signals_synced_at,requested_reviewers,opened_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14::integer,0),COALESCE($15::integer,0),COALESCE($16::integer,0),$17,$18,$19,$20,$21,$22,COALESCE($23::text[],'{}'),$24)
         ON CONFLICT (organization_id,repository_id,number) DO UPDATE SET title=$5,url=$6,state=$7,draft=$8,author=COALESCE($9,cloud_git_pull_requests.author),
@@ -267,181 +204,201 @@ export class CloudGitSync {
         deletions=COALESCE($15::integer,cloud_git_pull_requests.deletions),changed_files=COALESCE($16::integer,cloud_git_pull_requests.changed_files),
         checks=$17,review=$18,stage=$19,merged_at=$20,updated_at=$21,signals_synced_at=$22,
         requested_reviewers=COALESCE($23::text[],cloud_git_pull_requests.requested_reviewers),opened_at=COALESCE($24,cloud_git_pull_requests.opened_at),synced_at=clock_timestamp()`,
-        [
-          organizationId,
-          id,
-          repository.id,
-          pullRequest.number,
-          pullRequest.title.slice(0, 1000),
-          pullRequest.url.slice(0, 500),
-          state,
-          draft,
-          pullRequest.author?.slice(0, 100) ?? null,
-          pullRequest.headRef.slice(0, 255),
-          pullRequest.headSha,
-          pullRequest.baseRef.slice(0, 255),
-          mergeableState?.slice(0, 40) ?? null,
-          pullRequest.additions,
-          pullRequest.deletions,
-          pullRequest.changedFiles,
-          checks,
-          review,
-          stage,
-          pullRequest.mergedAt,
-          pullRequest.updatedAt,
-          signalsSyncedAt,
-          pullRequest.requestedReviewers
-            ?.slice(0, 50)
-            .map((login) => login.slice(0, 100)) ?? null,
-          pullRequest.openedAt,
-        ],
-      );
-      const keys = (
-        await sql.query<{ key: string }>(
-          "SELECT key FROM cloud_teams WHERE organization_id=$1",
-          [organizationId],
-        )
-      ).rows.map((row) => row.key);
-      const references = pullRequestReferences(
-        {
-          branch: pullRequest.headRef,
-          title: pullRequest.title,
-          body: pullRequest.body,
-        },
-        keys,
-      );
-      const intoDefaultBranch =
-        pullRequest.baseRef === repository.defaultBranch;
-      const issues = references.length
-        ? (
-            await sql.query<LinkedIssue>(
-              `SELECT i.id,i.identifier,i.team_id,s.id AS status_id,s.category,s.position,t.complete_issues_on_release AS completes_on_release FROM cloud_issues i
-              JOIN cloud_workflow_statuses s ON s.organization_id=i.organization_id AND s.id=i.status_id
-              JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
-              WHERE i.organization_id=$1 AND i.identifier=ANY($2::text[])`,
-              [organizationId, references.map((entry) => entry.identifier)],
-            )
-          ).rows.map((issue) => {
-            const closes = references.some(
-              (entry) => entry.identifier === issue.identifier && entry.closes,
-            );
-            return {
-              ...issue,
-              closes,
-              completes:
-                closes && intoDefaultBranch && !issue.completes_on_release,
-            };
-          })
-        : [];
-      await sql.query(
-        "DELETE FROM cloud_git_pull_request_issues WHERE organization_id=$1 AND pull_request_id=$2",
-        [organizationId, id],
-      );
-      for (const issue of issues)
-        await sql.query(
-          "INSERT INTO cloud_git_pull_request_issues (organization_id,pull_request_id,issue_id,closes) VALUES ($1,$2,$3,$4)",
-          [organizationId, id, issue.id, issue.closes],
-        );
-      if (emit && previous?.stage !== stage)
-        for (const issue of issues) {
-          await notifyPullRequestStage(sql, {
+          [
             organizationId,
-            actorId: connection.actorId,
-            issueId: issue.id,
-            teamId: issue.team_id,
-            reference: `${repository.fullName}#${pullRequest.number}`,
-            title: pullRequest.title,
-            stage,
-          });
-          await queueAutomationEvents(sql, {
-            organizationId,
-            teamId: issue.team_id,
-            issueId: issue.id,
-            actorId: null,
-            events: [
-              {
-                kind: "pull_request_changed",
-                pullRequestId: id,
-                stage,
-                title: pullRequest.title.slice(0, 300),
-                url: pullRequest.url.slice(0, 500),
-              },
-            ],
-          });
-        }
-      if (emit) {
-        const kinds = pullRequestLifecycleEvents(
-          previous
-            ? {
-                state: previous.state,
-                draft: previous.draft,
-                headSha: previous.head_sha,
-                checks: previous.checks,
-                mergeable:
-                  previous.mergeable_state === null
-                    ? null
-                    : previous.mergeable_state !== "dirty",
-              }
-            : null,
-          {
+            id,
+            repository.id,
+            pullRequest.number,
+            pullRequest.title.slice(0, 1000),
+            pullRequest.url.slice(0, 500),
             state,
             draft,
-            headSha: pullRequest.headSha,
+            pullRequest.author?.slice(0, 100) ?? null,
+            pullRequest.headRef.slice(0, 255),
+            pullRequest.headSha,
+            pullRequest.baseRef.slice(0, 255),
+            mergeableState?.slice(0, 40) ?? null,
+            pullRequest.additions,
+            pullRequest.deletions,
+            pullRequest.changedFiles,
             checks,
-            mergeable: pullRequest.mergeable,
+            review,
+            stage,
+            pullRequest.mergedAt,
+            pullRequest.updatedAt,
+            signalsSyncedAt,
+            pullRequest.requestedReviewers
+              ?.slice(0, 50)
+              .map((login) => login.slice(0, 100)) ?? null,
+            pullRequest.openedAt,
+          ],
+        );
+        const keys = (
+          await sql.query<{ key: string }>(
+            "SELECT key FROM cloud_teams WHERE organization_id=$1",
+            [organizationId],
+          )
+        ).rows.map((row) => row.key);
+        const references = pullRequestReferences(
+          {
+            branch: pullRequest.headRef,
+            title: pullRequest.title,
+            body: pullRequest.body,
           },
+          keys,
         );
-        const event = eventPullRequest(id, pullRequest);
-        const issueIds = issues.map((issue) => issue.id);
-        const events = kinds.map((kind) =>
-          gitEvent(repository, kind, {
-            branch: pullRequest.baseRef,
-            sender:
-              options.sender ??
-              (kind === "pull_request_opened" ? pullRequest.author : null),
-            pullRequest: event,
-            issueIds,
-          }),
+        const intoDefaultBranch =
+          pullRequest.baseRef === repository.defaultBranch;
+        const issues = references.length
+          ? (
+              await sql.query<LinkedIssue>(
+                `${linkedIssueSelect} WHERE i.organization_id=$1 AND i.identifier=ANY($2::text[])`,
+                [organizationId, references.map((entry) => entry.identifier)],
+              )
+            ).rows.map((issue) => {
+              const closes = references.some(
+                (entry) =>
+                  entry.identifier === issue.identifier && entry.closes,
+              );
+              return {
+                ...issue,
+                closes,
+                completes:
+                  closes && intoDefaultBranch && !issue.completes_on_release,
+              };
+            })
+          : [];
+        await sql.query(
+          "DELETE FROM cloud_git_pull_request_issues WHERE organization_id=$1 AND pull_request_id=$2 AND NOT recorded",
+          [organizationId, id],
         );
-        if (kinds.includes("pull_request_merged"))
-          events.push(
-            ...(await stackChildren(
-              sql,
-              organizationId,
-              repository,
-              pullRequest,
-              options.sender ?? null,
-            )),
+        for (const issue of issues)
+          await sql.query(
+            "INSERT INTO cloud_git_pull_request_issues (organization_id,pull_request_id,issue_id,closes) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+            [organizationId, id, issue.id, issue.closes],
           );
-        await queueGitEvents(sql, connection, events);
-      }
-      const statusEvent = pullRequestAutomationEvent(
-        { state, draft, review },
-        true,
-      );
-      const previousEvent =
-        previous && pullRequestAutomationEvent(previous, true);
-      return {
-        id,
-        steps:
-          emit && connection.automate && statusEvent !== previousEvent
-            ? await automationSteps(
+        if (issues.length)
+          await sql.query(
+            "DELETE FROM cloud_git_issue_suggestions WHERE organization_id=$1 AND pull_request_id=$2",
+            [organizationId, id],
+          );
+        if (emit && previous?.stage !== stage)
+          for (const issue of issues) {
+            await notifyPullRequestStage(sql, {
+              organizationId,
+              actorId: connection.actorId,
+              issueId: issue.id,
+              teamId: issue.team_id,
+              reference: `${repository.fullName}#${pullRequest.number}`,
+              title: pullRequest.title,
+              stage,
+            });
+            await queueAutomationEvents(sql, {
+              organizationId,
+              teamId: issue.team_id,
+              issueId: issue.id,
+              actorId: null,
+              events: [
+                {
+                  kind: "pull_request_changed",
+                  pullRequestId: id,
+                  stage,
+                  title: pullRequest.title.slice(0, 300),
+                  url: pullRequest.url.slice(0, 500),
+                },
+              ],
+            });
+          }
+        if (emit) {
+          const kinds = pullRequestLifecycleEvents(
+            previous
+              ? {
+                  state: previous.state,
+                  draft: previous.draft,
+                  headSha: previous.head_sha,
+                  checks: previous.checks,
+                  mergeable:
+                    previous.mergeable_state === null
+                      ? null
+                      : previous.mergeable_state !== "dirty",
+                }
+              : null,
+            {
+              state,
+              draft,
+              headSha: pullRequest.headSha,
+              checks,
+              mergeable: pullRequest.mergeable,
+            },
+          );
+          const event = eventPullRequest(id, pullRequest);
+          const issueIds = issues.map((issue) => issue.id);
+          const events = kinds.map((kind) =>
+            gitEvent(repository, kind, {
+              branch: pullRequest.baseRef,
+              sender:
+                options.sender ??
+                (kind === "pull_request_opened" ? pullRequest.author : null),
+              pullRequest: event,
+              issueIds,
+            }),
+          );
+          if (kinds.includes("pull_request_merged"))
+            events.push(
+              ...(await stackChildren(
                 sql,
                 organizationId,
-                id,
-                `${repository.fullName}#${pullRequest.number}`,
-                statusEvent,
-                issues,
-              )
-            : [],
-      };
-    });
+                repository,
+                pullRequest,
+                options.sender ?? null,
+              )),
+            );
+          await queueGitEvents(sql, connection, events);
+        }
+        const statusEvent = pullRequestAutomationEvent(
+          { state, draft, review },
+          true,
+        );
+        const previousEvent =
+          previous && pullRequestAutomationEvent(previous, true);
+        return {
+          id,
+          mergedUnlinked:
+            emit &&
+            state === "merged" &&
+            previous?.state !== "merged" &&
+            intoDefaultBranch &&
+            !issues.length,
+          steps:
+            emit && connection.automate && statusEvent !== previousEvent
+              ? await automationSteps(
+                  sql,
+                  organizationId,
+                  id,
+                  `${repository.fullName}#${pullRequest.number}`,
+                  statusEvent,
+                  issues,
+                )
+              : [],
+        };
+      },
+    );
+    await this.applySteps(connection, steps);
+    if (mergedUnlinked) await this.resolveMerged(connection, id);
+    return id;
+  }
+
+  async applySteps(
+    connection: SyncConnection,
+    steps: AutomationStep[],
+    userId = connection.actorId,
+  ): Promise<void> {
     for (const step of steps) {
       try {
         await this.issueChanges.apply(
           {
             organizationId: connection.organizationId,
-            userId: connection.actorId,
+            userId,
             automation: step.reference,
           },
           step.key,
@@ -452,7 +409,43 @@ export class CloudGitSync {
         await this.recordError(connection, error.message);
       }
     }
-    return id;
+  }
+
+  private async resolveMerged(
+    connection: SyncConnection,
+    pullRequestId: string,
+  ): Promise<void> {
+    const organizationId = connection.organizationId;
+    let steps: AutomationStep[];
+    try {
+      steps = await this.database.transaction(async (sql) => {
+        const pullRequest = await unlinkedMergedPullRequest(
+          sql,
+          organizationId,
+          pullRequestId,
+        );
+        if (!pullRequest) return [];
+        if (!(await gitReviewSettings(sql, organizationId)).mergeIssues) {
+          await sql.query(
+            "INSERT INTO cloud_git_issue_suggestions (organization_id,pull_request_id,team_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+            [organizationId, pullRequest.id, pullRequest.teamId],
+          );
+          return [];
+        }
+        return (
+          await recordMergedWork(
+            sql,
+            { organizationId, userId: connection.actorId },
+            pullRequest,
+          )
+        ).steps;
+      });
+    } catch (error) {
+      if (!isCloudError(error)) throw error;
+      await this.recordError(connection, error.message);
+      return;
+    }
+    await this.applySteps(connection, steps);
   }
 
   async refresh(

@@ -3,9 +3,11 @@
 import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, GitCommitHorizontal } from "lucide-react";
 import type {
+  CloudIssueGitActivity,
   CloudPullRequest,
+  GitIssueCommit,
   GitPullRequestFile,
 } from "@/lib/cloud-git-contract";
 import { cloudRequest } from "./api-client";
@@ -100,15 +102,17 @@ function PullRequestItem({ pullRequest }: { pullRequest: CloudPullRequest }) {
 }
 
 export function IssuePullRequests({ issueId }: { issueId: string }) {
-  const [pullRequests, setPullRequests] = useState<CloudPullRequest[]>([]);
+  const [activity, setActivity] = useState<CloudIssueGitActivity>({
+    pullRequests: [],
+    commits: [],
+  });
   const load = useCallback(
     (signal?: AbortSignal) =>
-      cloudRequest<{ pullRequests: CloudPullRequest[] }>(
-        `issues/${issueId}/pull-requests`,
-        { signal },
-      )
+      cloudRequest<CloudIssueGitActivity>(`issues/${issueId}/pull-requests`, {
+        signal,
+      })
         .then((result) => {
-          if (!signal?.aborted) setPullRequests(result.pullRequests);
+          if (!signal?.aborted) setActivity(result);
         })
         .catch(() => undefined),
     [issueId],
@@ -121,17 +125,58 @@ export function IssuePullRequests({ issueId }: { issueId: string }) {
       stop();
     };
   }, [load]);
-  if (!pullRequests.length) return null;
+  const { pullRequests, commits } = activity;
   return (
-    <section className="cloud-aside-section" aria-label="Pull requests">
-      <header>
-        <h2>Pull requests</h2>
-      </header>
-      <ul className="cloud-aside-pull-requests">
-        {pullRequests.map((pullRequest) => (
-          <PullRequestItem key={pullRequest.id} pullRequest={pullRequest} />
-        ))}
-      </ul>
-    </section>
+    <>
+      {pullRequests.length > 0 && (
+        <section className="cloud-aside-section" aria-label="Pull requests">
+          <header>
+            <h2>Pull requests</h2>
+          </header>
+          <ul className="cloud-aside-pull-requests">
+            {pullRequests.map((pullRequest) => (
+              <PullRequestItem key={pullRequest.id} pullRequest={pullRequest} />
+            ))}
+          </ul>
+        </section>
+      )}
+      {commits.length > 0 && (
+        <section className="cloud-aside-section" aria-label="Commits">
+          <header>
+            <h2>Commits</h2>
+          </header>
+          <ul className="cloud-aside-commits">
+            {commits.map((commit) => (
+              <CommitItem
+                key={`${commit.repository}:${commit.sha}`}
+                commit={commit}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  );
+}
+
+function CommitItem({ commit }: { commit: GitIssueCommit }) {
+  const summary = commit.message.split("\n", 1)[0];
+  const label = (
+    <>
+      <GitCommitHorizontal size={14} aria-hidden="true" />
+      <span className="cloud-aside-commit-message">{summary}</span>
+      <code>{commit.sha.slice(0, 7)}</code>
+    </>
+  );
+  return (
+    <li title={`${commit.repository} · ${commit.author}`}>
+      {commit.url ? (
+        <a href={commit.url} target="_blank" rel="noreferrer">
+          {label}
+        </a>
+      ) : (
+        <span>{label}</span>
+      )}
+    </li>
   );
 }

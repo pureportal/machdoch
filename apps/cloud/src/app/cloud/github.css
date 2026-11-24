@@ -94,6 +94,43 @@
   color: var(--cloud-success);
 }
 
+.cloud-aside-commits {
+  display: grid;
+  gap: 2px;
+}
+.cloud-aside-commits li > * {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 7px;
+  border-radius: 6px;
+  color: inherit;
+  font-size: 12.5px;
+}
+.cloud-aside-commits li > a:hover {
+  background: var(--cloud-hover);
+}
+.cloud-aside-commits li > a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.cloud-aside-commits svg,
+.cloud-aside-commits code {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.cloud-aside-commits code {
+  font-size: 11.5px;
+}
+.cloud-aside-commit-message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cloud-pull-request-meta {
   display: flex;
   flex-wrap: wrap;
@@ -476,6 +513,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.cloud-github-repositories .cloud-git-repository-team {
+  flex: none;
+  width: 160px;
+}
+.cloud-git-review-settings {
+  display: grid;
+  gap: 2px;
+}
+.cloud-git-review-settings li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  font-size: 13px;
 }
 .cloud-github-automations {
   display: grid;

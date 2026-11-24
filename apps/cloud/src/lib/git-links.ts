@@ -42,26 +42,53 @@ function keywordIdentifiers(
   );
 }
 
+function referenceCollector() {
+  const references = new Map<string, boolean>();
+  return {
+    add(identifiers: string[], closes: boolean) {
+      for (const identifier of identifiers)
+        references.set(
+          identifier,
+          closes || (references.get(identifier) ?? false),
+        );
+    },
+    list(): PullRequestReference[] {
+      return [...references].map(([identifier, closes]) => ({
+        identifier,
+        closes,
+      }));
+    },
+  };
+}
+
 export function pullRequestReferences(
   pullRequest: PullRequestText,
   teamKeys: readonly string[],
 ): PullRequestReference[] {
   const pattern = identifierPattern(teamKeys);
   if (!pattern) return [];
-  const references = new Map<string, boolean>();
-  const add = (identifiers: string[], closes: boolean) => {
-    for (const identifier of identifiers)
-      references.set(
-        identifier,
-        closes || (references.get(identifier) ?? false),
-      );
-  };
-  add(identifiersIn(pullRequest.branch, pattern), true);
-  add(identifiersIn(pullRequest.title, pattern), true);
-  add(keywordIdentifiers(pullRequest.body, pattern, closingWords), true);
-  add(keywordIdentifiers(pullRequest.body, pattern, referenceWords), false);
-  return [...references].map(([identifier, closes]) => ({
-    identifier,
-    closes,
-  }));
+  const references = referenceCollector();
+  references.add(identifiersIn(pullRequest.branch, pattern), true);
+  references.add(identifiersIn(pullRequest.title, pattern), true);
+  references.add(
+    keywordIdentifiers(pullRequest.body, pattern, closingWords),
+    true,
+  );
+  references.add(
+    keywordIdentifiers(pullRequest.body, pattern, referenceWords),
+    false,
+  );
+  return references.list();
+}
+
+export function commitReferences(
+  message: string,
+  teamKeys: readonly string[],
+): PullRequestReference[] {
+  const pattern = identifierPattern(teamKeys);
+  if (!pattern) return [];
+  const references = referenceCollector();
+  references.add(keywordIdentifiers(message, pattern, closingWords), true);
+  references.add(keywordIdentifiers(message, pattern, referenceWords), false);
+  return references.list();
 }

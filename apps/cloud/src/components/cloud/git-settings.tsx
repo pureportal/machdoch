@@ -26,6 +26,7 @@ import {
   formText,
 } from "./api-client";
 import { GitConnectionCard } from "./git-connection-card";
+import { GitReviewSettingsSection } from "./git-review-settings";
 import { CliSignInDialog, useCliLogin } from "./provider-sign-in";
 import { GitStatusRules } from "./git-status-rules";
 
@@ -40,12 +41,14 @@ function ProviderSection({
   provider,
   connections,
   credentialStorageAvailable,
+  teams,
   loading,
   onChanged,
 }: {
   provider: GitProvider;
   connections: GitConnection[];
   credentialStorageAvailable: boolean;
+  teams: { id: string; name: string }[];
   loading: boolean;
   onChanged: () => Promise<void>;
 }) {
@@ -115,6 +118,7 @@ function ProviderSection({
         <GitConnectionCard
           key={connection.id}
           connection={connection}
+          teams={teams}
           addingRepository={addingTo === connection.id}
           onAddingRepositoryChange={(open) =>
             setAddingTo(open ? connection.id : null)
@@ -318,10 +322,17 @@ export function GitSettings() {
             ) ?? []
           }
           credentialStorageAvailable={data?.credentialStorageAvailable ?? false}
+          teams={data?.automations.map((entry) => entry.team) ?? []}
           loading={!data && !error}
           onChanged={() => load()}
         />
       ))}
+      {data && data.connections.length > 0 && (
+        <GitReviewSettingsSection
+          settings={data.settings}
+          onChanged={() => load()}
+        />
+      )}
       {data && automated && (
         <GitStatusRules
           automations={data.automations}

@@ -12,6 +12,7 @@ import {
 import { ConfirmButton } from "@/components/confirm-button";
 import { CopyField } from "@/components/copy-field";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { cloudRequest, createCommandSender } from "./api-client";
 import { GitRepositoryPicker } from "./git-repository-picker";
 import { RelativeTime } from "./relative-time";
@@ -25,12 +26,14 @@ const webhookEvents: Record<GitProvider, string> = {
 
 export function GitConnectionCard({
   connection,
+  teams,
   addingRepository,
   onAddingRepositoryChange,
   onReconnect,
   onChanged,
 }: {
   connection: GitConnection;
+  teams: { id: string; name: string }[];
   addingRepository: boolean;
   onAddingRepositoryChange: (open: boolean) => void;
   onReconnect: () => void;
@@ -64,6 +67,14 @@ export function GitConnectionCard({
             <RelativeTime value={connection.connectedAt} />
             {connection.apiUrl !== defaultGitApiUrls[connection.provider] &&
               ` · ${connection.apiUrl}`}
+            {connection.lastDeliveryAt ? (
+              <>
+                {" · Webhook "}
+                <RelativeTime value={connection.lastDeliveryAt} />
+              </>
+            ) : (
+              connection.repositories.length > 0 && " · No webhook deliveries"
+            )}
           </p>
         </div>
         <label className="cloud-git-code-access">
@@ -185,6 +196,27 @@ export function GitConnectionCard({
                 {repository.syncedAt && (
                   <RelativeTime value={repository.syncedAt} />
                 )}
+                <Select
+                  className="cloud-git-repository-team"
+                  aria-label={`Team for ${repository.fullName}`}
+                  value={repository.teamId ?? ""}
+                  disabled={pending}
+                  onChange={(event) =>
+                    perform(() =>
+                      cloudRequest(`git/repositories/${repository.id}/team`, {
+                        method: "PUT",
+                        body: { teamId: event.target.value || null },
+                      }),
+                    )
+                  }
+                >
+                  <option value="">No team</option>
+                  {teams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))}
+                </Select>
                 <ConfirmButton
                   trigger={
                     <Button

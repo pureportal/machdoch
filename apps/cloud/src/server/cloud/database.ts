@@ -80,6 +80,7 @@ export const cloudMigrations = [
   "077-customer-requests.sql",
   "078-notification-preferences.sql",
   "079-git-connections.sql",
+  "080-git-review-settings.sql",
 ];
 
 export interface CloudSql {

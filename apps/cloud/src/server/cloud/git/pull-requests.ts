@@ -5,6 +5,7 @@ import type {
   CloudPullRequestDetails,
   CloudPullRequestList,
   CloudReviewInbox,
+  GitIssueCommit,
   GitMergeInput,
   GitPullRequestFile,
   GitReviewInput,
@@ -29,6 +30,7 @@ import { gitClient, type GitCommitStatus } from "./git-client";
 import { gitConnection, type GitConnectionRecord } from "./connections";
 import { gitEvent, queueGitEvents, type StoredRepository } from "./events";
 import type { ActingAccess, ActingMode, GitIdentities } from "./identity";
+import { recordMergedWork, unlinkedMergedPullRequest } from "./merge-issues";
 import { eventPullRequest, type CloudGitSync } from "./sync";
 import type { GitProvider } from "../../../lib/git-providers";
 
@@ -194,6 +196,66 @@ export class CloudGitPullRequests {
         closes: closes.get(row.id) ?? false,
       }));
     });
+  }
+
+  issueCommits(actor: CloudActor, issueId: string): Promise<GitIssueCommit[]> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "git.view");
+      await readIssue(sql, actor, issueId);
+      return (
+        await sql.query<
+          Omit<GitIssueCommit, "url"> & {
+            provider: GitProvider;
+            webUrl: string | null;
+          }
+        >(
+          `SELECT c.sha,r.full_name AS repository,c.message,c.author,c.closes,r.provider,r.web_url AS "webUrl",
+          to_char(c.linked_at AT TIME ZONE 'UTC',${timestamp}) AS "linkedAt"
+          FROM cloud_git_commit_issues c JOIN cloud_git_repositories r ON r.organization_id=c.organization_id AND r.id=c.repository_id
+          WHERE c.organization_id=$1 AND c.issue_id=$2 ORDER BY c.linked_at DESC,c.sha LIMIT 100`,
+          [actor.organizationId, issueId],
+        )
+      ).rows.map(({ provider, webUrl, ...commit }) => ({
+        ...commit,
+        url: webUrl
+          ? `${webUrl}/${provider === "gitlab" ? "-/" : ""}commit/${commit.sha}`
+          : null,
+      }));
+    });
+  }
+
+  async createIssue(
+    actor: CloudActor,
+    id: string,
+  ): Promise<{ issueId: string }> {
+    const { connection, issueId, steps } = await this.database.transaction(
+      async (sql) => {
+        await requireMembership(sql, actor, "git.act");
+        const visible = await this.visible(sql, actor, id);
+        const pullRequest = await unlinkedMergedPullRequest(
+          sql,
+          actor.organizationId,
+          id,
+        );
+        const suggested = await sql.query<{ team_id: string }>(
+          "SELECT team_id FROM cloud_git_issue_suggestions WHERE organization_id=$1 AND pull_request_id=$2 FOR UPDATE",
+          [actor.organizationId, id],
+        );
+        const teamId = suggested.rows[0]?.team_id;
+        if (!pullRequest || !teamId)
+          throw new CloudError(
+            409,
+            "git_issue_linked",
+            "This pull request already has an issue.",
+          );
+        return {
+          connection: visible.connection,
+          ...(await recordMergedWork(sql, actor, { ...pullRequest, teamId })),
+        };
+      },
+    );
+    await this.sync.applySteps(connection, steps, actor.userId);
+    return { issueId };
   }
 
   list(
@@ -376,19 +438,23 @@ export class CloudGitPullRequests {
         review: reviewDecision(reviews.map((review) => review.state)),
       },
     });
-    const { updated, actingAs } = await this.database.transaction(
-      async (sql) => {
+    const { updated, actingAs, issueSuggestion } =
+      await this.database.transaction(async (sql) => {
         const current = await this.visible(sql, actor, id);
+        const suggestion = await sql.query(
+          "SELECT 1 FROM cloud_git_issue_suggestions WHERE organization_id=$1 AND pull_request_id=$2",
+          [actor.organizationId, id],
+        );
         return {
           updated: current,
+          issueSuggestion: current.canAct && suggestion.rows.length > 0,
           actingAs: await this.identities.actingLogin(
             sql,
             current.connection,
             actor.userId,
           ),
         };
-      },
-    );
+      });
     return {
       pullRequest: updated.pullRequest,
       body: fresh.body,
@@ -401,6 +467,7 @@ export class CloudGitPullRequests {
         (left.committedAt ?? "").localeCompare(right.committedAt ?? ""),
       ),
       issues: updated.issues,
+      issueSuggestion,
       canMerge: updated.canAct && updated.pullRequest.state === "open",
       actingAs,
       mergeMethods: [...client.mergeMethods],
