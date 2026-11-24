@@ -377,6 +377,108 @@ it("re-checks the member's access when a proposal is confirmed", async () => {
   expect(await runtime.comments.list(owner, first.id)).toEqual([]);
 });
 
+it("never changes issues until the member confirms each proposal", async () => {
+  const { team } = await privateTeam();
+  const workflow = await runtime.workflows.get(owner, team.id);
+  const triageId = randomUUID();
+  const definition = {
+    revision: workflow.revision,
+    defaultStatusId: workflow.defaultStatusId,
+    statuses: [
+      {
+        id: triageId,
+        name: "Triage",
+        category: "triage" as const,
+        archived: false,
+      },
+      ...workflow.statuses.map(({ revision: _, ...status }) => status),
+    ],
+  };
+  await runtime.workflows.update(owner, randomUUID(), team.id, {
+    definition,
+    impactDigest: (await runtime.workflows.preview(owner, team.id, definition))
+      .digest,
+  });
+  await runtime.planning.createIssue(
+    owner,
+    randomUUID(),
+    issueInputSchema.parse({
+      teamId: team.id,
+      title: "Basket empties after retry",
+      status: { id: triageId, revision: 1 },
+    }),
+  );
+  const issueTables = [
+    "cloud_issues",
+    "cloud_issue_history",
+    "cloud_issue_label_sets",
+    "cloud_issue_labels",
+    "cloud_issue_relations",
+    "cloud_issue_relation_versions",
+    "cloud_comments",
+    "cloud_comment_history",
+  ];
+  const issueState = async () =>
+    Promise.all(
+      issueTables.map(
+        async (table) =>
+          (
+            await database.engine.query<{ digest: string }>(
+              `SELECT md5(coalesce(string_agg(row_value::text, ',' ORDER BY row_value::text), '')) AS digest FROM ${table} row_value`,
+            )
+          ).rows[0]!.digest,
+      ),
+    );
+  const before = await issueState();
+  const turn = await ask(
+    member,
+    toolCalls(
+      { name: "propose_issue", arguments: { team: "PRD", title: "New" } },
+      {
+        name: "propose_issue_update",
+        arguments: { issue: "PRD-1", priority: "urgent", addLabels: ["Bug"] },
+      },
+      {
+        name: "propose_bulk_update",
+        arguments: { issues: ["PRD-1", "PRD-2"], priority: "high" },
+      },
+      { name: "propose_archive_issues", arguments: { issues: ["PRD-3"] } },
+      {
+        name: "propose_link",
+        arguments: { issue: "PRD-2", relation: "blocks", target: "PRD-1" },
+      },
+      { name: "propose_comment", arguments: { issue: "PRD-1", body: "Hi" } },
+      {
+        name: "propose_triage",
+        arguments: { issue: "PRD-4", decision: "accept" },
+      },
+    ),
+  );
+  expect(turn.actions.map((action) => [action.kind, action.state])).toEqual([
+    ["create_issue", "pending"],
+    ["update_issue", "pending"],
+    ["update_issues", "pending"],
+    ["update_issues", "pending"],
+    ["link", "pending"],
+    ["comment", "pending"],
+    ["triage", "pending"],
+  ]);
+  expect(await issueState()).toEqual(before);
+  for (const action of turn.actions)
+    await expect(
+      runtime.chat.actions.apply(owner, turn.id, action.id),
+    ).rejects.toMatchObject({ status: 404 });
+  for (const action of turn.actions.slice(1))
+    expect(
+      await runtime.chat.actions.dismiss(member, turn.id, action.id),
+    ).toMatchObject({ state: "dismissed" });
+  expect(await issueState()).toEqual(before);
+  expect(
+    await runtime.chat.actions.apply(member, turn.id, turn.actions[0]!.id),
+  ).toMatchObject({ state: "applied", result: { label: "PRD-5" } });
+  expect(await issueState()).not.toEqual(before);
+});
+
 it("gives the agent the user's role, team vocabulary and assigned work", async () => {
   await privateTeam();
   const asMember = await database.transaction((sql) =>
