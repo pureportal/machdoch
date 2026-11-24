@@ -81,6 +81,7 @@ class RemoteWorkspacePlatform {
     columns: number,
     rows: number,
     onEvent: (event: WorkspaceTerminalEvent) => void,
+    cwd?: string,
   ): Promise<WorkspaceTerminalStarted> {
     const started = await this.transport.invoke<WorkspaceTerminalStarted>(
       "start_workspace_terminal",
@@ -90,6 +91,7 @@ class RemoteWorkspacePlatform {
           shellId,
           columns: Math.round(columns),
           rows: Math.round(rows),
+          ...(cwd ? { cwd } : {}),
         },
       },
     );

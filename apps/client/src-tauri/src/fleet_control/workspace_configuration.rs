@@ -93,6 +93,14 @@ pub(super) async fn invoke(
             .await
             .map_err(|error| json!(error))?,
         ),
+        "save_workspace_git_fsmonitor" => serde_json::to_value(
+            runtime_snapshot::save_workspace_git_fsmonitor(
+                workspace,
+                args["enabled"].as_bool().unwrap(),
+            )
+            .await
+            .map_err(|error| json!(error))?,
+        ),
         "save_workspace_release_stage" => serde_json::to_value(
             runtime_snapshot::save_workspace_release_stage(
                 workspace,

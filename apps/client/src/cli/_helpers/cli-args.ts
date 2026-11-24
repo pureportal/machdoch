@@ -811,6 +811,16 @@ export const parseCliArgs = (
     return { ...sharedOptions, command: "run-detection" };
   }
 
+  if (first === "commit-message") {
+    if (rest.length !== 1 || rawRalphInputJson || rawRalphInputJsonFile)
+      fail("Use commit-message <repository path>.");
+    return {
+      ...sharedOptions,
+      command: "commit-message",
+      commitMessage: { repositoryRoot: rest[0]! },
+    };
+  }
+
   if (first === "live-voice") {
     if (rawRalphInputJson && rawRalphInputJsonFile)
       fail("Choose --input-json or --input-json-file.");

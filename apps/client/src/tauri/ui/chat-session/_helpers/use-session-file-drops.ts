@@ -3,6 +3,7 @@ import {
   type DragDropEvent as TauriDragDropEvent,
 } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isOverNativeDropZone } from "../../lib/native-drop-zones";
 import type { FileDropTarget } from "./session-context-attachments";
 
 const TEXT_URI_LIST_TYPE = "text/uri-list";
@@ -268,6 +269,14 @@ export const useSessionFileDrops = (options: {
     void currentWindow
       .onDragDropEvent((event: { payload: TauriDragDropEvent }) => {
         const payload = event.payload;
+
+        if (
+          payload.type !== "leave" &&
+          isOverNativeDropZone(payload.position)
+        ) {
+          setIsNativeDropActive(false);
+          return;
+        }
 
         if (payload.type === "enter" || payload.type === "over") {
           setIsNativeDropActive(true);

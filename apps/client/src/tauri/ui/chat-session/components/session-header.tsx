@@ -17,6 +17,7 @@ import { switchWorkspaceGitBranches } from "../../runtime";
 import { workspaceGitBranchStatusStore } from "../../workspace-management/workspace-git-branch-status-store";
 import { workspaceGitChangeMonitor } from "../../workspace-management/workspace-git-change-monitor";
 import { workspaceGitSummaryStore } from "../../workspace-management/workspace-git-summary-store";
+import { WorkspaceDockToggles } from "./workspace-dock-toggles";
 import { WorkspaceQuickAccessControl } from "./workspace-quick-access-control";
 import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
 import {
@@ -134,6 +135,7 @@ export const SessionHeader = ({
         primaryTaskRunning={primaryTaskRunning}
         onOpenWorkspaces={onOpenWorkspaces}
       />
+      <WorkspaceDockToggles workspaceRoot={activeSession.workspace} />
       <WorkspaceRunDialogControl
         workspaceRoot={activeSession.workspace}
         primaryTaskRunning={primaryTaskRunning}

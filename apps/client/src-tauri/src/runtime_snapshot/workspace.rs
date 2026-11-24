@@ -326,6 +326,24 @@ pub(super) fn save_workspace_auto_gitignore_value(
     Ok(config_path)
 }
 
+pub(super) fn save_workspace_git_file_system_monitor_value(
+    workspace_root: &str,
+    enabled: bool,
+) -> Result<PathBuf, String> {
+    let workspace_path = resolve_workspace_root_path(workspace_root)?;
+    let config_path = workspace_path.join(".machdoch").join("config.json");
+    with_cooperative_file_lock(&config_path, || {
+        let mut config = load_workspace_config_json(&config_path)?;
+        config.insert(
+            "gitFileSystemMonitor".to_string(),
+            serde_json::Value::Bool(enabled),
+        );
+        write_workspace_config_json(&config_path, &config)
+    })?;
+    crate::workspace_git::apply_file_system_monitor_setting(&workspace_path, enabled);
+    Ok(config_path)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -492,11 +510,11 @@ pub(super) fn save_workspace_context_window_value(
 ) -> Result<PathBuf, String> {
     match context_window {
         ContextWindow::Mode(mode)
-            if crate::runtime_contract_generated::CONTEXT_WINDOW_MODES.contains(&mode.as_str()) => {}
+            if crate::runtime_contract_generated::CONTEXT_WINDOW_MODES.contains(&mode.as_str()) => {
+        }
         _ => {
             return Err(
-                "Expected workspace context window to be lowest, default, or highest."
-                    .to_string(),
+                "Expected workspace context window to be lowest, default, or highest.".to_string(),
             );
         }
     }

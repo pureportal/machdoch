@@ -124,6 +124,15 @@ const TASK_INTERVIEW_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     timeout_ms: AUXILIARY_CLI_COMMAND_TIMEOUT_MS,
 };
 
+const GIT_COMMIT_MESSAGE_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
+    subcommand: "commit-message",
+    command_name: "commit message",
+    parse_name: "commit message",
+    failure_name: "commit message",
+    stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+    timeout_ms: 3 * 60 * 1000,
+};
+
 const WORKSPACE_RUN_DETECTION_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     subcommand: "run-detection",
     command_name: "run detection",
@@ -689,6 +698,19 @@ pub(super) fn execute_workspace_run_detection_command(
         workspace_root,
         Vec::<String>::new(),
         &WORKSPACE_RUN_DETECTION_CLI_SPEC,
+    )
+}
+
+pub(super) fn execute_git_commit_message_command(
+    workspace_root: &str,
+    repository_root: &str,
+) -> Result<Value, String> {
+    let (_, repository) =
+        crate::workspace_git::repository_context(workspace_root, repository_root)?;
+    run_auxiliary_json_command(
+        workspace_root,
+        [repository.display().to_string()],
+        &GIT_COMMIT_MESSAGE_CLI_SPEC,
     )
 }
 

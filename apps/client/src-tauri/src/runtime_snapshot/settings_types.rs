@@ -125,6 +125,7 @@ pub(super) struct WorkspaceConfigFile {
     pub(super) workspace_memory_enabled: Option<bool>,
     pub(super) reasoning_bank_enabled: Option<bool>,
     pub(super) auto_gitignore: Option<bool>,
+    pub(super) git_file_system_monitor: Option<bool>,
     pub(super) adaptive_controller_enabled: Option<bool>,
     pub(super) release_stage: Option<String>,
 }

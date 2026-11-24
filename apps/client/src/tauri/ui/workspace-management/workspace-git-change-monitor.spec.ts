@@ -1,7 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
+import type { WorkspaceChangeEvent } from "@machdoch/fleet-protocol/workspace-contract";
 import { createWorkspaceGitChangeMonitor } from "./workspace-git-change-monitor";
 
 vi.mock("../runtime", () => ({ loadWorkspaceGitFingerprint: vi.fn() }));
+vi.mock("./workspace-change-events", () => ({ workspaceChangeFeed: {} }));
+
+const changeEvent = (sequence: number, repositories = ["C:\\a"]) => ({
+  sequence,
+  workspaceRoot: "C:\\a",
+  repositories: repositories.map((repositoryRoot) => ({
+    repositoryRoot,
+    kinds: ["worktree" as const],
+  })),
+  paths: ["src/a.ts"],
+  pathsTruncated: false,
+  rescan: false,
+});
 
 const flush = async (): Promise<void> => {
   for (let index = 0; index < 5; index += 1) await Promise.resolve();
@@ -18,10 +32,25 @@ const createHarness = () => {
   );
   const stopPolling = vi.fn();
   const startPolling = vi.fn(() => stopPolling);
+  const feedListeners = new Map<
+    string,
+    (event: WorkspaceChangeEvent) => void
+  >();
+  const unsubscribeFeed = vi.fn();
+  let watching = false;
+  let clock = 0;
   const monitor = createWorkspaceGitChangeMonitor({
     load,
     keyOf: (root) => root.toLowerCase(),
     startPolling,
+    changes: {
+      subscribe: (root, listener) => {
+        feedListeners.set(root.toLowerCase(), listener);
+        return unsubscribeFeed;
+      },
+      isWatching: () => watching,
+    },
+    now: () => clock,
   });
   const changed = vi.fn();
   monitor.subscribe(changed);
@@ -33,6 +62,14 @@ const createHarness = () => {
     changed,
     startPolling,
     stopPolling,
+    feedListeners,
+    unsubscribeFeed,
+    setWatching: (value: boolean) => {
+      watching = value;
+    },
+    advance: (milliseconds: number) => {
+      clock += milliseconds;
+    },
     deferLoads: (value: boolean) => {
       deferLoads = value;
     },
@@ -111,6 +148,52 @@ describe("workspace Git change monitor", () => {
     expect(load.mock.calls.map(([root]) => root)).toEqual(["C:\\b"]);
     second();
     expect(stopPolling).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports watcher events and polls fingerprints only while the watcher is down", async () => {
+    const { monitor, load, changed, feedListeners, setWatching } =
+      createHarness();
+    monitor.watch("C:\\a");
+    await flush();
+    setWatching(true);
+    load.mockClear();
+    monitor.check();
+    await flush();
+    expect(load).not.toHaveBeenCalled();
+
+    const event = changeEvent(1);
+    feedListeners.get("c:\\a")!(event);
+    expect(changed).toHaveBeenCalledExactlyOnceWith("C:\\a", event);
+
+    feedListeners.get("c:\\a")!(changeEvent(2, []));
+    expect(changed).toHaveBeenCalledTimes(1);
+
+    setWatching(false);
+    monitor.check();
+    await flush();
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores watcher events caused by its own actions", async () => {
+    const { monitor, changed, feedListeners, advance } = createHarness();
+    monitor.watch("C:\\a");
+    await flush();
+    monitor.sync("C:\\a");
+    feedListeners.get("c:\\a")!(changeEvent(1));
+    expect(changed).not.toHaveBeenCalled();
+    advance(1_500);
+    feedListeners.get("c:\\a")!(changeEvent(2));
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops listening to the watcher when the last view closes", () => {
+    const { monitor, unsubscribeFeed } = createHarness();
+    const first = monitor.watch("C:\\a");
+    const second = monitor.watch("C:\\a");
+    first();
+    expect(unsubscribeFeed).not.toHaveBeenCalled();
+    second();
+    expect(unsubscribeFeed).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the last known state when a check fails", async () => {

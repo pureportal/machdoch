@@ -113,12 +113,14 @@ fn integer(value: &Value, maximum: f64) -> bool {
 fn terminal(command: &str, args: &Value) -> bool {
     if command == "start_workspace_terminal" {
         return fields(args, &["request"]).is_some_and(|args| {
-            fields(
+            fields_with_optional(
                 &args["request"],
                 &["workspaceRoot", "shellId", "columns", "rows"],
+                &["cwd"],
             )
             .is_some_and(|request| {
-                root(&request["workspaceRoot"])
+                request.get("cwd").is_none_or(path)
+                    && root(&request["workspaceRoot"])
                     && text(&request["shellId"], 240, false)
                     && integer(&request["columns"], 500.0)
                     && request["columns"].as_f64().unwrap() > 0.0
@@ -187,13 +189,51 @@ fn stash_reference(value: &Value) -> bool {
     })
 }
 
-fn git_action(value: &Value) -> bool {
-    let Some(action) = value["action"].as_str() else {
-        return false;
-    };
-    let (required, optional): (&[&str], &[&str]) = match action {
+const OVERVIEW_SECTIONS: [&str; 5] = [
+    "branches",
+    "numstat",
+    "recentCommits",
+    "stashes",
+    "worktrees",
+];
+
+fn overview_sections(value: &Value) -> bool {
+    value.as_array().is_some_and(|sections| {
+        sections.len() <= OVERVIEW_SECTIONS.len()
+            && sections.iter().all(|section| {
+                section
+                    .as_str()
+                    .is_some_and(|section| OVERVIEW_SECTIONS.contains(&section))
+            })
+    })
+}
+
+fn untracked_files(value: &Value) -> bool {
+    matches!(value.as_str(), Some("normal" | "all"))
+}
+
+fn bounded_array(
+    value: &Value,
+    minimum: usize,
+    maximum: usize,
+    item: impl Fn(&Value) -> bool,
+) -> bool {
+    value
+        .as_array()
+        .is_some_and(|items| (minimum..=maximum).contains(&items.len()) && items.iter().all(item))
+}
+
+fn plain_string(value: &Value, maximum: usize) -> bool {
+    value
+        .as_str()
+        .is_some_and(|value| value.encode_utf16().count() <= maximum)
+}
+
+fn git_action_fields(action: &str) -> Option<(&'static [&'static str], &'static [&'static str])> {
+    Some(match action {
         "fetch" | "pull" | "stage-all" | "unstage-all" | "restack" | "continue-operation"
-        | "abort-operation" | "skip-operation" => (&[], &[]),
+        | "abort-operation" | "skip-operation" | "set-upstream" | "pull-rebase"
+        | "remove-index-lock" | "prune-worktrees" => (&[], &[]),
         "push" => (&[], &["force"]),
         "submit-pull-requests" => (&[], &["draft"]),
         "checkout"
@@ -202,28 +242,52 @@ fn git_action(value: &Value) -> bool {
         | "unstack-branch"
         | "merge"
         | "rebase" => (&["branchName"], &[]),
-        "create-branch" => (&["branchName"], &["startPoint"]),
+        "create-branch" | "add-worktree" => (&["branchName"], &["startPoint"]),
         "delete-branch" => (&["branchName"], &["force"]),
         "stack-branch" => (&["branchName", "parentBranch"], &[]),
         "reset" => (&[], &["startPoint", "resetMode"]),
-        "stage" | "unstage" => (&["paths"], &[]),
-        "commit" => (&["message"], &[]),
+        "stage" | "unstage" | "discard" | "mark-resolved" => (&["paths"], &[]),
+        "commit" => (
+            &["message"],
+            &["amend", "signOff", "coAuthors", "pushAfterCommit"],
+        ),
+        "apply-patch" => (&["patch", "patchTarget", "reverse"], &[]),
+        "cherry-pick" | "revert" => (&["commit"], &[]),
+        "create-tag" => (&["tagName"], &["startPoint", "message"]),
+        "push-tag" => (&["tagName"], &[]),
+        "delete-tag" => (&["tagName"], &["remote"]),
+        "resolve-conflict" => (&["paths", "side"], &[]),
+        "undo" => (&["target"], &[]),
+        "delete-branches" => (&["branchNames"], &["force"]),
+        "create-pull-request" => (&["title"], &["body", "baseBranch", "draft"]),
         "stash-push" => (&[], &["message", "includeUntracked"]),
         "stash-apply" | "stash-pop" | "stash-drop" => (&["stashRef"], &[]),
         "add-remote" => (&["remoteName", "remoteUrl"], &[]),
         "remove-remote" => (&["remoteName"], &[]),
-        "add-worktree" => (&["branchName"], &["startPoint"]),
         "remove-worktree" => (&["worktreePath"], &["force"]),
         "lock-worktree" | "unlock-worktree" => (&["worktreePath"], &[]),
-        "prune-worktrees" => (&[], &[]),
-        _ => return false,
+        _ => return None,
+    })
+}
+
+fn git_action(value: &Value) -> bool {
+    let Some(action) = value["action"].as_str() else {
+        return false;
+    };
+    let Some((required, optional)) = git_action_fields(action) else {
+        return false;
     };
     let base = ["workspaceRoot", "repositoryRoot", "action"];
+    let overview = ["sections", "untrackedFiles"];
     let Some(request) = value.as_object() else {
         return false;
     };
-    let known =
-        |key: &str| base.contains(&key) || required.contains(&key) || optional.contains(&key);
+    let known = |key: &str| {
+        base.contains(&key)
+            || overview.contains(&key)
+            || required.contains(&key)
+            || optional.contains(&key)
+    };
     if !base
         .iter()
         .chain(required)
@@ -233,33 +297,121 @@ fn git_action(value: &Value) -> bool {
         return false;
     }
     let message_limit = if action == "commit" { 20_000 } else { 500 };
+    let check = |field: &str, valid: &dyn Fn(&Value) -> bool| request.get(field).is_none_or(valid);
     repository(request)
-        && ["branchName", "parentBranch", "startPoint", "remoteName"]
-            .iter()
-            .all(|field| {
-                request
-                    .get(*field)
-                    .is_none_or(|value| text(value, 240, true))
-            })
-        && request
-            .get("remoteUrl")
-            .is_none_or(|value| text(value, 2048, true))
-        && request.get("worktreePath").is_none_or(root)
-        && request
-            .get("message")
-            .is_none_or(|value| text(value, message_limit, true))
-        && request.get("stashRef").is_none_or(stash_reference)
-        && request
-            .get("resetMode")
-            .is_none_or(|value| matches!(value.as_str(), Some("keep" | "discard")))
-        && ["force", "draft", "includeUntracked"]
-            .iter()
-            .all(|field| request.get(*field).is_none_or(Value::is_boolean))
-        && request.get("paths").is_none_or(|value| {
+        && [
+            "branchName",
+            "parentBranch",
+            "startPoint",
+            "remoteName",
+            "tagName",
+            "baseBranch",
+        ]
+        .iter()
+        .all(|field| check(field, &|value| text(value, 240, true)))
+        && check("remoteUrl", &|value| text(value, 2048, true))
+        && check("worktreePath", &root)
+        && check("message", &|value| text(value, message_limit, true))
+        && check("title", &|value| text(value, 500, true))
+        && check("body", &|value| plain_string(value, 60_000))
+        && check("patch", &|value| {
             value
-                .as_array()
-                .is_some_and(|paths| (1..=2000).contains(&paths.len()) && paths.iter().all(path))
+                .as_str()
+                .is_some_and(|patch| !patch.is_empty() && patch.encode_utf16().count() <= 2_000_000)
         })
+        && check("patchTarget", &|value| {
+            matches!(value.as_str(), Some("index" | "worktree"))
+        })
+        && check("side", &|value| {
+            matches!(value.as_str(), Some("ours" | "theirs"))
+        })
+        && check("commit", &commit_id)
+        && check("target", &commit_id)
+        && check("stashRef", &stash_reference)
+        && check("resetMode", &|value| {
+            matches!(value.as_str(), Some("keep" | "discard"))
+        })
+        && [
+            "force",
+            "draft",
+            "includeUntracked",
+            "amend",
+            "signOff",
+            "pushAfterCommit",
+            "remote",
+            "reverse",
+        ]
+        .iter()
+        .all(|field| check(field, &Value::is_boolean))
+        && check("coAuthors", &|value| {
+            bounded_array(value, 0, 20, |author| text(author, 240, true))
+        })
+        && check("branchNames", &|value| {
+            bounded_array(value, 1, 500, |branch| text(branch, 240, true))
+        })
+        && check("paths", &|value| bounded_array(value, 1, 2000, path))
+        && check("sections", &overview_sections)
+        && check("untrackedFiles", &untracked_files)
+}
+
+fn binary_chunk(value: &Value) -> bool {
+    value.as_str().is_some_and(|value| {
+        value.len() <= (1024 * 1024 + 2) / 3 * 4
+            && STANDARD
+                .decode(value)
+                .is_ok_and(|bytes| bytes.len() <= 1024 * 1024)
+    })
+}
+
+fn revision(value: &Value) -> bool {
+    value.as_str().is_some_and(|value| {
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    })
+}
+
+fn text_search(request: &Map<String, Value>) -> bool {
+    root(&request["workspaceRoot"])
+        && request["query"]
+            .as_str()
+            .is_some_and(|query| !query.is_empty() && query.encode_utf16().count() <= 2000)
+        && ["regex", "caseSensitive", "wholeWord"]
+            .iter()
+            .all(|field| request[*field].is_boolean())
+        && ["include", "exclude"].iter().all(|field| {
+            request
+                .get(*field)
+                .is_none_or(|value| plain_string(value, 2000))
+        })
+}
+
+fn repository_request(
+    args: &Value,
+    extra: &[&str],
+    optional: &[&str],
+) -> Option<Map<String, Value>> {
+    let args = fields(args, &["request"])?;
+    let mut required = vec!["workspaceRoot", "repositoryRoot"];
+    required.extend_from_slice(extra);
+    let request = fields_with_optional(&args["request"], &required, optional)?;
+    repository(request).then(|| request.clone())
+}
+
+fn cloud_issue_query(payload: &str) -> bool {
+    payload.encode_utf16().count() <= 1024
+        && serde_json::from_str::<Value>(payload)
+            .ok()
+            .as_ref()
+            .and_then(|arguments| fields(arguments, &["query"]))
+            .and_then(|arguments| arguments["query"].as_str())
+            .is_some_and(|query| {
+                !query.is_empty()
+                    && query.encode_utf16().count() <= 200
+                    && super::ecmascript_trim(query) == query
+                    && !query.contains('\0')
+            })
 }
 
 fn mcp_command(args: &Value) -> bool {
@@ -299,6 +451,13 @@ fn mcp_command(args: &Value) -> bool {
                 && text(response, 8192, true)
                 && response.as_str().is_some_and(|value| !value.contains('\0'))
         }
+        [action, id, tool, flag, payload] => {
+            action.as_str() == Some("call-tool")
+                && id.as_str() == Some("machdoch-cloud")
+                && tool.as_str() == Some("list_issues")
+                && flag.as_str() == Some("--arguments-json")
+                && payload.as_str().is_some_and(cloud_issue_query)
+        }
         _ => false,
     }
 }
@@ -306,24 +465,43 @@ fn mcp_command(args: &Value) -> bool {
 pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
     match command {
         "run_live_voice_command" => fields(args, &["workspaceRoot", "input"]).is_some_and(|args| {
-            root(&args["workspaceRoot"]) && match args["input"]["action"].as_str() {
-                Some("session") => fields(&args["input"], &["action"]).is_some(),
-                Some("process") => fields(&args["input"], &["action", "text"]).is_some_and(|input| text(&input["text"], 20_000, false)),
-                _ => false,
-            }
+            root(&args["workspaceRoot"])
+                && match args["input"]["action"].as_str() {
+                    Some("session") => fields(&args["input"], &["action"]).is_some(),
+                    Some("process") => fields(&args["input"], &["action", "text"])
+                        .is_some_and(|input| text(&input["text"], 20_000, false)),
+                    _ => false,
+                }
         }),
         "run_mcp_app_command" => fields(args, &["workspaceRoot", "input"]).is_some_and(|args| {
             text(&args["workspaceRoot"], 2048, true)
                 && args["input"].is_object()
                 && args["input"].to_string().len() <= 256 * 1024
-                && matches!(args["input"]["action"].as_str(), Some("settings" | "set-enabled" | "load" | "call-tool"))
+                && matches!(
+                    args["input"]["action"].as_str(),
+                    Some("settings" | "set-enabled" | "load" | "call-tool")
+                )
         }),
-        "run_workspace_library_command" => fields(args, &["workspaceRoot", "input"]).is_some_and(|args| {
-            root(&args["workspaceRoot"])
-                && args["input"].is_object()
-                && args["input"].to_string().len() <= 2 * 1024 * 1024
-                && matches!(args["input"]["action"].as_str(), Some("source" | "search" | "index" | "projects" | "project" | "save-project" | "delete-project" | "check-sources"))
-        }),
+        "run_workspace_library_command" => {
+            fields(args, &["workspaceRoot", "input"]).is_some_and(|args| {
+                root(&args["workspaceRoot"])
+                    && args["input"].is_object()
+                    && args["input"].to_string().len() <= 2 * 1024 * 1024
+                    && matches!(
+                        args["input"]["action"].as_str(),
+                        Some(
+                            "source"
+                                | "search"
+                                | "index"
+                                | "projects"
+                                | "project"
+                                | "save-project"
+                                | "delete-project"
+                                | "check-sources"
+                        )
+                    )
+            })
+        }
         "get_session_file_change_files" | "get_session_file_change_hunks" => {
             args.as_object().is_some_and(|args| {
                 let hunks = command == "get_session_file_change_hunks";
@@ -523,10 +701,10 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
                     && (args["enabled"].is_boolean() || args["enabled"].is_null())
             })
         }
-        "save_workspace_reasoning_bank_enabled" | "save_workspace_auto_gitignore" => {
-            fields(args, &["workspaceRoot", "enabled"])
-                .is_some_and(|args| root(&args["workspaceRoot"]) && args["enabled"].is_boolean())
-        }
+        "save_workspace_reasoning_bank_enabled"
+        | "save_workspace_auto_gitignore"
+        | "save_workspace_git_fsmonitor" => fields(args, &["workspaceRoot", "enabled"])
+            .is_some_and(|args| root(&args["workspaceRoot"]) && args["enabled"].is_boolean()),
         "save_workspace_release_stage" => fields(args, &["workspaceRoot", "releaseStage"])
             .is_some_and(|args| {
                 root(&args["workspaceRoot"])
@@ -564,7 +742,10 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
         "save_workspace_context_window" => fields(args, &["workspaceRoot", "contextWindow"])
             .is_some_and(|args| {
                 root(&args["workspaceRoot"])
-                    && matches!(args["contextWindow"].as_str(), Some("lowest" | "default" | "highest"))
+                    && matches!(
+                        args["contextWindow"].as_str(),
+                        Some("lowest" | "default" | "highest")
+                    )
             }),
         "save_workspace_mcp_config_document" => {
             fields(args, &["workspaceRoot", "rawBase64", "expectedRawBase64"]).is_some_and(|args| {
@@ -587,8 +768,9 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
             })
         }
         "discover_workspace_git_repositories" => {
-            fields_with_optional(args, &["workspaceRoot"], &["refresh"])
-                .is_some_and(|args| root(&args["workspaceRoot"]) && optional_boolean(args, "refresh"))
+            fields_with_optional(args, &["workspaceRoot"], &["refresh"]).is_some_and(|args| {
+                root(&args["workspaceRoot"]) && optional_boolean(args, "refresh")
+            })
         }
         "discover_workspace_shells" | "stop_workspace_terminals" => {
             fields(args, &["workspaceRoot"]).is_some_and(|args| root(&args["workspaceRoot"]))
@@ -599,14 +781,18 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
             )
         }),
         "get_workspace_git_branch_status" => fields(args, &["request"]).is_some_and(|args| {
-            fields_with_optional(&args["request"], &["workspaceRoot"], &["branchName", "fetch"])
-                .is_some_and(|request| {
-                    root(&request["workspaceRoot"])
-                        && request
-                            .get("branchName")
-                            .is_none_or(|value| text(value, 240, true))
-                        && optional_boolean(request, "fetch")
-                })
+            fields_with_optional(
+                &args["request"],
+                &["workspaceRoot"],
+                &["branchName", "fetch"],
+            )
+            .is_some_and(|request| {
+                root(&request["workspaceRoot"])
+                    && request
+                        .get("branchName")
+                        .is_none_or(|value| text(value, 240, true))
+                    && optional_boolean(request, "fetch")
+            })
         }),
         "switch_workspace_git_branches" => fields(args, &["request"]).is_some_and(|args| {
             fields(
@@ -617,7 +803,8 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
                 root(&request["workspaceRoot"])
                     && request["stashChanges"].is_boolean()
                     && request["targets"].as_array().is_some_and(|targets| {
-                        (1..=256).contains(&targets.len()) && targets.iter().all(branch_switch_target)
+                        (1..=256).contains(&targets.len())
+                            && targets.iter().all(branch_switch_target)
                     })
             })
         }),
@@ -668,25 +855,155 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
                 },
             )
         }),
-        "delete_workspace_entry" => fields(args, &["request"]).is_some_and(|args| {
+        "get_workspace_git_summary" | "get_workspace_git_fingerprint" => {
+            fields(args, &["workspaceRoot"]).is_some_and(|args| root(&args["workspaceRoot"]))
+        }
+        "get_workspace_git_overview" => {
+            repository_request(args, &[], &["sections", "untrackedFiles"]).is_some_and(|request| {
+                request.get("sections").is_none_or(overview_sections)
+                    && request.get("untrackedFiles").is_none_or(untracked_files)
+            })
+        }
+        "get_workspace_pull_requests"
+        | "list_workspace_git_branches"
+        | "get_workspace_git_undo" => repository_request(args, &[], &[]).is_some(),
+        "get_workspace_git_file_history" | "get_workspace_git_conflict" => {
+            repository_request(args, &["relativePath"], &[])
+                .is_some_and(|request| path(&request["relativePath"]))
+        }
+        "get_workspace_git_blame" | "get_workspace_git_file_revision" => {
+            repository_request(args, &["relativePath"], &["revision"]).is_some_and(|request| {
+                path(&request["relativePath"])
+                    && request
+                        .get("revision")
+                        .is_none_or(|value| text(value, 240, true))
+            })
+        }
+        "compare_workspace_git_revisions" => repository_request(args, &["base", "head"], &[])
+            .is_some_and(|request| {
+                text(&request["base"], 240, true) && text(&request["head"], 240, true)
+            }),
+        "get_workspace_pull_request_checks" => repository_request(args, &["number"], &[])
+            .is_some_and(|request| {
+                integer(&request["number"], 1_000_000_000.0)
+                    && request["number"]
+                        .as_f64()
+                        .is_some_and(|number| number >= 1.0)
+            }),
+        "generate_workspace_git_commit_message" => {
+            fields(args, &["workspaceRoot", "repositoryRoot"]).is_some_and(repository)
+        }
+        "get_workspace_git_call_log" | "watch_workspace" | "unwatch_workspace" => {
+            fields(args, &["workspaceRoot"]).is_some_and(|args| root(&args["workspaceRoot"]))
+        }
+        "read_workspace_changes" => fields(args, &["workspaceRoot", "after"]).is_some_and(|args| {
+            root(&args["workspaceRoot"]) && integer(&args["after"], 9_007_199_254_740_991.0)
+        }),
+        "search_workspace_files" => fields(args, &["request"]).is_some_and(|args| {
+            fields_with_optional(&args["request"], &["workspaceRoot", "query"], &["limit"])
+                .is_some_and(|request| {
+                    root(&request["workspaceRoot"])
+                        && plain_string(&request["query"], 500)
+                        && request.get("limit").is_none_or(|limit| {
+                            integer(limit, 500.0)
+                                && limit.as_f64().is_some_and(|limit| limit >= 1.0)
+                        })
+                })
+        }),
+        "search_workspace_text" => fields(args, &["request"]).is_some_and(|args| {
+            fields_with_optional(
+                &args["request"],
+                &[
+                    "workspaceRoot",
+                    "query",
+                    "regex",
+                    "caseSensitive",
+                    "wholeWord",
+                ],
+                &["include", "exclude", "limit"],
+            )
+            .is_some_and(|request| {
+                text_search(request)
+                    && request.get("limit").is_none_or(|limit| {
+                        integer(limit, 5000.0) && limit.as_f64().is_some_and(|limit| limit >= 1.0)
+                    })
+            })
+        }),
+        "replace_workspace_text" => fields(args, &["request"]).is_some_and(|args| {
+            fields_with_optional(
+                &args["request"],
+                &[
+                    "workspaceRoot",
+                    "query",
+                    "regex",
+                    "caseSensitive",
+                    "wholeWord",
+                    "replacement",
+                    "apply",
+                    "files",
+                ],
+                &["include", "exclude"],
+            )
+            .is_some_and(|request| {
+                text_search(request)
+                    && plain_string(&request["replacement"], 20_000)
+                    && request["apply"].is_boolean()
+                    && bounded_array(&request["files"], 1, 2000, |file| {
+                        fields(file, &["path", "revision"])
+                            .is_some_and(|file| path(&file["path"]) && revision(&file["revision"]))
+                    })
+            })
+        }),
+        "delete_workspace_entries" => fields(args, &["request"]).is_some_and(|args| {
             fields(
                 &args["request"],
-                &["workspaceRoot", "relativePath", "recursive"],
+                &["workspaceRoot", "relativePaths", "trash"],
+            )
+            .is_some_and(|request| {
+                root(&request["workspaceRoot"])
+                    && bounded_array(&request["relativePaths"], 1, 500, path)
+                    && request["trash"].is_boolean()
+            })
+        }),
+        "copy_workspace_entries" => fields(args, &["request"]).is_some_and(|args| {
+            fields(
+                &args["request"],
+                &["workspaceRoot", "sources", "targetDirectory", "mode"],
+            )
+            .is_some_and(|request| {
+                root(&request["workspaceRoot"])
+                    && bounded_array(&request["sources"], 1, 500, path)
+                    && reachable_path(&request["targetDirectory"])
+                    && matches!(request["mode"].as_str(), Some("copy" | "move"))
+            })
+        }),
+        "upload_workspace_file" => fields(args, &["request"]).is_some_and(|args| {
+            fields(
+                &args["request"],
+                &["workspaceRoot", "relativePath", "chunkBase64", "append"],
             )
             .is_some_and(|request| {
                 root(&request["workspaceRoot"])
                     && path(&request["relativePath"])
-                    && request["recursive"].is_boolean()
+                    && binary_chunk(&request["chunkBase64"])
+                    && request["append"].is_boolean()
             })
         }),
-        "get_workspace_git_summary" | "get_workspace_git_fingerprint" => {
-            fields(args, &["workspaceRoot"]).is_some_and(|args| root(&args["workspaceRoot"]))
-        }
-        "get_workspace_git_overview" | "get_workspace_pull_requests" => fields(args, &["request"])
-            .is_some_and(|args| {
-                fields(&args["request"], &["workspaceRoot", "repositoryRoot"])
-                    .is_some_and(repository)
-            }),
+        "read_workspace_file_range" => fields(args, &["request"]).is_some_and(|args| {
+            fields(
+                &args["request"],
+                &["workspaceRoot", "relativePath", "offset", "length"],
+            )
+            .is_some_and(|request| {
+                root(&request["workspaceRoot"])
+                    && reachable_path(&request["relativePath"])
+                    && integer(&request["offset"], 9_007_199_254_740_991.0)
+                    && integer(&request["length"], 1024.0 * 1024.0)
+                    && request["length"]
+                        .as_f64()
+                        .is_some_and(|length| length >= 1.0)
+            })
+        }),
         "get_workspace_git_graph" => fields(args, &["request"]).is_some_and(|args| {
             fields_with_optional(
                 &args["request"],

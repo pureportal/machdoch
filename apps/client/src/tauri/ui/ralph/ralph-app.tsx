@@ -38,7 +38,14 @@ import {
   type RalphSettings,
 } from "../lib/shell-store";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import { getCatalogModelsForProvider, getDefaultModelForProvider, RUNNABLE_PROVIDER_ORDER, type CatalogModel, type ProviderModelCatalogSnapshot, type RuntimeProvider } from "../model-catalog";
+import {
+  getCatalogModelsForProvider,
+  getDefaultModelForProvider,
+  RUNNABLE_PROVIDER_ORDER,
+  type CatalogModel,
+  type ProviderModelCatalogSnapshot,
+  type RuntimeProvider,
+} from "../model-catalog";
 import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import {
   getReasoningModesForProvider,
@@ -54,6 +61,7 @@ import {
 import { subscribeToSettingsImport } from "../settings-transfer";
 import { RalphFlowEditor } from "./ralph-flow-editor";
 import { RalphOverview } from "./components/ralph-overview";
+import { onRalphRunRequest, takeRalphRunRequest } from "./ralph-navigation";
 import type { RalphOverviewSelection } from "./ralph-overview-model";
 import { useRalphOverview } from "./use-ralph-overview";
 
@@ -204,9 +212,7 @@ const RuntimeModelPicker = ({
       )}
     >
       <label className="grid min-w-0 gap-1">
-        <span className="text-[11px] font-medium text-slate-500">
-          {label}
-        </span>
+        <span className="text-[11px] font-medium text-slate-500">{label}</span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -257,9 +263,7 @@ const RuntimeModelPicker = ({
       </label>
 
       <label className="grid min-w-0 gap-1">
-        <span className="text-[11px] font-medium text-slate-500">
-          Model
-        </span>
+        <span className="text-[11px] font-medium text-slate-500">Model</span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -782,6 +786,17 @@ export const RalphApp = ({
     }));
     setView("editor");
   };
+  const openSelectionRef = useRef(openOverviewSelection);
+  openSelectionRef.current = openOverviewSelection;
+  useEffect(() => {
+    if (!settingsLoaded || !shellStateLoaded) return;
+    const open = (): void => {
+      const selection = takeRalphRunRequest();
+      if (selection) openSelectionRef.current(selection);
+    };
+    open();
+    return onRalphRunRequest(open);
+  }, [settingsLoaded, shellStateLoaded]);
 
   const removeWorkspaceFromHistory = (workspace: string): void => {
     setRecentWorkspaces((current) => removeRecentWorkspace(current, workspace));

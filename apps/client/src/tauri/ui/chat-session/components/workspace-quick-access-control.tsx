@@ -1,11 +1,5 @@
-import {
-  FileCode2,
-  FolderGit2,
-  FolderOpen,
-  GitBranch,
-  PanelsTopLeft,
-} from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { FolderGit2, FolderOpen, GitBranch, PanelsTopLeft } from "lucide-react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
@@ -25,22 +19,10 @@ import {
 } from "../../workspace-management/workspace-git-summary-store";
 import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
 import {
-  WorkspaceTabList,
-  workspaceTabId,
-  workspaceTabPanelId,
-} from "../../workspace-management/workspace-tab-list";
-import { WorkspaceTools } from "../../workspace-management/workspace-tools";
-import {
   readWorkspaceViewPreferences,
   writeWorkspaceViewPreferences,
   type WorkspaceGitSection,
 } from "../../workspace-management/workspace-view-preferences";
-
-type QuickAccessTab = "git" | "files";
-
-const QUICK_ACCESS_SCOPE = "workspace-quick-access";
-
-let lastQuickAccessTab: QuickAccessTab = "git";
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -50,29 +32,17 @@ const workspaceName = (root: string): string =>
 
 const QuickAccessBody = ({
   workspaceRoot,
-  onFilesDirtyChange,
   onOpenWorkspaces,
 }: {
   workspaceRoot: string;
-  onFilesDirtyChange: (dirty: boolean) => void;
-  onOpenWorkspaces?: (tab: QuickAccessTab) => void;
+  onOpenWorkspaces?: () => void;
 }): JSX.Element => {
-  const [tab, setTab] = useState<QuickAccessTab>(lastQuickAccessTab);
   const [gitSection, setGitSection] = useState(
     () => readWorkspaceViewPreferences().gitSection,
   );
-  const [filesDirty, setFilesDirty] = useState(false);
-  const [filesRefreshToken, setFilesRefreshToken] = useState(0);
   const [openError, setOpenError] = useState<string | null>(null);
-  const git = useWorkspaceGit(workspaceRoot, {
-    filesDirty,
-    onFilesChanged: () => setFilesRefreshToken((current) => current + 1),
-  });
+  const git = useWorkspaceGit(workspaceRoot, { section: gitSection });
 
-  const selectTab = (next: QuickAccessTab): void => {
-    lastQuickAccessTab = next;
-    setTab(next);
-  };
   const selectGitSection = (next: WorkspaceGitSection): void => {
     setGitSection(next);
     writeWorkspaceViewPreferences((current) => ({
@@ -80,13 +50,6 @@ const QuickAccessBody = ({
       gitSection: next,
     }));
   };
-  const updateFilesDirty = useCallback(
-    (dirty: boolean): void => {
-      setFilesDirty(dirty);
-      onFilesDirtyChange(dirty);
-    },
-    [onFilesDirtyChange],
-  );
   const openPath = (
     relativePath: string,
     action: WorkspaceGitPathAction,
@@ -105,22 +68,6 @@ const QuickAccessBody = ({
         <DialogTitle className="min-w-0 truncate text-sm">
           {workspaceName(workspaceRoot)}
         </DialogTitle>
-        <WorkspaceTabList
-          scope={QUICK_ACCESS_SCOPE}
-          label="Workspace views"
-          tabs={[
-            {
-              value: "git",
-              label: "Git",
-              icon: GitBranch,
-              count: git.overview?.totalChanges,
-            },
-            { value: "files", label: "Files", icon: FileCode2 },
-          ]}
-          value={tab}
-          onChange={selectTab}
-          className="ml-2"
-        />
         <span className="flex-1" />
         <Button
           type="button"
@@ -136,7 +83,7 @@ const QuickAccessBody = ({
             type="button"
             size="sm"
             variant="ghost"
-            onClick={() => onOpenWorkspaces(tab)}
+            onClick={onOpenWorkspaces}
           >
             <PanelsTopLeft className="size-4" />
             Open in Workspaces
@@ -151,39 +98,14 @@ const QuickAccessBody = ({
           {openError}
         </p>
       ) : null}
-      <div
-        id={workspaceTabPanelId(QUICK_ACCESS_SCOPE, tab)}
-        role="tabpanel"
-        aria-labelledby={workspaceTabId(QUICK_ACCESS_SCOPE, tab)}
-        className="flex min-h-0 flex-1 flex-col p-3"
-      >
-        <div
-          className={cn(
-            tab === "git" ? "flex min-h-0 flex-1 flex-col" : "hidden",
-          )}
-        >
-          <WorkspaceGitPanel
-            controls={git}
-            section={gitSection}
-            onSectionChange={selectGitSection}
-            onOpenPath={openPath}
-            className="min-h-0 flex-1"
-          />
-        </div>
-        {tab === "files" || filesDirty ? (
-          <div
-            className={cn(
-              tab === "files" ? "flex min-h-0 flex-1 flex-col" : "hidden",
-            )}
-          >
-            <WorkspaceTools
-              workspaceRoot={workspaceRoot}
-              refreshToken={filesRefreshToken}
-              onDirtyChange={updateFilesDirty}
-              onWorkspaceMutation={git.reload}
-            />
-          </div>
-        ) : null}
+      <div className="flex min-h-0 flex-1 flex-col p-3">
+        <WorkspaceGitPanel
+          controls={git}
+          section={gitSection}
+          onSectionChange={selectGitSection}
+          onOpenPath={openPath}
+          className="min-h-0 flex-1"
+        />
       </div>
     </>
   );
@@ -201,7 +123,6 @@ export const WorkspaceQuickAccessControl = ({
   const normalizedRoot = workspaceRoot?.trim() || null;
   const summary = useWorkspaceGitSummary(normalizedRoot)?.summary;
   const [open, setOpen] = useState(false);
-  const [filesDirty, setFilesDirty] = useState(false);
   const previousTaskRunningRef = useRef(primaryTaskRunning);
 
   useEffect(() => {
@@ -217,30 +138,16 @@ export const WorkspaceQuickAccessControl = ({
 
   useEffect(() => {
     setOpen(false);
-    setFilesDirty(false);
   }, [normalizedRoot]);
 
   if (!normalizedRoot) return null;
 
-  const handleOpenChange = (nextOpen: boolean): boolean => {
-    if (
-      !nextOpen &&
-      filesDirty &&
-      !window.confirm("Discard your unsaved changes?")
-    ) {
-      return false;
-    }
-    setOpen(nextOpen);
-    if (!nextOpen) setFilesDirty(false);
-    return true;
-  };
-
   const openWorkspaces = onOpenWorkspaces
-    ? (tab: QuickAccessTab): void => {
-        if (!handleOpenChange(false)) return;
+    ? (): void => {
+        setOpen(false);
         writeWorkspaceViewPreferences((current) => ({
           ...current,
-          section: tab,
+          section: "git",
           selectedWorkspaceKey: createWorkspaceRootKey(normalizedRoot),
         }));
         onOpenWorkspaces();
@@ -252,10 +159,7 @@ export const WorkspaceQuickAccessControl = ({
     : "Workspace";
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => void handleOpenChange(nextOpen)}
-    >
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button
           type="button"
@@ -284,7 +188,7 @@ export const WorkspaceQuickAccessControl = ({
           ) : (
             <>
               <FolderGit2 aria-hidden="true" className="size-3.5" />
-              <span>Files</span>
+              <span>Git</span>
             </>
           )}
         </Button>
@@ -296,7 +200,6 @@ export const WorkspaceQuickAccessControl = ({
         {open ? (
           <QuickAccessBody
             workspaceRoot={normalizedRoot}
-            onFilesDirtyChange={setFilesDirty}
             onOpenWorkspaces={openWorkspaces}
           />
         ) : null}

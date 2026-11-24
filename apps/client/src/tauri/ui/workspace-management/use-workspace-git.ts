@@ -17,7 +17,6 @@ import {
   isWorkspaceGitStagingAction,
   optimisticWorkspaceGitStaging,
   selectWorkspaceGitRepository,
-  workspaceGitActionChangesFiles,
   workspaceGitActionDoneLabel,
   workspaceGitActionUsesRemote,
   workspaceGitRepositoryLabel,
@@ -38,7 +37,15 @@ import {
   workspaceGitScope,
   writeWorkspaceViewPreferences,
   type WorkspaceGitScope,
+  type WorkspaceGitSection,
 } from "./workspace-view-preferences";
+import {
+  mergeWorkspaceGitOverview,
+  workspaceGitOverviewCovers,
+  workspaceGitOverviewView,
+} from "./workspace-git-overview-view";
+import { workspaceGitPersistentCache } from "./workspace-git-persistent-cache";
+import { createBackgroundFetchScheduler } from "./workspace-git-background-fetch";
 
 interface WorkspaceGitViewState {
   workspaceKey: string | null;
@@ -84,6 +91,8 @@ interface Snapshot<T> {
 const FOCUS_REFRESH_INTERVAL_MS = 4_000;
 const PREFETCHED_OVERVIEWS = 8;
 const FETCH_ALL_CONCURRENCY = 3;
+const BACKGROUND_FETCH_INTERVAL_MS = 5 * 60_000;
+const BACKGROUND_FETCH_MAX_BACKOFF_MS = 60 * 60_000;
 const ALL_REPOSITORIES = "";
 const MAX_CACHED_ENTRIES = 64;
 
@@ -132,6 +141,52 @@ const cachedOverview = (
   repositoryRoot: string,
 ): WorkspaceGitOverview | undefined =>
   overviewCache.get(repositoryKey(repositoryRoot))?.value;
+
+const knownOverview = (
+  repositoryRoot: string,
+): WorkspaceGitOverview | undefined =>
+  cachedOverview(repositoryRoot) ??
+  workspaceGitPersistentCache.read(repositoryKey(repositoryRoot))?.overview;
+
+const storeOverview = (
+  repositoryRoot: string,
+  overview: WorkspaceGitOverview,
+  sequence: number,
+): WorkspaceGitOverview | null => {
+  const key = repositoryKey(repositoryRoot);
+  const merged = mergeWorkspaceGitOverview(
+    knownOverview(repositoryRoot),
+    overview,
+  );
+  if (!storeSnapshot(overviewCache, key, merged, sequence)) return null;
+  workspaceGitPersistentCache.write(key, "overview", merged);
+  return merged;
+};
+
+const backgroundFetchWorkspaces = new Map<string, string>();
+
+const backgroundFetch = createBackgroundFetchScheduler({
+  intervalMs: BACKGROUND_FETCH_INTERVAL_MS,
+  maxBackoffMs: BACKGROUND_FETCH_MAX_BACKOFF_MS,
+  fetch: async (repositoryRoot) => {
+    const workspaceRoot = backgroundFetchWorkspaces.get(repositoryRoot);
+    if (!workspaceRoot) return;
+    await runWorkspaceGitAction(
+      workspaceRoot,
+      repositoryRoot,
+      "fetch",
+      {},
+      { sections: [], untrackedFiles: "normal" },
+    );
+  },
+  online: () => navigator.onLine,
+  visible: () => document.visibilityState === "visible",
+  now: () => Date.now(),
+  setTimer: (task, delayMs) => {
+    const timer = window.setTimeout(task, delayMs);
+    return () => window.clearTimeout(timer);
+  },
+});
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -223,7 +278,7 @@ const createInitialState = (
     repositoriesStatusLoading: scope === "all",
     repositoriesStatusError: null,
     repositoryRoot,
-    overview: cachedOverview(repositoryRoot) ?? null,
+    overview: knownOverview(repositoryRoot) ?? null,
     loading: scope === "repository",
     error: null,
     pullRequests: pullRequestCache.get(repositoryKey(repositoryRoot)) ?? null,
@@ -235,9 +290,10 @@ const createInitialState = (
 export function useWorkspaceGit(
   workspaceRoot: string | null,
   {
-    filesDirty = false,
-    onFilesChanged,
-  }: { filesDirty?: boolean; onFilesChanged?: () => void } = {},
+    section = "changes",
+  }: {
+    section?: WorkspaceGitSection;
+  } = {},
 ) {
   const workspaceKey = workspaceRoot
     ? createWorkspaceRootKey(workspaceRoot)
@@ -264,10 +320,8 @@ export function useWorkspaceGit(
   repositoryRootRef.current = current.repositoryRoot;
   const scopeRef = useRef(current.scope);
   scopeRef.current = current.scope;
-  const filesDirtyRef = useRef(filesDirty);
-  filesDirtyRef.current = filesDirty;
-  const onFilesChangedRef = useRef(onFilesChanged);
-  onFilesChangedRef.current = onFilesChanged;
+  const viewRef = useRef(workspaceGitOverviewView(section));
+  viewRef.current = workspaceGitOverviewView(section);
   const overviewRequestRef = useRef(0);
   const statusRequestRef = useRef(0);
   const pullRequestRequestRef = useRef(0);
@@ -305,19 +359,17 @@ export function useWorkspaceGit(
     ): void => {
       const scopeKey = createWorkspaceRootKey(root);
       const key = repositoryKey(repositoryRoot);
-      if (!storeSnapshot(overviewCache, key, overview, sequence)) return;
+      const stored = storeOverview(repositoryRoot, overview, sequence);
+      if (!stored) return;
       if (key === scopeKey) {
         workspaceGitSummaryStore.publish(
           root,
-          workspaceGitSummaryFromOverview(overview),
+          workspaceGitSummaryFromOverview(stored),
           sequence,
         );
       }
       const cachedStatus = repositoriesStatusCache.get(scopeKey);
-      const status = withRepositoryStatus(
-        cachedStatus?.value ?? null,
-        overview,
-      );
+      const status = withRepositoryStatus(cachedStatus?.value ?? null, stored);
       if (status && cachedStatus) {
         rememberEntry(repositoriesStatusCache, scopeKey, {
           value: status,
@@ -328,7 +380,7 @@ export function useWorkspaceGit(
         ...current,
         ...(status ? { repositoriesStatus: status } : {}),
         ...(sameRepository(current.repositoryRoot, repositoryRoot)
-          ? { overview, loading: false, error: null }
+          ? { overview: stored, loading: false, error: null }
           : {}),
       }));
     },
@@ -352,16 +404,15 @@ export function useWorkspaceGit(
         loading: true,
       }));
       try {
-        const overview = await loadWorkspaceGitOverview(root, repositoryRoot);
+        const overview = await loadWorkspaceGitOverview(
+          root,
+          repositoryRoot,
+          viewRef.current,
+        );
         if (requestId === overviewRequestRef.current) {
           applyOverview(root, repositoryRoot, overview, sequence);
         } else {
-          storeSnapshot(
-            overviewCache,
-            repositoryKey(repositoryRoot),
-            overview,
-            sequence,
-          );
+          storeOverview(repositoryRoot, overview, sequence);
         }
       } catch (error) {
         if (requestId === overviewRequestRef.current) {
@@ -405,10 +456,13 @@ export function useWorkspaceGit(
         }
         try {
           const sequence = nextWorkspaceGitSequence();
-          storeSnapshot(
-            overviewCache,
-            repositoryKey(repository.repositoryRoot),
-            await loadWorkspaceGitOverview(root, repository.repositoryRoot),
+          storeOverview(
+            repository.repositoryRoot,
+            await loadWorkspaceGitOverview(
+              root,
+              repository.repositoryRoot,
+              viewRef.current,
+            ),
             sequence,
           );
         } catch {
@@ -475,7 +529,7 @@ export function useWorkspaceGit(
           repositoriesStatusError: null,
           repositoryRoot: selectedRoot,
           overview: selectedRoot
-            ? (cachedOverview(selectedRoot) ?? current.overview)
+            ? (knownOverview(selectedRoot) ?? current.overview)
             : null,
         }));
         if (discovery.repositories.length === 1 && selectedRoot) {
@@ -578,7 +632,7 @@ export function useWorkspaceGit(
             ...(repositoryChanged
               ? {
                   overview: selectedRoot
-                    ? (cachedOverview(selectedRoot) ?? null)
+                    ? (knownOverview(selectedRoot) ?? null)
                     : null,
                   error: null,
                   loading: selectedRoot !== null,
@@ -645,6 +699,32 @@ export function useWorkspaceGit(
   }, [load, workspaceRoot]);
 
   useEffect(() => {
+    const root = workspaceRootRef.current;
+    const repositoryRoot = repositoryRootRef.current;
+    if (!root || !repositoryRoot) return;
+    const cached = cachedOverview(repositoryRoot);
+    if (
+      cached &&
+      !workspaceGitOverviewCovers(cached, workspaceGitOverviewView(section))
+    ) {
+      void loadOverview(root, repositoryRoot);
+    }
+  }, [loadOverview, section]);
+
+  const selectedRepositoryRoot = current.repositoryRoot;
+  useEffect(() => {
+    if (!workspaceRoot || !selectedRepositoryRoot) return;
+    backgroundFetchWorkspaces.set(selectedRepositoryRoot, workspaceRoot);
+    const stop = backgroundFetch.watch(selectedRepositoryRoot);
+    return () => {
+      stop();
+      if (backgroundFetch.nextFetchAt(selectedRepositoryRoot) === undefined) {
+        backgroundFetchWorkspaces.delete(selectedRepositoryRoot);
+      }
+    };
+  }, [selectedRepositoryRoot, workspaceRoot]);
+
+  useEffect(() => {
     const refreshOnFocus = (): void => {
       if (
         document.visibilityState === "visible" &&
@@ -695,7 +775,7 @@ export function useWorkspaceGit(
           "repository",
         ),
       );
-      const cached = cachedOverview(repositoryRoot) ?? null;
+      const cached = knownOverview(repositoryRoot) ?? null;
       updateScoped(scopeKey, null, (current) => ({
         ...current,
         scope: "repository",
@@ -754,7 +834,10 @@ export function useWorkspaceGit(
           root,
           repositoryRoot,
           "fetch",
+          {},
+          viewRef.current,
         );
+        backgroundFetch.fetched(repositoryRoot);
         const selectedRoot = workspaceRootRef.current;
         const selected =
           selectedRoot !== null &&
@@ -834,7 +917,10 @@ export function useWorkspaceGit(
             root,
             repository.repositoryRoot,
             "fetch",
+            {},
+            viewRef.current,
           );
+          backgroundFetch.fetched(repository.repositoryRoot);
           applyOverview(
             root,
             repository.repositoryRoot,
@@ -899,16 +985,6 @@ export function useWorkspaceGit(
       ) {
         return false;
       }
-      const changesFiles = workspaceGitActionChangesFiles(action);
-      if (
-        changesFiles &&
-        filesDirtyRef.current &&
-        !window.confirm(
-          "Run this Git action with unsaved changes? Your draft will be kept.",
-        )
-      ) {
-        return false;
-      }
       const scope = {
         workspaceKey: createWorkspaceRootKey(root),
         repositoryRoot,
@@ -940,7 +1016,6 @@ export function useWorkspaceGit(
           overview,
           nextWorkspaceGitSequence(),
         );
-        if (changesFiles) onFilesChangedRef.current?.();
         if (workspaceGitActionUsesRemote(action)) {
           pullRequestCache.delete(repositoryKey(repositoryRoot));
           void loadPullRequests(root, repositoryRoot);
@@ -999,6 +1074,7 @@ export function useWorkspaceGit(
           activeRepositoryRoot,
           action,
           options,
+          viewRef.current,
         ),
       );
     },
@@ -1030,7 +1106,11 @@ export function useWorkspaceGit(
             true,
           );
           if (result?.error) throw new Error(result.error);
-          return loadWorkspaceGitOverview(root, activeRepositoryRoot);
+          return loadWorkspaceGitOverview(
+            root,
+            activeRepositoryRoot,
+            viewRef.current,
+          );
         },
         `Stashed changes and switched to ${branchName}`,
       );

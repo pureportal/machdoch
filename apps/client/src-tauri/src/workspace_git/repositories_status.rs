@@ -1,11 +1,10 @@
-use std::{path::Path, thread};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 use super::{
-    branch_alignment, command_output, current_operation, discover_repositories, output_error,
-    parallel_map, parse_status, parse_upstream_track, stack, WorkspaceGitChange,
-    WorkspaceGitRepository,
+    branch_alignment, canonical_workspace_root, config, current_operation, discover_repositories,
+    fsmonitor, overview, parallel_map, refs, status, WorkspaceGitChange, WorkspaceGitRepository,
 };
 
 const MAX_REPOSITORY_STATUS_CHANGES: usize = 100;
@@ -45,6 +44,8 @@ pub struct WorkspaceGitRepositoryStatus {
     operation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_fetched_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -56,133 +57,66 @@ pub struct WorkspaceGitRepositoriesStatus {
     issues: Vec<String>,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
-struct BranchHeader {
-    branch: String,
-    detached: bool,
-    upstream: Option<String>,
-    upstream_gone: bool,
-    ahead: u64,
-    behind: u64,
-}
-
-fn parse_branch_header(header: &str) -> BranchHeader {
-    let header = header.strip_prefix("## ").unwrap_or(header);
-    if header == "HEAD (no branch)" {
-        return BranchHeader {
-            branch: "Detached HEAD".to_string(),
-            detached: true,
-            ..BranchHeader::default()
-        };
-    }
-    for prefix in ["No commits yet on ", "Initial commit on "] {
-        if let Some(branch) = header.strip_prefix(prefix) {
-            return BranchHeader {
-                branch: branch.to_string(),
-                ..BranchHeader::default()
-            };
-        }
-    }
-    let (names, track) = match header.split_once(" [") {
-        Some((names, track)) => (names, track.trim_end_matches(']')),
-        None => (header, ""),
-    };
-    let (branch, upstream) = match names.split_once("...") {
-        Some((branch, upstream)) => (branch, Some(upstream.to_string())),
-        None => (names, None),
-    };
-    let (ahead, behind, upstream_gone) = parse_upstream_track(track);
-    BranchHeader {
-        branch: branch.to_string(),
-        detached: false,
-        upstream,
-        upstream_gone,
-        ahead,
-        behind,
-    }
-}
-
-fn read_status_with_branch(repository: &Path) -> Result<String, String> {
-    let arguments = [
-        "status",
-        "--porcelain=v1",
-        "--branch",
-        "-z",
-        "--untracked-files=all",
-    ];
-    let output = command_output("git", &arguments, repository)?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-    } else {
-        Err(output_error("git", &arguments, &output))
-    }
-}
-
-fn inspect_repository(repository: &WorkspaceGitRepository) -> WorkspaceGitRepositoryStatus {
-    let path = Path::new(&repository.repository_root);
-    let mut status = WorkspaceGitRepositoryStatus {
+fn inspect_repository(
+    repository: &WorkspaceGitRepository,
+    fsmonitor: bool,
+) -> WorkspaceGitRepositoryStatus {
+    let path = PathBuf::from(&repository.repository_root);
+    let mut result = WorkspaceGitRepositoryStatus {
         repository_root: repository.repository_root.clone(),
         relative_path: repository.relative_path.clone(),
         ..WorkspaceGitRepositoryStatus::default()
     };
-    let operation = current_operation(path);
-    let (status_output, trunk_references, parents) = thread::scope(|scope| {
-        let status_worker = scope.spawn(|| read_status_with_branch(path));
-        let trunk_worker = scope.spawn(|| branch_alignment::read_trunk_references(path));
-        let parents = stack::read_parents(path);
-        (
-            status_worker
-                .join()
-                .unwrap_or_else(|_| Err("Git status stopped unexpectedly.".to_string())),
-            trunk_worker.join().unwrap_or_default(),
-            parents,
-        )
+    let repository_status =
+        match status::repository_status(&path, status::UntrackedFiles::Normal, fsmonitor) {
+            Ok(repository_status) => repository_status,
+            Err(error) => {
+                result.error = Some(error);
+                return result;
+            }
+        };
+    let branch = &repository_status.branch;
+    let current = branch.head.as_deref();
+    let counts = repository_status.counts();
+    let (changes, changes_truncated) = repository_status.changes(MAX_REPOSITORY_STATUS_CHANGES);
+    result.default_branch =
+        branch_alignment::default_branch(&refs::trunk_references(&path), current);
+    result.parent_branch = current.and_then(|name| {
+        config::read_repository_config(&path)
+            .parents
+            .get(name)
+            .cloned()
     });
-    let output = match status_output {
-        Ok(output) => output,
-        Err(error) => {
-            status.error = Some(error);
-            return status;
-        }
-    };
-    let (header, entries) = match output.split_once('\0') {
-        Some((header, entries)) if header.starts_with("## ") => (header, entries),
-        _ => ("", output.as_str()),
-    };
-    let branch = parse_branch_header(header);
-    let (changes, _, staged, unstaged, untracked, conflicted, total) = parse_status(entries);
-    let current = (!branch.detached).then_some(branch.branch.as_str());
-    status.default_branch = branch_alignment::default_branch(&trunk_references, current);
-    status.parent_branch = current.and_then(|name| parents.get(name).cloned());
-    status.branch = branch.branch;
-    status.detached = branch.detached;
-    status.upstream = branch.upstream;
-    status.upstream_gone = branch.upstream_gone;
-    status.ahead = branch.ahead;
-    status.behind = branch.behind;
-    status.staged_count = staged;
-    status.unstaged_count = unstaged;
-    status.untracked_count = untracked;
-    status.conflicted_count = conflicted;
-    status.total_changes = total;
-    status.changes_truncated = total > MAX_REPOSITORY_STATUS_CHANGES;
-    status.changes = changes
-        .into_iter()
-        .take(MAX_REPOSITORY_STATUS_CHANGES)
-        .collect();
-    status.operation = operation;
-    status
+    result.branch = branch.display_name();
+    result.detached = current.is_none();
+    result.upstream = branch.upstream.clone();
+    result.upstream_gone = branch.upstream_gone;
+    result.ahead = branch.ahead;
+    result.behind = branch.behind;
+    result.staged_count = counts.staged;
+    result.unstaged_count = counts.unstaged;
+    result.untracked_count = counts.untracked;
+    result.conflicted_count = counts.conflicted;
+    result.total_changes = counts.total;
+    result.changes = changes;
+    result.changes_truncated = changes_truncated;
+    result.operation = current_operation(&path);
+    result.last_fetched_at = overview::last_fetched_at(&path);
+    result
 }
 
 pub(super) fn load_repositories_status(
     request: WorkspaceGitRepositoriesStatusRequest,
 ) -> Result<WorkspaceGitRepositoriesStatus, String> {
+    let workspace = canonical_workspace_root(&request.workspace_root)?;
     let discovery = discover_repositories(&request.workspace_root, request.refresh == Some(true))?;
+    crate::workspace_watch::ensure_watching(&workspace);
+    let fsmonitor = fsmonitor::enabled_for(&workspace);
     Ok(WorkspaceGitRepositoriesStatus {
         repositories: parallel_map(
             &discovery.repositories,
             MAX_REPOSITORY_STATUS_WORKERS,
-            inspect_repository,
+            |repository| inspect_repository(repository, fsmonitor),
         ),
         workspace_root: discovery.workspace_root,
         scan_limited: discovery.scan_limited,
@@ -196,28 +130,6 @@ mod tests {
 
     use super::*;
     use crate::workspace_git::run_required;
-
-    #[test]
-    fn parses_branch_headers() {
-        assert_eq!(
-            parse_branch_header("## feature/x...origin/feature/x [ahead 2, behind 3]"),
-            BranchHeader {
-                branch: "feature/x".to_string(),
-                detached: false,
-                upstream: Some("origin/feature/x".to_string()),
-                upstream_gone: false,
-                ahead: 2,
-                behind: 3,
-            }
-        );
-        assert!(parse_branch_header("## main...origin/main [gone]").upstream_gone);
-        assert_eq!(parse_branch_header("## main").upstream, None);
-        assert!(parse_branch_header("## HEAD (no branch)").detached);
-        assert_eq!(
-            parse_branch_header("## No commits yet on trunk").branch,
-            "trunk"
-        );
-    }
 
     #[test]
     fn reports_every_repository_with_branches_and_changes() {

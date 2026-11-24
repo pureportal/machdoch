@@ -28,10 +28,14 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 
+use super::{
+    files::{parse_requested_path, resolve_existing_path},
+    shell_integration::shell_launch,
+    terminal_text::render_terminal_text,
+};
+use crate::runtime_snapshot::resolve_workspace_root_path;
 #[cfg(windows)]
 use machdoch_process::terminate_child_process_tree_by_id;
-use super::terminal_text::render_terminal_text;
-use crate::runtime_snapshot::resolve_workspace_root_path;
 
 const MAX_TERMINAL_SESSIONS: usize = 32;
 const MAX_WORKSPACE_TERMINAL_SESSIONS: usize = 8;
@@ -109,6 +113,7 @@ pub struct StartWorkspaceTerminalRequest {
     shell_id: String,
     columns: u16,
     rows: u16,
+    cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -447,7 +452,7 @@ fn normalize_workspace_root_input(workspace_root: &str) -> String {
 }
 
 #[cfg(windows)]
-fn shell_compatible_path(path: &Path) -> PathBuf {
+pub(crate) fn shell_compatible_path(path: &Path) -> PathBuf {
     use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
 
     const VERBATIM_PREFIX: &[u16] = &[b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
@@ -493,7 +498,7 @@ fn shell_compatible_path(path: &Path) -> PathBuf {
 }
 
 #[cfg(not(windows))]
-fn shell_compatible_path(path: &Path) -> PathBuf {
+pub(crate) fn shell_compatible_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
@@ -965,7 +970,11 @@ enum TerminalStartupOutcome {
 
 fn build_shell_command(shell: &ShellSpec, workspace: &Path) -> CommandBuilder {
     let mut command = CommandBuilder::new(&shell.program);
-    command.args(shell.args.iter());
+    let launch = shell_launch(&shell.kind, &shell.program, &shell.args);
+    command.args(launch.args.iter());
+    for (key, value) in &launch.env {
+        command.env(key, value);
+    }
     command.cwd(workspace);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
@@ -990,6 +999,17 @@ fn start_terminal_sync(
 ) -> Result<StartedWorkspaceTerminal, String> {
     let size = validate_terminal_size(request.columns, request.rows)?;
     let (canonical_workspace, workspace) = shell_workspace_root(&request.workspace_root)?;
+    let working_directory = match request.cwd.as_deref() {
+        Some(relative) => {
+            let requested = parse_requested_path(relative, true)?;
+            let directory = resolve_existing_path(&canonical_workspace, &requested)?;
+            if !directory.is_dir() {
+                return Err("The terminal folder no longer exists.".to_string());
+            }
+            shell_compatible_path(&directory)
+        }
+        None => workspace.clone(),
+    };
     let workspace_key = normalized_workspace_key(&request.workspace_root);
     let canonical_workspace_key = normalized_workspace_key(&canonical_workspace.to_string_lossy());
     let shell = discover_shell_specs()
@@ -1008,7 +1028,7 @@ fn start_terminal_sync(
     let pair = native_pty_system()
         .openpty(size)
         .map_err(|error| format!("Unable to create a terminal: {error}"))?;
-    let command = build_shell_command(&shell, &workspace);
+    let command = build_shell_command(&shell, &working_directory);
     let mut child = pair
         .slave
         .spawn_command(command)
@@ -1569,6 +1589,10 @@ pub async fn open_workspace_terminal_host(
 }
 
 #[cfg(test)]
+#[path = "terminal_bench.rs"]
+mod bench;
+
+#[cfg(test)]
 mod tests {
     use std::{
         fs,
@@ -1975,6 +1999,7 @@ mod tests {
                 shell_id: shell.id.clone(),
                 columns: 80,
                 rows: 24,
+                cwd: None,
             },
             Channel::<WorkspaceTerminalEvent>::new(|_| Ok(())),
         )
@@ -1986,6 +2011,7 @@ mod tests {
                 shell_id: shell.id,
                 columns: 80,
                 rows: 24,
+                cwd: None,
             },
             Channel::<WorkspaceTerminalEvent>::new(|_| Ok(())),
         )
@@ -2044,6 +2070,7 @@ mod tests {
                     shell_id: shell.id.clone(),
                     columns: 80,
                     rows: 24,
+                    cwd: None,
                 },
                 Channel::<WorkspaceTerminalEvent>::new(|_| Ok(())),
             )
@@ -2109,6 +2136,7 @@ mod tests {
                 shell_id: powershell.id.clone(),
                 columns: 80,
                 rows: 24,
+                cwd: None,
             },
             powershell_channel,
         )
@@ -2120,6 +2148,7 @@ mod tests {
                 shell_id: command_prompt.id.clone(),
                 columns: 80,
                 rows: 24,
+                cwd: None,
             },
             Channel::<WorkspaceTerminalEvent>::new(|_| Ok(())),
         )
@@ -2266,6 +2295,7 @@ mod tests {
                 shell_id: shell.id,
                 columns: 80,
                 rows: 24,
+                cwd: None,
             },
             channel,
         )
@@ -2411,6 +2441,7 @@ mod tests {
                 shell_id: shell.id,
                 columns: 100,
                 rows: 30,
+                cwd: None,
             },
             channel,
         )
@@ -2629,6 +2660,7 @@ mod tests {
                 shell_id: shell.id,
                 columns: 80,
                 rows: 24,
+                cwd: None,
             },
             channel,
         )

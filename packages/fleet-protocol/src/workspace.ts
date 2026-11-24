@@ -78,12 +78,44 @@ const name = z
       value !== "..",
   );
 const repository = { workspaceRoot: root, repositoryRoot: root };
+const binaryChunk = z
+  .string()
+  .max(Math.ceil(maximumWorkspaceFileBytes / 3) * 4)
+  .refine((value) => {
+    try {
+      const binary = atob(value);
+      return (
+        binary.length <= maximumWorkspaceFileBytes && btoa(binary) === value
+      );
+    } catch {
+      return false;
+    }
+  });
+const revision = z.string().regex(/^[a-f0-9]{64}$/u);
+const searchPattern = z.string().max(2000).optional();
+const textSearch = {
+  workspaceRoot: root,
+  query: z.string().min(1).max(2000),
+  regex: z.boolean(),
+  caseSensitive: z.boolean(),
+  wholeWord: z.boolean(),
+  include: searchPattern,
+  exclude: searchPattern,
+};
+const paths = z.array(path).min(1).max(2000);
 const mcpServer = z
   .string()
   .trim()
   .min(1)
   .max(240)
   .refine((value) => !value.startsWith("-") && !value.includes("\0"));
+const cloudIssueQuery = z.strictObject({
+  query: z
+    .string()
+    .min(1)
+    .max(200)
+    .refine((value) => value.trim() === value && !value.includes("\0")),
+});
 const mcpArguments = z.union([
   z.tuple([z.literal("servers")]),
   z.tuple([z.literal("servers"), z.literal("--include-disabled")]),
@@ -102,13 +134,44 @@ const mcpArguments = z.union([
       .max(8192)
       .refine((value) => !value.includes("\0")),
   ]),
+  z.tuple([
+    z.literal("call-tool"),
+    z.literal("machdoch-cloud"),
+    z.literal("list_issues"),
+    z.literal("--arguments-json"),
+    z
+      .string()
+      .max(1024)
+      .refine((value) => {
+        try {
+          return cloudIssueQuery.safeParse(JSON.parse(value)).success;
+        } catch {
+          return false;
+        }
+      }),
+  ]),
 ]);
 const gitBranch = z.string().trim().min(1).max(240);
 const commitId = z.string().regex(/^[0-9a-f]{4,64}$/iu);
+const overviewOptions = {
+  sections: z
+    .array(
+      z.enum(["branches", "numstat", "recentCommits", "stashes", "worktrees"]),
+    )
+    .max(5)
+    .optional(),
+  untrackedFiles: z.enum(["normal", "all"]).optional(),
+};
 const gitAction = <T extends string, S extends z.ZodRawShape>(
   value: T,
   shape: S,
-) => z.strictObject({ ...repository, action: z.literal(value), ...shape });
+) =>
+  z.strictObject({
+    ...repository,
+    ...overviewOptions,
+    action: z.literal(value),
+    ...shape,
+  });
 const action = z.discriminatedUnion("action", [
   gitAction("push", { force: z.boolean().optional() }),
   gitAction("submit-pull-requests", { draft: z.boolean().optional() }),
@@ -147,10 +210,49 @@ const action = z.discriminatedUnion("action", [
     startPoint: gitBranch.optional(),
     resetMode: z.enum(["keep", "discard"]).optional(),
   }),
-  ...(["stage", "unstage"] as const).map((value) =>
-    gitAction(value, { paths: z.array(path).min(1).max(2000) }),
+  ...(["stage", "unstage", "discard", "mark-resolved"] as const).map((value) =>
+    gitAction(value, { paths }),
   ),
-  gitAction("commit", { message: z.string().trim().min(1).max(20_000) }),
+  gitAction("commit", {
+    message: z.string().trim().min(1).max(20_000),
+    amend: z.boolean().optional(),
+    signOff: z.boolean().optional(),
+    coAuthors: z.array(z.string().trim().min(1).max(240)).max(20).optional(),
+    pushAfterCommit: z.boolean().optional(),
+  }),
+  gitAction("apply-patch", {
+    patch: z.string().min(1).max(2_000_000),
+    patchTarget: z.enum(["index", "worktree"]),
+    reverse: z.boolean(),
+  }),
+  ...(["cherry-pick", "revert"] as const).map((value) =>
+    gitAction(value, { commit: commitId }),
+  ),
+  gitAction("create-tag", {
+    tagName: gitBranch,
+    startPoint: gitBranch.optional(),
+    message: z.string().trim().min(1).max(500).optional(),
+  }),
+  gitAction("push-tag", { tagName: gitBranch }),
+  gitAction("delete-tag", {
+    tagName: gitBranch,
+    remote: z.boolean().optional(),
+  }),
+  gitAction("resolve-conflict", { paths, side: z.enum(["ours", "theirs"]) }),
+  gitAction("undo", { target: commitId }),
+  ...(["set-upstream", "pull-rebase", "remove-index-lock"] as const).map(
+    (value) => gitAction(value, {}),
+  ),
+  gitAction("delete-branches", {
+    branchNames: z.array(gitBranch).min(1).max(500),
+    force: z.boolean().optional(),
+  }),
+  gitAction("create-pull-request", {
+    title: z.string().trim().min(1).max(500),
+    body: z.string().max(60_000).optional(),
+    baseBranch: gitBranch.optional(),
+    draft: z.boolean().optional(),
+  }),
   gitAction("stash-push", {
     message: z.string().trim().min(1).max(500).optional(),
     includeUntracked: z.boolean().optional(),
@@ -478,6 +580,7 @@ export const workspaceRequestSchema = z.union([
           shellId: z.string().min(1).max(240),
           columns: z.number().int().min(1).max(500),
           rows: z.number().int().min(1).max(300),
+          cwd: path.optional(),
         }),
       }),
     ),
@@ -568,7 +671,7 @@ export const workspaceRequestSchema = z.union([
           workspaceRoot: root,
           relativePath: reachablePath,
           contentBase64: fileContent,
-          expectedRevision: z.string().regex(/^[a-f0-9]{64}$/u),
+          expectedRevision: revision,
           force: z.boolean(),
           bom: z.boolean(),
         }),
@@ -596,13 +699,86 @@ export const workspaceRequestSchema = z.union([
       }),
     ),
     command(
-      "delete_workspace_entry",
+      "delete_workspace_entries",
+      z.strictObject({
+        request: z.strictObject({
+          workspaceRoot: root,
+          relativePaths: z.array(path).min(1).max(500),
+          trash: z.boolean(),
+        }),
+      }),
+    ),
+    command(
+      "copy_workspace_entries",
+      z.strictObject({
+        request: z.strictObject({
+          workspaceRoot: root,
+          sources: z.array(path).min(1).max(500),
+          targetDirectory: reachablePath,
+          mode: z.enum(["copy", "move"]),
+        }),
+      }),
+    ),
+    command(
+      "upload_workspace_file",
       z.strictObject({
         request: z.strictObject({
           workspaceRoot: root,
           relativePath: path,
-          recursive: z.boolean(),
+          chunkBase64: binaryChunk,
+          append: z.boolean(),
         }),
+      }),
+    ),
+    command(
+      "read_workspace_file_range",
+      z.strictObject({
+        request: z.strictObject({
+          workspaceRoot: root,
+          relativePath: reachablePath,
+          offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+          length: z.number().int().min(1).max(maximumWorkspaceFileBytes),
+        }),
+      }),
+    ),
+    command(
+      "search_workspace_files",
+      z.strictObject({
+        request: z.strictObject({
+          workspaceRoot: root,
+          query: z.string().max(500),
+          limit: z.number().int().min(1).max(500).optional(),
+        }),
+      }),
+    ),
+    command(
+      "search_workspace_text",
+      z.strictObject({
+        request: z.strictObject({
+          ...textSearch,
+          limit: z.number().int().min(1).max(5000).optional(),
+        }),
+      }),
+    ),
+    command(
+      "replace_workspace_text",
+      z.strictObject({
+        request: z.strictObject({
+          ...textSearch,
+          replacement: z.string().max(20_000),
+          apply: z.boolean(),
+          files: z.array(z.strictObject({ path, revision })).min(1).max(2000),
+        }),
+      }),
+    ),
+    ...(["watch_workspace", "unwatch_workspace"] as const).map((value) =>
+      command(value, z.strictObject({ workspaceRoot: root })),
+    ),
+    command(
+      "read_workspace_changes",
+      z.strictObject({
+        workspaceRoot: root,
+        after: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
       }),
     ),
     command(
@@ -657,7 +833,74 @@ export const workspaceRequestSchema = z.union([
     ),
     command(
       "get_workspace_git_overview",
-      z.strictObject({ request: z.strictObject(repository) }),
+      z.strictObject({
+        request: z.strictObject({ ...repository, ...overviewOptions }),
+      }),
+    ),
+    ...(["list_workspace_git_branches", "get_workspace_git_undo"] as const).map(
+      (value) =>
+        command(value, z.strictObject({ request: z.strictObject(repository) })),
+    ),
+    command(
+      "get_workspace_git_call_log",
+      z.strictObject({ workspaceRoot: root }),
+    ),
+    command(
+      "generate_workspace_git_commit_message",
+      z.strictObject(repository),
+    ),
+    command(
+      "save_workspace_git_fsmonitor",
+      z.strictObject({ workspaceRoot: root, enabled: z.boolean() }),
+    ),
+    ...(
+      ["get_workspace_git_file_history", "get_workspace_git_conflict"] as const
+    ).map((value) =>
+      command(
+        value,
+        z.strictObject({
+          request: z.strictObject({ ...repository, relativePath: path }),
+        }),
+      ),
+    ),
+    command(
+      "get_workspace_git_blame",
+      z.strictObject({
+        request: z.strictObject({
+          ...repository,
+          relativePath: path,
+          revision: gitBranch.optional(),
+        }),
+      }),
+    ),
+    command(
+      "get_workspace_git_file_revision",
+      z.strictObject({
+        request: z.strictObject({
+          ...repository,
+          relativePath: path,
+          revision: gitBranch.optional(),
+        }),
+      }),
+    ),
+    command(
+      "compare_workspace_git_revisions",
+      z.strictObject({
+        request: z.strictObject({
+          ...repository,
+          base: gitBranch,
+          head: gitBranch,
+        }),
+      }),
+    ),
+    command(
+      "get_workspace_pull_request_checks",
+      z.strictObject({
+        request: z.strictObject({
+          ...repository,
+          number: z.number().int().min(1).max(1_000_000_000),
+        }),
+      }),
     ),
     command(
       "get_workspace_git_graph",

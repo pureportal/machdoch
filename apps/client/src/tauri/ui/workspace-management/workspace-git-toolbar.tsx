@@ -11,6 +11,7 @@ import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js"
 import { SearchableSelect } from "@machdoch/media-studio/tauri/ui/components/ui/searchable-select.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { WorkspaceGitAction, WorkspaceGitOverview } from "../runtime";
+import { WorkspaceGitUndoButton } from "./workspace-git-undo";
 import type { WorkspaceGitControls } from "./use-workspace-git";
 import { WorkspaceGitBranchPicker } from "./workspace-git-branch-picker";
 import { WorkspaceGitBranchTarget } from "./workspace-git-branch-target";
@@ -225,6 +226,9 @@ export const WorkspaceGitToolbar = ({
             }
           />
         </div>
+      ) : null}
+      {!all && overview ? (
+        <WorkspaceGitUndoButton controls={controls} overview={overview} />
       ) : null}
       <Button
         type="button"

@@ -34,8 +34,14 @@ pub(crate) use desktop_settings_commands::{
 };
 pub(crate) use env::load_global_env;
 pub(crate) fn save_shared_speech_key(provider: &str, secret: Option<&str>) -> Result<(), String> {
-    if !matches!(provider, "openai" | "google") { return Err("Choose an existing shared API provider.".to_string()); }
-    match secret { Some(secret) => settings_commands::save_user_api_key(provider,secret), None => settings_commands::delete_user_api_key(provider) }.map(|_| ())
+    if !matches!(provider, "openai" | "google") {
+        return Err("Choose an existing shared API provider.".to_string());
+    }
+    match secret {
+        Some(secret) => settings_commands::save_user_api_key(provider, secret),
+        None => settings_commands::delete_user_api_key(provider),
+    }
+    .map(|_| ())
 }
 pub(crate) use env_commands::resolve_agent_cli_binary;
 pub use mcp_config::McpConfigWriteLock;
@@ -51,14 +57,14 @@ use settings_commands::{
     load_user_agent_limits_settings, load_user_api_keys, load_user_internal_task_model_settings,
     load_user_memory_settings, load_user_review_model_settings, load_user_speech_to_text_settings,
     load_user_voice_settings, load_user_web_search_settings, release_managed_api_keys,
-    save_user_agent_limits_settings_value,
-    save_user_api_key, save_user_global_memory_enabled_value,
-    save_user_internal_task_model_settings_value, save_user_review_model_settings_value,
-    save_user_speech_to_text_active_provider_value, save_user_speech_to_text_context_value,
-    save_user_speech_to_text_input_device_value, save_user_speech_to_text_key_terms_value,
-    save_user_speech_to_text_processing_value, save_user_voice_active_provider_value,
-    save_user_web_search_active_provider_value, save_user_web_search_api_key_value,
-    save_user_workspace_memory_default_enabled_value, save_user_workspace_run_settings_value,
+    save_user_agent_limits_settings_value, save_user_api_key,
+    save_user_global_memory_enabled_value, save_user_internal_task_model_settings_value,
+    save_user_review_model_settings_value, save_user_speech_to_text_active_provider_value,
+    save_user_speech_to_text_context_value, save_user_speech_to_text_input_device_value,
+    save_user_speech_to_text_key_terms_value, save_user_speech_to_text_processing_value,
+    save_user_voice_active_provider_value, save_user_web_search_active_provider_value,
+    save_user_web_search_api_key_value, save_user_workspace_memory_default_enabled_value,
+    save_user_workspace_run_settings_value,
 };
 pub(super) use settings_commands::{
     merge_user_agent_cli_paths_into_env, merge_user_api_keys_into_env,
@@ -81,9 +87,9 @@ pub(crate) use workspace::{get_user_config_directory, resolve_workspace_root_pat
 use workspace::{
     save_workspace_adaptive_controller_override_value, save_workspace_auto_gitignore_value,
     save_workspace_context_window_value, save_workspace_default_mode_value,
-    save_workspace_memory_override_value, save_workspace_reasoning_bank_enabled_value,
-    save_workspace_reasoning_execution_mode_value, save_workspace_reasoning_mode_value,
-    save_workspace_release_stage_value,
+    save_workspace_git_file_system_monitor_value, save_workspace_memory_override_value,
+    save_workspace_reasoning_bank_enabled_value, save_workspace_reasoning_execution_mode_value,
+    save_workspace_reasoning_mode_value, save_workspace_release_stage_value,
 };
 use workspace_memory::{forget_workspace_memory_entry, load_workspace_memory_entries};
 
@@ -570,11 +576,25 @@ pub async fn save_workspace_auto_gitignore(
 }
 
 #[tauri::command]
+pub async fn save_workspace_git_fsmonitor(
+    workspace_root: String,
+    enabled: bool,
+) -> Result<String, String> {
+    let config_path = tauri::async_runtime::spawn_blocking(move || {
+        save_workspace_git_file_system_monitor_value(&workspace_root, enabled)
+    })
+    .await
+    .map_err(|error| format!("Saving the Git setting stopped unexpectedly: {error}"))??;
+    Ok(config_path.display().to_string())
+}
+
+#[tauri::command]
 pub async fn save_workspace_release_stage(
     workspace_root: String,
     release_stage: Option<String>,
 ) -> Result<String, String> {
-    let config_path = save_workspace_release_stage_value(&workspace_root, release_stage.as_deref())?;
+    let config_path =
+        save_workspace_release_stage_value(&workspace_root, release_stage.as_deref())?;
     Ok(config_path.display().to_string())
 }
 

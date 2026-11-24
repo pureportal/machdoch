@@ -57,6 +57,7 @@ const buildHistory = (
       author: "Machdoch",
       authoredAt: new Date(clock).toISOString(),
       refs: [],
+      ...(subject === "Polish workspace toolbar" ? { agent: true } : {}),
     });
     return hash;
   };
@@ -197,6 +198,19 @@ export const previewWorkspaceGitGraph = (
     truncated: false,
     ...(base ? { base } : {}),
   };
+};
+
+export const previewWorkspaceGitRevision = (
+  repository: PreviewRepository,
+  trunk: string,
+  revision: string,
+): string => {
+  const history = buildHistory(repository, trunk);
+  const commit =
+    history.tips.get(revision) ??
+    (history.commits.has(revision) ? revision : null);
+  if (!commit) throw new Error(`Branch \`${revision}\` does not exist.`);
+  return commit;
 };
 
 export const previewWorkspaceGitCommit = (

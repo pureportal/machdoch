@@ -288,7 +288,7 @@ describe("createGitToolDefinitions", () => {
     expect(executeCommandMock).toHaveBeenNthCalledWith(
       3,
       "git",
-      ["commit", "-m", "Improve README"],
+      ["commit", "-m", "Improve README", "--trailer", "Machdoch-Agent: agent"],
       expect.any(Object),
     );
   });

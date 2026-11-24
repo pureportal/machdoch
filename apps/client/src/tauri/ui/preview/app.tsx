@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, type JSX } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentShellWindowLabel } from "../lib/shell-store";
 import { QUICK_VOICE_WINDOW_LABEL, TRAY_MENU_WINDOW_LABEL } from "../runtime";
+import { parseWorkspaceToolWindowRoute } from "../workspace-management/workspace-tool-window-route";
 
 const ChatSession = lazy(async () => {
   const module = await import("../chat-session-shell");
@@ -24,6 +25,14 @@ const TrayMenuShell = lazy(async () => {
 
   return {
     default: module.TrayMenuShell,
+  };
+});
+
+const WorkspaceToolShell = lazy(async () => {
+  const module = await import("../workspace-tool-shell");
+
+  return {
+    default: module.WorkspaceToolShell,
   };
 });
 
@@ -98,6 +107,18 @@ export const App = (): JSX.Element => {
     return (
       <Suspense fallback={fallback}>
         <TrayMenuShell />
+      </Suspense>
+    );
+  }
+
+  const toolRoute =
+    typeof window === "undefined"
+      ? null
+      : parseWorkspaceToolWindowRoute(window.location.search);
+  if (toolRoute) {
+    return (
+      <Suspense fallback={fallback}>
+        <WorkspaceToolShell route={toolRoute} />
       </Suspense>
     );
   }

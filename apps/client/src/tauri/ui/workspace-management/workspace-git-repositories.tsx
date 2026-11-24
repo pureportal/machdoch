@@ -2,18 +2,28 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  CircleCheck,
+  CircleDashed,
+  CircleX,
   GitBranch,
+  GitPullRequest,
   LoaderCircle,
   TriangleAlert,
 } from "lucide-react";
-import { useState, type JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import type {
-  WorkspaceGitChange,
-  WorkspaceGitRepositoryStatus,
+import {
+  loadWorkspacePullRequests,
+  openExternalUrl,
+  type WorkspaceGitChange,
+  type WorkspaceGitRepositoriesStatus,
+  type WorkspaceGitRepositoryStatus,
+  type WorkspacePullRequest,
 } from "../runtime";
 import type { WorkspaceGitControls } from "./use-workspace-git";
+import { WorkspaceGitBulkActions } from "./workspace-git-bulk-actions";
+import { formatWorkspaceGitTime } from "./workspace-git-time";
 import { WorkspaceGitBranchTarget } from "./workspace-git-branch-target";
 import type { WorkspaceGitPathAction } from "./workspace-git-changes";
 import { WorkspaceGitDiffView } from "./workspace-git-diff";
@@ -123,14 +133,82 @@ const SyncState = ({
   );
 };
 
+const PULL_REQUEST_CONCURRENCY = 3;
+
+const CHECK_ICONS = {
+  success: (
+    <CircleCheck
+      aria-label="Checks passed"
+      className="size-3 text-emerald-300"
+    />
+  ),
+  failure: (
+    <CircleX aria-label="Checks failed" className="size-3 text-red-300" />
+  ),
+  pending: (
+    <CircleDashed
+      aria-label="Checks running"
+      className="size-3 text-amber-300"
+    />
+  ),
+  neutral: (
+    <CircleDashed
+      aria-label="Checks neutral"
+      className="size-3 text-slate-500"
+    />
+  ),
+} as const;
+
+const useOpenPullRequests = (
+  status: WorkspaceGitRepositoriesStatus,
+): ReadonlyMap<string, WorkspacePullRequest> => {
+  const [pullRequests, setPullRequests] = useState<
+    ReadonlyMap<string, WorkspacePullRequest>
+  >(new Map());
+  const branches = JSON.stringify(
+    status.repositories
+      .filter((repository) => !repository.detached && repository.upstream)
+      .map((repository) => [repository.repositoryRoot, repository.branch]),
+  );
+  useEffect(() => {
+    let active = true;
+    const queue = JSON.parse(branches) as [string, string][];
+    const found = new Map<string, WorkspacePullRequest>();
+    const worker = async (): Promise<void> => {
+      for (let next = queue.shift(); next && active; next = queue.shift()) {
+        const [repositoryRoot, branch] = next;
+        const overview = await loadWorkspacePullRequests(
+          status.workspaceRoot,
+          repositoryRoot,
+        ).catch(() => null);
+        const pullRequest = overview?.items.find(
+          (item) => item.headBranch === branch,
+        );
+        if (pullRequest) found.set(repositoryRoot, pullRequest);
+      }
+    };
+    void Promise.all(
+      Array.from({ length: PULL_REQUEST_CONCURRENCY }, worker),
+    ).then(() => {
+      if (active) setPullRequests(new Map(found));
+    });
+    return () => {
+      active = false;
+    };
+  }, [branches, status.workspaceRoot]);
+  return pullRequests;
+};
+
 const RepositoryCard = ({
   repository,
   controls,
+  pullRequest,
   selected,
   onSelectChange,
 }: {
   repository: WorkspaceGitRepositoryStatus;
   controls: WorkspaceGitControls;
+  pullRequest: WorkspacePullRequest | undefined;
   selected: SelectedChange | null;
   onSelectChange: (change: SelectedChange) => void;
 }): JSX.Element => {
@@ -188,6 +266,29 @@ const RepositoryCard = ({
               />
             )}
             <SyncState repository={repository} />
+            {pullRequest ? (
+              <button
+                type="button"
+                title={pullRequest.title}
+                onClick={() => void openExternalUrl(pullRequest.url)}
+                className="inline-flex shrink-0 items-center gap-1 text-[11px] text-slate-400 hover:text-sky-200"
+              >
+                <GitPullRequest
+                  aria-hidden="true"
+                  className="size-3 text-emerald-300"
+                />
+                #{pullRequest.number}
+                {pullRequest.checks ? CHECK_ICONS[pullRequest.checks] : null}
+              </button>
+            ) : null}
+            {repository.lastFetchedAt ? (
+              <span className="shrink-0 text-[10px] text-slate-600">
+                fetched{" "}
+                {formatWorkspaceGitTime(
+                  new Date(repository.lastFetchedAt).toISOString(),
+                )}
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -305,6 +406,14 @@ export const WorkspaceGitRepositories = ({
 }): JSX.Element | null => {
   const [selected, setSelected] = useState<SelectedChange | null>(null);
   const status = controls.repositoriesStatus;
+  const pullRequests = useOpenPullRequests(
+    status ?? {
+      workspaceRoot: "",
+      repositories: [],
+      scanLimited: false,
+      issues: [],
+    },
+  );
   if (!status) return null;
   const selectedRepository = selected
     ? status.repositories.find(
@@ -329,11 +438,13 @@ export const WorkspaceGitRepositories = ({
       )}
     >
       <div className="flex min-w-0 flex-col gap-2">
+        <WorkspaceGitBulkActions controls={controls} status={status} />
         {status.repositories.map((repository) => (
           <RepositoryCard
             key={repository.repositoryRoot}
             repository={repository}
             controls={controls}
+            pullRequest={pullRequests.get(repository.repositoryRoot)}
             selected={selected}
             onSelectChange={setSelected}
           />

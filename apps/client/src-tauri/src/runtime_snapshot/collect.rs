@@ -13,9 +13,9 @@ use super::{
 use super::{normalize_optional_string, AudioProviderAvailability};
 use crate::runtime_contract_generated::{
     AGENT_CLI_PROVIDERS, CONTEXT_WINDOW_MODES, DEFAULT_ANSWER_LANGUAGE, DEFAULT_MODEL_BY_PROVIDER,
-    DEFAULT_MODEL_PROVIDER, PROVIDER_ENV_KEYS, REASONING_MODES, RELEASE_STAGES, USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS,
-    VALID_MODEL_PROVIDERS, VALID_SPEECH_TO_TEXT_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS,
-    WEB_SEARCH_ENV_KEYS,
+    DEFAULT_MODEL_PROVIDER, PROVIDER_ENV_KEYS, REASONING_MODES, RELEASE_STAGES,
+    USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS,
+    VALID_SPEECH_TO_TEXT_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS, WEB_SEARCH_ENV_KEYS,
 };
 
 fn normalize_context_window(value: &ContextWindow) -> Result<ContextWindow, String> {
@@ -23,9 +23,7 @@ fn normalize_context_window(value: &ContextWindow) -> Result<ContextWindow, Stri
         ContextWindow::Mode(mode) if CONTEXT_WINDOW_MODES.contains(&mode.trim()) => {
             Ok(ContextWindow::Mode(mode.trim().to_string()))
         }
-        _ => Err(
-            "Context window must be lowest, default, or highest.".to_string(),
-        ),
+        _ => Err("Context window must be lowest, default, or highest.".to_string()),
     }
 }
 
@@ -201,7 +199,10 @@ pub(super) fn get_audio_provider_availability(
         .iter()
         .filter_map(|provider| {
             if *provider == "fish" {
-                return Some(AudioProviderAvailability { provider: "fish".to_string(), configured: crate::speech::fish_configured() });
+                return Some(AudioProviderAvailability {
+                    provider: "fish".to_string(),
+                    configured: crate::speech::fish_configured(),
+                });
             }
             let env_key = PROVIDER_ENV_KEYS
                 .iter()
@@ -473,6 +474,7 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         workspace_memory_enabled,
         reasoning_bank_enabled: config.reasoning_bank_enabled.unwrap_or(true),
         auto_gitignore: config.auto_gitignore.unwrap_or(true),
+        git_file_system_monitor: config.git_file_system_monitor.unwrap_or(true),
         workspace_memory_override,
         adaptive_controller_override: config.adaptive_controller_enabled,
         release_stage,

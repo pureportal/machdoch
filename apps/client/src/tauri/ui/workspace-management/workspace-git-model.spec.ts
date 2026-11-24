@@ -7,12 +7,12 @@ import type {
   WorkspaceGitWorktree,
 } from "../runtime";
 import {
+  describeWorkspaceGitSync,
   createWorkspaceGitBranchTree,
   filterWorkspaceGitBranches,
   groupWorkspaceGitChanges,
   optimisticWorkspaceGitStaging,
   selectWorkspaceGitRepository,
-  workspaceGitActionChangesFiles,
   workspaceGitActionDoneLabel,
   workspaceGitActionProgressLabel,
   workspaceGitActionUsesRemote,
@@ -94,26 +94,7 @@ describe("workspace Git presentation", () => {
     expect(workspaceGitPathInWorkspace(null, "README.md")).toBe("README.md");
   });
 
-  it("identifies actions that rewrite files or use the remote", () => {
-    for (const action of [
-      "pull",
-      "checkout",
-      "merge",
-      "rebase",
-      "restack",
-      "stash-pop",
-      "abort-operation",
-    ] as const) {
-      expect(workspaceGitActionChangesFiles(action)).toBe(true);
-    }
-    for (const action of [
-      "fetch",
-      "commit",
-      "stage",
-      "create-stacked-branch",
-    ] as const) {
-      expect(workspaceGitActionChangesFiles(action)).toBe(false);
-    }
+  it("identifies actions that use the remote", () => {
     for (const action of [
       "fetch",
       "pull",
@@ -349,6 +330,34 @@ describe("optimistic workspace Git staging", () => {
     expect(next.changes[2]?.originalPath).toBeUndefined();
     expect(next.stagedCount).toBe(0);
     expect(next.untrackedCount).toBe(2);
+  });
+});
+
+describe("workspace Git sync state", () => {
+  it("names the sync state shown in the workspace status strip", () => {
+    const summary = { detached: false, ahead: 0, behind: 0 };
+    expect(
+      describeWorkspaceGitSync({ ...summary, upstream: "origin/main" }),
+    ).toBe("In sync");
+    expect(
+      describeWorkspaceGitSync({
+        ...summary,
+        upstream: "origin/main",
+        ahead: 2,
+        behind: 1,
+      }),
+    ).toBe("↑2 ↓1");
+    expect(
+      describeWorkspaceGitSync({
+        ...summary,
+        upstream: "origin/main",
+        behind: 3,
+      }),
+    ).toBe("↓3");
+    expect(describeWorkspaceGitSync(summary)).toBe("Not published");
+    expect(describeWorkspaceGitSync({ ...summary, detached: true })).toBe(
+      "Detached",
+    );
   });
 });
 

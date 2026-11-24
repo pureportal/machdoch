@@ -9,6 +9,7 @@ import {
   saveWorkspaceAdaptiveControllerOverride,
   saveWorkspaceReasoningBankEnabled,
   saveWorkspaceAutoGitignore,
+  saveWorkspaceGitFileSystemMonitor,
   saveWorkspaceReleaseStage,
   saveWorkspaceReasoningExecutionMode,
   saveWorkspaceReasoningMode,
@@ -44,6 +45,7 @@ type WorkspaceConfigurationValues = Omit<
   | "onAdaptiveControllerOverrideChange"
   | "onReasoningBankEnabledChange"
   | "onAutoGitignoreChange"
+  | "onGitFileSystemMonitorChange"
   | "onReleaseStageChange"
   | "onReasoningModeChange"
   | "onReasoningExecutionModeChange"
@@ -54,7 +56,8 @@ const createWorkspaceConfigurationValues = (
   snapshot: RuntimeSnapshot,
 ): WorkspaceConfigurationValues => {
   const effectiveReasoningMode = snapshot.reasoningMode ?? "standard";
-  const effectiveContextWindow = snapshot.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+  const effectiveContextWindow =
+    snapshot.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
 
   return {
     defaultMode: snapshot.defaultMode ?? snapshot.mode,
@@ -72,6 +75,7 @@ const createWorkspaceConfigurationValues = (
     workspaceMemoryEnabled: snapshot.workspaceMemoryEnabled,
     reasoningBankEnabled: snapshot.reasoningBankEnabled !== false,
     autoGitignore: snapshot.autoGitignore !== false,
+    gitFileSystemMonitor: snapshot.gitFileSystemMonitor !== false,
     releaseStage: snapshot.releaseStage ?? null,
     reasoningProvider:
       snapshot.provider === "unconfigured" ? undefined : snapshot.provider,
@@ -290,6 +294,13 @@ export const WorkspaceConfigurationSettings = ({
             () => saveWorkspaceAutoGitignore(workspaceRoot, enabled),
             ".gitignore settings saved.",
             ".gitignore settings could not be updated.",
+          );
+        },
+        onGitFileSystemMonitorChange: async (enabled) => {
+          await saveSetting(
+            () => saveWorkspaceGitFileSystemMonitor(workspaceRoot, enabled),
+            "Git settings saved.",
+            "Git settings could not be updated.",
           );
         },
         onReleaseStageChange: async (releaseStage) => {

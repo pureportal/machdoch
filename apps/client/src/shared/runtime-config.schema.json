@@ -277,6 +277,10 @@
           "type": "boolean",
           "default": true
         },
+        "gitFileSystemMonitor": {
+          "type": "boolean",
+          "default": true
+        },
         "adaptiveControllerEnabled": {
           "type": ["boolean", "null"]
         },

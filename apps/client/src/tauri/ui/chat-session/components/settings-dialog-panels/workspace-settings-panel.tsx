@@ -263,6 +263,25 @@ export const WorkspaceSettingsPanel = ({
         </SettingPanel>
       ) : null}
 
+      {setup.onGitFileSystemMonitorChange ? (
+        <SettingPanel label="Git file system monitor">
+          <ChoiceButtons
+            label="Git file system monitor"
+            value={
+              setup.gitFileSystemMonitor === false ? "disabled" : "enabled"
+            }
+            options={[
+              { value: "enabled", label: "Enabled" },
+              { value: "disabled", label: "Disabled" },
+            ]}
+            disabled={setup.saving || !setup.workspaceRoot}
+            onChange={(value) => {
+              void setup.onGitFileSystemMonitorChange?.(value === "enabled");
+            }}
+          />
+        </SettingPanel>
+      ) : null}
+
       <SettingPanel label="Default mode">
         <ChoiceButtons
           label="Default workspace mode"

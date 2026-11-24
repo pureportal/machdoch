@@ -11,6 +11,7 @@ import type { TaskDeterministicAction } from "../../core/types.js";
 export type CommandName =
   | "live-voice"
   | "run-detection"
+  | "commit-message"
   | "skills"
   | "mcp-apps"
   | "knowledge"
@@ -337,6 +338,7 @@ export interface ParsedCliArgs {
   liveVoice?: { request?: unknown; inputJsonFile?: string };
   workspaceLibrary?: { request?: unknown; inputJsonFile?: string };
   update?: { check: boolean };
+  commitMessage?: { repositoryRoot: string };
   mediaFlowAgent?: { inputJsonFile: string };
   speech?: { inputJsonFile: string };
   command: CommandName;

@@ -210,6 +210,7 @@ export const seedMachdoch = (
       needsRestack: true,
     }),
     branch("feature/conflict-demo", "c0ffee1"),
+    branch("cloud-2972-sign-in-redirect", "d2972aa"),
   ],
   remoteBranches: [
     branch("origin/main", "7f84c2a"),
@@ -238,6 +239,7 @@ export const seedMachdoch = (
       url: "https://github.com/example/machdoch/pull/128",
       headBranch: "feature/workspace",
       baseBranch: "main",
+      checks: "failure",
       draft: false,
       author: "machdoch",
       updatedAt: "2026-08-03T18:10:00Z",

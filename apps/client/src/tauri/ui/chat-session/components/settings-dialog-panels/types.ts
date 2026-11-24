@@ -86,6 +86,7 @@ export interface WorkspaceSettingsControls {
   workspaceMemoryEnabled?: boolean;
   reasoningBankEnabled?: boolean;
   autoGitignore?: boolean;
+  gitFileSystemMonitor?: boolean;
   releaseStage?: ReleaseStage | null;
   reasoningProvider?: RuntimeProvider;
   reasoningModel?: string;
@@ -100,6 +101,7 @@ export interface WorkspaceSettingsControls {
   ) => Promise<void> | void;
   onReasoningBankEnabledChange?: (enabled: boolean) => Promise<void> | void;
   onAutoGitignoreChange?: (enabled: boolean) => Promise<void> | void;
+  onGitFileSystemMonitorChange?: (enabled: boolean) => Promise<void> | void;
   onReleaseStageChange?: (
     releaseStage: ReleaseStage | null,
   ) => Promise<void> | void;
@@ -178,13 +180,15 @@ export interface AppearanceSettingsControls {
 }
 
 export interface VoiceSettingsControls {
-  answerMode?:"completed"|"streaming";
-  streamingSupported?:boolean;
-  onAnswerModeChange?:(mode:"completed"|"streaming")=>void;
+  answerMode?: "completed" | "streaming";
+  streamingSupported?: boolean;
+  onAnswerModeChange?: (mode: "completed" | "streaming") => void;
   conversationAutoSpeak?: "default" | "manual" | "auto";
-  onConversationAutoSpeakChange?: (value: "default" | "manual" | "auto") => void;
+  onConversationAutoSpeakChange?: (
+    value: "default" | "manual" | "auto",
+  ) => void;
   conversationProfileId?: string;
-  conversationProfiles?: Array<{id:string;name:string}>;
+  conversationProfiles?: Array<{ id: string; name: string }>;
   onConversationProfileChange?: (value: string | undefined) => void;
   supported: boolean;
   systemVoicesSupported: boolean;

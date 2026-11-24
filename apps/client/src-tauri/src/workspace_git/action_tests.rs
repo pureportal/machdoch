@@ -6,18 +6,18 @@ use std::{
 };
 
 use super::{
-    actions::execute_workspace_git_action, command_succeeds, load_overview, run_required,
+    actions::execute_workspace_git_action, command_succeeds, load_full_overview, run_required,
     stack::read_parents, WorkspaceGitActionRequest, WorkspaceGitOverview,
 };
 
 static NEXT_REPOSITORY: AtomicU64 = AtomicU64::new(0);
 
-struct TestRepository {
+pub(super) struct TestRepository {
     root: PathBuf,
 }
 
 impl TestRepository {
-    fn new(name: &str) -> Self {
+    pub(super) fn new(name: &str) -> Self {
         let unique = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("the clock should be valid")
@@ -37,12 +37,12 @@ impl TestRepository {
         repository
     }
 
-    fn git(&self, arguments: &[&str]) -> String {
+    pub(super) fn git(&self, arguments: &[&str]) -> String {
         run_required("git", arguments, &self.root)
             .unwrap_or_else(|error| panic!("git {arguments:?} failed: {error}"))
     }
 
-    fn write(&self, path: &str, content: &str) {
+    pub(super) fn write(&self, path: &str, content: &str) {
         let path = self.root.join(path);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("the parent directory should be created");
@@ -50,13 +50,13 @@ impl TestRepository {
         fs::write(path, content).expect("the file should write");
     }
 
-    fn commit_file(&self, path: &str, content: &str, message: &str) {
+    pub(super) fn commit_file(&self, path: &str, content: &str, message: &str) {
         self.write(path, content);
         self.git(&["add", "--", path]);
         self.git(&["commit", "-m", message]);
     }
 
-    fn action(
+    pub(super) fn action(
         &self,
         action: &str,
         configure: impl FnOnce(&mut WorkspaceGitActionRequest),
@@ -65,14 +65,26 @@ impl TestRepository {
             workspace_root: self.root.display().to_string(),
             repository_root: self.root.display().to_string(),
             action: action.to_string(),
+            sections: Some(
+                [
+                    "branches",
+                    "numstat",
+                    "recentCommits",
+                    "stashes",
+                    "worktrees",
+                ]
+                .map(str::to_string)
+                .to_vec(),
+            ),
+            untracked_files: Some("all".to_string()),
             ..Default::default()
         };
         configure(&mut request);
         execute_workspace_git_action(request)
     }
 
-    fn overview(&self) -> WorkspaceGitOverview {
-        load_overview(
+    pub(super) fn overview(&self) -> WorkspaceGitOverview {
+        load_full_overview(
             &self.root.display().to_string(),
             &self.root.display().to_string(),
         )
@@ -88,7 +100,7 @@ impl TestRepository {
         .expect("ancestry should be readable")
     }
 
-    fn path(&self) -> &Path {
+    pub(super) fn path(&self) -> &Path {
         &self.root
     }
 }
@@ -126,7 +138,9 @@ fn stages_commits_and_stashes_changes() {
     assert!(repository
         .action("commit", |request| request.message = Some("  ".to_string()))
         .is_err());
-    repository.action("stage-all", |_| {}).expect("all files should stage");
+    repository
+        .action("stage-all", |_| {})
+        .expect("all files should stage");
     let committed = repository
         .action("commit", |request| {
             request.message = Some("Add module".to_string())
@@ -150,7 +164,8 @@ fn stages_commits_and_stashes_changes() {
     assert!(stashed.stashes[0].message.ends_with("wip notes"));
 
     assert!(repository
-        .action("stash-pop", |request| request.stash_ref = Some("stash@{x}".to_string()))
+        .action("stash-pop", |request| request.stash_ref =
+            Some("stash@{x}".to_string()))
         .is_err());
     let popped = repository
         .action("stash-pop", |request| {
@@ -244,14 +259,22 @@ fn stacked_branches_restack_after_parent_changes() {
         .all(|candidate| !candidate.needs_restack));
     assert!(repository.is_ancestor("main", "feat/a"));
     assert!(repository.is_ancestor("feat/a", "feat/b"));
-    assert_eq!(repository.git(&["rev-list", "--count", "feat/a..feat/b"]), "1");
-    assert_eq!(repository.git(&["rev-list", "--count", "main..feat/b"]), "2");
+    assert_eq!(
+        repository.git(&["rev-list", "--count", "feat/a..feat/b"]),
+        "1"
+    );
+    assert_eq!(
+        repository.git(&["rev-list", "--count", "main..feat/b"]),
+        "2"
+    );
 
     let cycle = repository.action("stack-branch", |request| {
         request.branch_name = Some("feat/a".to_string());
         request.parent_branch = Some("feat/b".to_string());
     });
-    assert!(cycle.expect_err("cycles should be rejected").contains("cycle"));
+    assert!(cycle
+        .expect_err("cycles should be rejected")
+        .contains("cycle"));
 
     repository.git(&["switch", "main"]);
     let unmerged = repository
@@ -265,7 +288,9 @@ fn stacked_branches_restack_after_parent_changes() {
         })
         .expect("a forced delete should succeed");
     assert_eq!(
-        read_parents(repository.path()).get("feat/b").map(String::as_str),
+        read_parents(repository.path())
+            .get("feat/b")
+            .map(String::as_str),
         Some("main")
     );
 
@@ -301,7 +326,12 @@ fn branches_start_from_a_chosen_point_and_push_with_upstream() {
         .action("push", |_| {})
         .expect_err("pushing without a remote should fail")
         .contains("Add a Git remote"));
-    repository.git(&["remote", "add", "origin", &remote.path().display().to_string()]);
+    repository.git(&[
+        "remote",
+        "add",
+        "origin",
+        &remote.path().display().to_string(),
+    ]);
     let pushed = repository
         .action("push", |_| {})
         .expect("the branch should publish");
@@ -315,7 +345,12 @@ fn overview_tracks_the_current_branch_upstream() {
     let remote = TestRepository::new("tracking-remote");
     remote.git(&["fetch", &repository.path().display().to_string(), "main"]);
     remote.git(&["reset", "--hard", "FETCH_HEAD"]);
-    repository.git(&["remote", "add", "origin", &remote.path().display().to_string()]);
+    repository.git(&[
+        "remote",
+        "add",
+        "origin",
+        &remote.path().display().to_string(),
+    ]);
     repository
         .action("fetch", |_| {})
         .expect("the remote should fetch");
@@ -366,7 +401,10 @@ fn resets_the_current_branch_keeping_or_discarding_changes() {
             request.reset_mode = Some("discard".to_string());
         })
         .expect("the reset should discard changes");
-    assert_eq!((discarded.unstaged_count, discarded.untracked_count), (0, 1));
+    assert_eq!(
+        (discarded.unstaged_count, discarded.untracked_count),
+        (0, 1)
+    );
 
     let without_upstream = repository
         .action("reset", |_| {})
@@ -388,7 +426,10 @@ fn resets_the_current_branch_keeping_or_discarding_changes() {
 fn overview_reports_the_trunk_branch() {
     let repository = TestRepository::new("trunk");
     repository.git(&["switch", "-c", "feature"]);
-    assert_eq!(repository.overview().default_branch.as_deref(), Some("main"));
+    assert_eq!(
+        repository.overview().default_branch.as_deref(),
+        Some("main")
+    );
 }
 
 struct RemoveOnDrop(PathBuf);

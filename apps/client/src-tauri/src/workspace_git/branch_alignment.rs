@@ -7,9 +7,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    canonical_workspace_root, command_output, current_operation, discover_repositories,
-    output_error, parallel_map, relative_workspace_path, repository_context, run_git_network,
-    run_git_read, run_optional, run_required, summary::read_summary, WorkspaceGitRepository,
+    canonical_workspace_root, command_output, current_operation, discover_repositories, fsmonitor,
+    output_error, parallel_map, relative_workspace_path, repository_context, run_git_background,
+    run_git_network, run_optional, run_required, summary::read_summary, WorkspaceGitRepository,
     FETCH_ARGUMENTS, MAX_CONCURRENT_REPOSITORY_INSPECTIONS,
 };
 
@@ -191,24 +191,6 @@ pub(super) fn default_branch(
         .map(|candidate| candidate.to_string())
 }
 
-pub(super) fn read_trunk_references(repository: &Path) -> BranchReferences {
-    run_optional(
-        "git",
-        &[
-            "for-each-ref",
-            "--format=%(refname)%09%(symref)%09%(committerdate:unix)",
-            "refs/remotes/*/HEAD",
-            "refs/remotes/*/main",
-            "refs/remotes/*/master",
-            "refs/heads/main",
-            "refs/heads/master",
-        ],
-        repository,
-    )
-    .map(|output| parse_references(&output))
-    .unwrap_or_default()
-}
-
 const BRANCH_REFERENCE_ARGUMENTS: [&str; 4] = [
     "for-each-ref",
     "--format=%(refname)%09%(symref)%09%(committerdate:unix)",
@@ -229,16 +211,15 @@ pub(super) fn branch_revision(references: &BranchReferences, branch: &str) -> Op
         .map(|remote_branch| format!("refs/remotes/{remote_branch}"))
 }
 
-fn read_repository_facts(repository: &Path) -> Result<RepositoryFacts, String> {
+fn read_repository_facts(repository: &Path, fsmonitor: bool) -> Result<RepositoryFacts, String> {
     thread::scope(|scope| {
-        let summary_worker = scope.spawn(|| read_summary(repository));
+        let summary_worker = scope.spawn(|| read_summary(repository, fsmonitor));
         let references_worker =
             scope.spawn(|| run_required("git", &BRANCH_REFERENCE_ARGUMENTS, repository));
         let operation = current_operation(repository);
         let summary = summary_worker
             .join()
-            .map_err(|_| "Git status worker stopped unexpectedly.".to_string())??
-            .ok_or_else(|| "The folder is no longer a Git repository.".to_string())?;
+            .map_err(|_| "Git status worker stopped unexpectedly.".to_string())??;
         let references = parse_references(
             &references_worker
                 .join()
@@ -257,6 +238,7 @@ fn read_repository_facts(repository: &Path) -> Result<RepositoryFacts, String> {
 fn branch_status_repository(
     repository: &WorkspaceGitRepository,
     branch_name: Option<&str>,
+    fsmonitor: bool,
 ) -> (WorkspaceGitBranchRepository, Vec<(String, i64)>) {
     let root = Path::new(&repository.repository_root);
     let mut status = WorkspaceGitBranchRepository {
@@ -271,7 +253,7 @@ fn branch_status_repository(
         operation: None,
         error: None,
     };
-    match read_repository_facts(root) {
+    match read_repository_facts(root, fsmonitor) {
         Ok(facts) => {
             status.default_branch =
                 default_branch(&facts.references, facts.current_branch.as_deref());
@@ -356,7 +338,7 @@ pub(super) async fn load_branch_status(
     } else {
         Vec::new()
     };
-    run_git_read(move || read_branch_status(&workspace_root, branch_name, fetch_issues)).await
+    run_git_background(move || read_branch_status(&workspace_root, branch_name, fetch_issues)).await
 }
 
 fn read_branch_status(
@@ -365,6 +347,9 @@ fn read_branch_status(
     fetch_issues: Vec<String>,
 ) -> Result<WorkspaceGitBranchStatus, String> {
     let discovery = discover_repositories(workspace_root, false)?;
+    let workspace = canonical_workspace_root(workspace_root)?;
+    crate::workspace_watch::ensure_watching(&workspace);
+    let fsmonitor = fsmonitor::enabled_for(&workspace);
     let mut issues = discovery.issues;
     issues.extend(fetch_issues);
     let mut repositories = Vec::with_capacity(discovery.repositories.len());
@@ -372,7 +357,7 @@ fn read_branch_status(
     for (status, branches) in parallel_map(
         &discovery.repositories,
         MAX_CONCURRENT_REPOSITORY_INSPECTIONS,
-        |repository| branch_status_repository(repository, branch_name.as_deref()),
+        |repository| branch_status_repository(repository, branch_name.as_deref(), fsmonitor),
     ) {
         repositories.push(status);
         recent.extend(branches);
@@ -442,7 +427,8 @@ fn prepare_switch(
     let relative_path = relative_workspace_path(&workspace, &repository);
     let name = repository_display_name(&workspace, &relative_path);
     let (branch_name, facts) = thread::scope(|scope| {
-        let facts_worker = scope.spawn(|| read_repository_facts(&repository));
+        let facts_worker =
+            scope.spawn(|| read_repository_facts(&repository, fsmonitor::enabled_for(&workspace)));
         let branch_name = validate_switch_branch(&target.branch_name, &repository);
         let facts = facts_worker
             .join()

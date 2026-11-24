@@ -1,16 +1,34 @@
-import {
-  ExternalLink,
-  GitPullRequest,
-  LoaderCircle,
-  RefreshCw,
-} from "lucide-react";
-import { useEffect, type JSX } from "react";
-import { Badge } from "@machdoch/media-studio/tauri/ui/components/ui/badge.js";
+import { isTauri } from "@tauri-apps/api/core";
+import { GitPullRequest, LoaderCircle, RefreshCw } from "lucide-react";
+import { useEffect, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
-import { openExternalUrl, type WorkspaceGitOverview } from "../runtime";
+import { manageCloudWorkspaces } from "../cloud/workspace-runtime";
+import type { WorkspaceGitOverview } from "../runtime";
 import type { WorkspaceGitControls } from "./use-workspace-git";
-import { formatWorkspaceGitTime } from "./workspace-git-time";
+import { WorkspaceGitPullRequestForm } from "./workspace-git-pull-request-form";
+import { WorkspaceGitPullRequestRow } from "./workspace-git-pull-request-row";
+import { cloudOriginForWorkspace } from "./workspace-pull-request-links";
+
+const useCloudOrigin = (workspaceRoot: string): string | null => {
+  const [origin, setOrigin] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let active = true;
+    manageCloudWorkspaces({ action: "list", refresh: false })
+      .then((connections) => {
+        if (active)
+          setOrigin(cloudOriginForWorkspace(connections, workspaceRoot));
+      })
+      .catch((error: unknown) =>
+        console.error("Loading cloud connections failed", error),
+      );
+    return () => {
+      active = false;
+    };
+  }, [workspaceRoot]);
+  return origin;
+};
 
 export const WorkspaceGitPullRequests = ({
   controls,
@@ -25,6 +43,8 @@ export const WorkspaceGitPullRequests = ({
     pullRequestsError,
     pullRequestsLoading,
   } = controls;
+  const [creating, setCreating] = useState(false);
+  const cloudOrigin = useCloudOrigin(overview.workspaceRoot);
   useEffect(() => {
     ensurePullRequests();
   }, [ensurePullRequests, overview.repositoryRoot]);
@@ -75,10 +95,10 @@ export const WorkspaceGitPullRequests = ({
             size="sm"
             variant="outline"
             disabled={
-              controls.isActionBlocked("submit-pull-requests") ||
+              controls.isActionBlocked("create-pull-request") ||
               overview.remotes.length === 0
             }
-            onClick={() => void controls.runAction("submit-pull-requests")}
+            onClick={() => setCreating(true)}
           >
             <GitPullRequest className="size-4" />
             Create for {overview.branch}
@@ -99,6 +119,14 @@ export const WorkspaceGitPullRequests = ({
           />
         </Button>
       </div>
+      {creating ? (
+        <WorkspaceGitPullRequestForm
+          controls={controls}
+          overview={overview}
+          template={pullRequests?.template}
+          onDone={() => setCreating(false)}
+        />
+      ) : null}
       {pullRequests?.items.length === 0 ? (
         <EmptyState
           icon={GitPullRequest}
@@ -108,46 +136,12 @@ export const WorkspaceGitPullRequests = ({
       ) : (
         <ul className="space-y-1">
           {pullRequests?.items.map((pullRequest) => (
-            <li key={pullRequest.number}>
-              <button
-                type="button"
-                onClick={() => void openExternalUrl(pullRequest.url)}
-                className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-left hover:border-slate-700 hover:bg-slate-900/60"
-              >
-                <GitPullRequest
-                  aria-hidden="true"
-                  className={
-                    pullRequest.draft
-                      ? "mt-0.5 size-4 shrink-0 text-slate-500"
-                      : "mt-0.5 size-4 shrink-0 text-emerald-300"
-                  }
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-slate-200">
-                    <span className="text-slate-500">
-                      #{pullRequest.number}
-                    </span>{" "}
-                    {pullRequest.title}
-                  </p>
-                  <p className="mt-1 truncate text-xs text-slate-500">
-                    {pullRequest.headBranch} → {pullRequest.baseBranch}
-                    {pullRequest.updatedAt
-                      ? ` · ${formatWorkspaceGitTime(pullRequest.updatedAt)}`
-                      : ""}
-                  </p>
-                </div>
-                {pullRequest.draft ? (
-                  <Badge variant="outline">Draft</Badge>
-                ) : null}
-                {pullRequest.headBranch === overview.branch ? (
-                  <Badge variant="secondary">Current</Badge>
-                ) : null}
-                <ExternalLink
-                  aria-hidden="true"
-                  className="size-3.5 text-slate-600"
-                />
-              </button>
-            </li>
+            <WorkspaceGitPullRequestRow
+              key={pullRequest.number}
+              overview={overview}
+              pullRequest={pullRequest}
+              cloudOrigin={cloudOrigin}
+            />
           ))}
         </ul>
       )}

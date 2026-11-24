@@ -1,7 +1,13 @@
+import type { WorkspaceChangeEvent } from "@machdoch/fleet-protocol/workspace-contract";
 import { loadWorkspaceGitFingerprint } from "../runtime";
+import { workspaceChangeFeed } from "./workspace-change-events";
+import type { WorkspaceChangeFeed } from "./workspace-change-feed";
 import { createWorkspaceRootKey } from "./workspace-management-model";
 
-type WorkspaceGitChangeListener = (workspaceRoot: string) => void;
+type WorkspaceGitChangeListener = (
+  workspaceRoot: string,
+  event?: WorkspaceChangeEvent,
+) => void;
 
 interface MonitoredWorkspace {
   workspaceRoot: string;
@@ -9,13 +15,19 @@ interface MonitoredWorkspace {
   fingerprint: string | undefined;
   sequence: number;
   polling: boolean;
+  quietUntil: number;
+  stopEvents: (() => void) | null;
 }
 
 interface WorkspaceGitChangeMonitorOptions {
   load: (workspaceRoot: string) => Promise<string>;
   keyOf: (workspaceRoot: string) => string;
   startPolling: (check: () => void) => () => void;
+  changes: Pick<WorkspaceChangeFeed, "subscribe" | "isWatching">;
+  now: () => number;
 }
+
+const LOCAL_ACTION_QUIET_MS = 1_200;
 
 export interface WorkspaceGitChangeMonitor {
   watch: (workspaceRoot: string) => () => void;
@@ -28,6 +40,8 @@ export const createWorkspaceGitChangeMonitor = ({
   load,
   keyOf,
   startPolling,
+  changes,
+  now,
 }: WorkspaceGitChangeMonitorOptions): WorkspaceGitChangeMonitor => {
   const workspaces = new Map<string, MonitoredWorkspace>();
   const listeners = new Set<WorkspaceGitChangeListener>();
@@ -60,8 +74,22 @@ export const createWorkspaceGitChangeMonitor = ({
 
   const check = (): void => {
     for (const workspace of workspaces.values()) {
-      if (workspace.watchers > 0) poll(workspace);
+      if (
+        workspace.watchers > 0 &&
+        !changes.isWatching(workspace.workspaceRoot)
+      ) {
+        poll(workspace);
+      }
     }
+  };
+
+  const receive = (
+    workspace: MonitoredWorkspace,
+    event: WorkspaceChangeEvent,
+  ): void => {
+    if (event.repositories.length === 0 && !event.rescan) return;
+    if (now() < workspace.quietUntil) return;
+    for (const listener of listeners) listener(workspace.workspaceRoot, event);
   };
 
   return {
@@ -73,12 +101,19 @@ export const createWorkspaceGitChangeMonitor = ({
         fingerprint: undefined,
         sequence: 0,
         polling: false,
+        quietUntil: 0,
+        stopEvents: null,
       };
       workspaces.set(key, workspace);
       workspace.workspaceRoot = workspaceRoot;
       workspace.watchers += 1;
       activeWatchers += 1;
-      if (workspace.watchers === 1) poll(workspace);
+      if (workspace.watchers === 1) {
+        poll(workspace);
+        workspace.stopEvents = changes.subscribe(workspaceRoot, (event) =>
+          receive(workspace, event),
+        );
+      }
       stopPolling ??= startPolling(check);
       let watching = true;
       return () => {
@@ -86,6 +121,10 @@ export const createWorkspaceGitChangeMonitor = ({
         watching = false;
         workspace.watchers -= 1;
         activeWatchers -= 1;
+        if (workspace.watchers === 0) {
+          workspace.stopEvents?.();
+          workspace.stopEvents = null;
+        }
         if (activeWatchers === 0) {
           stopPolling?.();
           stopPolling = null;
@@ -99,7 +138,9 @@ export const createWorkspaceGitChangeMonitor = ({
     check,
     sync: (workspaceRoot) => {
       const workspace = workspaces.get(keyOf(workspaceRoot));
-      if (workspace) void read(workspace, false);
+      if (!workspace) return;
+      workspace.quietUntil = now() + LOCAL_ACTION_QUIET_MS;
+      void read(workspace, false);
     },
   };
 };
@@ -109,6 +150,8 @@ const POLL_INTERVAL_MS = 3_000;
 export const workspaceGitChangeMonitor = createWorkspaceGitChangeMonitor({
   load: loadWorkspaceGitFingerprint,
   keyOf: createWorkspaceRootKey,
+  changes: workspaceChangeFeed,
+  now: () => Date.now(),
   startPolling: (check) => {
     const checkVisible = (): void => {
       if (document.visibilityState === "visible") check();

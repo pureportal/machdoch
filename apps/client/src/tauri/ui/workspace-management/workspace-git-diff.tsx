@@ -1,5 +1,5 @@
 import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
-import { ExternalLink, FolderOpen, LoaderCircle } from "lucide-react";
+import { Bot, ExternalLink, FolderOpen, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import type {
@@ -14,6 +14,11 @@ import {
   type WorkspaceGitDiffLine,
 } from "./workspace-git-diff-model";
 import { WorkspaceGitLineStats } from "./workspace-git-line-stats";
+import {
+  canSelectPatchLines,
+  WorkspaceGitPatchLines,
+  type ApplyPatchLines,
+} from "./workspace-git-patch-lines";
 
 const PATCH_LABELS: Record<WorkspaceGitPatch["kind"], string> = {
   staged: "Staged",
@@ -33,9 +38,13 @@ const LINE_TONES: Record<WorkspaceGitDiffLine["kind"], string> = {
 export const WorkspaceGitPatchView = ({
   patch,
   label = PATCH_LABELS[patch.kind],
+  lineActions,
+  onAskAgent,
 }: {
   patch: WorkspaceGitPatch;
   label?: string;
+  lineActions?: { busy: boolean; apply: ApplyPatchLines };
+  onAskAgent?: (patch: string) => void;
 }): JSX.Element => {
   const lines = useMemo(
     () => parseWorkspaceGitPatch(patch.content),
@@ -53,6 +62,18 @@ export const WorkspaceGitPatchView = ({
         {patch.binary ? (
           <span className="text-[10px] text-slate-500">Binary</span>
         ) : null}
+        {onAskAgent && !patch.binary ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            className="ml-auto h-6 text-slate-400"
+            onClick={() => onAskAgent(patch.content)}
+          >
+            <Bot />
+            Ask agent
+          </Button>
+        ) : null}
       </header>
       <CopyContextMenu values={[{ label: "Copy diff", value: patch.content }]}>
         <div
@@ -63,6 +84,13 @@ export const WorkspaceGitPatchView = ({
         >
           {lines.length === 0 ? (
             <p className="px-3 text-slate-500">No textual diff available.</p>
+          ) : lineActions && canSelectPatchLines(patch) ? (
+            <WorkspaceGitPatchLines
+              key={patch.content}
+              patch={patch}
+              busy={lineActions.busy}
+              onApply={lineActions.apply}
+            />
           ) : (
             <table className="min-w-full border-collapse">
               <tbody>
@@ -102,6 +130,9 @@ export const WorkspaceGitDiffView = ({
   repositoryRoot,
   change,
   revision,
+  lineActions,
+  headerActions,
+  onAskAgent,
   onOpenFile,
   onRevealFile,
 }: {
@@ -109,6 +140,9 @@ export const WorkspaceGitDiffView = ({
   repositoryRoot: string;
   change: WorkspaceGitChange;
   revision: object;
+  lineActions?: { busy: boolean; apply: ApplyPatchLines };
+  headerActions?: JSX.Element;
+  onAskAgent?: (patch: string) => void;
   onOpenFile: () => void;
   onRevealFile: () => void;
 }): JSX.Element => {
@@ -182,6 +216,7 @@ export const WorkspaceGitDiffView = ({
             className="size-3.5 animate-spin text-slate-500"
           />
         ) : null}
+        {headerActions}
         <Button
           type="button"
           size="icon-sm"
@@ -233,7 +268,12 @@ export const WorkspaceGitDiffView = ({
         </div>
       ) : (
         diff?.patches.map((patch) => (
-          <WorkspaceGitPatchView key={patch.kind} patch={patch} />
+          <WorkspaceGitPatchView
+            key={patch.kind}
+            patch={patch}
+            lineActions={lineActions}
+            onAskAgent={onAskAgent}
+          />
         ))
       )}
     </section>

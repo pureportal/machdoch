@@ -14,24 +14,9 @@ export const workspacePathParent = (path: string): string => {
   return separator < 0 ? "." : normalized.slice(0, separator) || ".";
 };
 
-export const isWorkspaceDirectory = (entry: WorkspaceDirectoryEntry): boolean =>
-  entry.kind === "directory" ||
-  (entry.kind === "symlink" && entry.targetKind === "directory");
-
 export const isWorkspaceFile = (entry: WorkspaceDirectoryEntry): boolean =>
   entry.kind === "file" ||
   (entry.kind === "symlink" && entry.targetKind === "file");
-
-export const reconcileWorkspaceTreeFocus = (
-  visiblePaths: readonly string[],
-  focusedPath: string | null,
-  selectedPath: string | null,
-): string | null => {
-  if (visiblePaths.length === 0) return null;
-  if (focusedPath && visiblePaths.includes(focusedPath)) return focusedPath;
-  if (selectedPath && visiblePaths.includes(selectedPath)) return selectedPath;
-  return visiblePaths[0] ?? null;
-};
 
 export const formatWorkspaceFileSize = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;

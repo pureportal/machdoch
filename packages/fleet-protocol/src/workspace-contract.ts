@@ -39,6 +39,8 @@ export interface WorkspaceGitBranch {
   upstreamGone: boolean;
   parent?: string;
   needsRestack: boolean;
+  lastCommitAt?: string;
+  merged?: boolean;
 }
 
 export interface WorkspaceGitRemote {
@@ -70,6 +72,7 @@ export interface WorkspaceGitGraphCommit {
   author: string;
   authoredAt: string;
   refs: WorkspaceGitGraphRef[];
+  agent?: boolean;
 }
 
 export interface WorkspaceGitGraphBase {
@@ -149,12 +152,36 @@ export interface WorkspacePullRequest {
   draft: boolean;
   author?: string;
   updatedAt?: string;
+  checks?: WorkspacePullRequestCheckState;
+  reviewDecision?: string;
 }
 
 export interface WorkspacePullRequestOverview {
   available: boolean;
   reason?: string;
   items: WorkspacePullRequest[];
+  fetchedAt?: number;
+  template?: string;
+}
+
+export type WorkspacePullRequestCheckState =
+  | "success"
+  | "failure"
+  | "pending"
+  | "neutral";
+
+export interface WorkspacePullRequestCheck {
+  name: string;
+  state: WorkspacePullRequestCheckState;
+  workflow?: string;
+  url?: string;
+}
+
+export interface WorkspacePullRequestChecks {
+  number: number;
+  url: string;
+  reviewDecision?: string;
+  checks: WorkspacePullRequestCheck[];
 }
 
 export interface WorkspaceGitRepository {
@@ -189,6 +216,7 @@ export interface WorkspaceGitRepositoryStatus {
   changesTruncated: boolean;
   operation?: WorkspaceGitOperation;
   error?: string;
+  lastFetchedAt?: number;
 }
 
 export interface WorkspaceGitRepositoriesStatus {
@@ -257,8 +285,118 @@ export interface WorkspaceGitOverview {
   remotes: WorkspaceGitRemote[];
   recentCommits: WorkspaceGitCommit[];
   stashes: WorkspaceGitStash[];
+  stashCount: number;
   worktrees: WorkspaceGitWorktree[];
   operation?: WorkspaceGitOperation;
+  sections: WorkspaceGitOverviewSection[];
+  untrackedFiles: WorkspaceGitUntrackedFiles;
+  lastFetchedAt?: number;
+}
+
+export type WorkspaceGitOverviewSection =
+  | "branches"
+  | "numstat"
+  | "recentCommits"
+  | "stashes"
+  | "worktrees";
+
+export type WorkspaceGitUntrackedFiles = "normal" | "all";
+
+export interface WorkspaceGitBranchList {
+  repositoryRoot: string;
+  currentBranch: string;
+  detached: boolean;
+  localBranches: WorkspaceGitBranch[];
+  remoteBranches: WorkspaceGitBranch[];
+  recentBranches: string[];
+}
+
+export type WorkspaceGitCallPriority = "interactive" | "background";
+
+export interface WorkspaceGitCall {
+  repository: string;
+  arguments: string[];
+  priority: WorkspaceGitCallPriority;
+  startedAt: number;
+  queuedMs: number;
+  durationMs: number;
+  success: boolean;
+}
+
+export interface WorkspaceGitCallLog {
+  enabled: boolean;
+  calls: WorkspaceGitCall[];
+}
+
+export interface WorkspaceGitFileHistory {
+  relativePath: string;
+  commits: (WorkspaceGitCommit & { path: string })[];
+  truncated: boolean;
+}
+
+export interface WorkspaceGitBlameRange {
+  startLine: number;
+  lineCount: number;
+  commit: string;
+  shortHash: string;
+  author: string;
+  authoredAt: string;
+  summary: string;
+  uncommitted: boolean;
+}
+
+export interface WorkspaceGitBlame {
+  relativePath: string;
+  ranges: WorkspaceGitBlameRange[];
+}
+
+export interface WorkspaceGitFileRevision {
+  relativePath: string;
+  revision: string;
+  content: string | null;
+  binary: boolean;
+}
+
+export interface WorkspaceGitComparison {
+  base: string;
+  head: string;
+  mergeBase?: string;
+  ahead: number;
+  behind: number;
+  commits: WorkspaceGitCommit[];
+  commitsTruncated: boolean;
+  files: WorkspaceGitCommitFile[];
+  filesTruncated: boolean;
+}
+
+export interface WorkspaceGitConflictVersions {
+  relativePath: string;
+  base: string | null;
+  ours: string | null;
+  theirs: string | null;
+  result: string | null;
+  binary: boolean;
+}
+
+export type WorkspaceGitUndoKind =
+  | "commit"
+  | "amend"
+  | "checkout"
+  | "reset"
+  | "merge"
+  | "rebase"
+  | "pull"
+  | "cherry-pick"
+  | "revert";
+
+export interface WorkspaceGitUndoPreview {
+  kind: WorkspaceGitUndoKind;
+  description: string;
+  currentHead: string;
+  target: string;
+  targetBranch?: string;
+  files: WorkspaceGitCommitFile[];
+  filesTruncated: boolean;
 }
 
 export type WorkspaceGitAction =
@@ -295,7 +433,22 @@ export type WorkspaceGitAction =
   | "remove-worktree"
   | "lock-worktree"
   | "unlock-worktree"
-  | "prune-worktrees";
+  | "prune-worktrees"
+  | "apply-patch"
+  | "discard"
+  | "cherry-pick"
+  | "revert"
+  | "create-tag"
+  | "push-tag"
+  | "delete-tag"
+  | "resolve-conflict"
+  | "mark-resolved"
+  | "undo"
+  | "set-upstream"
+  | "pull-rebase"
+  | "remove-index-lock"
+  | "delete-branches"
+  | "create-pull-request";
 
 export interface WorkspaceGitActionOptions {
   worktreePath?: string;
@@ -311,7 +464,26 @@ export interface WorkspaceGitActionOptions {
   force?: boolean;
   draft?: boolean;
   resetMode?: WorkspaceGitResetMode;
+  patch?: string;
+  patchTarget?: WorkspaceGitPatchTarget;
+  reverse?: boolean;
+  amend?: boolean;
+  signOff?: boolean;
+  coAuthors?: string[];
+  pushAfterCommit?: boolean;
+  commit?: string;
+  tagName?: string;
+  remote?: boolean;
+  side?: WorkspaceGitConflictSide;
+  target?: string;
+  branchNames?: string[];
+  title?: string;
+  body?: string;
+  baseBranch?: string;
 }
+
+export type WorkspaceGitPatchTarget = "index" | "worktree";
+export type WorkspaceGitConflictSide = "ours" | "theirs";
 
 export type WorkspaceGitResetMode = "keep" | "discard";
 
@@ -324,6 +496,7 @@ export interface WorkspaceDirectoryEntry {
   targetKind: "file" | "directory" | "other" | null;
   size: number | null;
   modifiedAt: number | null;
+  ignored: boolean;
 }
 
 export interface WorkspaceDirectoryPage {
@@ -387,7 +560,8 @@ export interface WorkspaceTerminalStarted {
 export type WorkspaceTerminalEvent =
   | { type: "output"; sessionId: string; data: string }
   | { type: "exit"; exitCode: number | null }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "agentRead"; at: number };
 
 export interface WorkspaceTerminalEvents {
   cursor: number;
@@ -397,4 +571,116 @@ export interface WorkspaceTerminalEvents {
 export interface WorkspaceFilePreview {
   dataBase64: string;
   mediaType: string;
+}
+
+export type WorkspaceRepositoryChangeKind = "worktree" | "index" | "refs";
+
+export interface WorkspaceRepositoryChange {
+  repositoryRoot: string;
+  kinds: WorkspaceRepositoryChangeKind[];
+}
+
+export interface WorkspaceChangeEvent {
+  sequence: number;
+  workspaceRoot: string;
+  repositories: WorkspaceRepositoryChange[];
+  paths: string[];
+  pathsTruncated: boolean;
+  rescan: boolean;
+}
+
+export interface WorkspaceChangeEvents {
+  cursor: number;
+  events: WorkspaceChangeEvent[];
+  watching: boolean;
+}
+
+export interface WorkspaceFileMatch {
+  path: string;
+  score: number;
+  positions: number[];
+}
+
+export interface WorkspaceFileSearch {
+  matches: WorkspaceFileMatch[];
+  indexedFiles: number;
+  limitReached: boolean;
+}
+
+export interface WorkspaceTextSearchOptions {
+  query: string;
+  regex: boolean;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  include?: string;
+  exclude?: string;
+}
+
+export interface WorkspaceTextMatch {
+  line: number;
+  column: number;
+  length: number;
+  preview: string;
+  previewColumn: number;
+}
+
+export interface WorkspaceTextFileMatches {
+  path: string;
+  revision: string;
+  matches: WorkspaceTextMatch[];
+}
+
+export interface WorkspaceTextSearch {
+  files: WorkspaceTextFileMatches[];
+  totalMatches: number;
+  searchedFiles: number;
+  limitReached: boolean;
+}
+
+export type WorkspaceTextReplacementStatus =
+  | "preview"
+  | "replaced"
+  | "changed"
+  | "unchanged"
+  | "unreadable";
+
+export interface WorkspaceTextReplacementLine {
+  line: number;
+  before: string;
+  after: string;
+}
+
+export interface WorkspaceTextReplacement {
+  path: string;
+  status: WorkspaceTextReplacementStatus;
+  replacements: number;
+  lines: WorkspaceTextReplacementLine[];
+}
+
+export interface WorkspaceTextReplaceResult {
+  files: WorkspaceTextReplacement[];
+  applied: boolean;
+}
+
+export type WorkspaceEntryTransferMode = "copy" | "move";
+
+export interface WorkspaceEntryTransfer {
+  source: string;
+  path?: string;
+  error?: string;
+}
+
+export interface WorkspaceEntryDeletion {
+  path: string;
+  trashed: boolean;
+  error?: string;
+}
+
+export interface WorkspaceFileRange {
+  path: string;
+  offset: number;
+  bytesRead: number;
+  totalBytes: number;
+  text: string;
+  done: boolean;
 }

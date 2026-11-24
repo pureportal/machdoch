@@ -7,8 +7,8 @@ use serde_json::Value;
 
 use super::{
     actions::{current_branch, push_remote},
-    command_output, command_succeeds, current_operation, output_error, parallel_map, run_optional,
-    run_required, WorkspaceGitBranch,
+    command_output, command_succeeds, config, current_operation, output_error, parallel_map,
+    run_optional, run_required, WorkspaceGitBranch,
 };
 
 const PARENT_KEY: &str = "machdoch-parent";
@@ -29,27 +29,7 @@ fn config_key(branch: &str, key: &str) -> String {
 }
 
 pub(super) fn read_parents(repository: &Path) -> BTreeMap<String, String> {
-    run_optional(
-        "git",
-        &[
-            "config",
-            "--local",
-            "--get-regexp",
-            r"^branch\..*\.machdoch-parent$",
-        ],
-        repository,
-    )
-    .unwrap_or_default()
-    .lines()
-    .filter_map(|line| {
-        let (key, parent) = line.split_once(' ')?;
-        let branch = key
-            .strip_prefix("branch.")?
-            .strip_suffix(".machdoch-parent")?;
-        let parent = parent.trim();
-        (!parent.is_empty()).then(|| (branch.to_string(), parent.to_string()))
-    })
-    .collect()
+    config::read_repository_config(repository).parents
 }
 
 fn branch_exists(repository: &Path, branch: &str) -> Result<bool, String> {
@@ -305,7 +285,13 @@ pub(super) fn restack(repository: &Path) -> Result<(), String> {
                 Some(base) => base,
                 None => run_required("git", &["merge-base", parent, branch], repository)?,
             };
-            let arguments = ["rebase", "--onto", parent.as_str(), base.as_str(), branch.as_str()];
+            let arguments = [
+                "rebase",
+                "--onto",
+                parent.as_str(),
+                base.as_str(),
+                branch.as_str(),
+            ];
             let output = command_output("git", &arguments, repository)?;
             if !output.status.success() {
                 if current_operation(repository).is_some() {

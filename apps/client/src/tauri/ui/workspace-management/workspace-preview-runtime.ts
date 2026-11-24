@@ -1,4 +1,15 @@
 import type {
+  WorkspaceEntryDeletion,
+  WorkspaceEntryTransfer,
+  WorkspaceEntryTransferMode,
+  WorkspaceFileRange,
+  WorkspaceFileSearch,
+  WorkspaceTextReplaceResult,
+  WorkspaceTextSearch,
+  WorkspaceTextSearchOptions,
+} from "@machdoch/fleet-protocol/workspace-contract";
+import { searchPreviewText } from "./workspace-preview-search";
+import type {
   WorkspaceDirectoryEntry,
   WorkspaceDirectoryPage,
   WorkspaceEntryKind,
@@ -30,7 +41,21 @@ interface PreviewTerminalSession {
   shellId: string;
   onEvent: (event: WorkspaceTerminalEvent) => void;
   stopped: boolean;
+  line: string;
 }
+
+const shellSequence = (body: string): string => `\x1b]633;${body}\x07`;
+
+const escapeShellValue = (value: string): string =>
+  value.replaceAll("\\", "\\\\").replaceAll(";", "\\x3b");
+
+const previewPrompt = (session: PreviewTerminalSession): string =>
+  session.shellId === "cmd"
+    ? `${session.workspaceRoot}>`
+    : `${shellSequence(`P;Cwd=${escapeShellValue(session.workspaceRoot)}`)}${shellSequence("A")}PS ${session.workspaceRoot}> ${shellSequence("B")}`;
+
+const previewCommandOutput = (command: string): string =>
+  command === "lint" ? "src/main.ts:2:5 warning Unused variable\r\n" : "";
 
 const previewDirectories = new Set([
   ".",
@@ -45,6 +70,16 @@ const previewDirectories = new Set([
 
 let previewRevision = 4;
 const previewFiles = new Map<string, PreviewFile>([
+  [
+    "src/conflict.ts",
+    {
+      content:
+        '<<<<<<< HEAD\nexport const greeting = "hello there";\n=======\nexport const greeting = "hi";\n>>>>>>> feature\n',
+      language: "typescript",
+      revision: "preview-conflict",
+      modifiedAt: Date.now() - 60_000,
+    },
+  ],
   [
     "assets/branding/machdoch.svg",
     {
@@ -248,6 +283,7 @@ export const listPreviewWorkspaceDirectory = (
         targetKind: null,
         size: null,
         modifiedAt: Date.now() - 60_000,
+        ignored: false,
       });
     }
   }
@@ -260,6 +296,7 @@ export const listPreviewWorkspaceDirectory = (
         targetKind: null,
         size: file.size ?? byteLength(file.content),
         modifiedAt: file.modifiedAt,
+        ignored: false,
       });
     }
   }
@@ -433,8 +470,7 @@ export const renamePreviewWorkspaceEntry = (
   return destination;
 };
 
-export const deletePreviewWorkspaceEntry = (relativePath: string): void => {
-  const path = normalizePath(relativePath);
+const deletePreviewEntry = (path: string): void => {
   if (previewFiles.delete(path)) return;
   if (!previewDirectories.has(path)) {
     throw new Error("This entry is no longer available.");
@@ -447,6 +483,161 @@ export const deletePreviewWorkspaceEntry = (relativePath: string): void => {
   for (const file of [...previewFiles.keys()]) {
     if (file.startsWith(`${path}/`)) previewFiles.delete(file);
   }
+};
+
+export const deletePreviewWorkspaceEntries = (
+  relativePaths: string[],
+): WorkspaceEntryDeletion[] =>
+  relativePaths.map((relativePath) => {
+    const path = normalizePath(relativePath);
+    try {
+      deletePreviewEntry(path);
+      return { path, trashed: false };
+    } catch (error) {
+      return {
+        path,
+        trashed: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
+const freePreviewName = (directory: string, name: string): string => {
+  const taken = (candidate: string) => {
+    const path = joinPath(directory, candidate);
+    return previewFiles.has(path) || previewDirectories.has(path);
+  };
+  if (!taken(name)) return name;
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const extension = dot > 0 ? name.slice(dot) : "";
+  for (let index = 1; ; index += 1) {
+    const candidate = `${stem} copy${index > 1 ? ` ${index}` : ""}${extension}`;
+    if (!taken(candidate)) return candidate;
+  }
+};
+
+export const copyPreviewWorkspaceEntries = (
+  sources: string[],
+  targetDirectory: string,
+  mode: WorkspaceEntryTransferMode,
+): WorkspaceEntryTransfer[] => {
+  const target = normalizePath(targetDirectory);
+  return sources.map((source) => {
+    const path = normalizePath(source);
+    const file = previewFiles.get(path);
+    if (!file) {
+      return { source: path, error: "Only files can be copied here." };
+    }
+    const name =
+      mode === "copy"
+        ? freePreviewName(target, baseName(path))
+        : baseName(path);
+    const destination = joinPath(target, name);
+    if (mode === "move") {
+      if (previewFiles.has(destination)) {
+        return {
+          source: path,
+          error: "An entry with that name already exists.",
+        };
+      }
+      previewFiles.delete(path);
+    }
+    previewFiles.set(destination, { ...file, modifiedAt: Date.now() });
+    return { source: path, path: destination };
+  });
+};
+
+export const uploadPreviewWorkspaceFile = (
+  relativePath: string,
+  bytes: Uint8Array,
+): void => {
+  const path = normalizePath(relativePath);
+  if (previewFiles.has(path)) {
+    throw new Error("An entry with that name already exists.");
+  }
+  previewRevision += 1;
+  previewFiles.set(path, {
+    content: new TextDecoder().decode(bytes),
+    language: "text",
+    revision: `preview-${previewRevision}`,
+    modifiedAt: Date.now(),
+  });
+};
+
+export const readPreviewWorkspaceFileRange = (
+  relativePath: string,
+  offset: number,
+  length: number,
+): WorkspaceFileRange => {
+  const path = normalizePath(relativePath);
+  const file = previewFiles.get(path);
+  if (!file) throw new Error("This file is no longer available.");
+  const bytes = new TextEncoder().encode(file.content);
+  const slice = bytes.subarray(offset, offset + length);
+  return {
+    path,
+    offset,
+    bytesRead: slice.length,
+    totalBytes: bytes.length,
+    text: new TextDecoder().decode(slice),
+    done: offset + slice.length >= bytes.length,
+  };
+};
+
+export const searchPreviewWorkspaceFiles = (
+  query: string,
+  limit: number,
+): WorkspaceFileSearch => {
+  const needle = query.toLocaleLowerCase();
+  const matches = [...previewFiles.keys()]
+    .filter((path) => path.toLocaleLowerCase().includes(needle))
+    .slice(0, limit)
+    .map((path) => {
+      const start = path.toLocaleLowerCase().indexOf(needle);
+      return {
+        path,
+        score: 1,
+        positions: Array.from({ length: needle.length }, (_, i) => start + i),
+      };
+    });
+  return { matches, indexedFiles: previewFiles.size, limitReached: false };
+};
+
+const previewTextFiles = (): [string, string][] =>
+  [...previewFiles.entries()]
+    .filter(([, file]) => (file.kind ?? "text") === "text")
+    .map(([path, file]) => [path, file.content]);
+
+export const searchPreviewWorkspaceText = (
+  options: WorkspaceTextSearchOptions,
+): WorkspaceTextSearch => searchPreviewText(previewTextFiles(), options).search;
+
+export const replacePreviewWorkspaceText = (
+  options: WorkspaceTextSearchOptions,
+  replacement: string,
+  apply: boolean,
+  targets: { path: string }[],
+): WorkspaceTextReplaceResult => {
+  const selected = new Set(targets.map((target) => target.path));
+  const files = previewTextFiles().filter(([path]) => selected.has(path));
+  const result = searchPreviewText(files, options, replacement);
+  if (apply) {
+    for (const entry of result.replace.files) {
+      const file = previewFiles.get(entry.path);
+      if (!file) continue;
+      const lines = file.content.split("\n");
+      for (const replaced of entry.lines)
+        lines[replaced.line - 1] = replaced.after;
+      previewRevision += 1;
+      file.content = lines.join("\n");
+      file.revision = `preview-${previewRevision}`;
+      file.modifiedAt = Date.now();
+      entry.status = "replaced";
+    }
+    result.replace.applied = true;
+  }
+  return result.replace;
 };
 
 export const discoverPreviewWorkspaceShells = (): WorkspaceShellDiscovery => ({
@@ -472,14 +663,13 @@ export const startPreviewWorkspaceTerminal = (
     shellId,
     onEvent,
     stopped: false,
+    line: "",
   };
   previewTerminals.set(sessionId, session);
   window.setTimeout(() => {
     emitOutput(
       session,
-      shellId === "cmd"
-        ? "Microsoft Windows [Version 10.0.26100]\r\nC:\\Development\\machdoch>"
-        : "PowerShell 7.6.0\r\nPS C:\\Development\\machdoch> ",
+      `${shellId === "cmd" ? "Microsoft Windows [Version 10.0.26100]" : "PowerShell 7.6.0"}\r\n${previewPrompt(session)}`,
     );
   }, 20);
   return { sessionId, shellId, processId: null };
@@ -493,15 +683,31 @@ export const writePreviewWorkspaceTerminal = (
   if (!session || session.stopped) {
     throw new Error("This terminal is no longer running.");
   }
-  emitOutput(
-    session,
-    data.replaceAll(
-      "\r",
-      session.shellId === "cmd"
-        ? "\r\nC:\\Development\\machdoch>"
-        : "\r\nPS C:\\Development\\machdoch> ",
-    ),
-  );
+  for (const character of data) {
+    if (character === "\x7f") {
+      if (session.line) emitOutput(session, "\b \b");
+      session.line = session.line.slice(0, -1);
+      continue;
+    }
+    if (character !== "\r") {
+      session.line += character;
+      emitOutput(session, character);
+      continue;
+    }
+    const command = session.line.trim();
+    session.line = "";
+    if (!command || session.shellId === "cmd") {
+      emitOutput(
+        session,
+        `\r\n${previewCommandOutput(command)}${previewPrompt(session)}`,
+      );
+      continue;
+    }
+    emitOutput(
+      session,
+      `${shellSequence(`E;${escapeShellValue(command)}`)}\r\n${shellSequence("C")}${previewCommandOutput(command)}${shellSequence(`D;${command === "fail" ? 1 : 0}`)}${previewPrompt(session)}`,
+    );
+  }
 };
 
 export const stopPreviewWorkspaceTerminal = (sessionId: string): void => {

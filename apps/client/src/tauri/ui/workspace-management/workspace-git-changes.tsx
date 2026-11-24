@@ -1,23 +1,17 @@
 import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
-import {
-  Check,
-  ExternalLink,
-  GitCommitHorizontal,
-  LoaderCircle,
-  Minus,
-  Plus,
-} from "lucide-react";
+import { Check, ExternalLink, Minus, Plus, Undo2 } from "lucide-react";
 import { useEffect, useState, type JSX, type KeyboardEvent } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
-import {
-  SUBMIT_SHORTCUT_ACTION_PROPS,
-  SubmitShortcut,
-} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
-import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { WorkspaceGitChange, WorkspaceGitOverview } from "../runtime";
 import type { WorkspaceGitControls } from "./use-workspace-git";
+import {
+  askWorkspaceAgent,
+  diffReviewPrompt,
+} from "./workspace-agent-requests";
+import { WorkspaceGitCommitBox } from "./workspace-git-commit-box";
+import { WorkspaceGitConflictEditor } from "./workspace-git-conflict-editor";
 import { WorkspaceGitDiffView } from "./workspace-git-diff";
 import { prefetchWorkspaceGitDiff } from "./workspace-git-diff-cache";
 import { WorkspaceGitLineStats } from "./workspace-git-line-stats";
@@ -236,56 +230,6 @@ const ChangeGroup = ({
   );
 };
 
-const CommitBox = ({
-  overview,
-  controls,
-}: {
-  overview: WorkspaceGitOverview;
-  controls: WorkspaceGitControls;
-}): JSX.Element => {
-  const [message, setMessage] = useState("");
-  const committing = controls.pendingAction === "commit";
-  const stageFirst = overview.stagedCount === 0;
-  const unavailable =
-    overview.conflictedCount > 0
-      ? "Resolve conflicts before committing."
-      : null;
-  const commit = async (): Promise<void> => {
-    if (stageFirst && !(await controls.runAction("stage-all"))) return;
-    if (await controls.runAction("commit", { message })) setMessage("");
-  };
-  return (
-    <SubmitShortcut asChild>
-      <div className="grid gap-2 rounded-lg border border-slate-800 bg-slate-950/50 p-2">
-        <Textarea
-          value={message}
-          aria-label="Commit message"
-          placeholder={`Message (${overview.branch || "HEAD"})`}
-          rows={2}
-          disabled={unavailable !== null}
-          onChange={(event) => setMessage(event.target.value)}
-          className="min-h-14 resize-y border-slate-800 bg-slate-950 text-xs"
-        />
-        <Button
-          type="button"
-          size="sm"
-          disabled={controls.busy || unavailable !== null || !message.trim()}
-          tooltip={unavailable ?? undefined}
-          onClick={() => void commit()}
-          {...SUBMIT_SHORTCUT_ACTION_PROPS}
-        >
-          {committing ? (
-            <LoaderCircle className="size-4 animate-spin" />
-          ) : (
-            <GitCommitHorizontal className="size-4" />
-          )}
-          {stageFirst ? "Stage all & commit" : "Commit"}
-        </Button>
-      </div>
-    </SubmitShortcut>
-  );
-};
-
 const moveRowFocus = (event: KeyboardEvent<HTMLElement>): void => {
   if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
   const rows = Array.from(
@@ -351,6 +295,16 @@ export const WorkspaceGitChanges = ({
     });
   };
 
+  const discard = (change: WorkspaceGitChange): void => {
+    if (
+      !window.confirm(
+        `Discard all changes in ${change.path}? They are kept as a stash.`,
+      )
+    )
+      return;
+    void controls.runAction("discard", { paths: [change.path] });
+  };
+
   const groupProps = {
     selectedPath: selectedChange?.path ?? null,
     busy: controls.busy,
@@ -371,7 +325,7 @@ export const WorkspaceGitChanges = ({
           <EmptyState icon={Check} title="Working tree clean" size="compact" />
         ) : (
           <div className="space-y-3" onKeyDown={moveRowFocus}>
-            <CommitBox
+            <WorkspaceGitCommitBox
               key={overview.repositoryRoot}
               overview={overview}
               controls={controls}
@@ -417,12 +371,50 @@ export const WorkspaceGitChanges = ({
           </div>
         )}
       </div>
-      {selectedChange ? (
+      {selectedChange?.conflicted ? (
+        <WorkspaceGitConflictEditor
+          key={`${overview.repositoryRoot}
+${selectedChange.path}`}
+          controls={controls}
+          overview={overview}
+          change={selectedChange}
+        />
+      ) : selectedChange ? (
         <WorkspaceGitDiffView
           workspaceRoot={overview.workspaceRoot}
           repositoryRoot={overview.repositoryRoot}
           change={selectedChange}
           revision={overview}
+          lineActions={{
+            busy: controls.busy,
+            apply: (options) => controls.runAction("apply-patch", options),
+          }}
+          headerActions={
+            selectedChange.staged ||
+            selectedChange.unstaged ||
+            selectedChange.untracked ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Discard changes"
+                disabled={controls.busy}
+                onClick={() => discard(selectedChange)}
+              >
+                <Undo2 className="size-3.5" />
+              </Button>
+            ) : undefined
+          }
+          onAskAgent={(patch) =>
+            askWorkspaceAgent({
+              workspaceRoot: overview.workspaceRoot,
+              prompt: diffReviewPrompt(
+                overview.repositoryRoot,
+                selectedChange.path,
+                patch,
+              ),
+            })
+          }
           onOpenFile={() => onOpenPath(selectedChange.path, "open")}
           onRevealFile={() => onOpenPath(selectedChange.path, "reveal")}
         />

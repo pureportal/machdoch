@@ -28,18 +28,19 @@ mod settings_transfer;
 mod shared_cli;
 mod shell_state;
 mod sleep_inhibition;
-mod ui_control;
-mod ui_operation;
-mod user_activity;
-mod voice;
 mod speech;
 mod speech_error;
 mod speech_remote;
 mod storage_space;
+mod ui_control;
+mod ui_operation;
+mod user_activity;
+mod voice;
 mod workspace_git;
 mod workspace_run;
 mod workspace_storage;
 mod workspace_tools;
+mod workspace_watch;
 
 use tauri::Manager as _;
 
@@ -242,12 +243,9 @@ pub fn run() {
 
             #[cfg(target_os = "windows")]
             if desktop_shell::current_process_has_administrator_rights() {
-                if let Some(main_window) =
-                    app.get_webview_window(desktop_shell::MAIN_WINDOW_LABEL)
+                if let Some(main_window) = app.get_webview_window(desktop_shell::MAIN_WINDOW_LABEL)
                 {
-                    if let Err(error) =
-                        desktop_shell::elevated_file_drop::enable(&main_window)
-                    {
+                    if let Err(error) = desktop_shell::elevated_file_drop::enable(&main_window) {
                         eprintln!("Failed to enable file drops while elevated: {error}");
                     }
                 }
@@ -322,6 +320,7 @@ pub fn run() {
             desktop_task::run_mcp_app_command,
             desktop_task::run_live_voice_command,
             desktop_task::run_workspace_run_detection_command,
+            desktop_task::generate_workspace_git_commit_message,
             desktop_task::run_mcp_command,
             desktop_task::run_provider_sync_command,
             desktop_task::run_ralph_command,
@@ -344,6 +343,21 @@ pub fn run() {
             workspace_git::run_workspace_git_action,
             workspace_git::get_workspace_git_branch_status,
             workspace_git::switch_workspace_git_branches,
+            workspace_git::list_workspace_git_branches,
+            workspace_git::get_workspace_git_file_history,
+            workspace_git::get_workspace_git_blame,
+            workspace_git::get_workspace_git_file_revision,
+            workspace_git::compare_workspace_git_revisions,
+            workspace_git::get_workspace_git_conflict,
+            workspace_git::get_workspace_git_undo,
+            workspace_git::get_workspace_pull_request_checks,
+            workspace_git::get_workspace_git_call_log,
+            workspace_watch::watch_workspace,
+            workspace_watch::unwatch_workspace,
+            workspace_watch::read_workspace_changes,
+            workspace_tools::file_index::search_workspace_files,
+            workspace_tools::text_search::search_workspace_text,
+            workspace_tools::text_search::replace_workspace_text,
             workspace_run::get_workspace_run_configuration_document,
             workspace_run::get_workspace_run_snapshot,
             workspace_run::precheck_workspace_run_configuration_json,
@@ -352,7 +366,11 @@ pub fn run() {
             workspace_run::start_workspace_run_configuration,
             workspace_run::stop_workspace_run_configuration,
             workspace_tools::files::create_workspace_entry,
-            workspace_tools::files::delete_workspace_entry,
+            workspace_tools::file_operations::copy_workspace_entries,
+            workspace_tools::file_operations::import_workspace_entries,
+            workspace_tools::file_operations::delete_workspace_entries,
+            workspace_tools::file_operations::read_workspace_file_range,
+            workspace_tools::file_operations::upload_workspace_file,
             workspace_tools::files::list_workspace_directory,
             workspace_tools::files::read_workspace_file,
             workspace_tools::files::rename_workspace_entry,
@@ -360,6 +378,7 @@ pub fn run() {
             workspace_tools::terminal::acknowledge_workspace_terminal_output,
             workspace_tools::terminal::discover_workspace_shells,
             workspace_tools::terminal::open_workspace_terminal_host,
+            workspace_tools::tool_window::open_workspace_tool_window,
             workspace_tools::terminal::resize_workspace_terminal,
             workspace_tools::terminal::start_workspace_terminal,
             workspace_tools::terminal::stop_workspace_terminal,
@@ -542,6 +561,7 @@ pub fn run() {
             runtime_snapshot::save_workspace_adaptive_controller_override,
             runtime_snapshot::save_workspace_reasoning_bank_enabled,
             runtime_snapshot::save_workspace_auto_gitignore,
+            runtime_snapshot::save_workspace_git_fsmonitor,
             runtime_snapshot::save_workspace_release_stage,
             runtime_snapshot::save_workspace_reasoning_mode,
             runtime_snapshot::save_workspace_context_window,

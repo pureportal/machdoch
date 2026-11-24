@@ -8,7 +8,10 @@ import { useFleetDeviceUiSettings } from "./use-fleet-device-ui-settings";
 import { useProviderModelCatalog } from "../../use-provider-model-catalog";
 import { expandReviewChangesCommand } from "./review-changes";
 import { stopDesktopTask } from "./graceful-stop";
-import { answerQuestionWithMessage, findPendingAgentQuestion } from "./session-needs-input";
+import {
+  answerQuestionWithMessage,
+  findPendingAgentQuestion,
+} from "./session-needs-input";
 import { useAgentSessionControl } from "../../app-shell/use-agent-session-control";
 import {
   getAgentControlEndpoint,
@@ -31,14 +34,23 @@ import { useAutomaticChatWork } from "./use-automatic-chat-work";
 import { useShutdownWhenIdle } from "../../app-shell/use-shutdown-when-idle";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";
-import { createImageInputUnsupportedModelMessage, getImageInputMediaTypeForPath, getSupportedImageInputExtensions, modelSupportsImageInput, providerSupportsImageInputMediaType } from "@machdoch/model-runtime/model-capabilities";
+import {
+  createImageInputUnsupportedModelMessage,
+  getImageInputMediaTypeForPath,
+  getSupportedImageInputExtensions,
+  modelSupportsImageInput,
+  providerSupportsImageInputMediaType,
+} from "@machdoch/model-runtime/model-capabilities";
 import { resolveAdaptiveControllerEnabled } from "../../../../shared/adaptive-controller-settings.js";
 import type { RalphInputValue } from "../../../../core/ralph.js";
 import type {
   ReasoningMode,
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
-import type { AgentModelImageMediaType, ParallelAgentMode } from "@machdoch/model-runtime/types";
+import type {
+  AgentModelImageMediaType,
+  ParallelAgentMode,
+} from "@machdoch/model-runtime/types";
 import type { TaskExecutionProgress } from "../../../../core/types.js";
 import { resolveParallelAgentMode } from "../../../../core/parallel-agent-capabilities.js";
 import { scheduleAppNotificationDismiss } from "@machdoch/media-studio/tauri/ui/components/ui/notification-lifecycle.js";
@@ -973,26 +985,28 @@ export const useChatSessionController = (
     settings: state.shellState.voice,
     conversationAutoSpeakOverride: state.activeSession.voiceAutoSpeakOverride,
     conversationProfileId: state.activeSession.voiceProfileOverride,
-    onConversationProfileChange: value => state.applyShellState(previous => ({
-      ...previous,
-      sessions: previous.sessions.map(session => {
-        if (session.id !== state.activeSession.id) return session;
-        const updated = { ...session, updatedAt: Date.now() };
-        if (value === undefined) delete updated.voiceProfileOverride;
-        else updated.voiceProfileOverride = value;
-        return updated;
-      }),
-    })),
-    onConversationAutoSpeakChange: value => state.applyShellState(previous => ({
-      ...previous,
-      sessions: previous.sessions.map(session => {
-        if (session.id !== state.activeSession.id) return session;
-        const updated = { ...session, updatedAt: Date.now() };
-        if (value === undefined) delete updated.voiceAutoSpeakOverride;
-        else updated.voiceAutoSpeakOverride = value;
-        return updated;
-      }),
-    })),
+    onConversationProfileChange: (value) =>
+      state.applyShellState((previous) => ({
+        ...previous,
+        sessions: previous.sessions.map((session) => {
+          if (session.id !== state.activeSession.id) return session;
+          const updated = { ...session, updatedAt: Date.now() };
+          if (value === undefined) delete updated.voiceProfileOverride;
+          else updated.voiceProfileOverride = value;
+          return updated;
+        }),
+      })),
+    onConversationAutoSpeakChange: (value) =>
+      state.applyShellState((previous) => ({
+        ...previous,
+        sessions: previous.sessions.map((session) => {
+          if (session.id !== state.activeSession.id) return session;
+          const updated = { ...session, updatedAt: Date.now() };
+          if (value === undefined) delete updated.voiceAutoSpeakOverride;
+          else updated.voiceAutoSpeakOverride = value;
+          return updated;
+        }),
+      })),
     aiVoiceSettings: runtime.userVoiceSettings,
     visibleMessages: state.visibleMessages,
     onSettingsChange: (updater) => {
@@ -1367,10 +1381,12 @@ export const useChatSessionController = (
       : null;
   const activePromptEnhancementMode =
     activeComposerSession.temporaryPackSettings?.promptEnhancementMode ??
-    activeMessageEdit?.promptEnhancementMode ?? promptEnhancementMode;
+    activeMessageEdit?.promptEnhancementMode ??
+    promptEnhancementMode;
   const activeChatInterviewEnabled =
     activeComposerSession.temporaryPackSettings?.interviewEnabled ??
-    activeMessageEdit?.interviewEnabled ?? chatInterviewEnabled;
+    activeMessageEdit?.interviewEnabled ??
+    chatInterviewEnabled;
   const chatInterviewBusy =
     chatInterview?.status === "loading" || chatInterview?.status === "starting";
   const promptEnhancementBusy = promptEnhancementPendingTasks.length > 0;
@@ -1504,7 +1520,8 @@ export const useChatSessionController = (
           return {
             ...current,
             ...(!current.session.temporaryPackSettings
-              ? { promptEnhancementMode: mode } : {}),
+              ? { promptEnhancementMode: mode }
+              : {}),
             session: current.session.temporaryPackSettings
               ? {
                   ...current.session,
@@ -1552,7 +1569,8 @@ export const useChatSessionController = (
             ? {
                 ...current,
                 ...(!current.session.temporaryPackSettings
-                  ? { interviewEnabled: enabled } : {}),
+                  ? { interviewEnabled: enabled }
+                  : {}),
                 session: current.session.temporaryPackSettings
                   ? {
                       ...current.session,
@@ -3351,7 +3369,8 @@ export const useChatSessionController = (
   const handleOpenQuickTaskWorkspaceFile = (
     relativePath: string,
     line?: number,
-    workspaceRoot = quickTaskSession?.workspace ?? state.activeSession.workspace,
+    workspaceRoot = quickTaskSession?.workspace ??
+      state.activeSession.workspace,
     external?: boolean,
   ): void => {
     showFilePreview(
@@ -3650,9 +3669,7 @@ export const useChatSessionController = (
           workspace: activeSession.workspace,
           provider: activeSession.provider,
           model: activeSession.model,
-          ...(activeSession.mode
-            ? { mode: activeSession.mode }
-            : {}),
+          ...(activeSession.mode ? { mode: activeSession.mode } : {}),
           ...(activeSessionReasoning
             ? { reasoning: activeSessionReasoning }
             : {}),
@@ -4701,7 +4718,11 @@ export const useChatSessionController = (
       ...resetTemporaryContextPackSettings(session),
       updatedAt: Date.now(),
     }));
-  }, [state.activeSession.id, state.updateSessionById, updateMessageEditSession]);
+  }, [
+    state.activeSession.id,
+    state.updateSessionById,
+    updateMessageEditSession,
+  ]);
 
   const handleDeleteContextPack = useCallback(
     (packId: string): void => {
@@ -5707,7 +5728,9 @@ export const useChatSessionController = (
           ? { promptHistoryContent: input.promptHistoryContent.trim() }
           : {}),
         ...(input?.reference ? { reference: input.reference } : {}),
-        ...(input?.promptEnhancement ? { promptEnhancement: input.promptEnhancement } : {}),
+        ...(input?.promptEnhancement
+          ? { promptEnhancement: input.promptEnhancement }
+          : {}),
         ...(input?.promptEnhancementRequest
           ? { promptEnhancementRequest: input.promptEnhancementRequest }
           : {}),
@@ -5726,10 +5749,15 @@ export const useChatSessionController = (
       };
 
       updateQueuedSessionMessages((current) =>
-        placement === "front" ? [queuedMessage, ...current] : [...current, queuedMessage],
+        placement === "front"
+          ? [queuedMessage, ...current]
+          : [...current, queuedMessage],
       );
       if (input?.clearComposer !== false) {
-        clearSessionComposerInput(queuedMessage.sessionId, input?.composerClearGuard);
+        clearSessionComposerInput(
+          queuedMessage.sessionId,
+          input?.composerClearGuard,
+        );
       }
 
       return queuedMessage;
@@ -5888,12 +5916,11 @@ export const useChatSessionController = (
                 (message) => message.id === nextQueuedMessage.id,
               );
             let latestSession = state.getSessionById(session.id);
-            const queuedHeadAtDispatch =
-              findQueuedHead(
-                shellStateRef.current.queuedSessionMessages,
-                session.id,
-                stopQueueOnFailure,
-              );
+            const queuedHeadAtDispatch = findQueuedHead(
+              shellStateRef.current.queuedSessionMessages,
+              session.id,
+              stopQueueOnFailure,
+            );
 
             if (
               !queuedMessageAtDispatch ||
@@ -5914,7 +5941,8 @@ export const useChatSessionController = (
             latestSession = resetTemporaryContextPackSettings(latestSession);
             if (queuedMessageAtDispatch.settings) {
               latestSession = applySessionMessageSettings(
-                latestSession, queuedMessageAtDispatch.settings,
+                latestSession,
+                queuedMessageAtDispatch.settings,
               );
             }
             const promptEnhancementRequest =
@@ -5985,12 +6013,11 @@ export const useChatSessionController = (
                 (message) => message.id === queuedMessageAtDispatch.id,
               );
             const refreshedSession = state.getSessionById(session.id);
-            const refreshedQueuedHead =
-              findQueuedHead(
-                shellStateRef.current.queuedSessionMessages,
-                session.id,
-                stopQueueOnFailure,
-              );
+            const refreshedQueuedHead = findQueuedHead(
+              shellStateRef.current.queuedSessionMessages,
+              session.id,
+              stopQueueOnFailure,
+            );
 
             if (
               !refreshedQueuedMessage ||
@@ -6099,12 +6126,14 @@ export const useChatSessionController = (
               ...(dispatchPrompt.promptEnhancement
                 ? { promptEnhancement: dispatchPrompt.promptEnhancement }
                 : {}),
-              messageSettings: queuedMessageToSubmit.settings ?? createSessionMessageSettings(
-                latestSession,
-                promptEnhancementRequest?.mode ?? "off",
-                false,
-                queuedMessageToSubmit.goalObjective,
-              ),
+              messageSettings:
+                queuedMessageToSubmit.settings ??
+                createSessionMessageSettings(
+                  latestSession,
+                  promptEnhancementRequest?.mode ?? "off",
+                  false,
+                  queuedMessageToSubmit.goalObjective,
+                ),
               ...(promptEnhancementTaskIdForStartedTask
                 ? {
                     onTaskStarted: (taskId: string) =>
@@ -7067,7 +7096,8 @@ export const useChatSessionController = (
           pack,
         );
         if (!pack.temporary) {
-          appliedPromptEnhancementMode = nextComposerSettings.promptEnhancementMode;
+          appliedPromptEnhancementMode =
+            nextComposerSettings.promptEnhancementMode;
           appliedInterviewEnabled = nextComposerSettings.interviewEnabled;
         }
 
@@ -7305,7 +7335,14 @@ export const useChatSessionController = (
     onSetSessionContextWindow: (sessionId, contextWindow) => {
       const session = state.getSessionById(sessionId);
       if (!session) throw new Error("Choose a session first.");
-      state.applyShellState((previous) => ({ ...previous, sessions: previous.sessions.map((entry) => entry.id === sessionId ? { ...entry, contextWindow, updatedAt: Date.now() } : entry) }));
+      state.applyShellState((previous) => ({
+        ...previous,
+        sessions: previous.sessions.map((entry) =>
+          entry.id === sessionId
+            ? { ...entry, contextWindow, updatedAt: Date.now() }
+            : entry,
+        ),
+      }));
     },
     onSetSessionWorkspace: applyRemoteWorkspaceSelection,
     onSetSessionGitBranch: (sessionId, branch) => {
@@ -8219,7 +8256,8 @@ export const useChatSessionController = (
         updateQueuedSessionMessages((current) => [
           ...current,
           ...messages.map((message) => ({
-            ...message, settings: submission.messageSettings,
+            ...message,
+            settings: submission.messageSettings,
           })),
         ]);
         clearSessionComposerInput(sessionId, submission.composerClearGuard);
@@ -8287,14 +8325,18 @@ export const useChatSessionController = (
         if (submission.runningAction) {
           // While the agent waits on a question, the next message answers it,
           // whether it was typed here or sent from machdoch.cloud.
-          const pendingQuestion = findPendingAgentQuestion(submission.sessionSnapshot);
+          const pendingQuestion = findPendingAgentQuestion(
+            submission.sessionSnapshot,
+          );
           const questionTaskId = pendingQuestion
             ? getActiveDesktopTaskIdForSession(submission.sessionSnapshot.id)
             : null;
           if (
             pendingQuestion &&
             questionTaskId &&
-            getAgentControlEndpoint(questionTaskId)?.capabilities.includes("answer") &&
+            getAgentControlEndpoint(questionTaskId)?.capabilities.includes(
+              "answer",
+            ) &&
             submission.contextAttachments.length === 0
           ) {
             const sessionId = submission.sessionSnapshot.id;
@@ -8328,13 +8370,17 @@ export const useChatSessionController = (
                 messageSettings: submission.messageSettings,
                 visibleMessageContent: task,
                 promptHistoryContent,
-                ...(submission.reference ? { reference: submission.reference } : {}),
+                ...(submission.reference
+                  ? { reference: submission.reference }
+                  : {}),
                 contextAttachments: submission.contextAttachments,
               };
               // Attachments and enhanced prompts need a turn of their own.
               if (
                 !taskId ||
-                getAgentControlEndpoint(taskId)?.capabilities.includes("steer") !== true ||
+                getAgentControlEndpoint(taskId)?.capabilities.includes(
+                  "steer",
+                ) !== true ||
                 submission.contextAttachments.length > 0 ||
                 promptEnhancement ||
                 promptEnhancementRequest
@@ -8342,22 +8388,31 @@ export const useChatSessionController = (
                 queueActiveSessionMessage("back", {
                   ...queueInput,
                   ...(promptEnhancement ? { promptEnhancement } : {}),
-                  ...(promptEnhancementRequest ? { promptEnhancementRequest } : {}),
+                  ...(promptEnhancementRequest
+                    ? { promptEnhancementRequest }
+                    : {}),
                   composerClearGuard: submission.composerClearGuard,
                 });
                 return;
               }
-              clearSessionComposerInput(sessionId, submission.composerClearGuard);
-              void sendAgentControl(taskId, { type: "steer", text: task }).catch(
-                (error: unknown) => {
-                  queueActiveSessionMessage("back", { ...queueInput, clearComposer: false });
-                  setPromptEnhancementStatus({
-                    sessionId,
-                    tone: "info",
-                    text: `${error instanceof Error ? error.message : String(error)} The message was queued as the next turn instead.`,
-                  });
-                },
+              clearSessionComposerInput(
+                sessionId,
+                submission.composerClearGuard,
               );
+              void sendAgentControl(taskId, {
+                type: "steer",
+                text: task,
+              }).catch((error: unknown) => {
+                queueActiveSessionMessage("back", {
+                  ...queueInput,
+                  clearComposer: false,
+                });
+                setPromptEnhancementStatus({
+                  sessionId,
+                  tone: "info",
+                  text: `${error instanceof Error ? error.message : String(error)} The message was queued as the next turn instead.`,
+                });
+              });
               return;
             }
             case "stop-and-send": {
@@ -8370,7 +8425,9 @@ export const useChatSessionController = (
                   : {}),
                 visibleMessageContent: task,
                 promptHistoryContent,
-                ...(submission.reference ? { reference: submission.reference } : {}),
+                ...(submission.reference
+                  ? { reference: submission.reference }
+                  : {}),
                 ...(promptEnhancement ? { promptEnhancement } : {}),
                 ...(promptEnhancementRequest
                   ? { promptEnhancementRequest }
@@ -8394,7 +8451,9 @@ export const useChatSessionController = (
                   : {}),
                 visibleMessageContent: task,
                 promptHistoryContent,
-                ...(submission.reference ? { reference: submission.reference } : {}),
+                ...(submission.reference
+                  ? { reference: submission.reference }
+                  : {}),
                 ...(promptEnhancement ? { promptEnhancement } : {}),
                 ...(promptEnhancementRequest
                   ? { promptEnhancementRequest }
@@ -8589,7 +8648,8 @@ export const useChatSessionController = (
           }),
           composerClearGuard: {
             ...createComposerClearGuard(session),
-            preserve: input.preserveDraft === true || prompt !== session.draft.trim(),
+            preserve:
+              input.preserveDraft === true || prompt !== session.draft.trim(),
           },
           messageSettings: createSessionMessageSettings(
             session,
@@ -8702,7 +8762,8 @@ export const useChatSessionController = (
     );
     const selectedPromptEnhancementMode =
       sessionSnapshot.temporaryPackSettings?.promptEnhancementMode ??
-      currentEdit?.promptEnhancementMode ?? promptEnhancementMode;
+      currentEdit?.promptEnhancementMode ??
+      promptEnhancementMode;
     const submission: ChatInputNeededSubmission = {
       kind: "active-session",
       sessionSnapshot,
@@ -8713,7 +8774,8 @@ export const useChatSessionController = (
         sessionSnapshot,
         selectedPromptEnhancementMode,
         sessionSnapshot.temporaryPackSettings?.interviewEnabled ??
-          currentEdit?.interviewEnabled ?? chatInterviewEnabled,
+          currentEdit?.interviewEnabled ??
+          chatInterviewEnabled,
         !currentEdit && !goalCommand ? goalObjective : undefined,
       ),
       promptEnhancementMode: selectedPromptEnhancementMode,
@@ -8721,7 +8783,8 @@ export const useChatSessionController = (
       iterationMode,
       interviewEnabled:
         sessionSnapshot.temporaryPackSettings?.interviewEnabled ??
-        currentEdit?.interviewEnabled ?? chatInterviewEnabled,
+        currentEdit?.interviewEnabled ??
+        chatInterviewEnabled,
       runningAction: currentEdit
         ? null
         : getSessionMessageRunningAction({
@@ -8806,6 +8869,12 @@ export const useChatSessionController = (
     submitQuickVoiceCommand,
     clearQuickTaskHistory,
     fileDrop,
+    workspaceChat: {
+      attachPaths: (paths: string[]) =>
+        handleAttachPaths(paths, "active-session"),
+      appendText: (text: string) =>
+        handleAppendDroppedText(text, "active-session"),
+    },
     voiceInputOverlay: {
       visible:
         speechInput.starting ||
@@ -8857,7 +8926,8 @@ export const useChatSessionController = (
     renamePoseScene: handleRemoteRenameSession,
     openProviderSettings: () => settingsActions.openSettings("providers"),
     sidebar: {
-      totalSessions: state.shellState.sessions.length - (quickTaskSession ? 1 : 0),
+      totalSessions:
+        state.shellState.sessions.length - (quickTaskSession ? 1 : 0),
       activeSessionId: state.activeSession.id,
       filteredSessions: sidebarSessions,
       queuedSessionMessages: state.shellState.queuedSessionMessages,
@@ -9028,7 +9098,9 @@ export const useChatSessionController = (
       activeRunModeMeta,
       defaultRunMode,
       defaultReasoning: normalizedEffectiveReasoning,
-      workspaceContextWindow: workspaceSnapshotMatchesSession ? runtime.runtimeSnapshot?.contextWindow : undefined,
+      workspaceContextWindow: workspaceSnapshotMatchesSession
+        ? runtime.runtimeSnapshot?.contextWindow
+        : undefined,
       activeReasoning,
       isUsingWorkspaceDefaultMode,
       isUsingWorkspaceDefaultReasoning,
@@ -9073,12 +9145,28 @@ export const useChatSessionController = (
           ),
       speechInput: {
         live: {
-          replyPlayback: { enabled: voice.conversationAutoSpeak === "auto" || (voice.conversationAutoSpeak === "default" && voice.autoSpeakResponses), onChange: (enabled: boolean) => voice.setConversationAutoSpeak(enabled ? "auto" : "manual") },
+          replyPlayback: {
+            enabled:
+              voice.conversationAutoSpeak === "auto" ||
+              (voice.conversationAutoSpeak === "default" &&
+                voice.autoSpeakResponses),
+            onChange: (enabled: boolean) =>
+              voice.setConversationAutoSpeak(enabled ? "auto" : "manual"),
+          },
           inputDeviceId: runtime.userSpeechToTextSettings.inputDeviceId,
           onSpeechStart: voice.stopSpeaking,
           onTranscript: async (prompt: string) => {
-            const sent = submitRemoteSessionMessage({ sessionId: activeComposerSession.id, prompt, promptEnhancementMode: "off", interviewEnabled: false, runningAction: "stop-and-send" });
-            if (!sent) throw new Error("The voice message could not be sent. Retry the text below.");
+            const sent = submitRemoteSessionMessage({
+              sessionId: activeComposerSession.id,
+              prompt,
+              promptEnhancementMode: "off",
+              interviewEnabled: false,
+              runningAction: "stop-and-send",
+            });
+            if (!sent)
+              throw new Error(
+                "The voice message could not be sent. Retry the text below.",
+              );
           },
         },
         provider: runtime.userSpeechToTextSettings.activeProvider,
@@ -9136,12 +9224,27 @@ export const useChatSessionController = (
       onAdaptiveControllerOverrideChange:
         handleAdaptiveControllerOverrideChange,
       onSessionReasoningSelection: handleSessionReasoningSelection,
-      onContextWindowChange: (contextWindow: import("@machdoch/fleet-protocol/context-window").ContextWindow | undefined) => {
+      onContextWindowChange: (
+        contextWindow:
+          | import("@machdoch/fleet-protocol/context-window").ContextWindow
+          | undefined,
+      ) => {
         if (activeMessageEditRef.current) {
-          updateMessageEditSession((session) => ({ ...session, contextWindow, updatedAt: Date.now() }));
+          updateMessageEditSession((session) => ({
+            ...session,
+            contextWindow,
+            updatedAt: Date.now(),
+          }));
           return;
         }
-        state.applyShellState((previous) => ({ ...previous, sessions: previous.sessions.map((session) => session.id === state.activeSessionId ? { ...session, contextWindow, updatedAt: Date.now() } : session) }));
+        state.applyShellState((previous) => ({
+          ...previous,
+          sessions: previous.sessions.map((session) =>
+            session.id === state.activeSessionId
+              ? { ...session, contextWindow, updatedAt: Date.now() }
+              : session,
+          ),
+        }));
       },
       onSessionMemoryEnabledChange: handleSessionMemoryEnabledChange,
       onForgetSessionMemory: (memoryId: string) =>
@@ -9298,7 +9401,7 @@ export const useChatSessionController = (
         {
           onRefreshSpeechInputDevices: speechInputDevices.refresh,
           onAutoSpeakResponsesChange: voice.setAutoSpeakResponses,
-          onAnswerModeChange:voice.setAnswerMode,
+          onAnswerModeChange: voice.setAnswerMode,
           conversationAutoSpeak: voice.conversationAutoSpeak,
           conversationProfileId: voice.conversationProfileId,
           conversationProfiles: voice.conversationProfiles,

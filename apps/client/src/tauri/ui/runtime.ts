@@ -42,6 +42,8 @@ import type {
   WorkspaceGitRepositoryDiscovery,
   WorkspaceGitRepositoriesStatus,
   WorkspaceGitOverview,
+  WorkspaceGitOverviewSection,
+  WorkspaceGitUntrackedFiles,
   WorkspaceGitAction,
   WorkspaceGitActionOptions,
   WorkspaceGitSummary,
@@ -87,6 +89,8 @@ export type {
   WorkspaceGitBranchSwitchTarget,
   WorkspaceGitBranchSwitchResult,
   WorkspaceGitOverview,
+  WorkspaceGitOverviewSection,
+  WorkspaceGitUntrackedFiles,
   WorkspaceGitAction,
   WorkspaceGitActionOptions,
   WorkspaceEntryKind,
@@ -329,7 +333,6 @@ import {
 } from "./preview/fixtures";
 import {
   createPreviewWorkspaceEntry,
-  deletePreviewWorkspaceEntry,
   discoverPreviewWorkspaceShells,
   listPreviewWorkspaceDirectory,
   readPreviewWorkspaceFile,
@@ -355,6 +358,7 @@ import {
   runPreviewWorkspaceGitAction,
   switchPreviewWorkspaceGitBranches,
 } from "./workspace-management/workspace-preview-git";
+import { searchPreviewCloudIssues } from "./workspace-management/workspace-preview-git-reads";
 
 export type UserApiKeyProvider = SharedUserApiProvider;
 
@@ -3870,6 +3874,20 @@ export const saveWorkspaceAutoGitignore = async (
   });
 };
 
+export const saveWorkspaceGitFileSystemMonitor = async (
+  workspaceRoot: string | null | undefined,
+  enabled: boolean,
+): Promise<string | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before changing Git settings.");
+  }
+  return await invokeWorkspaceTools<string>("save_workspace_git_fsmonitor", {
+    workspaceRoot: normalizedWorkspaceRoot,
+    enabled,
+  });
+};
+
 export const saveWorkspaceReleaseStage = async (
   workspaceRoot: string | null | undefined,
   releaseStage: ReleaseStage | null,
@@ -4903,9 +4921,22 @@ export const loadWorkspaceGitFingerprint = async (
   }
 };
 
+export interface WorkspaceGitOverviewView {
+  sections?: WorkspaceGitOverviewSection[];
+  untrackedFiles?: WorkspaceGitUntrackedFiles;
+}
+
+const overviewViewFields = (
+  view: WorkspaceGitOverviewView,
+): WorkspaceGitOverviewView => ({
+  ...(view.sections ? { sections: [...new Set(view.sections)] } : {}),
+  ...(view.untrackedFiles ? { untrackedFiles: view.untrackedFiles } : {}),
+});
+
 export const loadWorkspaceGitOverview = async (
   workspaceRoot: string,
   repositoryRoot: string,
+  view: WorkspaceGitOverviewView = {},
 ): Promise<WorkspaceGitOverview> => {
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
   const normalizedRepositoryRoot = normalizeWorkspaceRoot(repositoryRoot);
@@ -4925,6 +4956,7 @@ export const loadWorkspaceGitOverview = async (
         request: {
           workspaceRoot: normalizedWorkspaceRoot,
           repositoryRoot: normalizedRepositoryRoot,
+          ...overviewViewFields(view),
         },
       },
     );
@@ -5083,15 +5115,40 @@ const createWorkspaceGitActionFields = (
     "remoteUrl",
     "message",
     "stashRef",
+    "commit",
+    "tagName",
+    "target",
+    "title",
+    "baseBranch",
   ] as const) {
     const value = options[key]?.trim();
     if (value) fields[key] = value;
   }
   if (options.paths?.length) fields.paths = options.paths;
-  for (const key of ["includeUntracked", "force", "draft"] as const) {
+  if (options.branchNames?.length) fields.branchNames = options.branchNames;
+  const coAuthors = options.coAuthors
+    ?.map((entry) => entry.trim())
+    .filter(Boolean);
+  if (coAuthors?.length) fields.coAuthors = coAuthors;
+  for (const key of [
+    "includeUntracked",
+    "force",
+    "draft",
+    "amend",
+    "signOff",
+    "pushAfterCommit",
+    "remote",
+  ] as const) {
     if (options[key]) fields[key] = true;
   }
   if (options.resetMode) fields.resetMode = options.resetMode;
+  if (options.side) fields.side = options.side;
+  if (options.patch) {
+    fields.patch = options.patch;
+    fields.patchTarget = options.patchTarget ?? "index";
+    fields.reverse = options.reverse ?? false;
+  }
+  if (options.body !== undefined) fields.body = options.body;
   return fields;
 };
 
@@ -5100,6 +5157,7 @@ export const runWorkspaceGitAction = async (
   repositoryRoot: string,
   action: WorkspaceGitAction,
   options: WorkspaceGitActionOptions = {},
+  view: WorkspaceGitOverviewView = {},
 ): Promise<WorkspaceGitOverview> => {
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
   const normalizedRepositoryRoot = normalizeWorkspaceRoot(repositoryRoot);
@@ -5124,6 +5182,7 @@ export const runWorkspaceGitAction = async (
           repositoryRoot: normalizedRepositoryRoot,
           action,
           ...fields,
+          ...overviewViewFields(view),
         },
       },
     );
@@ -5544,26 +5603,6 @@ export const renameWorkspaceEntry = async (
   }
 };
 
-export const deleteWorkspaceEntry = async (
-  workspaceRoot: string,
-  relativePath: string,
-  recursive: boolean,
-): Promise<void> => {
-  const root = requireWorkspaceRoot(workspaceRoot);
-  const path = requireWorkspaceRelativePath(relativePath);
-  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
-    deletePreviewWorkspaceEntry(path);
-    return;
-  }
-  try {
-    await invokeWorkspaceTools("delete_workspace_entry", {
-      request: { workspaceRoot: root, relativePath: path, recursive },
-    });
-  } catch (error) {
-    throw normalizeWorkspaceToolsError(error);
-  }
-};
-
 export const discoverWorkspaceShells = async (
   workspaceRoot: string,
 ): Promise<WorkspaceShellDiscovery> => {
@@ -5589,12 +5628,13 @@ export const startWorkspaceTerminal = async (
   columns: number,
   rows: number,
   onEvent: (event: WorkspaceTerminalEvent) => void,
+  cwd?: string,
 ): Promise<WorkspaceTerminalStarted> => {
   const root = requireTerminalWorkspaceRoot(workspaceRoot);
   if (!shellId) throw new Error("Choose a shell.");
   const remote = getRemoteWorkspacePlatform();
   if (remote)
-    return remote.startTerminal(root, shellId, columns, rows, onEvent);
+    return remote.startTerminal(root, shellId, columns, rows, onEvent, cwd);
   if (!canInvokeTauriCommands()) {
     await new Promise<void>((resolve) => window.setTimeout(resolve, 200));
     return startPreviewWorkspaceTerminal(root, shellId, onEvent);
@@ -5610,6 +5650,7 @@ export const startWorkspaceTerminal = async (
           shellId,
           columns: Math.round(columns),
           rows: Math.round(rows),
+          ...(cwd ? { cwd } : {}),
         },
         onEvent: channel,
       },
@@ -5814,6 +5855,22 @@ export const listMcpServers = async (
     servers: [],
   }));
 };
+
+export const searchMachdochCloudIssues = (
+  workspaceRoot: string,
+  query: string,
+): Promise<unknown> =>
+  runMcpCommand(
+    workspaceRoot,
+    [
+      "call-tool",
+      "machdoch-cloud",
+      "list_issues",
+      "--arguments-json",
+      JSON.stringify({ query }),
+    ],
+    () => searchPreviewCloudIssues(workspaceRoot, query),
+  );
 
 export const listMcpCachedCapabilities = async (
   workspaceRoot: string | null | undefined,

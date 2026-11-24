@@ -1,9 +1,5 @@
 import { CircleAlert, Play } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import type {
-  WorkspaceRunConfigurationStatus,
-  WorkspaceRunSnapshot,
-} from "../../../../shared/workspace-run.js";
+import { useEffect, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
@@ -13,24 +9,10 @@ import {
   DialogTrigger,
 } from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import {
-  listenWorkspaceRunState,
-  loadWorkspaceRunSnapshot,
-} from "../../runtime";
+import { useWorkspaceRunActivity } from "../../workspace-management/use-workspace-run-activity";
 import { useWorkspaceRunDetectionState } from "../../workspace-management/workspace-run-detection-state";
 import { WorkspaceRunPanel } from "../../workspace-management/workspace-run-panel";
-import { workspaceRunIsActive } from "../../workspace-management/workspace-run-model";
 import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
-
-const RUN_RECONCILIATION_INTERVAL_MS = 5_000;
-
-const collectWorkspaceRunStatuses = (
-  statuses: readonly WorkspaceRunConfigurationStatus[],
-): WorkspaceRunConfigurationStatus[] =>
-  statuses.flatMap((status) => [
-    status,
-    ...collectWorkspaceRunStatuses(status.children),
-  ]);
 
 export const WorkspaceRunDialogControl = ({
   workspaceRoot,
@@ -43,70 +25,19 @@ export const WorkspaceRunDialogControl = ({
   const rootKey = normalizedRoot
     ? createWorkspaceRootKey(normalizedRoot)
     : null;
-  const activeRootKeyRef = useRef(rootKey);
-  activeRootKeyRef.current = rootKey;
   const [open, setOpen] = useState(false);
   const [documentDirty, setDocumentDirty] = useState(false);
-  const [snapshot, setSnapshot] = useState<WorkspaceRunSnapshot | null>(null);
   const detectionState = useWorkspaceRunDetectionState(normalizedRoot);
-
-  const refreshSnapshot = useCallback(async (): Promise<void> => {
-    if (!normalizedRoot || !rootKey) return;
-    try {
-      const next = await loadWorkspaceRunSnapshot(normalizedRoot);
-      if (
-        activeRootKeyRef.current === rootKey &&
-        createWorkspaceRootKey(next.workspaceRoot) === rootKey
-      ) {
-        setSnapshot(next);
-      }
-    } catch (cause) {
-      console.error("Failed to refresh workspace run state", cause);
-    }
-  }, [normalizedRoot, rootKey]);
+  const { activeRuns: activeRunStatuses, healthCheckFailed } =
+    useWorkspaceRunActivity(normalizedRoot);
 
   useEffect(() => {
     setOpen(false);
     setDocumentDirty(false);
-    setSnapshot(null);
-    if (!normalizedRoot || !rootKey) return;
-
-    let active = true;
-    void refreshSnapshot();
-    const interval = window.setInterval(() => {
-      if (active) void refreshSnapshot();
-    }, RUN_RECONCILIATION_INTERVAL_MS);
-    let unlisten: (() => void) | undefined;
-    void listenWorkspaceRunState((next) => {
-      if (active && createWorkspaceRootKey(next.workspaceRoot) === rootKey) {
-        setSnapshot(next);
-      }
-    })
-      .then((listener) => {
-        if (active) unlisten = listener;
-        else listener();
-      })
-      .catch((cause) => {
-        console.error("Failed to subscribe to workspace run state", cause);
-      });
-
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-      unlisten?.();
-    };
-  }, [normalizedRoot, refreshSnapshot, rootKey]);
+  }, [rootKey]);
 
   const detecting = detectionState.phase === "detecting";
-  const activeRunStatuses = snapshot
-    ? collectWorkspaceRunStatuses(snapshot.configurations).filter(
-        workspaceRunIsActive,
-      )
-    : [];
   const scriptRunning = activeRunStatuses.length > 0;
-  const healthCheckFailed = activeRunStatuses.some(
-    (status) => status.health?.state === "failed",
-  );
   const runAriaLabel = [
     "Run workspace",
     scriptRunning ? "process running" : null,

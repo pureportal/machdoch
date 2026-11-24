@@ -102,6 +102,7 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
     args.command !== "mcp-apps" &&
     args.command !== "live-voice" &&
     args.command !== "run-detection" &&
+    args.command !== "commit-message" &&
     args.command !== "speech" &&
     args.command !== "cloud" &&
     !isInternalProviderProcess &&
@@ -123,7 +124,8 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
 
   switch (args.command) {
     case "cloud": {
-      const { runCloudCommand } = await import("./_helpers/cli-cloud-commands.js");
+      const { runCloudCommand } =
+        await import("./_helpers/cli-cloud-commands.js");
       await runCloudCommand(args);
       return;
     }
@@ -131,12 +133,28 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
       const { detectWorkspaceRunConfigurations } =
         await import("../core/workspace-run-detection.js");
       writeStdoutLine(
-        JSON.stringify(await detectWorkspaceRunConfigurations(args.workspaceRoot)),
+        JSON.stringify(
+          await detectWorkspaceRunConfigurations(args.workspaceRoot),
+        ),
+      );
+      return;
+    }
+    case "commit-message": {
+      const { generateWorkspaceGitCommitMessage } =
+        await import("../core/workspace-git-commit-message.js");
+      writeStdoutLine(
+        JSON.stringify(
+          await generateWorkspaceGitCommitMessage(
+            args.workspaceRoot,
+            args.commitMessage!.repositoryRoot,
+          ),
+        ),
       );
       return;
     }
     case "live-voice": {
-      const { runLiveVoiceCommand } = await import("./_helpers/cli-live-voice.js");
+      const { runLiveVoiceCommand } =
+        await import("./_helpers/cli-live-voice.js");
       await runLiveVoiceCommand(args);
       return;
     }
@@ -152,7 +170,8 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
     }
     case "knowledge":
     case "research": {
-      const { runWorkspaceLibraryCommand } = await import("./_helpers/cli-workspace-library.js");
+      const { runWorkspaceLibraryCommand } =
+        await import("./_helpers/cli-workspace-library.js");
       await runWorkspaceLibraryCommand(args);
       return;
     }

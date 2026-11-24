@@ -2,19 +2,24 @@ import { ContextActionMenu } from "@machdoch/media-studio/tauri/ui/components/ui
 import { copyText } from "@machdoch/media-studio/tauri/ui/lib/clipboard.js";
 import "@xterm/xterm/css/xterm.css";
 import {
-  CircleDot,
-  Copy,
+  ArrowDownToLine,
+  ArrowUpToLine,
   ClipboardPaste,
-  ChevronDown,
-  ChevronUp,
+  Columns2,
+  Copy,
   Eraser,
   ExternalLink,
-  ListFilter,
   LoaderCircle,
+  MessageSquarePlus,
+  MoreHorizontal,
+  PanelBottom,
+  PanelRight,
   Play,
-  Plus,
   RotateCw,
+  Search,
   Square,
+  SquareArrowOutUpRight,
+  SquareTerminal,
   TerminalSquare,
   X,
 } from "lucide-react";
@@ -22,18 +27,15 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
   type JSX,
 } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
-import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
-import {
-  asPaletteCommands,
-  type CommandDefinition,
-} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
@@ -44,65 +46,45 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@machdoch/client-ui/dropdown-menu";
-import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
-import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
-import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { openWorkspaceTerminalHost } from "../runtime";
+import { useWorkspaceDock, workspaceDockStore } from "./workspace-dock-store";
+import {
+  DEFAULT_TERMINAL_LAYOUT,
+  type TerminalDock,
+} from "./workspace-terminal-layout";
+import { WorkspaceTerminalNewMenu } from "./workspace-terminal-new-menu";
+import { WorkspaceTerminalPalette } from "./workspace-terminal-palette";
+import { WorkspaceTerminalSearch } from "./workspace-terminal-search";
 import {
   getWorkspaceTerminalStore,
-  type WorkspaceTerminalStore,
   type WorkspaceTerminalSessionView,
-  type WorkspaceTerminalStatus,
+  type WorkspaceTerminalStore,
 } from "./workspace-terminal-store";
+import {
+  WorkspaceTerminalTabs,
+  type TerminalTabActions,
+} from "./workspace-terminal-tabs";
+import { useWorkspaceTerminalCommands } from "./use-workspace-terminal-commands";
+import { openWorkspaceToolWindow } from "./workspace-tools-runtime";
 
-const terminalStatusLabel = (status: WorkspaceTerminalStatus): string => {
-  switch (status) {
-    case "loading":
-      return "Loading";
-    case "starting":
-      return "Starting";
-    case "running":
-      return "Running";
-    case "exited":
-      return "Exited";
-    case "error":
-      return "Unavailable";
-  }
-};
+export interface WorkspaceTerminalChatBridge {
+  addText: (text: string) => void;
+}
 
-const TerminalStatusDot = ({
-  terminal,
-}: {
-  terminal: WorkspaceTerminalSessionView;
-}): JSX.Element => {
-  const statusLabel = terminalStatusLabel(terminal.status);
-
-  return (
-    <span
-      role="status"
-      aria-label={`${terminal.label}: ${statusLabel}`}
-      className={cn(
-        "size-1.5 shrink-0 rounded-full",
-        terminal.status === "running"
-          ? "bg-emerald-400"
-          : terminal.status === "starting" || terminal.status === "loading"
-            ? "animate-pulse bg-sky-400"
-            : terminal.status === "error"
-              ? "bg-red-400"
-              : "bg-slate-600",
-      )}
-    />
-  );
-};
+const SCROLLBACK_OPTIONS = [1_000, 10_000, 50_000, 100_000] as const;
 
 const WorkspaceTerminalViewport = ({
   store,
   terminal,
-  active,
+  visible,
+  focused,
+  chat,
 }: {
   store: WorkspaceTerminalStore;
   terminal: WorkspaceTerminalSessionView;
-  active: boolean;
+  visible: boolean;
+  focused: boolean;
+  chat?: WorkspaceTerminalChatBridge;
 }): JSX.Element => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -119,6 +101,7 @@ const WorkspaceTerminalViewport = ({
       preserveEditing={false}
       actions={() => {
         const selection = store.getTerminalSelection(terminal.id);
+        const output = chat ? store.lastCommandOutput(terminal.id) : null;
         return [
           {
             label: "Copy selection",
@@ -131,6 +114,24 @@ const WorkspaceTerminalViewport = ({
             icon: ClipboardPaste,
             onSelect: () => store.pasteToTerminal(terminal.id),
           },
+          ...(chat
+            ? [
+                {
+                  label: "Send selection to chat",
+                  icon: MessageSquarePlus,
+                  disabled: !selection,
+                  onSelect: () => chat.addText(selection),
+                },
+                {
+                  label: "Send last output to chat",
+                  icon: MessageSquarePlus,
+                  disabled: !output,
+                  onSelect: () => {
+                    if (output) chat.addText(output);
+                  },
+                },
+              ]
+            : []),
         ];
       }}
     >
@@ -138,10 +139,15 @@ const WorkspaceTerminalViewport = ({
         data-command-focus="terminal"
         role="tabpanel"
         aria-label={terminal.label}
-        hidden={!active}
-        className="h-full w-full px-2 py-1.5"
+        hidden={!visible}
+        className={cn(
+          "h-full min-h-0 min-w-0 flex-1 px-2 py-1.5",
+          focused && "ring-1 ring-inset ring-slate-800",
+        )}
         onMouseDown={(event) => {
-          if (event.button === 0) store.fitActiveTerminal(true);
+          if (event.button !== 0) return;
+          store.selectTerminal(terminal.id);
+          store.fitTerminal(terminal.id, true);
         }}
       >
         <div
@@ -153,14 +159,16 @@ const WorkspaceTerminalViewport = ({
   );
 };
 
-export const WorkspaceTerminal = ({
+export const WorkspaceTerminalPanel = ({
   workspaceRoot,
-  open,
-  onToggle,
+  chat,
+  standalone = false,
+  onClose,
 }: {
   workspaceRoot: string;
-  open: boolean;
-  onToggle: () => void;
+  chat?: WorkspaceTerminalChatBridge;
+  standalone?: boolean;
+  onClose?: () => void;
 }): JSX.Element => {
   const store = useMemo(
     () => getWorkspaceTerminalStore(workspaceRoot),
@@ -171,43 +179,59 @@ export const WorkspaceTerminal = ({
     store.getSnapshot,
     store.getSnapshot,
   );
-  const terminalAreaRef = useRef<HTMLDivElement | null>(null);
+  const dock = useWorkspaceDock(workspaceRoot);
+  const layout = dock?.terminal ?? DEFAULT_TERMINAL_LAYOUT;
+  const [searching, setSearching] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const areaRef = useRef<HTMLDivElement | null>(null);
   const activeTerminal =
     snapshot.terminals.find(
       (terminal) => terminal.id === snapshot.activeTerminalId,
     ) ?? null;
+  const splitTerminal =
+    layout.split && layout.split.tabId !== snapshot.activeTerminalId
+      ? (snapshot.terminals.find(
+          (terminal) => terminal.id === layout.split?.tabId,
+        ) ?? null)
+      : null;
+  const visibleIds = [activeTerminal?.id, splitTerminal?.id].filter(Boolean);
   const error = activeTerminal?.error ?? snapshot.discoveryError;
 
   useEffect(() => {
     void store.initialize();
   }, [store]);
 
+  const visibleKey = visibleIds.join("|");
   useEffect(() => {
-    const area = terminalAreaRef.current;
+    const area = areaRef.current;
     if (!area) return;
     let frame: number | null = null;
+    const fit = (focus: boolean) => {
+      for (const id of visibleKey.split("|")) {
+        if (id)
+          store.fitTerminal(
+            id,
+            focus && id === store.getSnapshot().activeTerminalId,
+          );
+      }
+    };
     const observer = new ResizeObserver(() => {
-      if (!open) return;
       if (frame !== null) window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         frame = null;
-        store.fitActiveTerminal(false);
+        fit(false);
       });
     });
     observer.observe(area);
+    frame = window.requestAnimationFrame(() => {
+      frame = null;
+      fit(true);
+    });
     return () => {
       observer.disconnect();
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
-  }, [open, store]);
-
-  useEffect(() => {
-    if (!open || !snapshot.activeTerminalId) return;
-    const frame = window.requestAnimationFrame(() =>
-      store.fitActiveTerminal(true),
-    );
-    return () => window.cancelAnimationFrame(frame);
-  }, [open, snapshot.activeTerminalId, store]);
+  }, [store, visibleKey, layout.split?.direction]);
 
   const closeTerminal = (terminal: WorkspaceTerminalSessionView): void => {
     if (
@@ -229,383 +253,305 @@ export const WorkspaceTerminal = ({
     );
   };
 
-  const terminalCommandStateRef = useRef({
-    snapshot,
-    activeTerminal,
-    store,
-    closeTerminal,
-    openExternalTerminal,
-  });
-  terminalCommandStateRef.current = {
-    snapshot,
-    activeTerminal,
-    store,
-    closeTerminal,
-    openExternalTerminal,
+  const setDock = (value: TerminalDock): void => {
+    if (value === "window") {
+      void openWorkspaceToolWindow(workspaceRoot, "terminal")
+        .then(() =>
+          workspaceDockStore.updateLayout(workspaceRoot, (current) => ({
+            ...current,
+            terminalOpen: false,
+          })),
+        )
+        .catch((failure: unknown) => store.reportError(failure));
+      return;
+    }
+    workspaceDockStore.updateTerminal(workspaceRoot, (current) => ({
+      ...current,
+      dock: value,
+    }));
   };
-  const terminalCommands = useMemo<readonly CommandDefinition[]>(() => {
-    const scope = {
-      kind: "view" as const,
-      ownerId: "workspaces",
-      viewId: "workspaces",
-    };
-    const state = () => terminalCommandStateRef.current;
-    return asPaletteCommands([
-      {
-        id: "workspaces.terminal.select",
-        title: "Select workspace terminal",
-        group: "Workspace terminal",
-        scope,
-        availability: () =>
-          state().snapshot.terminals.length
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        children: () => ({
-          id: "workspaces.terminal.select.page",
-          title: "Select workspace terminal",
-          searchPlaceholder: "Search terminals",
-          groups: [
-            {
-              id: "terminals",
-              items: state().snapshot.terminals.map((terminal) => ({
-                id: terminal.id,
-                title: terminal.label,
-                keywords: [
-                  terminal.title ?? "",
-                  terminalStatusLabel(terminal.status),
-                ],
-                current: terminal.id === state().snapshot.activeTerminalId,
-                execute: () => state().store.selectTerminal(terminal.id),
-              })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "workspaces.terminal.new",
-        title: "New workspace terminal",
-        group: "Workspace terminal",
-        scope,
-        availability: () =>
-          (state().snapshot.profiles?.visibleShells.length ?? 0) > 0
-            ? { state: "enabled" }
-            : { state: "disabled", reason: "No shells are available." },
-        children: () => ({
-          id: "workspaces.terminal.new.page",
-          title: "New workspace terminal",
-          searchPlaceholder: "Search shells",
-          groups: [
-            {
-              id: "shells",
-              items: (state().snapshot.profiles?.visibleShells ?? []).map(
-                (shell) => ({
-                  id: shell.id,
-                  title: shell.label,
-                  execute: () => void state().store.createTerminal(shell.id),
-                }),
-              ),
-            },
-          ],
-        }),
-      },
-      {
-        id: "workspaces.terminal.start",
-        title: "Start or restart workspace terminal",
-        group: "Workspace terminal",
-        scope,
-        availability: () =>
-          !state().activeTerminal
-            ? { state: "hidden" }
-            : state().activeTerminal?.transitioning
-              ? { state: "disabled", reason: "Terminal is starting." }
-              : { state: "enabled" },
-        execute: () => void state().store.startActiveTerminal(),
-      },
-      {
-        id: "workspaces.terminal.stop",
-        title: "Stop workspace terminal",
-        group: "Workspace terminal",
-        scope,
-        availability: () => {
-          const terminal = state().activeTerminal;
-          if (!terminal) return { state: "hidden" };
-          return terminal.sessionActive || terminal.status === "starting"
-            ? { state: "enabled" }
-            : { state: "disabled", reason: "Terminal is not running." };
-        },
-        execute: () => void state().store.stopActiveTerminal(),
-      },
-      {
-        id: "workspaces.terminal.clear",
-        title: "Clear workspace terminal",
-        group: "Workspace terminal",
-        scope,
-        availability: () =>
-          state().activeTerminal ? { state: "enabled" } : { state: "hidden" },
-        execute: () => state().store.clearActiveTerminal(),
-      },
-      {
-        id: "workspaces.terminal.close",
-        title: "Close workspace terminal",
-        group: "Workspace terminal",
-        scope,
-        availability: () =>
-          state().snapshot.terminals.length
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        children: () => ({
-          id: "workspaces.terminal.close.page",
-          title: "Close workspace terminal",
-          searchPlaceholder: "Search terminals",
-          groups: [
-            {
-              id: "terminals",
-              items: state().snapshot.terminals.map((terminal) => ({
-                id: terminal.id,
-                title: terminal.label,
-                keywords: [
-                  terminal.title ?? "",
-                  terminalStatusLabel(terminal.status),
-                ],
-                current: terminal.id === state().snapshot.activeTerminalId,
-                execute: () => state().closeTerminal(terminal),
-              })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "workspaces.terminal.open-external",
-        title: "Open workspace in external terminal",
-        group: "Workspace terminal",
-        scope,
-        availability: () =>
-          state().snapshot.discovery?.externalTerminal
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        execute: () => state().openExternalTerminal(),
-      },
-    ]);
-  }, []);
-  useOptionalRegisterCommands(terminalCommands);
+
+  const tabActions: TerminalTabActions = {
+    select: (terminalId) => store.selectTerminal(terminalId),
+    rename: (terminalId, name) => store.renameTerminal(terminalId, name),
+    color: (terminalId, color) => store.colorTerminal(terminalId, color),
+    split: (terminalId, direction) => {
+      if (terminalId === snapshot.activeTerminalId) {
+        void store.splitActiveTerminal(direction);
+      } else {
+        workspaceDockStore.updateTerminal(workspaceRoot, (current) => ({
+          ...current,
+          split: { tabId: terminalId, direction },
+        }));
+      }
+    },
+    close: closeTerminal,
+  };
+
+  useWorkspaceTerminalCommands({
+    store,
+    snapshot,
+    activeTerminal,
+    chat,
+    closeTerminal,
+    openExternalTerminal,
+    openSearch: () => setSearching(true),
+    openPalette: () => setPaletteOpen(true),
+  });
+
+  const activeId = activeTerminal?.id ?? null;
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-[#050910]">
-      <header className="app-workspace-terminal-toolbar flex min-h-10 shrink-0 flex-wrap items-center gap-1.5 border-b border-slate-800/80 px-2.5">
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={onToggle}
-          className="flex min-w-0 shrink-0 items-center gap-2 rounded-md px-1.5 py-1 text-xs font-medium text-slate-300 outline-none hover:bg-slate-900 focus-visible:ring-1 focus-visible:ring-sky-400"
-        >
-          <TerminalSquare className="size-3.5 text-sky-400" />
-          Terminal
-          {open ? (
-            <ChevronDown className="size-3 text-slate-600" />
-          ) : (
-            <ChevronUp className="size-3 text-slate-600" />
-          )}
-        </button>
-
-        <div
-          role="tablist"
-          aria-label="Workspace terminals"
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1 [scrollbar-width:none]"
-        >
-          {snapshot.terminals.map((terminal) => {
-            const active = terminal.id === snapshot.activeTerminalId;
-            return (
-              <div
-                key={terminal.id}
-                className={cn(
-                  "group flex h-7 max-w-48 shrink-0 items-center rounded-md border",
-                  active
-                    ? "border-slate-700 bg-slate-900 text-slate-200"
-                    : "border-transparent text-slate-500 hover:bg-slate-900/60 hover:text-slate-300",
-                )}
-              >
-                <ControlTooltip
-                  content={`${terminal.title ?? terminal.label} · ${terminalStatusLabel(terminal.status)}`}
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => store.selectTerminal(terminal.id)}
-                    className="flex min-w-0 items-center gap-1.5 py-1 pl-2 text-[11px] outline-none focus-visible:text-sky-300"
-                  >
-                    <TerminalStatusDot terminal={terminal} />
-                    <span className="truncate">{terminal.label}</span>
-                  </button>
-                </ControlTooltip>
-                <ControlTooltip content={`Close ${terminal.label}`}>
-                  <button
-                    type="button"
-                    aria-label={`Close ${terminal.label}`}
-                    onClick={() => closeTerminal(terminal)}
-                    className={cn(
-                      "mx-1 grid size-4 shrink-0 place-items-center rounded-sm text-slate-600 outline-none hover:bg-slate-800 hover:text-slate-300 focus-visible:ring-1 focus-visible:ring-sky-400",
-                      !active &&
-                        "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-                    )}
-                  >
-                    <X className="size-3" />
-                  </button>
-                </ControlTooltip>
-              </div>
-            );
-          })}
-        </div>
-
+    <section
+      aria-label="Terminal"
+      className="flex h-full min-h-0 flex-col bg-[#050910]"
+      onKeyDown={(event) => {
+        const mod = event.ctrlKey || event.metaKey;
+        if (mod && event.shiftKey && event.key.toLowerCase() === "f") {
+          event.preventDefault();
+          setSearching(true);
+        } else if (mod && event.key === "ArrowUp" && activeId) {
+          event.preventDefault();
+          store.jumpToCommand(activeId, "previous");
+        } else if (mod && event.key === "ArrowDown" && activeId) {
+          event.preventDefault();
+          store.jumpToCommand(activeId, "next");
+        }
+      }}
+    >
+      <header className="flex min-h-10 shrink-0 items-center gap-1 border-b border-slate-800/80 px-2">
+        <SquareTerminal className="mx-1 size-3.5 shrink-0 text-sky-400" />
+        <WorkspaceTerminalTabs
+          terminals={snapshot.terminals}
+          layout={layout}
+          activeTerminalId={snapshot.activeTerminalId}
+          actions={tabActions}
+        />
         {snapshot.profiles?.availableShells.length ? (
-          <DropdownMenu>
-            <ControlTooltip content="New terminal">
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 shrink-0"
-                  aria-label="New terminal"
-                  tooltip={null}
-                >
-                  <Plus className="size-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-            </ControlTooltip>
-            <DropdownMenuContent align="end" className="min-w-44">
-              {snapshot.profiles.visibleShells.map((shell) => (
-                <DropdownMenuItem
-                  key={shell.id}
-                  onSelect={() => void store.createTerminal(shell.id)}
-                >
-                  <TerminalSquare className="size-3.5" />
-                  {shell.label}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <ListFilter className="size-3.5" />
-                  Profiles
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="min-w-48">
-                  {snapshot.profiles.availableShells.map((shell) => {
-                    const visible = snapshot.profiles?.visibleShells.some(
-                      (candidate) => candidate.id === shell.id,
-                    );
-                    return (
-                      <DropdownMenuCheckboxItem
-                        key={shell.id}
-                        checked={visible}
-                        disabled={
-                          visible &&
-                          snapshot.profiles?.visibleShells.length === 1
-                        }
-                        onSelect={(event) => event.preventDefault()}
-                        onCheckedChange={(checked) => {
-                          if (typeof checked === "boolean") {
-                            void store.setShellVisibility(shell.id, checked);
-                          }
-                        }}
-                      >
-                        {shell.label}
-                      </DropdownMenuCheckboxItem>
-                    );
-                  })}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <CircleDot className="size-3.5" />
-                  Default
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="min-w-48">
-                  <DropdownMenuRadioGroup
-                    value={snapshot.profiles.defaultShellId ?? undefined}
-                    onValueChange={(shellId) => {
-                      void store.setDefaultShell(shellId);
-                    }}
-                  >
-                    {snapshot.profiles.visibleShells.map((shell) => (
-                      <DropdownMenuRadioItem key={shell.id} value={shell.id}>
-                        {shell.label}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <WorkspaceTerminalNewMenu
+            store={store}
+            profiles={snapshot.profiles}
+          />
         ) : snapshot.discovery === null && !snapshot.discoveryError ? (
           <LoaderCircle className="mx-1 size-3.5 animate-spin text-slate-600" />
         ) : null}
-
-        {snapshot.discovery?.externalTerminal ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0"
+          aria-label="Find"
+          tooltip="Find"
+          disabled={!activeId}
+          onClick={() => setSearching((value) => !value)}
+        >
+          <Search className="size-3.5" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0"
+          aria-label="Run command"
+          tooltip="Run command"
+          disabled={!activeId}
+          onClick={() => setPaletteOpen(true)}
+        >
+          <Play className="size-3.5" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0"
+          aria-label={splitTerminal ? "Unsplit" : "Split"}
+          tooltip={splitTerminal ? "Unsplit" : "Split"}
+          disabled={!activeId}
+          onClick={() =>
+            splitTerminal
+              ? store.unsplit()
+              : void store.splitActiveTerminal("vertical")
+          }
+        >
+          <Columns2 className="size-3.5" />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7 shrink-0"
+              aria-label="More terminal actions"
+              tooltip="More"
+            >
+              <MoreHorizontal className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-52">
+            {activeTerminal ? (
+              <>
+                <DropdownMenuItem
+                  disabled={!activeTerminal.hasCommands}
+                  onSelect={() => store.rerunLastCommand(activeTerminal.id)}
+                >
+                  <RotateCw className="size-3.5" />
+                  Rerun last command
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!activeTerminal.hasCommands}
+                  onSelect={() =>
+                    store.jumpToCommand(activeTerminal.id, "previous")
+                  }
+                >
+                  <ArrowUpToLine className="size-3.5" />
+                  Previous command
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!activeTerminal.hasCommands}
+                  onSelect={() =>
+                    store.jumpToCommand(activeTerminal.id, "next")
+                  }
+                >
+                  <ArrowDownToLine className="size-3.5" />
+                  Next command
+                </DropdownMenuItem>
+                {chat ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        const selection = store.getTerminalSelection(
+                          activeTerminal.id,
+                        );
+                        if (selection) chat.addText(selection);
+                        else
+                          store.reportError(
+                            new Error("Select terminal text first."),
+                          );
+                      }}
+                    >
+                      <MessageSquarePlus className="size-3.5" />
+                      Send selection to chat
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!activeTerminal.hasCommands}
+                      onSelect={() => {
+                        const output = store.lastCommandOutput(
+                          activeTerminal.id,
+                        );
+                        if (output) chat.addText(output);
+                        else
+                          store.reportError(
+                            new Error("The last command printed no output."),
+                          );
+                      }}
+                    >
+                      <MessageSquarePlus className="size-3.5" />
+                      Send last output to chat
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={activeTerminal.transitioning}
+                  onSelect={() => void store.startActiveTerminal()}
+                >
+                  {activeTerminal.sessionActive ? (
+                    <RotateCw className="size-3.5" />
+                  ) : (
+                    <Play className="size-3.5" />
+                  )}
+                  {activeTerminal.sessionActive ? "Restart" : "Start"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={
+                    !activeTerminal.sessionActive &&
+                    activeTerminal.status !== "starting"
+                  }
+                  onSelect={() => void store.stopActiveTerminal()}
+                >
+                  <Square className="size-3.5" />
+                  Stop
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => store.clearActiveTerminal()}>
+                  <Eraser className="size-3.5" />
+                  Clear
+                </DropdownMenuItem>
+              </>
+            ) : null}
+            {snapshot.discovery?.externalTerminal ? (
+              <DropdownMenuItem onSelect={openExternalTerminal}>
+                <ExternalLink className="size-3.5" />
+                Open in {snapshot.discovery.externalTerminal.label}
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <TerminalSquare className="size-3.5" />
+                Scrollback
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup
+                  value={String(layout.scrollbackLines)}
+                  onValueChange={(value) =>
+                    store.setScrollbackLines(Number(value))
+                  }
+                >
+                  {SCROLLBACK_OPTIONS.map((lines) => (
+                    <DropdownMenuRadioItem key={lines} value={String(lines)}>
+                      {lines.toLocaleString()} lines
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            {!standalone ? (
+              <>
+                <DropdownMenuItem onSelect={() => setDock("bottom")}>
+                  <PanelBottom className="size-3.5" />
+                  Dock at bottom
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setDock("side")}>
+                  <PanelRight className="size-3.5" />
+                  Dock at side
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setDock("window")}>
+                  <SquareArrowOutUpRight className="size-3.5" />
+                  Open in new window
+                </DropdownMenuItem>
+              </>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {onClose ? (
           <Button
             type="button"
             size="icon"
             variant="ghost"
             className="size-7 shrink-0"
-            aria-label={`Open in ${snapshot.discovery.externalTerminal.label}`}
-            onClick={openExternalTerminal}
+            aria-label="Close terminal panel"
+            tooltip="Close"
+            onClick={onClose}
           >
-            <ExternalLink className="size-3.5" />
+            <X className="size-3.5" />
           </Button>
-        ) : null}
-
-        {activeTerminal ? (
-          <>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-7 shrink-0 px-2 text-[11px]"
-              disabled={activeTerminal.transitioning}
-              onClick={() => void store.startActiveTerminal()}
-            >
-              {activeTerminal.transitioning ? (
-                <LoaderCircle className="size-3.5 animate-spin" />
-              ) : activeTerminal.sessionActive ? (
-                <RotateCw className="size-3.5" />
-              ) : (
-                <Play className="size-3.5" />
-              )}
-              {activeTerminal.transitioning
-                ? "Starting"
-                : activeTerminal.sessionActive
-                  ? "Restart"
-                  : "Start"}
-            </Button>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="size-7 shrink-0"
-              aria-label="Clear terminal"
-              onClick={() => store.clearActiveTerminal()}
-            >
-              <Eraser className="size-3.5" />
-            </Button>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="size-7 shrink-0"
-              aria-label="Stop terminal"
-              disabled={
-                !activeTerminal.sessionActive &&
-                activeTerminal.status !== "starting"
-              }
-              onClick={() => void store.stopActiveTerminal()}
-            >
-              <Square className="size-3 fill-current" />
-            </Button>
-          </>
         ) : null}
       </header>
 
-      {error && open ? (
+      {searching && activeId ? (
+        <WorkspaceTerminalSearch
+          key={activeId}
+          search={store.searchTerminal(activeId)}
+          onClose={() => {
+            setSearching(false);
+            store.fitTerminal(activeId, true);
+          }}
+        />
+      ) : null}
+
+      {error ? (
         <button
           type="button"
           role="alert"
@@ -617,11 +563,14 @@ export const WorkspaceTerminal = ({
       ) : null}
 
       <div
-        ref={terminalAreaRef}
-        className={cn("relative min-h-0 flex-1", !open && "hidden")}
+        ref={areaRef}
+        className={cn(
+          "relative flex min-h-0 flex-1",
+          layout.split?.direction === "horizontal" ? "flex-col" : "flex-row",
+        )}
       >
         {snapshot.discovery && snapshot.discovery.shells.length === 0 ? (
-          <div className="grid h-full place-items-center p-4">
+          <div className="grid h-full w-full place-items-center p-4">
             <EmptyState
               icon={TerminalSquare}
               title="No shells available"
@@ -629,7 +578,7 @@ export const WorkspaceTerminal = ({
             />
           </div>
         ) : snapshot.discovery && snapshot.terminals.length === 0 ? (
-          <div className="grid h-full place-items-center p-4">
+          <div className="grid h-full w-full place-items-center p-4">
             <EmptyState
               icon={TerminalSquare}
               title="No terminals"
@@ -642,11 +591,26 @@ export const WorkspaceTerminal = ({
               key={terminal.id}
               store={store}
               terminal={terminal}
-              active={terminal.id === snapshot.activeTerminalId}
+              visible={visibleIds.includes(terminal.id)}
+              focused={splitTerminal !== null && terminal.id === activeId}
+              chat={chat}
             />
           ))
         )}
       </div>
+
+      <WorkspaceTerminalPalette
+        workspaceRoot={workspaceRoot}
+        open={paletteOpen}
+        history={dock?.commandHistory ?? []}
+        onOpenChange={setPaletteOpen}
+        onRunCommand={(command) => {
+          if (activeId) store.runCommand(activeId, command);
+        }}
+        onRunConfiguration={(run, runSnapshot) =>
+          void store.runConfiguration(run, runSnapshot.inputs)
+        }
+      />
     </section>
   );
 };

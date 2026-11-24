@@ -23,6 +23,8 @@ import {
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import { WorkspaceManager } from "../ui/workspace-management/workspace-manager";
+import { WorkspaceToolShell } from "../ui/workspace-tool-shell";
+import { parseWorkspaceToolWindowRoute } from "../ui/workspace-management/workspace-tool-window-route";
 import { WorkspaceLibraryView } from "../ui/workspace-management/workspace-library-view";
 import {
   configureRemoteWorkspacePlatform,
@@ -170,7 +172,13 @@ function FleetWorkspaces(): React.ReactElement {
       const value = await loadSnapshot();
       if (disposed) return;
       if (value.shell?.workspaceToolsMode === "library") {
-        setWorkspace((current) => current ?? value.shell?.composer?.workspace ?? value.shell?.workspaces[0]?.root ?? null);
+        setWorkspace(
+          (current) =>
+            current ??
+            value.shell?.composer?.workspace ??
+            value.shell?.workspaces[0]?.root ??
+            null,
+        );
         setReady(true);
         return;
       }
@@ -348,7 +356,12 @@ function FleetWorkspaces(): React.ReactElement {
           </div>
         ) : null}
         {ready && snapshot?.shell?.workspaceToolsMode === "library" ? (
-          <WorkspaceLibraryView roots={snapshot.shell.workspaces.map((entry) => entry.root)} workspaceRoot={workspace} onWorkspaceChange={setWorkspace} onDirtyChange={setDirty} />
+          <WorkspaceLibraryView
+            roots={snapshot.shell.workspaces.map((entry) => entry.root)}
+            workspaceRoot={workspace}
+            onWorkspaceChange={setWorkspace}
+            onDirtyChange={setDirty}
+          />
         ) : ready && workspaceSetup ? (
           <WorkspaceManager
             setup={setup}
@@ -367,4 +380,7 @@ function FleetWorkspaces(): React.ReactElement {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<FleetWorkspaces />);
+const toolRoute = parseWorkspaceToolWindowRoute(window.location.search);
+createRoot(document.getElementById("root")!).render(
+  toolRoute ? <WorkspaceToolShell route={toolRoute} /> : <FleetWorkspaces />,
+);

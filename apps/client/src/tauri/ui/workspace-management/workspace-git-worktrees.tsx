@@ -1,4 +1,5 @@
 import {
+  Bot,
   Copy,
   FolderGit2,
   FolderOpen,
@@ -9,7 +10,7 @@ import {
   Trash2,
   Unplug,
 } from "lucide-react";
-import { useId, useState, type JSX } from "react";
+import { useEffect, useId, useState, type JSX } from "react";
 import { Badge } from "@machdoch/media-studio/tauri/ui/components/ui/badge.js";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
@@ -19,12 +20,55 @@ import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
 } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
-import type { WorkspaceGitOverview, WorkspaceGitWorktree } from "../runtime";
+import { openRalphRun } from "../ralph/ralph-navigation";
+import {
+  listRalphRuns,
+  type WorkspaceGitOverview,
+  type WorkspaceGitWorktree,
+} from "../runtime";
 import type { WorkspaceGitControls } from "./use-workspace-git";
 import {
   workspaceGitWorktreeBranches,
   workspaceGitWorktreeLabel,
 } from "./workspace-git-model";
+import {
+  matchWorktreeTasks,
+  type WorktreeTask,
+} from "./workspace-worktree-tasks";
+
+const RALPH_SCOPES = ["workspace", "user"] as const;
+
+const useWorktreeTasks = (
+  workspaceRoot: string,
+  worktreePaths: readonly string[],
+): Map<string, WorktreeTask> => {
+  const key = JSON.stringify(worktreePaths);
+  const [tasks, setTasks] = useState(() => new Map<string, WorktreeTask>());
+  useEffect(() => {
+    const paths = JSON.parse(key) as string[];
+    if (paths.length === 0) {
+      setTasks(new Map());
+      return;
+    }
+    let active = true;
+    void Promise.all(
+      RALPH_SCOPES.map(async (scope) => ({
+        scope,
+        runs: (await listRalphRuns(workspaceRoot, undefined, scope)).runs,
+      })),
+    )
+      .then((lists) => {
+        if (active) setTasks(matchWorktreeTasks(paths, lists));
+      })
+      .catch((cause: unknown) =>
+        console.error("Failed to load the tasks of worktrees", cause),
+      );
+    return () => {
+      active = false;
+    };
+  }, [key, workspaceRoot]);
+  return tasks;
+};
 
 const NewWorktreeForm = ({
   overview,
@@ -105,10 +149,14 @@ const NewWorktreeForm = ({
 
 const WorktreeRow = ({
   worktree,
+  workspaceRoot,
+  task,
   controls,
   onOpenWorktree,
 }: {
   worktree: WorkspaceGitWorktree;
+  workspaceRoot: string;
+  task?: WorktreeTask;
   controls: WorkspaceGitControls;
   onOpenWorktree?: (path: string) => void;
 }): JSX.Element => {
@@ -157,6 +205,24 @@ const WorktreeRow = ({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {task ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={() =>
+              openRalphRun({
+                workspaceRoot,
+                flowId: task.flowId,
+                scope: task.scope,
+                runId: task.runId,
+              })
+            }
+          >
+            <Bot />
+            {task.flowName}
+          </Button>
+        ) : null}
         {onOpenWorktree && !worktree.current && !worktree.prunable ? (
           <Button
             type="button"
@@ -220,34 +286,48 @@ export const WorkspaceGitWorktrees = ({
   controls: WorkspaceGitControls;
   overview: WorkspaceGitOverview;
   onOpenWorktree?: (path: string) => void;
-}): JSX.Element => (
-  <div className="space-y-3">
-    <NewWorktreeForm overview={overview} controls={controls} />
-    {overview.worktrees.some((worktree) => worktree.prunable) ? (
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={controls.busy}
-        onClick={() => void controls.runAction("prune-worktrees")}
-      >
-        <Unplug className="size-4" />
-        Prune missing worktrees
-      </Button>
-    ) : null}
-    {overview.worktrees.length <= 1 ? (
-      <EmptyState icon={FolderGit2} title="No other worktrees" size="compact" />
-    ) : (
-      <ul className="space-y-1">
-        {overview.worktrees.map((worktree) => (
-          <WorktreeRow
-            key={worktree.path}
-            worktree={worktree}
-            controls={controls}
-            onOpenWorktree={onOpenWorktree}
-          />
-        ))}
-      </ul>
-    )}
-  </div>
-);
+}): JSX.Element => {
+  const tasks = useWorktreeTasks(
+    overview.workspaceRoot,
+    overview.worktrees
+      .filter((worktree) => !worktree.main)
+      .map((worktree) => worktree.path),
+  );
+  return (
+    <div className="space-y-3">
+      <NewWorktreeForm overview={overview} controls={controls} />
+      {overview.worktrees.some((worktree) => worktree.prunable) ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={controls.busy}
+          onClick={() => void controls.runAction("prune-worktrees")}
+        >
+          <Unplug className="size-4" />
+          Prune missing worktrees
+        </Button>
+      ) : null}
+      {overview.worktrees.length <= 1 ? (
+        <EmptyState
+          icon={FolderGit2}
+          title="No other worktrees"
+          size="compact"
+        />
+      ) : (
+        <ul className="space-y-1">
+          {overview.worktrees.map((worktree) => (
+            <WorktreeRow
+              key={worktree.path}
+              worktree={worktree}
+              workspaceRoot={overview.workspaceRoot}
+              task={tasks.get(worktree.path)}
+              controls={controls}
+              onOpenWorktree={onOpenWorktree}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};

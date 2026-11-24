@@ -11,7 +11,11 @@ import {
   FileQuestion,
   FileText,
   Folder,
+  GitCompare,
+  History,
   LoaderCircle,
+  MessageSquarePlus,
+  MessageSquareText,
   RefreshCw,
   Save,
 } from "lucide-react";
@@ -57,8 +61,33 @@ import {
   startExclusiveWorkspaceOperation,
   type WorkspaceOperationLock,
 } from "./workspace-operation-lock";
+import {
+  blameGutter,
+  comparisonView,
+  goToLineKeymap,
+  revealLine,
+} from "./workspace-file-editor-extensions";
+import { blameLabelsByLine, type BlameLineLabel } from "./workspace-file-blame";
+import {
+  WorkspaceFileHistoryMenu,
+  type FileHistoryRevision,
+} from "./workspace-file-history";
+import { structuredPreviewKind } from "./workspace-file-structured-preview";
+import { WorkspaceLargeFileView } from "./workspace-large-file-view";
+import type { WorkspacePathInRepository } from "./workspace-path-repository";
+import { WorkspaceStructuredPreview } from "./workspace-structured-preview";
+import {
+  loadWorkspaceGitBlame,
+  loadWorkspaceGitFileRevision,
+} from "./workspace-tools-runtime";
 
 type ViewerMode = "edit" | "preview";
+
+interface Comparison {
+  kind: "head" | "disk" | "revision";
+  original: string;
+  label?: string;
+}
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -158,20 +187,37 @@ const WorkspaceMarkdownImage = ({
   );
 };
 
+export interface WorkspaceFileContext {
+  path: string;
+  selection: { fromLine: number; toLine: number; text: string } | null;
+}
+
 export const WorkspaceFileViewer = ({
   workspaceRoot,
   selectedEntry,
+  commandsActive,
   externalRefreshToken,
+  repository = null,
+  reveal = null,
+  initialHeadComparison = false,
   onDirtyChange,
   onSaved,
   onExternalChange,
+  onAddToChat,
+  onAsk,
 }: {
   workspaceRoot: string;
   selectedEntry: WorkspaceDirectoryEntry | null;
+  commandsActive: boolean;
   externalRefreshToken: string;
+  repository?: WorkspacePathInRepository | null;
+  reveal?: { id: number; line: number } | null;
+  initialHeadComparison?: boolean;
   onDirtyChange: (dirty: boolean) => void;
   onSaved: () => void;
   onExternalChange: () => void;
+  onAddToChat?: (context: WorkspaceFileContext) => void;
+  onAsk?: (context: WorkspaceFileContext) => void;
 }): JSX.Element => {
   const [document, setDocument] = useState<WorkspaceFileDocument | null>(null);
   const [draft, setDraft] = useState("");
@@ -185,6 +231,11 @@ export const WorkspaceFileViewer = ({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [externalChanged, setExternalChanged] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [blame, setBlame] = useState<Map<number, BlameLineLabel> | null>(null);
+  const [gitError, setGitError] = useState<string | null>(null);
+  const editorViewRef = useRef<EditorView | null>(null);
+  const revealedRef = useRef<number | null>(null);
   const requestIdRef = useRef(0);
   const diskVersionRef = useRef(0);
   const externalCheckIdRef = useRef(0);
@@ -261,6 +312,10 @@ export const WorkspaceFileViewer = ({
     setExternalChanged(false);
     setSaved(false);
     setSaving(false);
+    setComparison(null);
+    setBlame(null);
+    setGitError(null);
+    revealedRef.current = null;
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
@@ -422,9 +477,132 @@ export const WorkspaceFileViewer = ({
           },
         },
       ]),
+      goToLineKeymap,
+      ...(blame ? [blameGutter(blame)] : []),
+      ...(comparison
+        ? [comparisonView(comparison.original, comparison.kind === "disk")]
+        : []),
     ],
-    [document?.name, languageExtensions],
+    [blame, comparison, document?.name, languageExtensions],
   );
+
+  useEffect(() => {
+    const view = editorViewRef.current;
+    if (!reveal || !view || loading || revealedRef.current === reveal.id) {
+      return;
+    }
+    revealedRef.current = reveal.id;
+    revealLine(view, reveal.line);
+  }, [document?.path, loading, reveal]);
+
+  const toggleHeadComparison = (): void => {
+    if (comparison?.kind === "head") {
+      setComparison(null);
+      return;
+    }
+    if (!repository) return;
+    setGitError(null);
+    void loadWorkspaceGitFileRevision(
+      workspaceRoot,
+      repository.repositoryRoot,
+      repository.relativePath,
+    )
+      .then((revision) => {
+        if (revision.binary) {
+          setGitError("Binary files can't be compared.");
+          return;
+        }
+        setComparison({ kind: "head", original: revision.content ?? "" });
+      })
+      .catch((compareError: unknown) =>
+        setGitError(errorMessage(compareError)),
+      );
+  };
+
+  const initialComparisonRef = useRef(initialHeadComparison);
+  useEffect(() => {
+    if (!initialComparisonRef.current || !document || loading || !repository)
+      return;
+    initialComparisonRef.current = false;
+    toggleHeadComparison();
+  });
+
+  const fileContext = (): WorkspaceFileContext | null => {
+    if (!document) return null;
+    const view = editorViewRef.current;
+    const range = view?.state.selection.main;
+    if (!view || !range || range.empty)
+      return { path: document.path, selection: null };
+    return {
+      path: document.path,
+      selection: {
+        fromLine: view.state.doc.lineAt(range.from).number,
+        toLine: view.state.doc.lineAt(range.to).number,
+        text: view.state.sliceDoc(range.from, range.to),
+      },
+    };
+  };
+
+  const compareWithRevision = (target: FileHistoryRevision): void => {
+    if (!repository) return;
+    setGitError(null);
+    void loadWorkspaceGitFileRevision(
+      workspaceRoot,
+      repository.repositoryRoot,
+      target.path,
+      target.revision,
+    )
+      .then((revision) => {
+        if (revision.binary) {
+          setGitError("Binary files can't be compared.");
+          return;
+        }
+        setComparison({
+          kind: "revision",
+          original: revision.content ?? "",
+          label: target.label,
+        });
+      })
+      .catch((compareError: unknown) =>
+        setGitError(errorMessage(compareError)),
+      );
+  };
+
+  const toggleBlame = (): void => {
+    if (blame) {
+      setBlame(null);
+      return;
+    }
+    if (!repository) return;
+    setGitError(null);
+    void loadWorkspaceGitBlame(
+      workspaceRoot,
+      repository.repositoryRoot,
+      repository.relativePath,
+    )
+      .then((result) => setBlame(blameLabelsByLine(result.ranges, Date.now())))
+      .catch((blameError: unknown) => setGitError(errorMessage(blameError)));
+  };
+
+  const mergeWithDisk = (): void => {
+    if (!document) return;
+    void readWorkspaceFile(workspaceRoot, document.path)
+      .then((current) => {
+        if (current.content === null) {
+          setSaveError("This file can't be merged here.");
+          return;
+        }
+        setComparison({ kind: "disk", original: current.content });
+        setDocument((existing) =>
+          existing?.path === current.path
+            ? { ...existing, revision: current.revision }
+            : existing,
+        );
+        diskVersionRef.current += 1;
+        setExternalChanged(false);
+      })
+      .catch((mergeError: unknown) => setSaveError(errorMessage(mergeError)));
+  };
 
   useEffect(() => {
     if (!document?.path || !document.revision) return;
@@ -545,6 +723,7 @@ export const WorkspaceFileViewer = ({
     setMode,
   };
   const fileViewerCommands = useMemo<readonly CommandDefinition[]>(() => {
+    if (!commandsActive) return [];
     const scope = {
       kind: "view" as const,
       ownerId: "workspaces",
@@ -649,7 +828,7 @@ export const WorkspaceFileViewer = ({
         },
       },
     ]);
-  }, []);
+  }, [commandsActive]);
   useOptionalRegisterCommands(fileViewerCommands);
 
   if (!selectedEntry) {
@@ -714,7 +893,10 @@ export const WorkspaceFileViewer = ({
     );
   }
 
-  const canPreview = document.previewKind !== null;
+  const structuredKind =
+    document.kind === "text" ? structuredPreviewKind(document.name) : null;
+  const canPreview = document.previewKind !== null || structuredKind !== null;
+  const canUseGit = repository !== null && document.kind === "text";
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-slate-950/30">
@@ -762,6 +944,75 @@ export const WorkspaceFileViewer = ({
               </button>
             ))}
           </div>
+        ) : null}
+        {canUseGit && mode === "edit" ? (
+          <>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              aria-label="Compare with HEAD"
+              aria-pressed={comparison?.kind === "head"}
+              tooltip="Compare with HEAD"
+              disabled={comparison?.kind === "disk"}
+              onClick={toggleHeadComparison}
+            >
+              <GitCompare className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              aria-label="Blame"
+              aria-pressed={blame !== null}
+              tooltip="Blame"
+              onClick={toggleBlame}
+            >
+              <History className="size-3.5" />
+            </Button>
+            {repository ? (
+              <WorkspaceFileHistoryMenu
+                workspaceRoot={workspaceRoot}
+                repositoryRoot={repository.repositoryRoot}
+                relativePath={repository.relativePath}
+                onCompare={compareWithRevision}
+              />
+            ) : null}
+          </>
+        ) : null}
+        {onAddToChat ? (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            aria-label="Add to chat"
+            tooltip="Add to chat"
+            onClick={() => {
+              const context = fileContext();
+              if (context) onAddToChat(context);
+            }}
+          >
+            <MessageSquarePlus className="size-3.5" />
+          </Button>
+        ) : null}
+        {onAsk ? (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            aria-label="Ask about this"
+            tooltip="Ask about this"
+            onClick={() => {
+              const context = fileContext();
+              if (context) onAsk(context);
+            }}
+          >
+            <MessageSquareText className="size-3.5" />
+          </Button>
         ) : null}
         <Button
           type="button"
@@ -818,17 +1069,57 @@ export const WorkspaceFileViewer = ({
             Reload
           </Button>
           {dirty ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 px-2 text-xs"
-              disabled={saving}
-              onClick={() => void save(true)}
-            >
-              Overwrite
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs"
+                onClick={mergeWithDisk}
+              >
+                Merge
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-xs"
+                disabled={saving}
+                onClick={() => void save(true)}
+              >
+                Overwrite
+              </Button>
+            </>
           ) : null}
         </div>
+      ) : null}
+
+      {comparison?.kind === "disk" || comparison?.kind === "revision" ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-sky-900/60 bg-sky-950/30 px-3 py-1.5 text-xs text-sky-100">
+          <GitCompare className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            {comparison.kind === "disk"
+              ? "Merging with the version on disk"
+              : `Compared with ${comparison.label ?? "revision"}`}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs"
+            onClick={() => setComparison(null)}
+          >
+            Done
+          </Button>
+        </div>
+      ) : null}
+
+      {gitError ? (
+        <button
+          type="button"
+          role="alert"
+          className="shrink-0 border-b border-red-950 bg-red-950/30 px-3 py-2 text-left text-xs text-red-200"
+          onClick={() => setGitError(null)}
+        >
+          {gitError}
+        </button>
       ) : null}
 
       {saveError ? (
@@ -851,10 +1142,23 @@ export const WorkspaceFileViewer = ({
               height="100%"
               theme={oneDark}
               extensions={editorExtensions}
+              onCreateEditor={(view) => {
+                editorViewRef.current = view;
+                if (reveal && revealedRef.current !== reveal.id) {
+                  revealedRef.current = reveal.id;
+                  revealLine(view, reveal.line);
+                }
+              }}
               className="h-full text-[13px] [&_.cm-editor]:h-full [&_.cm-editor]:bg-slate-950/35 [&_.cm-gutters]:border-r-slate-800 [&_.cm-gutters]:bg-slate-950/70 [&_.cm-scroller]:font-mono"
               onChange={setDraft}
             />
           </div>
+        ) : structuredKind ? (
+          <WorkspaceStructuredPreview
+            kind={structuredKind}
+            name={document.name}
+            text={draft}
+          />
         ) : document.previewKind === "markdown" ? (
           <article className="h-full overflow-auto px-6 py-5">
             <MarkdownContent
@@ -987,15 +1291,16 @@ export const WorkspaceFileViewer = ({
               className="max-h-full max-w-full rounded-md"
             />
           </div>
-        ) : document.kind === "binary" || document.kind === "oversized" ? (
+        ) : document.kind === "oversized" ? (
+          <WorkspaceLargeFileView
+            workspaceRoot={workspaceRoot}
+            path={document.path}
+          />
+        ) : document.kind === "binary" ? (
           <div className="grid h-full place-items-center p-6">
             <EmptyState
               icon={FileQuestion}
-              title={
-                document.kind === "oversized"
-                  ? "File too large"
-                  : "Preview unavailable"
-              }
+              title="Preview unavailable"
               description={document.reason ?? undefined}
               size="compact"
               action={

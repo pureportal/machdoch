@@ -1,5 +1,6 @@
 import {
   Archive,
+  Bot,
   FileDiff,
   FolderGit2,
   GitBranch,
@@ -34,7 +35,15 @@ import { WorkspaceGitRepositories } from "./workspace-git-repositories";
 import { WorkspaceGitStashes } from "./workspace-git-stashes";
 import { WorkspaceGitToolbar } from "./workspace-git-toolbar";
 import { WorkspaceGitWorktrees } from "./workspace-git-worktrees";
-import { workspaceGitPathInWorkspace } from "./workspace-git-model";
+import {
+  workspaceGitActionUsesRemote,
+  workspaceGitPathInWorkspace,
+} from "./workspace-git-model";
+import {
+  askWorkspaceAgent,
+  failedGitActionPrompt,
+} from "./workspace-agent-requests";
+import { explainGitError } from "./workspace-git-errors";
 import {
   WorkspaceTabList,
   workspaceTabId,
@@ -42,6 +51,7 @@ import {
   type WorkspaceTab,
 } from "./workspace-tab-list";
 import type { WorkspaceGitSection } from "./workspace-view-preferences";
+import { WorkspaceGitCallOverlay } from "./workspace-git-call-overlay";
 
 const OPERATION_LABELS: Record<WorkspaceGitOperation, string> = {
   merge: "Merge in progress",
@@ -136,6 +146,9 @@ const ActionError = ({
   const forceDelete =
     feedback.action === "delete-branch" &&
     feedback.text.includes("unmerged commits");
+  const explained = explainGitError(feedback.text);
+  const fix = explained?.fix;
+  const remoteFailure = workspaceGitActionUsesRemote(feedback.action);
   return (
     <div className="px-3 pt-3">
       <AppNotification
@@ -144,9 +157,50 @@ const ActionError = ({
         dismissAfterMs={null}
         onDismiss={controls.dismissFeedback}
       >
+        {explained ? (
+          <span className="mb-1 block font-medium">{explained.cause}</span>
+        ) : null}
         <span className="block whitespace-pre-wrap break-words">
           {feedback.text}
         </span>
+        {fix || remoteFailure ? (
+          <span className="mt-2 flex flex-wrap gap-1">
+            {fix ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={controls.busy}
+                onClick={() => {
+                  if (fix.confirm && !window.confirm(fix.confirm)) return;
+                  void controls.runAction(fix.action);
+                }}
+              >
+                {fix.label}
+              </Button>
+            ) : null}
+            {remoteFailure && overview ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                onClick={() =>
+                  askWorkspaceAgent({
+                    workspaceRoot: overview.workspaceRoot,
+                    prompt: failedGitActionPrompt(
+                      overview.repositoryRoot,
+                      feedback.action,
+                      feedback.text,
+                    ),
+                  })
+                }
+              >
+                <Bot />
+                Ask agent
+              </Button>
+            ) : null}
+          </span>
+        ) : null}
         {forceDelete ? (
           <Button
             type="button"
@@ -184,13 +238,15 @@ const gitTabs = (
     value: "stashes",
     label: "Stashes",
     icon: Archive,
-    count: overview?.stashes.length,
+    count: overview?.stashCount,
   },
   {
     value: "worktrees",
     label: "Worktrees",
     icon: FolderGit2,
-    count: overview ? overview.worktrees.length - 1 : undefined,
+    count: overview?.sections.includes("worktrees")
+      ? overview.worktrees.length - 1
+      : undefined,
   },
   { value: "history", label: "History", icon: GitGraph },
   {
@@ -363,6 +419,9 @@ export const WorkspaceGitPanel = ({
           onOpenWorktree={onOpenWorktree}
         />
       )}
+      {import.meta.env.DEV && controls.workspaceRoot ? (
+        <WorkspaceGitCallOverlay workspaceRoot={controls.workspaceRoot} />
+      ) : null}
     </section>
   );
 };

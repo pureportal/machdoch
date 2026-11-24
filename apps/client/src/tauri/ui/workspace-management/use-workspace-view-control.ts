@@ -19,6 +19,7 @@ import {
 const SECTION_LABELS: Readonly<Record<WorkspaceDetailSection, string>> = {
   git: "Git",
   files: "Files",
+  terminal: "Terminal",
   run: "Run",
   knowledge: "Knowledge",
   research: "Research",

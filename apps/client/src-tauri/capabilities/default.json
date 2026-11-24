@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capability for the main machdoch desktop window.",
-  "windows": ["main", "quick-voice", "tray-menu"],
+  "windows": ["main", "quick-voice", "tray-menu", "workspace-tool-*"],
   "permissions": [
     "core:default",
     "core:window:default",

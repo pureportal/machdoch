@@ -102,6 +102,8 @@ import { listRalphFlows, showRalphFlow } from "../../runtime";
 const loadContextPackUsage = (workspaceRoot: string) =>
   loadRalphContextPackUsage(workspaceRoot, listRalphFlows, showRalphFlow);
 import { WorkspacePicker } from "./workspace-picker";
+import { openWorkspaceFeature } from "./open-workspace-feature";
+import { WorkspaceStatusStrip } from "../../workspace-management/workspace-status-strip";
 import { useProviderModelCatalog } from "../../use-provider-model-catalog";
 
 export interface SessionComposerProps {
@@ -150,7 +152,12 @@ export interface SessionComposerProps {
   imageInputSupported: boolean;
   imageInputDisabledReason: string | null;
   speechInput: {
-    live?: { onTranscript: (text: string) => Promise<void>; onSpeechStart: () => void; inputDeviceId?: string | null | undefined; replyPlayback: { enabled: boolean; onChange: (enabled: boolean) => void } };
+    live?: {
+      onTranscript: (text: string) => Promise<void>;
+      onSpeechStart: () => void;
+      inputDeviceId?: string | null | undefined;
+      replyPlayback: { enabled: boolean; onChange: (enabled: boolean) => void };
+    };
     provider: SpeechToTextProvider;
     browserSupported: boolean;
     enabled: boolean;
@@ -468,20 +475,31 @@ export const SessionComposer = ({
         : speechInput.enabled
           ? "Speak to text"
           : "Configure speak to text";
+  const statusWorkspaceRoot = activeSession.workspace?.trim() || null;
   const workspacePicker = (
-    <WorkspacePicker
-      currentWorkspace={activeSession.workspace}
-      workspaceLabel={composerWorkspaceLabel}
-      recentWorkspaces={recentWorkspaces}
-      hasActiveWorkspace={hasActiveWorkspace}
-      highlightSelection={false}
-      workspaceLocked={workspaceLocked}
-      workspaceSwitchBlocked={workspaceSwitchBlocked}
-      buttonClassName="app-composer-toolbar-pill app-composer-toolbar-control h-8 rounded-full px-3 text-xs font-medium shadow-none"
-      onSelectWorkspace={onWorkspaceSelection}
-      onRemoveWorkspace={onWorkspaceRemoval}
-      onChooseNewWorkspace={onSelectFolder}
-    />
+    <div className="flex min-w-0 items-center gap-1">
+      <WorkspacePicker
+        currentWorkspace={activeSession.workspace}
+        workspaceLabel={composerWorkspaceLabel}
+        recentWorkspaces={recentWorkspaces}
+        hasActiveWorkspace={hasActiveWorkspace}
+        highlightSelection={false}
+        workspaceLocked={workspaceLocked}
+        workspaceSwitchBlocked={workspaceSwitchBlocked}
+        buttonClassName="app-composer-toolbar-pill app-composer-toolbar-control h-8 rounded-full px-3 text-xs font-medium shadow-none"
+        onSelectWorkspace={onWorkspaceSelection}
+        onRemoveWorkspace={onWorkspaceRemoval}
+        onChooseNewWorkspace={onSelectFolder}
+      />
+      {statusWorkspaceRoot ? (
+        <WorkspaceStatusStrip
+          workspaceRoot={statusWorkspaceRoot}
+          onOpen={(feature) =>
+            openWorkspaceFeature(statusWorkspaceRoot, feature)
+          }
+        />
+      ) : null}
+    </div>
   );
   const toolbarControls = (
     <>
@@ -502,7 +520,21 @@ export const SessionComposer = ({
         onSessionReasoningSelection={onSessionReasoningSelection}
       />
 
-      {onContextWindowChange && <ContextWindowPicker provider={activeSession.provider} model={activeSession.model} value={activeSession.contextWindow} inheritedValue={workspaceContextWindow} onChange={onContextWindowChange} capabilities={packModelCatalog?.providers.find((entry) => entry.provider === activeSession.provider)?.models.find((entry) => entry.id === activeSession.model)?.capabilities} />}
+      {onContextWindowChange && (
+        <ContextWindowPicker
+          provider={activeSession.provider}
+          model={activeSession.model}
+          value={activeSession.contextWindow}
+          inheritedValue={workspaceContextWindow}
+          onChange={onContextWindowChange}
+          capabilities={
+            packModelCatalog?.providers
+              .find((entry) => entry.provider === activeSession.provider)
+              ?.models.find((entry) => entry.id === activeSession.model)
+              ?.capabilities
+          }
+        />
+      )}
 
       <SessionAdaptiveControllerPicker
         override={activeSession.adaptiveControllerOverride ?? null}
@@ -545,7 +577,7 @@ export const SessionComposer = ({
       />
 
       <SmartContextPackPicker
-          activeContextWindow={activeSession.contextWindow}
+        activeContextWindow={activeSession.contextWindow}
         loadRalphPackUsage={loadContextPackUsage}
         contextPacks={contextPacks}
         modelOptions={packModelCatalog?.providers.flatMap((provider) =>
@@ -553,7 +585,7 @@ export const SessionComposer = ({
             provider: provider.provider,
             id: model.id,
             label: model.label ?? model.id,
-              capabilities: model.capabilities,
+            capabilities: model.capabilities,
           })),
         )}
         workspaceRoot={activeSession.workspace}
@@ -742,7 +774,10 @@ export const SessionComposer = ({
         label: actionLabel,
         title: actionLabel,
         icon,
-        disabled: liveVoiceActive || !speechInput.browserSupported || speechInput.transcribing,
+        disabled:
+          liveVoiceActive ||
+          !speechInput.browserSupported ||
+          speechInput.transcribing,
         onClick: speechInput.onAction,
         contextActions: [
           ...(canTranslate
@@ -840,7 +875,9 @@ export const SessionComposer = ({
             ? "Update the message and its options"
             : isExecuting && sessionNeedsInput(activeSession)
               ? "Type your answer, or choose an option above"
-              : isExecuting && canSteerRunningTask && runningTaskMessageAction === "steer"
+              : isExecuting &&
+                  canSteerRunningTask &&
+                  runningTaskMessageAction === "steer"
                 ? "Add guidance for the running task"
                 : "What should machdoch do next?"
         }
@@ -901,7 +938,8 @@ export const SessionComposer = ({
         }
         inputHeader={
           <>
-            {activeSession.temporaryPackSettings && onResetTemporaryContextPack ? (
+            {activeSession.temporaryPackSettings &&
+            onResetTemporaryContextPack ? (
               <div className="flex items-center justify-between gap-3 border-b border-slate-700/60 px-3 py-2 text-xs">
                 <span className="truncate text-sky-200">
                   Next prompt: {activeSession.temporaryPackSettings.packName}
@@ -916,31 +954,31 @@ export const SessionComposer = ({
               </div>
             ) : null}
             {showGoalControl ? (
-            <GoalControl
-              key={activeSession.id}
-              id={goalId}
-              open={goalOpen}
-              mode={resolveGoalMode(
-                activeSession.provider,
-                activeSession.goalMode,
-              )}
-              modes={getAvailableGoalModes(activeSession.provider)}
-              goal={activeSession.goal}
-              objective={goalDraft.objective}
-              error={goalDraft.error}
-              onObjectiveChange={(value) => {
-                goalDraft.setObjective(value);
-                if (!value.trim()) setUseGoalWithMessage(false);
-              }}
-              useWithMessage={Boolean(goalDraft.submissionObjective)}
-              onUseWithMessageChange={setUseGoalWithMessage}
-              running={isExecuting}
-              disabled={Boolean(editingMessageId)}
-              onClose={() => setGoalOpen(false)}
-              onModeChange={onGoalModeSelection}
-              onCommand={(command) => onSend(command)}
-              onPause={onCancel}
-            />
+              <GoalControl
+                key={activeSession.id}
+                id={goalId}
+                open={goalOpen}
+                mode={resolveGoalMode(
+                  activeSession.provider,
+                  activeSession.goalMode,
+                )}
+                modes={getAvailableGoalModes(activeSession.provider)}
+                goal={activeSession.goal}
+                objective={goalDraft.objective}
+                error={goalDraft.error}
+                onObjectiveChange={(value) => {
+                  goalDraft.setObjective(value);
+                  if (!value.trim()) setUseGoalWithMessage(false);
+                }}
+                useWithMessage={Boolean(goalDraft.submissionObjective)}
+                onUseWithMessageChange={setUseGoalWithMessage}
+                running={isExecuting}
+                disabled={Boolean(editingMessageId)}
+                onClose={() => setGoalOpen(false)}
+                onModeChange={onGoalModeSelection}
+                onCommand={(command) => onSend(command)}
+                onPause={onCancel}
+              />
             ) : null}
           </>
         }
@@ -953,9 +991,7 @@ export const SessionComposer = ({
           !editingMessageId && activeSession.queuePausedAt !== undefined
         }
         iterationsEnabled={
-          !editingMessageId &&
-          !interviewEnabled &&
-          !goalEnabled
+          !editingMessageId && !interviewEnabled && !goalEnabled
         }
         iterationsDisabledReason={
           goalEnabled ? "Goals continue automatically." : undefined

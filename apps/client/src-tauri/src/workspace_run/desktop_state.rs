@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
-use tauri::Manager as _;
+use tauri::{Emitter as _, Manager as _};
 
 use super::{
     agent_activity::read_agent_activity,
@@ -23,6 +23,7 @@ use crate::{
     },
 };
 
+const TERMINAL_AGENT_READ_EVENT: &str = "workspace-terminal-agent-read";
 const MAX_PAGE_ITEMS: usize = 50;
 pub(super) const MAX_ACTIVITY_PAGE_ITEMS: usize = 200;
 const MAX_LOG_PAGE_ENTRIES: usize = 400;
@@ -195,7 +196,11 @@ pub(super) fn read_desktop_state(
         } => {
             let tail_lines = tail_lines.unwrap_or(200);
             require_limit(tail_lines, MAX_TERMINAL_TAIL_LINES, "tailLines")?;
-            serde_json::to_value(terminals.read_output(&terminal_id, tail_lines)?)
+            let output = terminals.read_output(&terminal_id, tail_lines)?;
+            if let Err(error) = app.emit(TERMINAL_AGENT_READ_EVENT, &terminal_id) {
+                eprintln!("Could not announce the agent terminal read: {error}");
+            }
+            serde_json::to_value(output)
                 .map_err(|error| format!("Failed to serialize terminal output: {error}"))
         }
         DesktopStateQuery::ReadRunLogs {

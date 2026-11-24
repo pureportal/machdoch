@@ -5,30 +5,24 @@ import type {
   WorkspaceGitOverview,
   WorkspaceGitRepository,
   WorkspaceGitRepositoryStatus,
+  WorkspaceGitSummary,
   WorkspaceGitWorktree,
 } from "../runtime";
 import { createWorkspaceRootKey } from "./workspace-management-model";
 
-const FILE_CHANGING_ACTIONS = new Set<WorkspaceGitAction>([
-  "pull",
-  "checkout",
-  "checkout-remote",
-  "create-branch",
-  "merge",
-  "rebase",
-  "restack",
-  "reset",
-  "continue-operation",
-  "abort-operation",
-  "skip-operation",
-  "stash-push",
-  "stash-apply",
-  "stash-pop",
-]);
-
-export const workspaceGitActionChangesFiles = (
-  action: WorkspaceGitAction,
-): boolean => FILE_CHANGING_ACTIONS.has(action);
+export const describeWorkspaceGitSync = (
+  summary: Pick<
+    WorkspaceGitSummary,
+    "upstream" | "ahead" | "behind" | "detached"
+  >,
+): string => {
+  if (!summary.upstream) return summary.detached ? "Detached" : "Not published";
+  const counts = [
+    summary.ahead ? `↑${summary.ahead}` : "",
+    summary.behind ? `↓${summary.behind}` : "",
+  ].filter(Boolean);
+  return counts.length ? counts.join(" ") : "In sync";
+};
 
 const REMOTE_ACTIONS = new Set<WorkspaceGitAction>([
   "fetch",
@@ -37,6 +31,10 @@ const REMOTE_ACTIONS = new Set<WorkspaceGitAction>([
   "submit-pull-requests",
   "add-remote",
   "remove-remote",
+  "pull-rebase",
+  "push-tag",
+  "set-upstream",
+  "create-pull-request",
 ]);
 
 export const workspaceGitActionUsesRemote = (
@@ -81,6 +79,21 @@ const ACTION_LABELS: Record<WorkspaceGitAction, [string, string]> = {
   "lock-worktree": ["Locking worktree", "Locked worktree"],
   "unlock-worktree": ["Unlocking worktree", "Unlocked worktree"],
   "prune-worktrees": ["Pruning worktrees", "Pruned worktrees"],
+  "apply-patch": ["Updating lines", "Updated lines"],
+  discard: ["Discarding changes", "Discarded changes"],
+  "cherry-pick": ["Cherry-picking", "Cherry-picked"],
+  revert: ["Reverting", "Reverted"],
+  "create-tag": ["Creating tag", "Created tag"],
+  "push-tag": ["Pushing tag", "Pushed tag"],
+  "delete-tag": ["Deleting tag", "Deleted tag"],
+  "resolve-conflict": ["Resolving conflict", "Resolved conflict"],
+  "mark-resolved": ["Marking resolved", "Marked resolved"],
+  undo: ["Undoing", "Undone"],
+  "set-upstream": ["Setting upstream", "Upstream set"],
+  "pull-rebase": ["Pulling with rebase", "Pulled with rebase"],
+  "remove-index-lock": ["Removing lock", "Removed lock"],
+  "delete-branches": ["Deleting branches", "Deleted branches"],
+  "create-pull-request": ["Creating pull request", "Created pull request"],
 };
 
 export const workspaceGitWorktreeLabel = (

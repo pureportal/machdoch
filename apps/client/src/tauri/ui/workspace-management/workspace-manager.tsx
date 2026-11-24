@@ -8,6 +8,7 @@ import {
   Play,
   Search,
   Settings2,
+  SquareTerminal,
 } from "lucide-react";
 import {
   useCallback,
@@ -38,6 +39,7 @@ import {
 } from "./use-workspace-commands";
 import { useWorkspaceGit } from "./use-workspace-git";
 import { WorkspaceDetailHeader } from "./workspace-detail-header";
+import { WorkspaceStatusStrip } from "./workspace-status-strip";
 import type { WorkspaceGitPathAction } from "./workspace-git-changes";
 import { WorkspaceGitPanel } from "./workspace-git-panel";
 import { useWorkspaceGitSummary } from "./workspace-git-summary-store";
@@ -59,7 +61,8 @@ import {
   workspaceTabPanelId,
   type WorkspaceTab,
 } from "./workspace-tab-list";
-import { WorkspaceTools } from "./workspace-tools";
+import { WorkspaceFilesPanel } from "./workspace-files-panel";
+import { WorkspaceTerminalPanel } from "./workspace-terminal";
 import {
   readWorkspaceViewPreferences,
   reconcileWorkspaceSelection,
@@ -98,6 +101,7 @@ const detailTabs = (
 ): WorkspaceTab<WorkspaceDetailSection>[] => [
   { value: "git", label: "Git", icon: GitBranch, count: gitChanges },
   { value: "files", label: "Files", icon: FileCode2 },
+  { value: "terminal", label: "Terminal", icon: SquareTerminal },
   { value: "run", label: "Run", icon: Play },
   { value: "knowledge", label: "Knowledge", icon: Search },
   { value: "research", label: "Research", icon: BookOpen },
@@ -193,15 +197,12 @@ export const WorkspaceManager = ({
   const [displayName, setDisplayName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraftPending, setTagDraftPending] = useState(false);
-  const [workspaceToolsDirty, setWorkspaceToolsDirty] = useState(false);
   const [workspaceRunDirty, setWorkspaceRunDirty] = useState(false);
   const [workspaceConfigurationBusy, setWorkspaceConfigurationBusy] =
     useState(false);
   const [workspaceMcpDirty, setWorkspaceMcpDirty] = useState(false);
   const [workspaceResearchDirty, setWorkspaceResearchDirty] = useState(false);
   const [workspaceSettingsResetToken, setWorkspaceSettingsResetToken] =
-    useState(0);
-  const [workspaceToolsRefreshToken, setWorkspaceToolsRefreshToken] =
     useState(0);
   const [workspaceActionError, setWorkspaceActionError] = useState<
     string | null
@@ -266,7 +267,6 @@ export const WorkspaceManager = ({
   const workspaceDraftDirty =
     workspaceResearchDirty ||
     workspaceSettingsDirty ||
-    workspaceToolsDirty ||
     workspaceRunDirty ||
     workspaceMcpDirty;
 
@@ -284,14 +284,7 @@ export const WorkspaceManager = ({
     setTagDraftPending(false);
   }, [registry?.revision, selectedWorkspace?.key]);
 
-  const refreshFiles = useCallback(
-    () => setWorkspaceToolsRefreshToken((current) => current + 1),
-    [],
-  );
-  const git = useWorkspaceGit(selectedRoot, {
-    filesDirty: workspaceToolsDirty,
-    onFilesChanged: refreshFiles,
-  });
+  const git = useWorkspaceGit(selectedRoot, { section: gitSection });
   const gitSummary = useWorkspaceGitSummary(selectedRoot)?.summary;
 
   const selectSection = useCallback((next: WorkspaceDetailSection): void => {
@@ -350,7 +343,6 @@ export const WorkspaceManager = ({
     window.confirm(`Discard unsaved changes and ${action}?`);
 
   const resetDrafts = (): void => {
-    setWorkspaceToolsDirty(false);
     setWorkspaceRunDirty(false);
     setWorkspaceConfigurationBusy(false);
     setWorkspaceMcpDirty(false);
@@ -475,7 +467,6 @@ export const WorkspaceManager = ({
         if (!saved) return;
       }
       await workspaceSetup.onRemove(selectedWorkspace.root);
-      setWorkspaceToolsDirty(false);
       setWorkspaceRunDirty(false);
       setTagDraftPending(false);
     });
@@ -637,6 +628,13 @@ export const WorkspaceManager = ({
                 onRelink={() => void relinkWorkspace()}
                 onRemove={() => void removeWorkspace()}
               />
+              {selectedRoot ? (
+                <WorkspaceStatusStrip
+                  workspaceRoot={selectedRoot}
+                  onOpen={selectSection}
+                  className="shrink-0 border-b border-slate-900 px-3 py-1"
+                />
+              ) : null}
               <WorkspaceTabList
                 scope={DETAIL_SCOPE}
                 label="Workspace sections"
@@ -665,12 +663,18 @@ export const WorkspaceManager = ({
                 ) : null}
                 {visitedSections.has("files") ? (
                   <SectionFrame active={section === "files"} fill>
-                    <WorkspaceTools
+                    <WorkspaceFilesPanel
                       key={selectedWorkspace.key}
                       workspaceRoot={selectedWorkspace.root}
-                      refreshToken={workspaceToolsRefreshToken}
-                      onDirtyChange={setWorkspaceToolsDirty}
-                      onWorkspaceMutation={git.reload}
+                    />
+                  </SectionFrame>
+                ) : null}
+                {visitedSections.has("terminal") ? (
+                  <SectionFrame active={section === "terminal"} fill>
+                    <WorkspaceTerminalPanel
+                      key={selectedWorkspace.key}
+                      workspaceRoot={selectedWorkspace.root}
+                      standalone
                     />
                   </SectionFrame>
                 ) : null}

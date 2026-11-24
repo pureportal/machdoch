@@ -2,6 +2,19 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use tauri::Manager;
 
+macro_rules! with_request {
+    ($function:path, $args:expr) => {
+        serde_json::to_value(
+            $function(
+                serde_json::from_value($args["request"].clone())
+                    .map_err(|error| json!(error.to_string()))?,
+            )
+            .await
+            .map_err(|error| json!(error))?,
+        )
+    };
+}
+
 pub(crate) async fn invoke(
     app: tauri::AppHandle,
     command: String,
@@ -15,10 +28,18 @@ pub(crate) async fn invoke(
     }
     if command == "run_mcp_app_command" {
         let workspace = args["workspaceRoot"].as_str().unwrap_or("");
-        if !matches!(args["input"]["action"].as_str(), Some("settings" | "set-enabled")) {
+        if !matches!(
+            args["input"]["action"].as_str(),
+            Some("settings" | "set-enabled")
+        ) {
             super::workspace::require_known_workspace(&app, workspace)?;
         }
-        return crate::desktop_task::run_mcp_app_command(workspace.to_owned(), args["input"].clone()).await.map_err(|error| json!(error));
+        return crate::desktop_task::run_mcp_app_command(
+            workspace.to_owned(),
+            args["input"].clone(),
+        )
+        .await
+        .map_err(|error| json!(error));
     }
     if command == "reset_desktop_task_timeout" {
         return crate::desktop_task::reset_desktop_task_timeout(
@@ -74,16 +95,25 @@ pub(crate) async fn invoke(
     }
     let result = match command.as_str() {
         "run_live_voice_command" => {
-            return crate::desktop_task::run_live_voice_command(workspace.to_owned(), args["input"].clone())
-                .await.map_err(|error| json!(error));
+            return crate::desktop_task::run_live_voice_command(
+                workspace.to_owned(),
+                args["input"].clone(),
+            )
+            .await
+            .map_err(|error| json!(error));
         }
         "run_workspace_run_detection_command" => {
             return crate::desktop_task::run_workspace_run_detection_command(workspace.to_owned())
-                .await.map_err(|error| json!(error));
+                .await
+                .map_err(|error| json!(error));
         }
         "run_workspace_library_command" => {
-            return crate::desktop_task::run_workspace_library_command(workspace.to_owned(), args["input"].clone())
-                .await.map_err(|error| json!(error));
+            return crate::desktop_task::run_workspace_library_command(
+                workspace.to_owned(),
+                args["input"].clone(),
+            )
+            .await
+            .map_err(|error| json!(error));
         }
         "get_workspace_run_configuration_document"
         | "get_workspace_run_snapshot"
@@ -106,6 +136,7 @@ pub(crate) async fn invoke(
         | "save_workspace_adaptive_controller_override"
         | "save_workspace_reasoning_bank_enabled"
         | "save_workspace_auto_gitignore"
+        | "save_workspace_git_fsmonitor"
         | "save_workspace_release_stage"
         | "save_workspace_reasoning_mode"
         | "save_workspace_reasoning_execution_mode"
@@ -188,14 +219,109 @@ pub(crate) async fn invoke(
             .await
             .map_err(|error| json!(error))?,
         ),
-        "delete_workspace_entry" => serde_json::to_value(
-            crate::workspace_tools::files::delete_workspace_entry(
-                serde_json::from_value(args["request"].clone())
-                    .map_err(|error| json!(error.to_string()))?,
+        "delete_workspace_entries" => {
+            with_request!(
+                crate::workspace_tools::file_operations::delete_workspace_entries,
+                args
+            )
+        }
+        "copy_workspace_entries" => {
+            with_request!(
+                crate::workspace_tools::file_operations::copy_workspace_entries,
+                args
+            )
+        }
+        "upload_workspace_file" => {
+            with_request!(
+                crate::workspace_tools::file_operations::upload_workspace_file,
+                args
+            )
+        }
+        "read_workspace_file_range" => {
+            with_request!(
+                crate::workspace_tools::file_operations::read_workspace_file_range,
+                args
+            )
+        }
+        "search_workspace_files" => {
+            with_request!(
+                crate::workspace_tools::file_index::search_workspace_files,
+                args
+            )
+        }
+        "search_workspace_text" => {
+            with_request!(
+                crate::workspace_tools::text_search::search_workspace_text,
+                args
+            )
+        }
+        "replace_workspace_text" => {
+            with_request!(
+                crate::workspace_tools::text_search::replace_workspace_text,
+                args
+            )
+        }
+        "watch_workspace" => serde_json::to_value(
+            crate::workspace_watch::watch_workspace(workspace.to_owned())
+                .await
+                .map_err(|error| json!(error))?,
+        ),
+        "unwatch_workspace" => serde_json::to_value(
+            crate::workspace_watch::unwatch_workspace(workspace.to_owned())
+                .await
+                .map_err(|error| json!(error))?,
+        ),
+        "read_workspace_changes" => serde_json::to_value(
+            crate::workspace_watch::read_workspace_changes(
+                workspace.to_owned(),
+                args["after"].as_u64().unwrap_or(0),
             )
             .await
             .map_err(|error| json!(error))?,
         ),
+        "list_workspace_git_branches" => {
+            with_request!(crate::workspace_git::list_workspace_git_branches, args)
+        }
+        "get_workspace_git_undo" => {
+            with_request!(crate::workspace_git::get_workspace_git_undo, args)
+        }
+        "get_workspace_git_file_history" => {
+            with_request!(crate::workspace_git::get_workspace_git_file_history, args)
+        }
+        "get_workspace_git_conflict" => {
+            with_request!(crate::workspace_git::get_workspace_git_conflict, args)
+        }
+        "get_workspace_git_blame" => {
+            with_request!(crate::workspace_git::get_workspace_git_blame, args)
+        }
+        "get_workspace_git_file_revision" => {
+            with_request!(crate::workspace_git::get_workspace_git_file_revision, args)
+        }
+        "compare_workspace_git_revisions" => {
+            with_request!(crate::workspace_git::compare_workspace_git_revisions, args)
+        }
+        "get_workspace_pull_request_checks" => {
+            with_request!(
+                crate::workspace_git::get_workspace_pull_request_checks,
+                args
+            )
+        }
+        "get_workspace_git_call_log" => serde_json::to_value(
+            crate::workspace_git::get_workspace_git_call_log(workspace.to_owned())
+                .await
+                .map_err(|error| json!(error))?,
+        ),
+        "generate_workspace_git_commit_message" => {
+            return crate::desktop_task::generate_workspace_git_commit_message(
+                workspace.to_owned(),
+                args["repositoryRoot"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
+            )
+            .await
+            .map_err(|error| json!(error));
+        }
         "discover_workspace_git_repositories" => serde_json::to_value(
             crate::workspace_git::discover_workspace_git_repositories(
                 workspace.to_owned(),

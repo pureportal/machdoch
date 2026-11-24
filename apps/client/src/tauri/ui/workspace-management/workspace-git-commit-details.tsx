@@ -149,12 +149,14 @@ export const WorkspaceGitCommitDetails = ({
   commit,
   resetBranch,
   busy,
+  actions,
   onReset,
 }: {
   overview: WorkspaceGitOverview;
   commit: WorkspaceGitGraphCommit;
   resetBranch: string | null;
   busy: boolean;
+  actions?: JSX.Element;
   onReset: () => void;
 }): JSX.Element => {
   const { detail } = useWorkspaceGitCommit(overview, commit.hash);
@@ -179,6 +181,7 @@ export const WorkspaceGitCommitDetails = ({
         </time>
         {commit.parents.length > 1 ? <span>Merge</span> : null}
         <span className="flex-1" />
+        {actions}
         {resetBranch ? (
           <Button
             type="button"

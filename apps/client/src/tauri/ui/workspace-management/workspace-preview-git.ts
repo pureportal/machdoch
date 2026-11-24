@@ -27,6 +27,7 @@ import {
 import {
   previewWorkspaceGitCommit,
   previewWorkspaceGitGraph,
+  previewWorkspaceGitRevision,
 } from "./workspace-preview-git-history";
 
 const repositories = new Map<string, PreviewRepository>();
@@ -48,7 +49,7 @@ const previewRepositoryPaths = (workspaceRoot: string): string[] =>
     ? [".", "packages/cloud", "packages/desktop"]
     : [".", "api", "app"];
 
-const repositoryFor = (
+export const repositoryFor = (
   workspaceRoot: string,
   repositoryRoot: string,
 ): PreviewRepository => {
@@ -95,7 +96,7 @@ const previewRemoteBranch = (
     (candidate) => candidate.name === `origin/${branchName}`,
   )?.name;
 
-const previewDefaultBranch = (
+export const previewDefaultBranch = (
   repository: PreviewRepository,
 ): string | undefined =>
   PREVIEW_DEFAULT_BRANCHES.find(
@@ -147,16 +148,28 @@ const overviewFor = (repository: PreviewRepository): WorkspaceGitOverview => {
     totalChanges: changes.length,
     changes,
     changesTruncated: false,
-    localBranches: repository.localBranches.map((entry) => ({
+    localBranches: repository.localBranches.map((entry, index) => ({
       ...entry,
       current: entry.name === repository.branch,
+      lastCommitAt: new Date(
+        Date.now() - (index + 1) * 26 * 3_600_000,
+      ).toISOString(),
+      merged: entry.name === "feature/workspace",
     })),
-    remoteBranches: repository.remoteBranches.map((entry) => ({ ...entry })),
+    remoteBranches: repository.remoteBranches.map((entry, index) => ({
+      ...entry,
+      lastCommitAt: new Date(
+        Date.now() - (index + 1) * 3 * 3_600_000,
+      ).toISOString(),
+    })),
     remotes: repository.remotes.map((entry) => ({ ...entry })),
     recentCommits: repository.recentCommits.map((entry) => ({ ...entry })),
     stashes: repository.stashes.map(({ changes: _changes, ...stash }) => ({
       ...stash,
     })),
+    stashCount: repository.stashes.length,
+    sections: ["branches", "numstat", "recentCommits", "stashes", "worktrees"],
+    untrackedFiles: "all",
     worktrees: [
       {
         path: repository.repositoryRoot,
@@ -227,6 +240,7 @@ export const loadPreviewWorkspaceGitRepositoriesStatus = (
       changes: overview.changes,
       changesTruncated: overview.changesTruncated,
       ...(overview.operation ? { operation: overview.operation } : {}),
+      lastFetchedAt: Date.now() - 12 * 60_000,
     };
   }),
   scanLimited: false,
@@ -276,6 +290,19 @@ export const loadPreviewWorkspaceGitCommit = (
     previewDefaultBranch(repository) ?? repository.branch,
     commit,
     options,
+  );
+};
+
+export const resolvePreviewWorkspaceGitRevision = (
+  workspaceRoot: string,
+  repositoryRoot: string,
+  revision: string,
+): string => {
+  const repository = repositoryFor(workspaceRoot, repositoryRoot);
+  return previewWorkspaceGitRevision(
+    repository,
+    previewDefaultBranch(repository) ?? repository.branch,
+    revision,
   );
 };
 
@@ -531,9 +558,18 @@ export const runPreviewWorkspaceGitAction = (
     case "fetch":
       break;
     case "pull":
+    case "pull-rebase":
       if (current) current.behind = 0;
       break;
+    case "set-upstream":
+      if (current) current.upstream ??= `origin/${current.name}`;
+      break;
     case "push":
+      if (current?.behind) {
+        throw new Error(
+          ` ! [rejected]        ${current.name} -> ${current.name} (non-fast-forward)\nerror: failed to push some refs`,
+        );
+      }
       if (current) {
         current.upstream ??= `origin/${current.name}`;
         current.ahead = 0;
@@ -716,6 +752,22 @@ export const runPreviewWorkspaceGitAction = (
       );
       delete repository.operation;
       break;
+    case "mark-resolved":
+    case "resolve-conflict": {
+      const paths = new Set(options.paths ?? []);
+      repository.changes = repository.changes.map((entry) =>
+        entry.conflicted && paths.has(entry.path)
+          ? {
+              ...entry,
+              status: "M ",
+              staged: true,
+              unstaged: false,
+              conflicted: false,
+            }
+          : entry,
+      );
+      break;
+    }
     case "stage":
       setStage(repository, options.paths ?? [], true);
       break;

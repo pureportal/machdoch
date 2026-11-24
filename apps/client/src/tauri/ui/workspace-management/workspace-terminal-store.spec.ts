@@ -23,6 +23,7 @@ type StartTerminal = (
   columns: number,
   rows: number,
   onEvent: (event: WorkspaceTerminalEvent) => void,
+  cwd?: string,
 ) => Promise<StartedTerminal>;
 
 const runtimeMocks = vi.hoisted(() => ({
@@ -81,6 +82,58 @@ const xtermState = vi.hoisted(() => ({
 }));
 
 vi.mock("../runtime", () => runtimeMocks);
+
+const dockState = vi.hoisted(() => ({
+  terminal: null as unknown,
+  histories: new Map<string, string | null>(),
+  commands: [] as string[],
+}));
+
+vi.mock("./workspace-dock-store", async () => {
+  const layout = await import("./workspace-terminal-layout");
+  return {
+    workspaceDockStore: {
+      get: () => ({
+        terminal: dockState.terminal ?? layout.DEFAULT_TERMINAL_LAYOUT,
+      }),
+      updateTerminal: (_root: string, change: (value: unknown) => unknown) => {
+        dockState.terminal = change(
+          dockState.terminal ?? layout.DEFAULT_TERMINAL_LAYOUT,
+        );
+      },
+      readTerminalHistory: (_root: string, tabId: string) =>
+        dockState.histories.get(tabId) ?? null,
+      writeTerminalHistory: (
+        _root: string,
+        tabId: string,
+        value: string | null,
+      ) => void dockState.histories.set(tabId, value),
+      rememberCommand: (_root: string, command: string) =>
+        void dockState.commands.push(command),
+      openFile: vi.fn(),
+    },
+  };
+});
+
+vi.mock("./workspace-terminal-features", () => ({
+  TerminalFeatures: class {
+    readonly search = {};
+    readonly hasCommands = false;
+    attachRenderer(): void {}
+    serialize(): string {
+      return "";
+    }
+    resetCommands(): void {}
+    lastCommand(): string | null {
+      return null;
+    }
+    lastCommandOutput(): string | null {
+      return null;
+    }
+    jump(): void {}
+    dispose(): void {}
+  },
+}));
 
 vi.mock("../lib/shell-store", () => ({
   DEFAULT_TERMINAL_PROFILE_SETTINGS: {
@@ -238,6 +291,9 @@ describe("WorkspaceTerminalStore shell startup", () => {
     xtermState.elements.length = 0;
     xtermState.autoProcessWrites = true;
     xtermState.selection = "";
+    dockState.terminal = null;
+    dockState.histories.clear();
+    dockState.commands.length = 0;
   });
 
   it("falls back when the preferred shell cannot stay running", async () => {
@@ -1127,5 +1183,95 @@ describe("WorkspaceTerminalStore shell startup", () => {
         windowsPty: { backend: "conpty" },
       }),
     );
+  });
+
+  it("restores saved tabs in their folder with their history", async () => {
+    let started = 0;
+    runtimeMocks.startWorkspaceTerminal.mockImplementation(async () => ({
+      sessionId: `restored-${++started}`,
+      shellId: "cmd",
+      processId: started,
+    }));
+    dockState.terminal = {
+      tabs: [
+        {
+          id: "api",
+          shellId: "cmd",
+          name: "API",
+          color: "emerald",
+          cwd: "packages/api",
+        },
+        {
+          id: "root",
+          shellId: "missing-shell",
+          name: null,
+          color: null,
+          cwd: null,
+        },
+      ],
+      activeTabId: "root",
+      split: null,
+      dock: "bottom",
+      size: 260,
+      scrollbackLines: 5_000,
+    };
+    dockState.histories.set("api", "previous output");
+    const store = new WorkspaceTerminalStore("C:\\Workspace");
+
+    await store.initialize();
+
+    expect(
+      store.getSnapshot().terminals.map((terminal) => terminal.id),
+    ).toEqual(["api", "root"]);
+    expect(store.getSnapshot().activeTerminalId).toBe("root");
+    expect(
+      runtimeMocks.startWorkspaceTerminal.mock.calls.map((call) => [
+        call[1],
+        call[5],
+      ]),
+    ).toEqual([
+      ["cmd", "packages/api"],
+      ["windows-powershell", undefined],
+    ]);
+    expect(xtermState.writes).toContain("previous output\r\n");
+    expect(xtermState.instances[0]?.options).toEqual(
+      expect.objectContaining({ scrollback: 5_000 }),
+    );
+  });
+
+  it("keeps the saved layout in step when terminals open, run commands and close", async () => {
+    let started = 0;
+    runtimeMocks.startWorkspaceTerminal.mockImplementation(
+      async (_root, shellId) => ({
+        sessionId: `session-${++started}`,
+        shellId,
+        processId: started,
+      }),
+    );
+    const store = new WorkspaceTerminalStore("C:\\Workspace");
+    await store.initialize();
+    const first = store.getSnapshot().activeTerminalId;
+
+    await store.runInNewTerminal("pnpm dev", "dev");
+    const layout = dockState.terminal as {
+      tabs: Array<{ id: string; name: string | null }>;
+      activeTabId: string;
+    };
+    expect(layout.tabs).toHaveLength(2);
+    expect(layout.tabs[1]?.name).toBe("dev");
+    await vi.waitFor(() =>
+      expect(runtimeMocks.writeWorkspaceTerminal).toHaveBeenCalledWith(
+        "session-2",
+        "pnpm dev\r",
+      ),
+    );
+
+    expect(store.runCommand(layout.activeTabId, "git status")).toBe(true);
+    expect(dockState.commands).toEqual(["git status"]);
+
+    await store.closeTerminal(first ?? "");
+    expect((dockState.terminal as { tabs: unknown[] }).tabs).toHaveLength(1);
+    expect(dockState.histories.get(first ?? "")).toBeNull();
+    expect(store.getSnapshot().activeTerminalId).toBe(layout.activeTabId);
   });
 });

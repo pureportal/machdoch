@@ -3,8 +3,8 @@ use std::{path::Path, thread};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    branch_alignment, command_output_bounded, output_error, parse_numstat, repository_context,
-    run_diff, run_optional, run_required, stack, WorkspaceGitPatch,
+    branch_alignment, command_output_bounded, diff::run_diff, output_error, parse_numstat,
+    repository_context, run_optional, run_required, stack, WorkspaceGitPatch,
 };
 
 const MAX_GRAPH_COMMITS: usize = 300;
@@ -54,6 +54,18 @@ pub struct WorkspaceGitGraphCommit {
     author: String,
     authored_at: String,
     refs: Vec<WorkspaceGitGraphRef>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    agent: bool,
+}
+
+const AGENT_EMAIL_DOMAINS: [&str; 2] = ["@machdoch.invalid", "@machdoch.local"];
+
+fn is_agent_commit(email: &str, agent_trailer: &str) -> bool {
+    let email = email.to_ascii_lowercase();
+    !agent_trailer.trim().is_empty()
+        || AGENT_EMAIL_DOMAINS
+            .iter()
+            .any(|domain| email.ends_with(domain))
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -152,19 +164,28 @@ fn parse_graph_log(output: &str) -> Vec<WorkspaceGitGraphCommit> {
     output
         .lines()
         .filter_map(|line| {
-            let mut parts = line.splitn(7, '\u{1f}');
+            let mut parts = line.splitn(9, '\u{1f}');
+            let hash = parts.next()?.to_string();
+            let short_hash = parts.next()?.to_string();
+            let parents = parts
+                .next()?
+                .split_whitespace()
+                .map(str::to_string)
+                .collect();
+            let author = parts.next()?.to_string();
+            let email = parts.next()?;
+            let authored_at = parts.next()?.to_string();
+            let refs = parse_decorations(parts.next()?);
+            let agent = is_agent_commit(email, parts.next()?);
             Some(WorkspaceGitGraphCommit {
-                hash: parts.next()?.to_string(),
-                short_hash: parts.next()?.to_string(),
-                parents: parts
-                    .next()?
-                    .split_whitespace()
-                    .map(str::to_string)
-                    .collect(),
-                author: parts.next()?.to_string(),
-                authored_at: parts.next()?.to_string(),
-                refs: parse_decorations(parts.next()?),
+                hash,
+                short_hash,
+                parents,
                 subject: parts.next()?.to_string(),
+                author,
+                authored_at,
+                refs,
+                agent,
             })
         })
         .collect()
@@ -256,7 +277,7 @@ pub(super) fn load_graph(request: WorkspaceGitGraphRequest) -> Result<WorkspaceG
         "--topo-order",
         "--decorate=full",
         limit.as_str(),
-        "--format=%H%x1f%h%x1f%P%x1f%an%x1f%aI%x1f%D%x1f%s",
+        "--format=%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%(trailers:key=Machdoch-Agent,valueonly,separator=%x2c)%x1f%s",
     ];
     match scope {
         WorkspaceGitGraphScope::All => arguments.extend(["--branches", "--remotes", "HEAD"]),
@@ -294,7 +315,7 @@ pub(super) fn load_graph(request: WorkspaceGitGraphRequest) -> Result<WorkspaceG
     })
 }
 
-fn validate_commit(commit: &str) -> Result<&str, String> {
+pub(super) fn validate_commit(commit: &str) -> Result<&str, String> {
     let commit = commit.trim();
     if (4..=64).contains(&commit.len()) && commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         Ok(commit)
@@ -310,6 +331,56 @@ fn parse_name_status(output: &str) -> Vec<(String, String)> {
         files.push((path.to_string(), status.chars().take(1).collect()));
     }
     files
+}
+
+fn commit_files(names: &str, stats: &str) -> (Vec<WorkspaceGitCommitFile>, bool) {
+    let stats = parse_numstat(stats);
+    let mut names = parse_name_status(names);
+    let files_truncated = names.len() > MAX_COMMIT_FILES;
+    names.truncate(MAX_COMMIT_FILES);
+    let files = names
+        .into_iter()
+        .map(|(path, status)| {
+            let (additions, deletions) = stats.get(&path).copied().unwrap_or_default();
+            WorkspaceGitCommitFile {
+                path,
+                status,
+                additions,
+                deletions,
+            }
+        })
+        .collect();
+    (files, files_truncated)
+}
+
+pub(super) fn changed_files(
+    repository: &Path,
+    base: &str,
+    head: &str,
+) -> Result<(Vec<WorkspaceGitCommitFile>, bool), String> {
+    let arguments = |format: &'static str| {
+        [
+            "diff-tree",
+            "-r",
+            "-z",
+            "--no-renames",
+            format,
+            base,
+            head,
+            "--",
+        ]
+    };
+    let (names, stats) = thread::scope(|scope| {
+        let names = scope.spawn(|| run_required("git", &arguments("--name-status"), repository));
+        let stats = run_required("git", &arguments("--numstat"), repository);
+        (
+            names
+                .join()
+                .unwrap_or_else(|_| Err("Git stopped unexpectedly.".to_string())),
+            stats,
+        )
+    });
+    Ok(commit_files(&names?, &stats?))
 }
 
 const COMMIT_DIFF_ARGUMENTS: [&str; 7] = [
@@ -408,22 +479,7 @@ pub(super) fn load_commit(
     let author = parts.next().unwrap_or_default().to_string();
     let authored_at = parts.next().unwrap_or_default().to_string();
     let message = parts.next().unwrap_or_default().trim_end().to_string();
-    let stats = parse_numstat(&stats?);
-    let mut names = parse_name_status(&names?);
-    let files_truncated = names.len() > MAX_COMMIT_FILES;
-    names.truncate(MAX_COMMIT_FILES);
-    let files = names
-        .into_iter()
-        .map(|(path, status)| {
-            let (additions, deletions) = stats.get(&path).copied().unwrap_or_default();
-            WorkspaceGitCommitFile {
-                path,
-                status,
-                additions,
-                deletions,
-            }
-        })
-        .collect();
+    let (files, files_truncated) = commit_files(&names?, &stats?);
     Ok(WorkspaceGitCommitDetail {
         hash,
         parents,
@@ -505,6 +561,36 @@ mod tests {
             ]
         );
         assert!(parse_decorations("").is_empty());
+    }
+
+    #[test]
+    fn graph_marks_commits_made_by_the_agent() {
+        let root = repository("agent");
+        commit(&root, "user.txt", "user\n", "user change");
+        fs::write(root.join("agent.txt"), "agent\n").expect("the file should be written");
+        run_required("git", &["add", "--", "agent.txt"], &root).expect("the file should stage");
+        run_required(
+            "git",
+            &[
+                "commit",
+                "--quiet",
+                "-m",
+                "agent change",
+                "--trailer",
+                "Machdoch-Agent: session-1",
+            ],
+            &root,
+        )
+        .expect("the agent commit should succeed");
+
+        let graph = graph(&root, WorkspaceGitGraphScope::Current);
+        let agent: Vec<_> = graph
+            .commits
+            .iter()
+            .map(|commit| (commit.subject.as_str(), commit.agent))
+            .collect();
+        assert_eq!(agent, vec![("agent change", true), ("user change", false)]);
+        assert!(is_agent_commit("Agent@Machdoch.Invalid", ""));
     }
 
     #[test]

@@ -1,4 +1,6 @@
 use std::{
+    collections::HashSet,
+    ffi::OsString,
     fs::{self, File, OpenOptions},
     io::Read,
     path::{Component, Path, PathBuf},
@@ -31,6 +33,7 @@ pub struct WorkspaceDirectoryEntry {
     target_kind: Option<String>,
     size: Option<u64>,
     modified_at: Option<u64>,
+    ignored: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -100,16 +103,7 @@ pub struct RenameWorkspaceEntryRequest {
     name: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeleteWorkspaceEntryRequest {
-    workspace_root: String,
-    relative_path: String,
-    #[serde(default)]
-    recursive: bool,
-}
-
-fn canonical_workspace_root(workspace_root: &str) -> Result<PathBuf, String> {
+pub(super) fn canonical_workspace_root(workspace_root: &str) -> Result<PathBuf, String> {
     if workspace_root.trim().is_empty() {
         return Err("Select a workspace first.".to_string());
     }
@@ -117,7 +111,10 @@ fn canonical_workspace_root(workspace_root: &str) -> Result<PathBuf, String> {
     resolve_workspace_root_path(workspace_root)
 }
 
-fn parse_requested_path(requested_path: &str, allow_root: bool) -> Result<PathBuf, String> {
+pub(super) fn parse_requested_path(
+    requested_path: &str,
+    allow_root: bool,
+) -> Result<PathBuf, String> {
     if requested_path.is_empty() || requested_path.contains('\0') {
         return Err("Expected a file or folder path.".to_string());
     }
@@ -134,7 +131,7 @@ fn parse_requested_path(requested_path: &str, allow_root: bool) -> Result<PathBu
     Ok(path)
 }
 
-fn parse_entry_path(requested_path: &str) -> Result<PathBuf, String> {
+pub(super) fn parse_entry_path(requested_path: &str) -> Result<PathBuf, String> {
     let path = parse_requested_path(requested_path, false)?;
     if path
         .components()
@@ -146,13 +143,13 @@ fn parse_entry_path(requested_path: &str) -> Result<PathBuf, String> {
     }
 }
 
-fn resolve_existing_path(root: &Path, requested_path: &Path) -> Result<PathBuf, String> {
+pub(super) fn resolve_existing_path(root: &Path, requested_path: &Path) -> Result<PathBuf, String> {
     root.join(requested_path)
         .canonicalize()
         .map_err(|error| format!("Unable to find `{}`: {error}", requested_path.display()))
 }
 
-fn path_for_ui(path: &Path) -> String {
+pub(super) fn path_for_ui(path: &Path) -> String {
     let normalized = path.to_string_lossy().replace('\\', "/");
     if normalized.is_empty() {
         ".".to_string()
@@ -180,8 +177,25 @@ struct DirectoryEntryCandidate {
     file_type: fs::FileType,
 }
 
+fn unignored_children(directory: &Path) -> HashSet<OsString> {
+    ignore::WalkBuilder::new(directory)
+        .max_depth(Some(1))
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(false)
+        .git_exclude(true)
+        .require_git(false)
+        .parents(true)
+        .build()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.depth() == 1)
+        .map(|entry| entry.file_name().to_owned())
+        .collect()
+}
+
 impl DirectoryEntryCandidate {
-    fn into_entry(self) -> WorkspaceDirectoryEntry {
+    fn into_entry(self, unignored: &HashSet<OsString>) -> WorkspaceDirectoryEntry {
+        let ignored = !unignored.contains(std::ffi::OsStr::new(&self.name));
         let metadata = fs::symlink_metadata(&self.path).ok();
         let (kind, target_kind) = if self.file_type.is_symlink() {
             ("symlink", classify_symlink_target(&self.path))
@@ -200,6 +214,7 @@ impl DirectoryEntryCandidate {
                 .filter(|metadata| metadata.is_file())
                 .map(fs::Metadata::len),
             modified_at: metadata.as_ref().and_then(metadata_modified_at),
+            ignored,
             kind: kind.to_string(),
             target_kind,
         }
@@ -224,7 +239,7 @@ fn directory_page_window(entry_count: usize, offset: usize) -> (usize, usize, Op
     (start, end, next_offset)
 }
 
-fn list_directory_sync(
+pub(crate) fn list_directory_sync(
     workspace_root: &str,
     relative_path: &str,
     offset: usize,
@@ -290,12 +305,12 @@ fn list_directory_sync(
     });
     let total_entries = entries.len() + omitted_entries;
     let (page_start, page_end, next_offset) = directory_page_window(entries.len(), offset);
-    // Only the visible page needs metadata and symlink target resolution.
+    let unignored = unignored_children(&directory);
     let page_entries = entries
         .into_iter()
         .skip(page_start)
         .take(page_end - page_start)
-        .map(DirectoryEntryCandidate::into_entry)
+        .map(|entry| entry.into_entry(&unignored))
         .collect();
 
     Ok(WorkspaceDirectoryPage {
@@ -602,7 +617,7 @@ pub async fn save_workspace_file(
         .map_err(|error| format!("The workspace file writer stopped unexpectedly: {error}"))?
 }
 
-fn validate_entry_name(name: &str) -> Result<(), String> {
+pub(super) fn validate_entry_name(name: &str) -> Result<(), String> {
     if name.is_empty() || name.trim() != name || name == "." || name == ".." {
         return Err("Enter a valid file or folder name.".to_string());
     }
@@ -681,7 +696,7 @@ pub async fn create_workspace_entry(
         .map_err(|error| format!("The workspace entry creator stopped unexpectedly: {error}"))?
 }
 
-fn entry_without_following_final_symlink(
+pub(super) fn entry_without_following_final_symlink(
     root: &Path,
     requested_entry: &Path,
 ) -> Result<PathBuf, String> {
@@ -735,46 +750,35 @@ fn remove_symlink(path: &Path) -> std::io::Result<()> {
     }
 }
 
-fn delete_entry_sync(request: DeleteWorkspaceEntryRequest) -> Result<(), String> {
-    let root = canonical_workspace_root(&request.workspace_root)?;
-    let requested_entry = parse_entry_path(&request.relative_path)?;
-    let path = entry_without_following_final_symlink(&root, &requested_entry)?;
+pub(super) fn delete_entry(root: &Path, relative_path: &str, trash: bool) -> Result<bool, String> {
+    let requested_entry = parse_entry_path(relative_path)?;
+    let path = entry_without_following_final_symlink(root, &requested_entry)?;
     let metadata = fs::symlink_metadata(&path)
         .map_err(|error| format!("Unable to inspect the entry: {error}"))?;
 
     if metadata.file_type().is_symlink() {
         return remove_symlink(&path)
+            .map(|_| false)
             .map_err(|error| format!("Unable to delete the link: {error}"));
     }
 
     let canonical = path
         .canonicalize()
         .map_err(|error| format!("Unable to resolve the entry: {error}"))?;
-    if metadata.is_dir() {
-        if request.recursive {
-            fs::remove_dir_all(&canonical)
-                .map_err(|error| format!("Unable to delete the folder: {error}"))
-        } else {
-            fs::remove_dir(&canonical).map_err(|error| {
-                if error.kind() == std::io::ErrorKind::DirectoryNotEmpty {
-                    "The folder is not empty.".to_string()
-                } else {
-                    format!("Unable to delete the folder: {error}")
-                }
-            })
-        }
-    } else if metadata.is_file() {
-        fs::remove_file(&canonical).map_err(|error| format!("Unable to delete the file: {error}"))
-    } else {
-        Err("This entry type cannot be deleted here.".to_string())
+    if !metadata.is_dir() && !metadata.is_file() {
+        return Err("This entry type cannot be deleted here.".to_string());
     }
-}
-
-#[tauri::command]
-pub async fn delete_workspace_entry(request: DeleteWorkspaceEntryRequest) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || delete_entry_sync(request))
-        .await
-        .map_err(|error| format!("The workspace entry deleter stopped unexpectedly: {error}"))?
+    if trash && trash::delete(&canonical).is_ok() {
+        return Ok(true);
+    }
+    if metadata.is_dir() {
+        fs::remove_dir_all(&canonical)
+            .map_err(|error| format!("Unable to delete the folder: {error}"))?;
+    } else {
+        fs::remove_file(&canonical)
+            .map_err(|error| format!("Unable to delete the file: {error}"))?;
+    }
+    Ok(false)
 }
 
 #[cfg(test)]
@@ -785,6 +789,15 @@ mod tests {
     };
 
     use super::*;
+
+    fn delete_test_entry(workspace_root: &str, relative_path: &str) -> Result<(), String> {
+        delete_entry(
+            &canonical_workspace_root(workspace_root)?,
+            relative_path,
+            false,
+        )
+        .map(|_| ())
+    }
 
     fn test_directory(name: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -833,6 +846,38 @@ mod tests {
         );
         assert_eq!(page.total_entries, 4);
         assert_eq!(page.next_offset, None);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn directory_listing_marks_ignored_entries() {
+        let root = create_workspace("ignored");
+        fs::write(root.join(".gitignore"), "dist/\n*.log\n").expect("ignore file should write");
+        fs::write(root.join("app.log"), "log").expect("file should write");
+        fs::write(root.join("main.ts"), "main").expect("file should write");
+        fs::create_dir_all(root.join("dist")).expect("folder should create");
+        fs::create_dir_all(root.join("src")).expect("folder should create");
+        fs::write(root.join("src").join("debug.log"), "log").expect("file should write");
+
+        let ignored = |relative: &str| {
+            list_directory_sync(root.to_string_lossy().as_ref(), relative, 0)
+                .expect("directory should list")
+                .entries
+                .into_iter()
+                .map(|entry| (entry.name, entry.ignored))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ignored("."),
+            vec![
+                ("dist".to_string(), true),
+                ("src".to_string(), false),
+                (".gitignore".to_string(), false),
+                ("app.log".to_string(), true),
+                ("main.ts".to_string(), false),
+            ]
+        );
+        assert_eq!(ignored("src"), vec![("debug.log".to_string(), true)]);
         let _ = fs::remove_dir_all(root);
     }
 
@@ -910,12 +955,7 @@ mod tests {
         })
         .expect("file should rename");
         assert_eq!(renamed, "plan.txt");
-        delete_entry_sync(DeleteWorkspaceEntryRequest {
-            workspace_root,
-            relative_path: renamed,
-            recursive: false,
-        })
-        .expect("file should delete");
+        delete_test_entry(&workspace_root, &renamed).expect("file should delete");
         assert!(!root.join("plan.txt").exists());
         let _ = fs::remove_dir_all(root);
     }
@@ -978,12 +1018,7 @@ mod tests {
             "folder/../../sibling.txt".to_string(),
             sibling.to_string_lossy().into_owned(),
         ] {
-            assert!(delete_entry_sync(DeleteWorkspaceEntryRequest {
-                workspace_root: workspace_root.clone(),
-                relative_path: requested.clone(),
-                recursive: true,
-            })
-            .is_err());
+            assert!(delete_test_entry(&workspace_root, &requested).is_err());
             assert!(rename_entry_sync(RenameWorkspaceEntryRequest {
                 workspace_root: workspace_root.clone(),
                 relative_path: requested,
@@ -992,12 +1027,7 @@ mod tests {
             .is_err());
         }
         for requested in [".", "./"] {
-            assert!(delete_entry_sync(DeleteWorkspaceEntryRequest {
-                workspace_root: workspace_root.clone(),
-                relative_path: requested.to_string(),
-                recursive: true,
-            })
-            .is_err());
+            assert!(delete_test_entry(&workspace_root, requested).is_err());
         }
         assert!(sibling.is_file());
         assert!(root.is_dir());
@@ -1131,20 +1161,11 @@ mod tests {
         .expect("file in linked folder should rename");
         assert_eq!(renamed, "linked-folder/new.txt");
         assert!(outside.join("new.txt").is_file());
-        delete_entry_sync(DeleteWorkspaceEntryRequest {
-            workspace_root: workspace_root.clone(),
-            relative_path: "linked-folder/doomed.txt".to_string(),
-            recursive: false,
-        })
-        .expect("file in linked folder should delete");
+        delete_test_entry(&workspace_root, "linked-folder/doomed.txt")
+            .expect("file in linked folder should delete");
         assert!(!outside.join("doomed.txt").exists());
 
-        delete_entry_sync(DeleteWorkspaceEntryRequest {
-            workspace_root,
-            relative_path: "linked-folder".to_string(),
-            recursive: true,
-        })
-        .expect("folder link should delete");
+        delete_test_entry(&workspace_root, "linked-folder").expect("folder link should delete");
         assert!(fs::symlink_metadata(root.join("linked-folder")).is_err());
         assert!(outside_file.is_file());
         let _ = fs::remove_dir_all(root);

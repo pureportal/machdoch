@@ -1,6 +1,7 @@
 export const WORKSPACE_DETAIL_SECTIONS = [
   "git",
   "files",
+  "terminal",
   "run",
   "knowledge",
   "research",

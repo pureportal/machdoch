@@ -16,6 +16,7 @@ pub struct RuntimeSnapshot {
     pub(super) workspace_memory_enabled: bool,
     pub(super) reasoning_bank_enabled: bool,
     pub(super) auto_gitignore: bool,
+    pub(super) git_file_system_monitor: bool,
     pub(super) workspace_memory_override: Option<bool>,
     pub(super) adaptive_controller_override: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -54,12 +54,12 @@ use paths::resolve_workspace_path;
 use process::open_path_in_system_shell;
 use progress::create_progress_timestamp;
 use ralph::{execute_ralph_command, resolve_ralph_flow_path_for_open};
-pub(crate) use registry::{active_task_ids, active_task_summaries};
 use registry::{
-    acknowledge_completed_task_results, completed_desktop_task_result,
-    finish_active_task, normalize_task_id, recent_completed_task_results, register_active_task,
+    acknowledge_completed_task_results, completed_desktop_task_result, finish_active_task,
+    normalize_task_id, recent_completed_task_results, register_active_task,
     remember_completed_task_result, ActiveDesktopTaskClaim, ActiveDesktopTaskRegistration,
 };
+pub(crate) use registry::{active_task_ids, active_task_summaries};
 pub use registry::{
     request_all_desktop_task_cancels, request_desktop_task_cancel, ActiveDesktopTaskSummary,
     DesktopTaskCancelMap, RecentDesktopTaskResult,
@@ -858,38 +858,63 @@ pub async fn run_instruction_command(request: InstructionCommandRequest) -> Resu
 }
 
 #[tauri::command]
-pub async fn run_workspace_library_command(workspace_root: String, input: Value) -> Result<Value, String> {
-    tauri::async_runtime::spawn_blocking(move || cli_commands::execute_json_payload_command(&workspace_root, &input, "knowledge"))
-        .await
-        .map_err(|error| format!("The workspace library command stopped unexpectedly. {error}"))?
+pub async fn run_workspace_library_command(
+    workspace_root: String,
+    input: Value,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        cli_commands::execute_json_payload_command(&workspace_root, &input, "knowledge")
+    })
+    .await
+    .map_err(|error| format!("The workspace library command stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]
 pub async fn run_skill_command(input: Value) -> Result<Value, String> {
-    tauri::async_runtime::spawn_blocking(move || cli_commands::execute_json_payload_command("", &input, "skills"))
-        .await
-        .map_err(|error| format!("The skill command stopped unexpectedly. {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        cli_commands::execute_json_payload_command("", &input, "skills")
+    })
+    .await
+    .map_err(|error| format!("The skill command stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]
 pub async fn run_mcp_app_command(workspace_root: String, input: Value) -> Result<Value, String> {
-    tauri::async_runtime::spawn_blocking(move || cli_commands::execute_json_payload_command(&workspace_root, &input, "mcp-apps"))
-        .await
-        .map_err(|error| format!("The MCP App command stopped unexpectedly. {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        cli_commands::execute_json_payload_command(&workspace_root, &input, "mcp-apps")
+    })
+    .await
+    .map_err(|error| format!("The MCP App command stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]
 pub async fn run_live_voice_command(workspace_root: String, input: Value) -> Result<Value, String> {
-    tauri::async_runtime::spawn_blocking(move || cli_commands::execute_json_payload_command(&workspace_root, &input, "live-voice"))
-        .await
-        .map_err(|error| format!("The live voice command stopped unexpectedly. {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        cli_commands::execute_json_payload_command(&workspace_root, &input, "live-voice")
+    })
+    .await
+    .map_err(|error| format!("The live voice command stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]
 pub async fn run_workspace_run_detection_command(workspace_root: String) -> Result<Value, String> {
-    tauri::async_runtime::spawn_blocking(move || cli_commands::execute_workspace_run_detection_command(&workspace_root))
-        .await
-        .map_err(|error| format!("The run detection command stopped unexpectedly. {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        cli_commands::execute_workspace_run_detection_command(&workspace_root)
+    })
+    .await
+    .map_err(|error| format!("The run detection command stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn generate_workspace_git_commit_message(
+    workspace_root: String,
+    repository_root: String,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        cli_commands::execute_git_commit_message_command(&workspace_root, &repository_root)
+    })
+    .await
+    .map_err(|error| format!("The commit message command stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]

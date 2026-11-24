@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fs,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Read},
@@ -16,17 +16,36 @@ use std::{
 use machdoch_process::SupervisedChild;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use tokio::sync::Semaphore;
 
 #[cfg(test)]
 mod action_tests;
+#[cfg(test)]
+mod action_workflow_tests;
 mod actions;
+#[cfg(test)]
+mod bench;
 mod branch_alignment;
+mod branches;
+mod calls;
+mod compare;
+mod config;
+mod conflicts;
+mod diff;
+mod file_history;
+mod fsmonitor;
 mod history;
+mod index_update;
+mod overview;
+mod program;
+mod pull_requests;
+mod refs;
 mod repositories_status;
 mod stack;
+mod status;
 mod summary;
+mod undo;
+mod worktree_status;
 mod worktrees;
 
 #[cfg(target_os = "windows")]
@@ -57,32 +76,46 @@ const OPERATION_MARKERS: [(&str, &str); 5] = [
     ("cherry-pick", "CHERRY_PICK_HEAD"),
     ("revert", "REVERT_HEAD"),
 ];
-static GIT_READ_PERMITS: OnceLock<Semaphore> = OnceLock::new();
+static GIT_INTERACTIVE_PERMITS: OnceLock<Semaphore> = OnceLock::new();
+static GIT_BACKGROUND_PERMITS: OnceLock<Semaphore> = OnceLock::new();
 static GIT_NETWORK_PERMITS: OnceLock<Semaphore> = OnceLock::new();
 
 async fn run_with_permit<R: Send + 'static>(
     permits: &'static Semaphore,
-    label: &str,
+    priority: calls::GitPriority,
     work: impl FnOnce() -> Result<R, String> + Send + 'static,
 ) -> Result<R, String> {
+    let queued_at = Instant::now();
     let permit = permits
         .acquire()
         .await
-        .map_err(|error| format!("The workspace Git {label} is unavailable: {error}"))?;
+        .map_err(|error| format!("The workspace Git worker is unavailable: {error}"))?;
+    let queued = queued_at.elapsed();
     tauri::async_runtime::spawn_blocking(move || {
         let _permit = permit;
-        work()
+        calls::with_context(priority, queued, work)
     })
     .await
-    .map_err(|error| format!("The workspace Git {label} stopped unexpectedly: {error}"))?
+    .map_err(|error| format!("The workspace Git worker stopped unexpectedly: {error}"))?
 }
 
-async fn run_git_read<R: Send + 'static>(
+async fn run_git_interactive<R: Send + 'static>(
     read: impl FnOnce() -> Result<R, String> + Send + 'static,
 ) -> Result<R, String> {
     run_with_permit(
-        GIT_READ_PERMITS.get_or_init(|| Semaphore::new(4)),
-        "reader",
+        GIT_INTERACTIVE_PERMITS.get_or_init(|| Semaphore::new(4)),
+        calls::GitPriority::Interactive,
+        read,
+    )
+    .await
+}
+
+async fn run_git_background<R: Send + 'static>(
+    read: impl FnOnce() -> Result<R, String> + Send + 'static,
+) -> Result<R, String> {
+    run_with_permit(
+        GIT_BACKGROUND_PERMITS.get_or_init(|| Semaphore::new(2)),
+        calls::GitPriority::Background,
         read,
     )
     .await
@@ -93,7 +126,7 @@ async fn run_git_network<R: Send + 'static>(
 ) -> Result<R, String> {
     run_with_permit(
         GIT_NETWORK_PERMITS.get_or_init(|| Semaphore::new(4)),
-        "network worker",
+        calls::GitPriority::Background,
         work,
     )
     .await
@@ -198,6 +231,28 @@ pub struct WorkspaceGitBranch {
     #[serde(skip_serializing_if = "Option::is_none")]
     parent: Option<String>,
     needs_restack: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_commit_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    merged: Option<bool>,
+}
+
+impl WorkspaceGitBranch {
+    fn unborn(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            commit: "unborn".to_string(),
+            current: true,
+            upstream: None,
+            ahead: 0,
+            behind: 0,
+            upstream_gone: false,
+            parent: None,
+            needs_restack: false,
+            last_commit_at: None,
+            merged: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -226,31 +281,6 @@ pub struct WorkspaceGitCommit {
     subject: String,
     author: String,
     authored_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspacePullRequest {
-    number: u64,
-    title: String,
-    state: String,
-    url: String,
-    head_branch: String,
-    base_branch: String,
-    draft: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    author: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    updated_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspacePullRequestOverview {
-    available: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
-    items: Vec<WorkspacePullRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -295,9 +325,14 @@ pub struct WorkspaceGitOverview {
     remotes: Vec<WorkspaceGitRemote>,
     recent_commits: Vec<WorkspaceGitCommit>,
     stashes: Vec<WorkspaceGitStash>,
+    stash_count: usize,
     worktrees: Vec<worktrees::WorkspaceGitWorktree>,
     #[serde(skip_serializing_if = "Option::is_none")]
     operation: Option<String>,
+    sections: Vec<String>,
+    untracked_files: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_fetched_at: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -319,6 +354,24 @@ pub struct WorkspaceGitActionRequest {
     force: Option<bool>,
     draft: Option<bool>,
     reset_mode: Option<String>,
+    patch: Option<String>,
+    patch_target: Option<String>,
+    reverse: Option<bool>,
+    amend: Option<bool>,
+    sign_off: Option<bool>,
+    co_authors: Option<Vec<String>>,
+    push_after_commit: Option<bool>,
+    commit: Option<String>,
+    tag_name: Option<String>,
+    remote: Option<bool>,
+    side: Option<String>,
+    target: Option<String>,
+    branch_names: Option<Vec<String>>,
+    title: Option<String>,
+    body: Option<String>,
+    base_branch: Option<String>,
+    sections: Option<Vec<String>>,
+    untracked_files: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -337,7 +390,7 @@ pub struct WorkspaceGitRepositoryRequest {
 }
 
 fn configured_command(program: &str, args: &[&str], cwd: &Path) -> Command {
-    let mut command = Command::new(program);
+    let mut command = program::command(program, args);
     command
         .args(args)
         .current_dir(cwd)
@@ -386,9 +439,31 @@ fn command_output_bounded(
     cwd: &Path,
     stdout_limit: usize,
 ) -> Result<Output, String> {
+    let started = Instant::now();
+    let output = run_bounded(program, args, cwd, stdout_limit);
+    calls::record(
+        program,
+        args,
+        cwd,
+        started.elapsed(),
+        output.as_ref().is_ok_and(|output| output.status.success()),
+    );
+    output
+}
+
+fn run_bounded(
+    program: &str,
+    args: &[&str],
+    cwd: &Path,
+    stdout_limit: usize,
+) -> Result<Output, String> {
     let mut command = configured_command(program, args, cwd);
-    let mut child = SupervisedChild::spawn_with_required_isolation(&mut command)
-        .map_err(|error| format!("Failed to run {program}: {error}"))?;
+    let spawned = if program::runs_without_console(program, args) {
+        SupervisedChild::spawn_without_console_with_required_isolation(&mut command)
+    } else {
+        SupervisedChild::spawn_with_required_isolation(&mut command)
+    };
+    let mut child = spawned.map_err(|error| format!("Failed to run {program}: {error}"))?;
     let stdout = child
         .stdout
         .take()
@@ -495,7 +570,7 @@ fn output_error(program: &str, args: &[&str], output: &Output) -> String {
     }
 }
 
-fn run_required(program: &str, args: &[&str], cwd: &Path) -> Result<String, String> {
+pub(crate) fn run_required(program: &str, args: &[&str], cwd: &Path) -> Result<String, String> {
     let output = command_output(program, args, cwd)?;
     if output.status.success() {
         Ok(output_text(&output))
@@ -524,7 +599,7 @@ fn canonical_workspace_root(workspace_root: &str) -> Result<PathBuf, String> {
     Ok(root)
 }
 
-fn repository_context(
+pub(crate) fn repository_context(
     workspace_root: &str,
     repository_root: &str,
 ) -> Result<(PathBuf, PathBuf), String> {
@@ -581,6 +656,31 @@ fn enclosing_repository(path: &Path) -> Option<PathBuf> {
     path.ancestors()
         .find(|candidate| git_directories(candidate).is_some())
         .map(Path::to_path_buf)
+}
+
+pub(crate) fn repository_directories(repository: &Path) -> Option<(PathBuf, PathBuf)> {
+    git_directories(repository).map(|directories| (directories.git_dir, directories.common_dir))
+}
+
+pub(crate) fn known_repository_roots(workspace: &Path) -> Vec<PathBuf> {
+    let mut roots = cached_repository_roots(workspace);
+    if roots.is_empty() {
+        roots = discover_repositories(&workspace.display().to_string(), false)
+            .map(|discovery| {
+                discovery
+                    .repositories
+                    .into_iter()
+                    .map(|repository| PathBuf::from(repository.repository_root))
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
+    if let Some(enclosing) = enclosing_repository(workspace) {
+        if !roots.contains(&enclosing) {
+            roots.push(enclosing);
+        }
+    }
+    roots
 }
 
 fn relative_workspace_path(workspace: &Path, repository: &Path) -> String {
@@ -735,10 +835,20 @@ fn repository_discoveries() -> MutexGuard<'static, HashMap<PathBuf, DiscoverySta
 }
 
 fn store_discovery(workspace: &Path, discovery: WorkspaceGitRepositoryDiscovery) {
-    let mut discoveries = repository_discoveries();
-    let state = discoveries.entry(workspace.to_path_buf()).or_default();
-    state.discovery = Some((Instant::now(), discovery));
-    state.rescanning = false;
+    let changed = {
+        let mut discoveries = repository_discoveries();
+        let state = discoveries.entry(workspace.to_path_buf()).or_default();
+        let changed = state
+            .discovery
+            .as_ref()
+            .is_none_or(|(_, previous)| previous.repositories != discovery.repositories);
+        state.discovery = Some((Instant::now(), discovery));
+        state.rescanning = false;
+        changed
+    };
+    if changed {
+        crate::workspace_watch::refresh_repositories(workspace);
+    }
 }
 
 fn cached_repository_roots(workspace: &Path) -> Vec<PathBuf> {
@@ -821,87 +931,6 @@ fn scan_repositories(workspace: &Path) -> WorkspaceGitRepositoryDiscovery {
     }
 }
 
-fn status_is_conflicted(left: char, right: char) -> bool {
-    matches!((left, right), ('U', _) | (_, 'U') | ('A', 'A') | ('D', 'D'))
-}
-
-type StatusSummary = (
-    Vec<WorkspaceGitChange>,
-    bool,
-    usize,
-    usize,
-    usize,
-    usize,
-    usize,
-);
-
-fn parse_status(output: &str) -> StatusSummary {
-    parse_status_matching(output, None)
-}
-
-fn parse_status_matching(output: &str, selected_path: Option<&str>) -> StatusSummary {
-    let mut changes = Vec::new();
-    let mut total = 0usize;
-    let mut staged = 0usize;
-    let mut unstaged = 0usize;
-    let mut untracked = 0usize;
-    let mut conflicted = 0usize;
-    let mut records = output.split_terminator('\0');
-    while let Some(record) = records.next() {
-        if record.len() < 3 {
-            continue;
-        }
-        total += 1;
-        let bytes = record.as_bytes();
-        let left = bytes.first().copied().unwrap_or(b' ') as char;
-        let right = bytes.get(1).copied().unwrap_or(b' ') as char;
-        let is_untracked = left == '?' && right == '?';
-        let is_conflicted = status_is_conflicted(left, right);
-        let is_staged = !is_untracked && !matches!(left, ' ' | '.' | '?' | '!');
-        let is_unstaged = !is_untracked && !matches!(right, ' ' | '.' | '?' | '!');
-        if is_untracked {
-            untracked += 1;
-        } else {
-            if is_conflicted {
-                conflicted += 1;
-            }
-            if is_staged {
-                staged += 1;
-            }
-            if is_unstaged {
-                unstaged += 1;
-            }
-        }
-        let original_path = (matches!(left, 'R' | 'C') || matches!(right, 'R' | 'C'))
-            .then(|| records.next())
-            .flatten();
-        if changes.len() < MAX_GIT_ENTRIES
-            && selected_path.is_none_or(|path| record.get(3..) == Some(path))
-        {
-            changes.push(WorkspaceGitChange {
-                status: format!("{left}{right}"),
-                path: record.get(3..).unwrap_or_default().to_string(),
-                original_path: original_path.map(ToOwned::to_owned),
-                staged: is_staged,
-                unstaged: is_unstaged,
-                untracked: is_untracked,
-                conflicted: is_conflicted,
-                additions: None,
-                deletions: None,
-            });
-        }
-    }
-    (
-        changes,
-        total > MAX_GIT_ENTRIES,
-        staged,
-        unstaged,
-        untracked,
-        conflicted,
-        total,
-    )
-}
-
 fn parse_numstat(output: &str) -> HashMap<String, (Option<u64>, Option<u64>)> {
     output
         .split_terminator('\0')
@@ -914,168 +943,7 @@ fn parse_numstat(output: &str) -> HashMap<String, (Option<u64>, Option<u64>)> {
         .collect()
 }
 
-fn read_line_stats(repository: &Path) -> HashMap<String, (Option<u64>, Option<u64>)> {
-    run_optional(
-        "git",
-        &[
-            "diff",
-            "HEAD",
-            "--numstat",
-            "-z",
-            "--no-renames",
-            "--no-ext-diff",
-            "--no-textconv",
-        ],
-        repository,
-    )
-    .map(|output| parse_numstat(&output))
-    .unwrap_or_default()
-}
-
-fn status_output(repository: &Path) -> Result<String, String> {
-    read_status(repository, None, true)
-}
-
-fn read_status(repository: &Path, path: Option<&str>, untracked: bool) -> Result<String, String> {
-    let mut arguments = vec![
-        "status",
-        "--porcelain=v1",
-        "-z",
-        if untracked {
-            "--untracked-files=all"
-        } else {
-            "--untracked-files=no"
-        },
-    ];
-    if let Some(path) = path {
-        arguments.extend(["--", path]);
-    }
-    let output = command_output("git", &arguments, repository)?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-    } else {
-        Err(output_error("git", &arguments, &output))
-    }
-}
-
-fn truncate_diff_output(bytes: &[u8]) -> (String, bool) {
-    let truncated = bytes.len() > MAX_GIT_DIFF_BYTES;
-    let bounded = &bytes[..bytes.len().min(MAX_GIT_DIFF_BYTES)];
-    let content = String::from_utf8_lossy(bounded)
-        .trim_end_matches(['\r', '\n'])
-        .to_string();
-    (content, truncated)
-}
-
-fn run_diff(
-    repository: &Path,
-    kind: &str,
-    arguments: &[&str],
-    allow_difference_exit: bool,
-) -> Result<WorkspaceGitPatch, String> {
-    let output = command_output_bounded("git", arguments, repository, MAX_GIT_DIFF_BYTES + 1)?;
-    if !output.status.success() && !(allow_difference_exit && output.status.code() == Some(1)) {
-        return Err(output_error("git", arguments, &output));
-    }
-    let (content, truncated) = truncate_diff_output(&output.stdout);
-    let binary = content.contains("Binary files ") || content.contains("GIT binary patch");
-    Ok(WorkspaceGitPatch {
-        kind: kind.to_string(),
-        content,
-        binary,
-        truncated,
-    })
-}
-
-fn load_diff(request: WorkspaceGitDiffRequest) -> Result<WorkspaceGitDiff, String> {
-    let (_, repository) = repository_context(&request.workspace_root, &request.repository_root)?;
-    if request.relative_path.is_empty() || request.relative_path.contains('\0') {
-        return Err("Select a changed file to view its diff.".to_string());
-    }
-    let (changes, _, _, _, _, _, _) = parse_status_matching(
-        &read_status(&repository, Some(&request.relative_path), true)?,
-        Some(&request.relative_path),
-    );
-    let mut change = changes
-        .into_iter()
-        .find(|change| change.path == request.relative_path)
-        .ok_or_else(|| "This file is no longer changed.".to_string())?;
-    // A path-limited status represents a staged rename as an addition because
-    // its source was excluded. Only these additions need the wider tracked scan.
-    if change.status.starts_with('A') {
-        if let Some(renamed) = parse_status_matching(
-            &read_status(&repository, None, false)?,
-            Some(&request.relative_path),
-        )
-        .0
-        .into_iter()
-        .next()
-        {
-            change = renamed;
-        }
-    }
-    let mut patches = Vec::new();
-    if change.staged {
-        patches.push(run_diff(
-            &repository,
-            "staged",
-            &[
-                "diff",
-                "--cached",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-color",
-                "--find-renames",
-                "--unified=3",
-                "--",
-                &change.path,
-            ],
-            false,
-        )?);
-    }
-    if change.unstaged || change.conflicted {
-        patches.push(run_diff(
-            &repository,
-            "unstaged",
-            &[
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-color",
-                "--find-renames",
-                "--unified=3",
-                "--",
-                &change.path,
-            ],
-            false,
-        )?);
-    }
-    if change.untracked {
-        patches.push(run_diff(
-            &repository,
-            "untracked",
-            &[
-                "diff",
-                "--no-index",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-color",
-                "--unified=3",
-                "--",
-                "/dev/null",
-                &change.path,
-            ],
-            true,
-        )?);
-    }
-    Ok(WorkspaceGitDiff {
-        path: change.path,
-        original_path: change.original_path,
-        patches,
-    })
-}
-
-const BRANCH_REFERENCE_FORMAT: &str = "--format=%(refname)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)%09%(upstream:track,nobracket)%09%(symref)";
+const BRANCH_REFERENCE_FORMAT: &str = "--format=%(refname)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)%09%(upstream:track,nobracket)%09%(symref)%09%(committerdate:iso-strict)";
 
 fn parse_branches(output: &str, remote: bool) -> Vec<WorkspaceGitBranch> {
     let namespace = if remote {
@@ -1096,6 +964,11 @@ fn parse_branches(output: &str, remote: bool) -> Vec<WorkspaceGitBranch> {
             let marker = parts.next().unwrap_or_default().trim();
             let (ahead, behind, upstream_gone) =
                 parse_upstream_track(parts.next().unwrap_or_default());
+            let last_commit_at = parts
+                .nth(1)
+                .map(str::trim)
+                .filter(|date| !date.is_empty())
+                .map(str::to_string);
             Some(WorkspaceGitBranch {
                 name,
                 commit,
@@ -1106,6 +979,8 @@ fn parse_branches(output: &str, remote: bool) -> Vec<WorkspaceGitBranch> {
                 upstream_gone,
                 parent: None,
                 needs_restack: false,
+                last_commit_at,
+                merged: None,
             })
         })
         .collect()
@@ -1120,7 +995,10 @@ fn parse_upstream_track(track: &str) -> (u64, u64, bool) {
     let mut behind = 0;
     for part in track.split(',') {
         let mut words = part.split_whitespace();
-        match (words.next(), words.next().and_then(|count| count.parse().ok())) {
+        match (
+            words.next(),
+            words.next().and_then(|count| count.parse().ok()),
+        ) {
             (Some("ahead"), Some(count)) => ahead = count,
             (Some("behind"), Some(count)) => behind = count,
             _ => {}
@@ -1129,7 +1007,10 @@ fn parse_upstream_track(track: &str) -> (u64, u64, bool) {
     (ahead, behind, false)
 }
 
+#[cfg(test)]
 fn parse_remotes(output: &str) -> Vec<WorkspaceGitRemote> {
+    use std::collections::BTreeMap;
+
     let mut values: BTreeMap<String, (Option<String>, Option<String>)> = BTreeMap::new();
     for line in output.lines() {
         let mut parts = line.split_whitespace();
@@ -1204,285 +1085,61 @@ fn current_operation(repository: &Path) -> Option<String> {
     operation_in(&git_directories(repository)?.git_dir).map(str::to_string)
 }
 
-fn modified_at(path: &Path) -> Option<std::time::SystemTime> {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-}
-
-fn hash_repository_state(repository: &Path, hasher: &mut DefaultHasher) {
-    repository.hash(hasher);
-    let Some(directories) = git_directories(repository) else {
-        return;
-    };
-    let head = fs::read(directories.git_dir.join("HEAD")).unwrap_or_default();
-    head.hash(hasher);
-    if let Some(reference) = head
-        .strip_prefix(b"ref:")
-        .and_then(|reference| std::str::from_utf8(reference).ok())
-    {
-        fs::read(directories.common_dir.join(reference.trim()))
-            .unwrap_or_default()
-            .hash(hasher);
-    }
-    operation_in(&directories.git_dir).hash(hasher);
-    modified_at(&directories.git_dir.join("FETCH_HEAD")).hash(hasher);
-    modified_at(&directories.common_dir.join("packed-refs")).hash(hasher);
-}
-
 fn workspace_git_fingerprint(workspace_root: &str) -> Result<String, String> {
     let workspace = canonical_workspace_root(workspace_root)?;
-    let mut repositories = cached_repository_roots(&workspace);
-    if let Some(enclosing) = enclosing_repository(&workspace) {
-        if !repositories.contains(&enclosing) {
-            repositories.push(enclosing);
-        }
-    }
+    crate::workspace_watch::ensure_watching(&workspace);
     let mut hasher = DefaultHasher::new();
-    for repository in &repositories {
-        hash_repository_state(repository, &mut hasher);
+    for repository in known_repository_roots(&workspace) {
+        repository.hash(&mut hasher);
+        status::repository_signature(&repository, None).hash(&mut hasher);
+        crate::workspace_watch::repository_generations(&repository)
+            .map(|generations| (generations.worktree, generations.index, generations.refs))
+            .hash(&mut hasher);
     }
     Ok(format!("{:016x}", hasher.finish()))
 }
 
-fn pull_request_overview(repository: &Path, has_remote: bool) -> WorkspacePullRequestOverview {
-    if !has_remote {
-        return WorkspacePullRequestOverview {
-            available: false,
-            reason: Some("Add a Git remote to load pull requests.".to_string()),
-            items: Vec::new(),
-        };
-    }
-    let args = [
-        "pr",
-        "list",
-        "--limit",
-        "50",
-        "--json",
-        "number,title,state,url,headRefName,baseRefName,isDraft,author,updatedAt",
-    ];
-    let output = match command_output("gh", &args, repository) {
-        Ok(output) if output.status.success() => output_text(&output),
-        Ok(output) => {
-            return WorkspacePullRequestOverview {
-                available: false,
-                reason: Some(output_error("gh", &args, &output)),
-                items: Vec::new(),
-            }
-        }
-        Err(error) => {
-            return WorkspacePullRequestOverview {
-                available: false,
-                reason: Some(error),
-                items: Vec::new(),
-            }
-        }
-    };
-    let values = match serde_json::from_str::<Vec<Value>>(&output) {
-        Ok(values) => values,
-        Err(error) => {
-            return WorkspacePullRequestOverview {
-                available: false,
-                reason: Some(format!(
-                    "GitHub CLI returned invalid pull-request data: {error}"
-                )),
-                items: Vec::new(),
-            }
-        }
-    };
-    let items = values
-        .into_iter()
-        .filter_map(|value| {
-            Some(WorkspacePullRequest {
-                number: value.get("number")?.as_u64()?,
-                title: value.get("title")?.as_str()?.to_string(),
-                state: value.get("state")?.as_str()?.to_string(),
-                url: value.get("url")?.as_str()?.to_string(),
-                head_branch: value.get("headRefName")?.as_str()?.to_string(),
-                base_branch: value.get("baseRefName")?.as_str()?.to_string(),
-                draft: value
-                    .get("isDraft")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-                author: value
-                    .get("author")
-                    .and_then(|author| author.get("login"))
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-                updated_at: value
-                    .get("updatedAt")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-            })
-        })
-        .collect();
-    WorkspacePullRequestOverview {
-        available: true,
-        reason: None,
-        items,
+pub(crate) fn apply_file_system_monitor_setting(workspace: &Path, enabled: bool) {
+    fsmonitor::forget_setting(workspace);
+    if !enabled {
+        fsmonitor::stop_daemons_in(workspace);
     }
 }
 
-fn load_overview(
+#[cfg(test)]
+pub(crate) fn test_repository(path: &Path) {
+    fs::create_dir_all(path).expect("the repository should be created");
+    run_required("git", &["init", "-b", "main"], path).expect("git init should succeed");
+    run_required("git", &["config", "user.email", "test@example.test"], path)
+        .expect("Git email should configure");
+    run_required("git", &["config", "user.name", "Test"], path).expect("Git name should configure");
+    run_required("git", &["config", "commit.gpgsign", "false"], path)
+        .expect("Git signing should configure");
+    fs::write(path.join("tracked.txt"), "base\n").expect("tracked file should write");
+    run_required("git", &["add", "."], path).expect("tracked file should stage");
+    run_required("git", &["commit", "--quiet", "-m", "base"], path)
+        .expect("base commit should succeed");
+}
+
+#[cfg(test)]
+fn load_full_overview(
     workspace_root: &str,
     repository_root: &str,
 ) -> Result<WorkspaceGitOverview, String> {
-    let (workspace, repository) = repository_context(workspace_root, repository_root)?;
-    thread::scope(|scope| {
-        let status_worker = scope.spawn(|| status_output(&repository));
-        let line_stats_worker = scope.spawn(|| read_line_stats(&repository));
-        let branches_worker = scope.spawn(|| {
-            run_required(
-                "git",
-                &[
-                    "for-each-ref",
-                    BRANCH_REFERENCE_FORMAT,
-                    "refs/heads",
-                    "refs/remotes",
-                ],
-                &repository,
-            )
-        });
-        let parents_worker = scope.spawn(|| stack::read_parents(&repository));
-        let remotes_worker = scope.spawn(|| run_required("git", &["remote", "-v"], &repository));
-        let commits_worker = scope.spawn(|| {
-            run_optional(
-                "git",
-                &[
-                    "log",
-                    &format!("-{MAX_RECENT_COMMITS}"),
-                    "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI",
-                ],
-                &repository,
-            )
-        });
-        let stash_worker = scope.spawn(|| {
-            run_optional(
-                "git",
-                &["stash", "list", "--format=%gd%x1f%gs%x1f%cI"],
-                &repository,
-            )
-        });
-        let worktrees_worker = scope.spawn(|| worktrees::read_worktrees(&repository));
-        let operation = current_operation(&repository);
-        let branch_output = branches_worker
-            .join()
-            .map_err(|_| "Git branch worker stopped unexpectedly.".to_string())??;
-        let mut local_branches = parse_branches(&branch_output, false);
-        let current_branch = local_branches.iter().find(|candidate| candidate.current);
-        let upstream = current_branch
-            .filter(|candidate| !candidate.upstream_gone)
-            .and_then(|candidate| candidate.upstream.clone());
-        let (ahead, behind) =
-            current_branch.map_or((0, 0), |candidate| (candidate.ahead, candidate.behind));
-        let head = match current_branch {
-            Some(candidate) => Some(candidate.name.clone()),
-            None => run_optional(
-                "git",
-                &["symbolic-ref", "--quiet", "--short", "HEAD"],
-                &repository,
-            )
-            .filter(|value| !value.is_empty()),
-        };
-        let detached = head.is_none();
-        let trunk_references =
-            branch_alignment::references_from(branch_output.lines().map(|line| {
-                let mut columns = line.split('\t');
-                let reference = columns.next().unwrap_or_default();
-                (reference, columns.nth(4).unwrap_or_default(), 0)
-            }));
-        let default_branch = branch_alignment::default_branch(&trunk_references, head.as_deref());
-        let branch = head.unwrap_or_else(|| "Detached HEAD".to_string());
-        if !detached
-            && !local_branches
-                .iter()
-                .any(|candidate| candidate.name == branch)
-        {
-            local_branches.insert(
-                0,
-                WorkspaceGitBranch {
-                    name: branch.clone(),
-                    commit: "unborn".to_string(),
-                    current: true,
-                    upstream: upstream.clone(),
-                    ahead: 0,
-                    behind: 0,
-                    upstream_gone: false,
-                    parent: None,
-                    needs_restack: false,
-                },
-            );
-        }
-        let parents = parents_worker
-            .join()
-            .map_err(|_| "Git stack worker stopped unexpectedly.".to_string())?;
-        stack::annotate_branches(&repository, &parents, &mut local_branches);
-        let remote_branches = parse_branches(&branch_output, true);
-        let remotes = parse_remotes(
-            &remotes_worker
-                .join()
-                .map_err(|_| "Git remote worker stopped unexpectedly.".to_string())??,
-        );
-        let recent_commits = commits_worker
-            .join()
-            .map_err(|_| "Git commit worker stopped unexpectedly.".to_string())?
-            .map(|value| parse_commits(&value))
-            .unwrap_or_default();
-        let stashes = stash_worker
-            .join()
-            .map_err(|_| "Git stash worker stopped unexpectedly.".to_string())?
-            .map(|value| parse_stashes(&value))
-            .unwrap_or_default();
-        let worktrees = worktrees_worker
-            .join()
-            .map_err(|_| "Git worktree worker stopped unexpectedly.".to_string())?;
-        let status_output = status_worker
-            .join()
-            .map_err(|_| "Git status worker stopped unexpectedly.".to_string())??;
-        let (
-            mut changes,
-            changes_truncated,
-            staged_count,
-            unstaged_count,
-            untracked_count,
-            conflicted_count,
-            total_changes,
-        ) = parse_status(&status_output);
-        let line_stats = line_stats_worker
-            .join()
-            .map_err(|_| "Git line statistics worker stopped unexpectedly.".to_string())?;
-        for change in &mut changes {
-            if let Some((additions, deletions)) = line_stats.get(&change.path) {
-                change.additions = *additions;
-                change.deletions = *deletions;
-            }
-        }
-        Ok(WorkspaceGitOverview {
-            workspace_root: workspace.display().to_string(),
-            repository_root: repository.display().to_string(),
-            branch,
-            detached,
-            upstream,
-            default_branch,
-            ahead,
-            behind,
-            clean: changes.is_empty(),
-            staged_count,
-            unstaged_count,
-            untracked_count,
-            conflicted_count,
-            total_changes,
-            changes,
-            changes_truncated,
-            local_branches,
-            remote_branches,
-            remotes,
-            recent_commits,
-            stashes,
-            worktrees,
-            operation,
-        })
-    })
+    overview::load_overview(
+        workspace_root,
+        repository_root,
+        &overview::OverviewOptions::full(),
+    )
+}
+
+#[cfg(test)]
+fn reset_process_caches() {
+    repository_discoveries().clear();
+    status::clear();
+    overview::clear();
+    branches::clear();
+    diff::clear();
 }
 
 #[tauri::command]
@@ -1490,21 +1147,21 @@ pub async fn discover_workspace_git_repositories(
     workspace_root: String,
     refresh: Option<bool>,
 ) -> Result<WorkspaceGitRepositoryDiscovery, String> {
-    run_git_read(move || discover_repositories(&workspace_root, refresh == Some(true))).await
+    run_git_interactive(move || discover_repositories(&workspace_root, refresh == Some(true))).await
 }
 
 #[tauri::command]
 pub async fn get_workspace_git_repositories_status(
     request: repositories_status::WorkspaceGitRepositoriesStatusRequest,
 ) -> Result<repositories_status::WorkspaceGitRepositoriesStatus, String> {
-    run_git_read(move || repositories_status::load_repositories_status(request)).await
+    run_git_background(move || repositories_status::load_repositories_status(request)).await
 }
 
 #[tauri::command]
 pub async fn get_workspace_git_summary(
     workspace_root: String,
 ) -> Result<Option<summary::WorkspaceGitSummary>, String> {
-    run_git_read(move || summary::load_summary(&workspace_root)).await
+    run_git_interactive(move || summary::load_summary(&workspace_root)).await
 }
 
 #[tauri::command]
@@ -1516,52 +1173,124 @@ pub async fn get_workspace_git_fingerprint(workspace_root: String) -> Result<Str
 
 #[tauri::command]
 pub async fn get_workspace_git_overview(
-    request: WorkspaceGitRepositoryRequest,
+    request: overview::WorkspaceGitOverviewRequest,
 ) -> Result<WorkspaceGitOverview, String> {
-    run_git_read(move || load_overview(&request.workspace_root, &request.repository_root)).await
+    run_git_interactive(move || {
+        let options = request.options()?;
+        let (workspace_root, repository_root) = request.roots();
+        overview::load_overview(workspace_root, repository_root, &options)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_workspace_git_branches(
+    request: WorkspaceGitRepositoryRequest,
+) -> Result<branches::WorkspaceGitBranchList, String> {
+    run_git_interactive(move || branches::load_branch_list(request)).await
 }
 
 #[tauri::command]
 pub async fn get_workspace_git_graph(
     request: history::WorkspaceGitGraphRequest,
 ) -> Result<history::WorkspaceGitGraph, String> {
-    run_git_read(move || history::load_graph(request)).await
+    run_git_background(move || history::load_graph(request)).await
 }
 
 #[tauri::command]
 pub async fn get_workspace_git_commit(
     request: history::WorkspaceGitCommitRequest,
 ) -> Result<history::WorkspaceGitCommitDetail, String> {
-    run_git_read(move || history::load_commit(request)).await
+    run_git_interactive(move || history::load_commit(request)).await
 }
 
 #[tauri::command]
 pub async fn get_workspace_git_diff(
     request: WorkspaceGitDiffRequest,
 ) -> Result<WorkspaceGitDiff, String> {
-    run_git_read(move || load_diff(request)).await
+    run_git_interactive(move || diff::load_diff(request)).await
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_file_history(
+    request: file_history::WorkspaceGitFileRequest,
+) -> Result<file_history::WorkspaceGitFileHistory, String> {
+    run_git_interactive(move || file_history::load_file_history(request)).await
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_file_revision(
+    request: file_history::WorkspaceGitBlameRequest,
+) -> Result<file_history::WorkspaceGitFileRevision, String> {
+    run_git_interactive(move || file_history::load_file_revision(request)).await
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_blame(
+    request: file_history::WorkspaceGitBlameRequest,
+) -> Result<file_history::WorkspaceGitBlame, String> {
+    run_git_interactive(move || file_history::load_blame(request)).await
+}
+
+#[tauri::command]
+pub async fn compare_workspace_git_revisions(
+    request: compare::WorkspaceGitCompareRequest,
+) -> Result<compare::WorkspaceGitComparison, String> {
+    run_git_interactive(move || compare::load_comparison(request)).await
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_conflict(
+    request: file_history::WorkspaceGitFileRequest,
+) -> Result<conflicts::WorkspaceGitConflictVersions, String> {
+    run_git_interactive(move || conflicts::load_conflict(request)).await
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_undo(
+    request: WorkspaceGitRepositoryRequest,
+) -> Result<Option<undo::WorkspaceGitUndoPreview>, String> {
+    run_git_interactive(move || undo::load_undo(request)).await
 }
 
 #[tauri::command]
 pub async fn get_workspace_pull_requests(
     request: WorkspaceGitRepositoryRequest,
-) -> Result<WorkspacePullRequestOverview, String> {
+) -> Result<pull_requests::WorkspacePullRequestOverview, String> {
     run_git_network(move || {
         let (_, repository) =
             repository_context(&request.workspace_root, &request.repository_root)?;
-        let has_remote = !run_required("git", &["remote"], &repository)?.is_empty();
-        Ok(pull_request_overview(&repository, has_remote))
+        Ok(pull_requests::pull_requests(&repository))
     })
     .await
+}
+
+#[tauri::command]
+pub async fn get_workspace_pull_request_checks(
+    request: pull_requests::WorkspacePullRequestChecksRequest,
+) -> Result<pull_requests::WorkspacePullRequestChecks, String> {
+    run_git_network(move || pull_requests::load_request_checks(request)).await
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_call_log(
+    workspace_root: String,
+) -> Result<calls::WorkspaceGitCallLog, String> {
+    let workspace = crate::runtime_snapshot::resolve_workspace_root_path(&workspace_root)?;
+    Ok(calls::call_log(&workspace))
 }
 
 #[tauri::command]
 pub async fn run_workspace_git_action(
     request: WorkspaceGitActionRequest,
 ) -> Result<WorkspaceGitOverview, String> {
-    tauri::async_runtime::spawn_blocking(move || actions::execute_workspace_git_action(request))
-        .await
-        .map_err(|error| format!("The workspace Git action stopped unexpectedly: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        calls::with_context(calls::GitPriority::Interactive, Duration::ZERO, || {
+            actions::execute_workspace_git_action(request)
+        })
+    })
+    .await
+    .map_err(|error| format!("The workspace Git action stopped unexpectedly: {error}"))?
 }
 
 #[tauri::command]
@@ -1581,33 +1310,74 @@ pub async fn switch_workspace_git_branches(
 }
 
 #[cfg(test)]
-mod tests {
-    use std::{env, fs, time::SystemTime};
+mod priority_tests {
+    use std::time::{Duration, Instant};
 
-    use super::{
-        actions::{execute_workspace_git_action, validate_remote_url},
-        command_output, discover_repositories, load_diff, load_overview, parse_branches,
-        parse_remotes, parse_status, repository_context, run_required, workspace_git_fingerprint,
-        WorkspaceGitActionRequest, WorkspaceGitDiffRequest, MAX_GIT_DIFF_BYTES, MAX_GIT_ENTRIES,
-    };
+    use super::{run_git_background, run_git_interactive};
 
-    fn committed_repository(path: &std::path::Path) {
-        fs::create_dir_all(path).expect("the repository should be created");
-        run_required("git", &["init", "-b", "main"], path).expect("git init should succeed");
-        run_required("git", &["config", "user.email", "state@example.test"], path)
-            .expect("Git email should configure");
-        run_required("git", &["config", "user.name", "State"], path)
-            .expect("Git name should configure");
-        run_required("git", &["config", "commit.gpgsign", "false"], path)
-            .expect("Git signing should configure");
-        fs::write(path.join("tracked.txt"), "base\n").expect("tracked file should write");
-        run_required("git", &["add", "."], path).expect("tracked file should stage");
-        run_required("git", &["commit", "--quiet", "-m", "base"], path)
-            .expect("base commit should succeed");
+    fn slow_fake_git() -> Result<(), String> {
+        std::thread::sleep(Duration::from_millis(1_500));
+        Ok(())
     }
 
     #[test]
-    fn fingerprint_follows_branch_and_commit_changes_in_every_repository() {
+    fn interactive_reads_never_wait_behind_background_work() {
+        tauri::async_runtime::block_on(async {
+            let background = (0..8)
+                .map(|_| tauri::async_runtime::spawn(run_git_background(slow_fake_git)))
+                .collect::<Vec<_>>();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let started = Instant::now();
+            run_git_interactive(|| Ok(()))
+                .await
+                .expect("the interactive read should run");
+            assert!(
+                started.elapsed() < Duration::from_millis(300),
+                "interactive reads waited {:?} behind background work",
+                started.elapsed()
+            );
+            let started = Instant::now();
+            for task in background {
+                task.await
+                    .expect("the task should join")
+                    .expect("the work should succeed");
+            }
+            assert!(started.elapsed() >= Duration::from_millis(1_000));
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        env, fs,
+        time::{Duration, Instant, SystemTime},
+    };
+
+    use super::{
+        actions::{execute_workspace_git_action, validate_remote_url},
+        command_output,
+        diff::load_diff,
+        discover_repositories, load_full_overview, parse_branches, parse_remotes,
+        repository_context, run_required, test_repository, workspace_git_fingerprint,
+        WorkspaceGitActionRequest, WorkspaceGitDiffRequest, MAX_GIT_DIFF_BYTES, MAX_GIT_ENTRIES,
+    };
+
+    use test_repository as committed_repository;
+
+    fn eventually(condition: impl Fn() -> bool) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if condition() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        false
+    }
+
+    #[test]
+    fn fingerprint_follows_file_index_branch_and_commit_changes_in_every_repository() {
         let unique = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("the clock should be valid")
@@ -1624,26 +1394,34 @@ mod tests {
             || workspace_git_fingerprint(&workspace_root).expect("the fingerprint should load");
 
         let initial = fingerprint();
+        std::thread::sleep(Duration::from_millis(300));
+        let settled = fingerprint();
         fs::write(root.join("tracked.txt"), "edited\n").expect("the edit should write");
-        assert_eq!(fingerprint(), initial);
+        assert!(
+            eventually(|| fingerprint() != settled),
+            "a file edit must change the fingerprint"
+        );
+        let edited = fingerprint();
+        run_required("git", &["add", "tracked.txt"], &root).expect("the edit should stage");
+        assert!(
+            eventually(|| fingerprint() != edited),
+            "staging must change the fingerprint"
+        );
+        assert_ne!(initial, edited);
 
+        let before_switch = fingerprint();
         run_required("git", &["switch", "--quiet", "-c", "feature"], &root)
             .expect("the branch should switch");
+        assert!(eventually(|| fingerprint() != before_switch));
         let switched = fingerprint();
-        assert_ne!(switched, initial);
-        run_required("git", &["commit", "--quiet", "-am", "feature"], &root)
+        run_required("git", &["commit", "--quiet", "-m", "feature"], &root)
             .expect("the commit should succeed");
-        let committed = fingerprint();
-        assert_ne!(committed, switched);
+        assert!(eventually(|| fingerprint() != switched));
 
+        let before_nested = fingerprint();
         run_required("git", &["switch", "--quiet", "-c", "topic"], &nested)
             .expect("the nested branch should switch");
-        assert_eq!(fingerprint(), committed);
-        discover_repositories(&workspace_root, true).expect("discovery should succeed");
-        let discovered = fingerprint();
-        run_required("git", &["switch", "--quiet", "main"], &nested)
-            .expect("the nested branch should switch back");
-        assert_ne!(fingerprint(), discovered);
+        assert!(eventually(|| fingerprint() != before_nested));
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1661,7 +1439,7 @@ mod tests {
         committed_repository(&root);
         fs::write(root.join("tracked.txt"), "first\nsecond\n").expect("the edit should write");
         fs::write(root.join("new.txt"), "new\n").expect("the file should write");
-        let overview = load_overview(
+        let overview = load_full_overview(
             root.to_string_lossy().as_ref(),
             root.to_string_lossy().as_ref(),
         )
@@ -1708,24 +1486,6 @@ mod tests {
         )
         .is_ok());
         let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn status_parser_counts_real_porcelain_states() {
-        let (changes, truncated, staged, unstaged, untracked, conflicted, total) = parse_status(
-            " M changed.ts\0M  staged.ts\0?? new.ts\0UU conflict.ts\0R  renamed.ts\0old.ts\0 R worktree-renamed.ts\0worktree-old.ts\0",
-        );
-        assert_eq!(changes.len(), 6);
-        assert!(!truncated);
-        assert_eq!(
-            (staged, unstaged, untracked, conflicted, total),
-            (3, 3, 1, 1, 6)
-        );
-        assert_eq!(changes[0].path, "changed.ts");
-        assert_eq!(changes[4].path, "renamed.ts");
-        assert_eq!(changes[4].original_path.as_deref(), Some("old.ts"));
-        assert_eq!(changes[5].path, "worktree-renamed.ts");
-        assert_eq!(changes[5].original_path.as_deref(), Some("worktree-old.ts"));
     }
 
     #[test]
@@ -1837,7 +1597,7 @@ mod tests {
         assert!(discovery.issues.is_empty());
 
         fs::write(api.join("api.txt"), "untracked\n").expect("api fixture should write");
-        let api_overview = load_overview(
+        let api_overview = load_full_overview(
             root.to_string_lossy().as_ref(),
             api.to_string_lossy().as_ref(),
         )
@@ -1946,10 +1706,10 @@ mod tests {
         let beta_root = beta.display().to_string();
         let alpha_branch_before = run_required("git", &["symbolic-ref", "--short", "HEAD"], &alpha)
             .expect("the alpha branch should resolve");
-        let alpha_overview =
-            load_overview(&workspace_root, &alpha_root).expect("the alpha overview should load");
+        let alpha_overview = load_full_overview(&workspace_root, &alpha_root)
+            .expect("the alpha overview should load");
         let beta_overview =
-            load_overview(&workspace_root, &beta_root).expect("the beta overview should load");
+            load_full_overview(&workspace_root, &beta_root).expect("the beta overview should load");
         assert_eq!(
             alpha_overview
                 .changes
@@ -2236,6 +1996,7 @@ mod tests {
             repository_root: root.display().to_string(),
             action: "create-branch".to_string(),
             branch_name: Some("feature/workspace-ui".to_string()),
+            sections: Some(vec!["branches".to_string()]),
             ..Default::default()
         })
         .expect("branch creation should succeed");

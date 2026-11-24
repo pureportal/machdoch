@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   formatWorkspaceFileSize,
-  isWorkspaceDirectory,
-  isWorkspaceFile,
-  reconcileWorkspaceTreeFocus,
   resolveWorkspaceMarkdownPath,
   workspacePathParent,
   workspaceEntryAbsolutePath,
@@ -37,22 +34,6 @@ describe("workspace tools model", () => {
     expect(formatWorkspaceFileSize(12 * 1024 * 1024)).toBe("12 MB");
   });
 
-  it("treats links to folders as directories", () => {
-    const entry = {
-      name: "linked",
-      path: "linked",
-      kind: "symlink",
-      targetKind: "directory",
-      size: null,
-      modifiedAt: null,
-    } as const;
-    expect(isWorkspaceDirectory(entry)).toBe(true);
-    expect(isWorkspaceFile(entry)).toBe(false);
-    expect(
-      isWorkspaceDirectory({ ...entry, targetKind: "file" }),
-    ).toBe(false);
-  });
-
   it("resolves local Markdown targets inside and outside the workspace", () => {
     expect(
       resolveWorkspaceMarkdownPath("docs/guide.md", "../assets/logo.png"),
@@ -76,19 +57,5 @@ describe("workspace tools model", () => {
       resolveWorkspaceMarkdownPath("README.md", "https://example.test/a"),
     ).toBeNull();
     expect(resolveWorkspaceMarkdownPath("README.md", "#section")).toBeNull();
-  });
-
-  it("keeps the tree roving focus on a visible entry", () => {
-    const visible = ["src", "src/main.ts", "README.md"];
-    expect(
-      reconcileWorkspaceTreeFocus(visible, "src/main.ts", "README.md"),
-    ).toBe("src/main.ts");
-    expect(
-      reconcileWorkspaceTreeFocus(visible, "removed.ts", "README.md"),
-    ).toBe("README.md");
-    expect(reconcileWorkspaceTreeFocus(visible, "removed.ts", "gone.ts")).toBe(
-      "src",
-    );
-    expect(reconcileWorkspaceTreeFocus([], "removed.ts", null)).toBeNull();
   });
 });

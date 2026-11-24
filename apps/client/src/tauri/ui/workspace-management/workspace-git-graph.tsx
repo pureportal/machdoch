@@ -1,4 +1,5 @@
 import {
+  Bot,
   Cloud,
   GitCommitHorizontal,
   GitCompareArrows,
@@ -18,6 +19,8 @@ import type {
 } from "../runtime";
 import type { WorkspaceGitControls } from "./use-workspace-git";
 import { useWorkspaceGitGraph } from "./use-workspace-git-graph";
+import { WorkspaceGitCommitActions } from "./workspace-git-commit-actions";
+import { WorkspaceGitCompare } from "./workspace-git-compare";
 import {
   WorkspaceGitChangedFiles,
   WorkspaceGitCommitDetails,
@@ -229,6 +232,7 @@ export const WorkspaceGitGraphView = ({
   const [scope, setScope] = useState(rememberedScope);
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
   const [comparing, setComparing] = useState(false);
+  const [comparingRevisions, setComparingRevisions] = useState(false);
   const [resetTarget, setResetTarget] =
     useState<WorkspaceGitResetTarget | null>(null);
   const listRef = useRef<HTMLOListElement>(null);
@@ -288,6 +292,16 @@ export const WorkspaceGitGraphView = ({
           />
         ) : null}
         <span className="flex-1" />
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          aria-pressed={comparingRevisions}
+          onClick={() => setComparingRevisions((current) => !current)}
+        >
+          <GitCompareArrows />
+          Compare
+        </Button>
         {loading && graph ? (
           <LoaderCircle
             role="status"
@@ -296,6 +310,7 @@ export const WorkspaceGitGraphView = ({
           />
         ) : null}
       </div>
+      {comparingRevisions ? <WorkspaceGitCompare overview={overview} /> : null}
       {comparing && base && headHash && base.ahead > 0 ? (
         <section
           aria-label={`Changes since ${base.branch}`}
@@ -376,6 +391,13 @@ export const WorkspaceGitGraphView = ({
                       branched here
                     </span>
                   ) : null}
+                  {commit.agent ? (
+                    <Bot
+                      role="img"
+                      aria-label="Made by agent"
+                      className="size-3 shrink-0 text-violet-300"
+                    />
+                  ) : null}
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate text-xs",
@@ -409,6 +431,13 @@ export const WorkspaceGitGraphView = ({
                       commit={commit}
                       resetBranch={head ? null : currentBranch}
                       busy={controls.busy}
+                      actions={
+                        <WorkspaceGitCommitActions
+                          controls={controls}
+                          commit={commit}
+                          head={head}
+                        />
+                      }
                       onReset={() =>
                         setResetTarget({
                           revision: commit.hash,

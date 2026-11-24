@@ -25,6 +25,9 @@ import { stepChatZoomPercent } from "./chat-session/_helpers/chat-zoom";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { useUnsavedChangesGuard } from "./chat-session/_helpers/use-unsaved-changes-guard";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
+import { useWorkspaceChatBridges } from "./workspace-management/use-workspace-chat-bridges";
+import { onOpenWorkspaceSection } from "./workspace-management/workspace-navigation";
+import { WorkspaceChatDock } from "./workspace-management/workspace-chat-dock";
 import { ZoomableChatContent } from "./chat-session/components/zoomable-chat-content";
 import { AttachmentImagePreviewDialog } from "./chat-session/components/attachment-image-preview-dialog";
 import { ShareMessageDialog } from "./chat-session/components/share-message-dialog";
@@ -60,6 +63,7 @@ import {
   type AppShellState,
   type MainAppId,
 } from "./lib/shell-store";
+import { onRalphRunRequest } from "./ralph/ralph-navigation";
 import { useRalphActivity } from "./ralph/use-ralph-activity";
 import { useMediaActivity } from "./media/use-media-activity";
 import { useMediaShutdownGuard } from "./media/use-media-shutdown-guard";
@@ -1038,6 +1042,19 @@ export const ChatSession = (): JSX.Element => {
     });
   }, [schedulerWorkspaceRoots]);
 
+  const workspaceChatBridges = useWorkspaceChatBridges(
+    controller.composer.activeSession.workspace,
+    controller.composer.activeSession.messages,
+    controller.workspaceChat,
+    () => selectApp("chat"),
+  );
+
+  useEffect(
+    () => onOpenWorkspaceSection(() => selectApp("workspaces")),
+    [selectApp],
+  );
+  useEffect(() => onRalphRunRequest(() => selectApp("ralph")), [selectApp]);
+
   useEffect(() => {
     if (isTestEnvironment()) {
       return;
@@ -1301,85 +1318,97 @@ export const ChatSession = (): JSX.Element => {
                   onOpenSettings={controller.openProviderSettings}
                 />
               ) : (
-                <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
-                  <SessionHeader
-                    {...controller.header}
-                    onOpenSessions={
-                      isMobile ? () => setSessionsOpen(true) : undefined
-                    }
-                    onOpenWorkspaces={() => selectApp("workspaces")}
-                  />
-
-                  <div
-                    data-find-scope="conversation"
-                    className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
-                  >
-                    <ScrollArea className="h-full min-w-0" type="always">
-                      <ZoomableChatContent
-                        zoomPercent={chatZoom.zoomPercent}
-                        onZoomPercentChange={chatZoom.onZoomPercentChange}
-                      >
-                        <ConversationFeed
-                          key={controller.composer.activeSession.id}
-                          {...controller.conversation}
-                          showChangedFiles={
-                            appearance.settings.showChangedFiles
-                          }
-                          hideEmptyState={
-                            controller.composer.activeSession.specialSession ===
-                            "pose"
-                          }
-                          poseScenePreview={
-                            controller.composer.activeSession.specialSession ===
-                            "pose" ? (
-                              <PoseScenePreview
-                                key={controller.composer.activeSession.id}
-                                sessionId={controller.composer.activeSession.id}
-                                initialScene={
-                                  controller.composer.activeSession.poseScene
-                                }
-                                onSceneChange={(scene) =>
-                                  controller.updatePoseScene(
-                                    controller.composer.activeSession.id,
-                                    scene,
-                                  )
-                                }
-                              />
-                            ) : undefined
-                          }
-                        />
-                      </ZoomableChatContent>
-                    </ScrollArea>
-                    <ScrollToTopButton
-                      visible={controller.conversation.showScrollToTopButton}
-                      onClick={controller.conversation.onScrollToTop}
-                      className="top-4 right-4"
+                <WorkspaceChatDock
+                  key={controller.composer.activeSession.workspace ?? ""}
+                  workspaceRoot={
+                    controller.composer.activeSession.workspace?.trim() || null
+                  }
+                  {...workspaceChatBridges}
+                >
+                  <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
+                    <SessionHeader
+                      {...controller.header}
+                      onOpenSessions={
+                        isMobile ? () => setSessionsOpen(true) : undefined
+                      }
+                      onOpenWorkspaces={() => selectApp("workspaces")}
                     />
-                    <ScrollToNewestButton
-                      visible={controller.conversation.showScrollToNewestButton}
-                      onClick={controller.conversation.onScrollToNewest}
-                      className="bottom-4 right-4"
-                    />
-                  </div>
 
-                  <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-5 pb-3 pt-2.5 backdrop-blur-xl">
-                    <div className="mx-auto w-full max-w-5xl min-w-0">
-                      <SessionComposer
-                        key={controller.composer.activeSession.id}
-                        {...controller.composer}
-                        onBrowseMediaAssets={() => {
-                          setPendingMediaSection("library");
-                          selectApp("media");
-                        }}
-                        onCreateMediaAsset={(prompt) => {
-                          setPendingMediaDraftPrompt(prompt);
-                          setPendingMediaSection("generate");
-                          selectApp("media");
-                        }}
+                    <div
+                      data-find-scope="conversation"
+                      className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+                    >
+                      <ScrollArea className="h-full min-w-0" type="always">
+                        <ZoomableChatContent
+                          zoomPercent={chatZoom.zoomPercent}
+                          onZoomPercentChange={chatZoom.onZoomPercentChange}
+                        >
+                          <ConversationFeed
+                            key={controller.composer.activeSession.id}
+                            {...controller.conversation}
+                            showChangedFiles={
+                              appearance.settings.showChangedFiles
+                            }
+                            hideEmptyState={
+                              controller.composer.activeSession
+                                .specialSession === "pose"
+                            }
+                            poseScenePreview={
+                              controller.composer.activeSession
+                                .specialSession === "pose" ? (
+                                <PoseScenePreview
+                                  key={controller.composer.activeSession.id}
+                                  sessionId={
+                                    controller.composer.activeSession.id
+                                  }
+                                  initialScene={
+                                    controller.composer.activeSession.poseScene
+                                  }
+                                  onSceneChange={(scene) =>
+                                    controller.updatePoseScene(
+                                      controller.composer.activeSession.id,
+                                      scene,
+                                    )
+                                  }
+                                />
+                              ) : undefined
+                            }
+                          />
+                        </ZoomableChatContent>
+                      </ScrollArea>
+                      <ScrollToTopButton
+                        visible={controller.conversation.showScrollToTopButton}
+                        onClick={controller.conversation.onScrollToTop}
+                        className="top-4 right-4"
+                      />
+                      <ScrollToNewestButton
+                        visible={
+                          controller.conversation.showScrollToNewestButton
+                        }
+                        onClick={controller.conversation.onScrollToNewest}
+                        className="bottom-4 right-4"
                       />
                     </div>
-                  </footer>
-                </main>
+
+                    <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-5 pb-3 pt-2.5 backdrop-blur-xl">
+                      <div className="mx-auto w-full max-w-5xl min-w-0">
+                        <SessionComposer
+                          key={controller.composer.activeSession.id}
+                          {...controller.composer}
+                          onBrowseMediaAssets={() => {
+                            setPendingMediaSection("library");
+                            selectApp("media");
+                          }}
+                          onCreateMediaAsset={(prompt) => {
+                            setPendingMediaDraftPrompt(prompt);
+                            setPendingMediaSection("generate");
+                            selectApp("media");
+                          }}
+                        />
+                      </div>
+                    </footer>
+                  </main>
+                </WorkspaceChatDock>
               )}
             </div>
           ) : null}

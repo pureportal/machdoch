@@ -319,6 +319,7 @@ export interface WorkspaceConfigFile {
   workspaceMemoryEnabled?: boolean | null;
   reasoningBankEnabled?: boolean;
   autoGitignore?: boolean;
+  gitFileSystemMonitor?: boolean;
   adaptiveControllerEnabled?: boolean | null;
   releaseStage?: ReleaseStage;
 }
@@ -419,6 +420,7 @@ export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "co
   workspaceMemoryEnabled: boolean;
   reasoningBankEnabled?: boolean;
   autoGitignore?: boolean;
+  gitFileSystemMonitor?: boolean;
   adaptiveControllerOverride?: boolean | null;
   releaseStage?: ReleaseStage;
   workspaceMemoryOverride: boolean | null;

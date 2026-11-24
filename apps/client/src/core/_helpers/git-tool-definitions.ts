@@ -66,9 +66,7 @@ const coerceOptionalStringArray = (
   }
 
   const strings = value.flatMap((entry) =>
-    typeof entry === "string" && entry.trim().length > 0
-      ? [entry.trim()]
-      : [],
+    typeof entry === "string" && entry.trim().length > 0 ? [entry.trim()] : [],
   );
 
   return strings.length > 0 ? strings : undefined;
@@ -147,17 +145,16 @@ const resolveGitPathspecs = async (
     }
 
     pathspecs.push(
-      normalizeWorkspacePath(relative(repository.repoRoot, target.resolvedPath))
-        || ".",
+      normalizeWorkspacePath(
+        relative(repository.repoRoot, target.resolvedPath),
+      ) || ".",
     );
   }
 
   return pathspecs;
 };
 
-export const parseGitStatusPorcelain = (
-  output: string,
-): GitStatusSummary => {
+export const parseGitStatusPorcelain = (output: string): GitStatusSummary => {
   const lines = output
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
@@ -427,7 +424,10 @@ export const createGitToolDefinitions = (): AgentToolDefinition[] => {
             ...(scope === "head" ? ["HEAD"] : []),
             ...(pathspecs.length > 0 ? ["--", ...pathspecs] : []),
           ];
-          const result = await runGitCommand(repository.workspaceRoot, diffArgs);
+          const result = await runGitCommand(
+            repository.workspaceRoot,
+            diffArgs,
+          );
           const lines = result.stdout
             .split("\n")
             .filter((line) => line.trim().length > 0);
@@ -662,6 +662,8 @@ export const createGitToolDefinitions = (): AgentToolDefinition[] => {
             "commit",
             "-m",
             message,
+            "--trailer",
+            `Machdoch-Agent: ${context.runId ?? "agent"}`,
           ]);
           const hashResult = await runGitCommand(repository.workspaceRoot, [
             "rev-parse",

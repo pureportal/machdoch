@@ -1,9 +1,12 @@
 import { copyText } from "@machdoch/media-studio/tauri/ui/lib/clipboard.js";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import {
   acknowledgeWorkspaceTerminalOutput,
   discoverWorkspaceShells,
+  openExternalUrl,
   resizeWorkspaceTerminal,
   startWorkspaceTerminal,
   stopWorkspaceTerminal,
@@ -21,6 +24,32 @@ import {
   type TerminalProfileSettings,
 } from "../lib/shell-store";
 import { createWorkspaceRootKey } from "./workspace-management-model";
+import { workspaceDockStore } from "./workspace-dock-store";
+import {
+  activateTerminalTab,
+  addTerminalTab,
+  closeTerminalTab,
+  colorTerminalTab,
+  normalizeTerminalLayout,
+  renameTerminalTab,
+  restorableTerminalTabs,
+  setTerminalTabCwd,
+  splitTerminal,
+  unsplitTerminal,
+  type TerminalColor,
+  type TerminalLayout,
+  type TerminalSplitDirection,
+  type TerminalTabLayout,
+} from "./workspace-terminal-layout";
+import { TerminalFeatures } from "./workspace-terminal-features";
+import { resolveTerminalLinkPath } from "./workspace-terminal-links";
+import {
+  terminalRunCommand,
+  terminalShellKind,
+  type TerminalRunTask,
+} from "./workspace-terminal-run";
+import type { WorkspaceRunInput } from "../../../shared/workspace-run.js";
+import { workspaceRelativeDirectory } from "./workspace-terminal-shell-integration";
 import {
   resolveTerminalProfiles,
   terminalProfileSettingsEqual,
@@ -44,6 +73,25 @@ export interface WorkspaceTerminalSessionView {
   error: string | null;
   sessionActive: boolean;
   transitioning: boolean;
+  cwd: string | null;
+  agentReading: boolean;
+  lastExitCode: number | null;
+  hasCommands: boolean;
+}
+
+export interface WorkspaceTerminalSessionOptions {
+  id: string;
+  ordinal: number;
+  cwd: string | null;
+  scrollbackLines: number;
+  history: string | null;
+}
+
+export interface WorkspaceTerminalSessionCallbacks {
+  onChange: () => void;
+  onCwdChange: (terminalId: string, cwd: string) => void;
+  onOutputIdle: (terminalId: string) => void;
+  onCommandFinished: (command: string) => void;
 }
 
 export interface WorkspaceTerminalStoreSnapshot {
@@ -82,7 +130,9 @@ const TERMINAL_INPUT_CHUNK_BYTES = 48 * 1024;
 const TERMINAL_INPUT_BUFFER_BYTES = 1024 * 1024;
 const TERMINAL_INPUT_BUFFER_ENTRIES = 4096;
 const TERMINAL_OUTPUT_ACK_CHUNK_BYTES = 256 * 1024;
-const TERMINAL_SCROLLBACK_LINES = 10_000;
+const TERMINAL_HISTORY_SAVE_DELAY_MS = 3_000;
+const AGENT_READ_INDICATOR_MS = 4_000;
+const TERMINAL_AGENT_READ_EVENT = "workspace-terminal-agent-read";
 
 const decodeTerminalOutput = (value: string): Uint8Array => {
   const binary = atob(value);
@@ -139,7 +189,7 @@ interface PendingStartingInput {
 
 let fallbackTerminalId = 0;
 
-const createTerminalId = (): string => {
+export const createTerminalId = (): string => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
@@ -151,13 +201,22 @@ const errorMessage = (failure: unknown): string =>
   failure instanceof Error ? failure.message : String(failure);
 
 class WorkspaceTerminalSession {
-  readonly id = createTerminalId();
+  readonly id: string;
   readonly terminal: Terminal;
   readonly fitAddon: FitAddon;
+  readonly features: TerminalFeatures;
   readonly shell: WorkspaceShell;
   readonly ordinal: number;
   private readonly workspaceRoot: string;
   private readonly onChange: () => void;
+  private readonly callbacks: WorkspaceTerminalSessionCallbacks;
+  private cwd: string | null;
+  private history: string | null;
+  private historyTimer: ReturnType<typeof setTimeout> | null = null;
+  private agentReadTimer: ReturnType<typeof setTimeout> | null = null;
+  private agentReading = false;
+  private lastExitCode: number | null = null;
+  private scrollbackLines: number;
   private readonly disposables: IDisposable[] = [];
   private backendSessionId: string | null = null;
   private generation = 0;
@@ -182,15 +241,20 @@ class WorkspaceTerminalSession {
     workspaceRoot: string,
     shell: WorkspaceShell,
     platform: string,
-    ordinal: number,
-    onChange: () => void,
+    options: WorkspaceTerminalSessionOptions,
+    callbacks: WorkspaceTerminalSessionCallbacks,
   ) {
     this.workspaceRoot = workspaceRoot;
     this.shell = shell;
-    this.ordinal = ordinal;
-    this.onChange = onChange;
+    this.id = options.id;
+    this.ordinal = options.ordinal;
+    this.cwd = options.cwd;
+    this.history = options.history;
+    this.scrollbackLines = options.scrollbackLines;
+    this.callbacks = callbacks;
+    this.onChange = callbacks.onChange;
     this.terminal = new Terminal({
-      allowProposedApi: false,
+      allowProposedApi: true,
       convertEol: false,
       cursorBlink: true,
       cursorStyle: "bar",
@@ -202,12 +266,36 @@ class WorkspaceTerminalSession {
       minimumContrastRatio: 4.5,
       rightClickSelectsWord: true,
       screenReaderMode: true,
-      scrollback: TERMINAL_SCROLLBACK_LINES,
+      scrollback: options.scrollbackLines,
+      overviewRuler: { width: 6 },
       theme: terminalTheme,
       windowsPty: platform === "windows" ? { backend: "conpty" } : undefined,
     });
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
+    this.features = new TerminalFeatures(this.terminal, {
+      onCwd: (path) => this.updateCwd(path),
+      onCommandFinished: (command, exitCode) => {
+        this.lastExitCode = exitCode;
+        if (command) this.callbacks.onCommandFinished(command);
+        this.onChange();
+      },
+      openUrl: (url) => {
+        void openExternalUrl(url).catch((failure: unknown) =>
+          this.reportFailure(failure),
+        );
+      },
+      openFileLink: (link, cwd) => {
+        const resolved = resolveTerminalLinkPath(link, this.workspaceRoot, cwd);
+        if (resolved && "relativePath" in resolved) {
+          workspaceDockStore.openFile(
+            this.workspaceRoot,
+            resolved.relativePath,
+            link.line ?? undefined,
+          );
+        }
+      },
+    });
     this.terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown") {
         return true;
@@ -252,13 +340,88 @@ class WorkspaceTerminalSession {
       error: this.error,
       sessionActive: this.backendSessionId !== null,
       transitioning: this.transitionPending,
+      cwd: this.cwd,
+      agentReading: this.agentReading,
+      lastExitCode: this.lastExitCode,
+      hasCommands: this.features.hasCommands,
     };
+  }
+
+  get backendId(): string | null {
+    return this.backendSessionId;
+  }
+
+  private updateCwd(path: string): void {
+    const relative = workspaceRelativeDirectory(path, this.workspaceRoot);
+    if (relative === null || relative === this.cwd) return;
+    this.cwd = relative;
+    this.callbacks.onCwdChange(this.id, relative);
+    this.onChange();
+  }
+
+  private reportFailure(failure: unknown): void {
+    if (this.disposed) return;
+    this.error = errorMessage(failure);
+    this.onChange();
+  }
+
+  private scheduleHistorySave(): void {
+    if (this.historyTimer !== null) clearTimeout(this.historyTimer);
+    this.historyTimer = setTimeout(() => {
+      this.historyTimer = null;
+      this.callbacks.onOutputIdle(this.id);
+    }, TERMINAL_HISTORY_SAVE_DELAY_MS);
+  }
+
+  serializeHistory(): string | null {
+    if (this.disposed) return null;
+    return this.features.serialize(this.scrollbackLines) || null;
+  }
+
+  markAgentRead(): void {
+    if (this.disposed) return;
+    if (this.agentReadTimer !== null) clearTimeout(this.agentReadTimer);
+    this.agentReadTimer = setTimeout(() => {
+      this.agentReadTimer = null;
+      this.agentReading = false;
+      this.onChange();
+    }, AGENT_READ_INDICATOR_MS);
+    if (this.agentReading) return;
+    this.agentReading = true;
+    this.onChange();
+  }
+
+  setScrollbackLines(lines: number): void {
+    this.scrollbackLines = lines;
+    this.terminal.options.scrollback = lines;
+  }
+
+  runCommand(command: string): boolean {
+    const text = command.trim();
+    if (!text || (!this.backendSessionId && !this.transitionPending))
+      return false;
+    this.queueInput(`${text}\r`, false);
+    return true;
+  }
+
+  rerunLastCommand(): boolean {
+    const command = this.features.lastCommand();
+    return command ? this.runCommand(command) : false;
+  }
+
+  lastCommandOutput(): string | null {
+    return this.features.lastCommandOutput();
+  }
+
+  jumpToCommand(direction: "previous" | "next"): void {
+    this.features.jump(direction);
   }
 
   mount(container: HTMLDivElement): void {
     if (this.disposed) return;
     if (!this.terminal.element) {
       this.terminal.open(container);
+      this.features.attachRenderer();
     } else if (this.terminal.element.parentElement !== container) {
       container.append(this.terminal.element);
     }
@@ -653,7 +816,12 @@ class WorkspaceTerminalSession {
     if (this.disposed || this.generation !== generation) return false;
     await this.waitForTerminalWrites();
     if (this.disposed || this.generation !== generation) return false;
+    const history =
+      this.history ?? (previousSessionId ? this.serializeHistory() : null);
+    this.history = null;
+    this.features.resetCommands();
     this.terminal.reset();
+    if (history) this.writeTerminal(`${history}\r\n`);
 
     let exitedBeforeStartResolved = false;
     let failedBeforeStartResolved = false;
@@ -663,6 +831,7 @@ class WorkspaceTerminalSession {
         case "output":
           this.attachBackendSession(event.sessionId, generation);
           const outputByteLength = decodedBase64ByteLength(event.data);
+          this.scheduleHistorySave();
           try {
             const output = decodeTerminalOutput(event.data);
             this.writeTerminal(output, () =>
@@ -707,6 +876,7 @@ class WorkspaceTerminalSession {
         Math.max(2, this.terminal.cols),
         Math.max(1, this.terminal.rows),
         handleEvent,
+        this.cwd && this.cwd !== "." ? this.cwd : undefined,
       );
       if (this.disposed || this.generation !== generation) {
         await stopWorkspaceTerminal(started.sessionId).catch(() => {});
@@ -781,10 +951,13 @@ class WorkspaceTerminalSession {
     this.generation += 1;
     this.clearInput();
     if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
+    if (this.historyTimer !== null) clearTimeout(this.historyTimer);
+    if (this.agentReadTimer !== null) clearTimeout(this.agentReadTimer);
     const sessionId = this.backendSessionId;
     const startPromise = this.startPromise;
     this.backendSessionId = null;
     for (const disposable of this.disposables) disposable.dispose();
+    this.features.dispose();
     this.pendingTerminalWrites = 0;
     for (const resolve of this.terminalWriteWaiters) resolve();
     this.terminalWriteWaiters.clear();
@@ -821,6 +994,7 @@ export class WorkspaceTerminalStore {
   private nextOrdinal = 1;
   private disposed = false;
   private snapshot: WorkspaceTerminalStoreSnapshot;
+  private readonly cleanups: Array<() => void> = [];
 
   constructor(workspaceRoot: string) {
     this.workspaceRoot = workspaceRoot;
@@ -849,10 +1023,61 @@ export class WorkspaceTerminalStore {
     for (const listener of this.listeners) listener();
   };
 
+  private find(
+    terminalId: string | null,
+  ): WorkspaceTerminalSession | undefined {
+    return this.terminals.find((terminal) => terminal.id === terminalId);
+  }
+
+  private updateLayout(
+    change: (layout: TerminalLayout) => TerminalLayout,
+  ): void {
+    workspaceDockStore.updateTerminal(this.workspaceRoot, change);
+  }
+
+  private saveHistory = (terminalId: string): void => {
+    const terminal = this.find(terminalId);
+    if (!terminal) return;
+    workspaceDockStore.writeTerminalHistory(
+      this.workspaceRoot,
+      terminalId,
+      terminal.serializeHistory(),
+    );
+  };
+
+  saveAllHistories = (): void => {
+    for (const terminal of this.terminals) this.saveHistory(terminal.id);
+  };
+
+  private listenForAgentReads(): void {
+    if (!isTauri()) return;
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void listen<string>(TERMINAL_AGENT_READ_EVENT, (event) => {
+      this.terminals
+        .find((terminal) => terminal.backendId === event.payload)
+        ?.markAgentRead();
+    })
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      })
+      .catch((failure: unknown) =>
+        console.error("Could not watch agent terminal reads", failure),
+      );
+    window.addEventListener("pagehide", this.saveAllHistories);
+    this.cleanups.push(() => {
+      disposed = true;
+      unlisten?.();
+      window.removeEventListener("pagehide", this.saveAllHistories);
+    });
+  }
+
   initialize(): Promise<void> {
     if (this.initializePromise) return this.initializePromise;
     this.initializePromise = (async () => {
       try {
+        this.listenForAgentReads();
         const [discovery, settingsResult] = await Promise.all([
           discoverWorkspaceShells(this.workspaceRoot),
           loadTerminalProfileSettings()
@@ -891,37 +1116,19 @@ export class WorkspaceTerminalStore {
           }
         }
         await this.profileSettingsMutation;
-        if (this.disposed) return;
+        if (this.disposed || this.terminals.length > 0) return;
         const startupProfiles = this.profiles ?? profiles;
-        const preferredShell = startupProfiles.visibleShells.find(
-          (shell) => shell.id === startupProfiles.defaultShellId,
+        const layout = workspaceDockStore.get(this.workspaceRoot).terminal;
+        const restorable = restorableTerminalTabs(
+          layout.tabs,
+          startupProfiles.visibleShells.map((shell) => shell.id),
+          startupProfiles.defaultShellId,
         );
-        const startupOrder = preferredShell
-          ? [
-              preferredShell,
-              ...startupProfiles.visibleShells.filter(
-                (shell) => shell.id !== preferredShell.id,
-              ),
-            ]
-          : startupProfiles.visibleShells;
-        if (this.terminals.length === 0) {
-          for (const [index, shell] of startupOrder.entries()) {
-            const attempt = await this.createTerminalSession(shell.id);
-            if (!attempt || attempt.started || this.disposed) return;
-            if (index === startupOrder.length - 1) return;
-
-            const terminalIndex = this.terminals.indexOf(attempt.terminal);
-            if (terminalIndex >= 0) this.terminals.splice(terminalIndex, 1);
-            if (this.nextOrdinal === attempt.terminal.ordinal + 1) {
-              this.nextOrdinal -= 1;
-            }
-            if (this.activeTerminalId === attempt.terminal.id) {
-              this.activeTerminalId = null;
-            }
-            this.publish();
-            await attempt.terminal.dispose(true).catch(() => {});
-          }
+        if (restorable.length > 0) {
+          await this.restoreTerminals(restorable, layout.activeTabId);
+          return;
         }
+        await this.startFirstTerminal(startupProfiles);
       } catch (failure) {
         if (this.disposed) return;
         this.discoveryError = errorMessage(failure);
@@ -931,7 +1138,102 @@ export class WorkspaceTerminalStore {
     return this.initializePromise;
   }
 
-  private async createTerminalSession(shellId: string): Promise<{
+  private async restoreTerminals(
+    tabs: readonly TerminalTabLayout[],
+    activeTabId: string | null,
+  ): Promise<void> {
+    this.updateLayout((layout) => ({
+      ...layout,
+      tabs: tabs.map((tab) => ({ ...tab })),
+    }));
+    const sessions = tabs.flatMap((tab) => {
+      const shell = this.profiles?.visibleShells.find(
+        (candidate) => candidate.id === tab.shellId,
+      );
+      return shell ? [this.createSession(shell, tab)] : [];
+    });
+    this.activeTerminalId =
+      sessions.find((session) => session.id === activeTabId)?.id ??
+      sessions[0]?.id ??
+      null;
+    this.publish();
+    await Promise.all(sessions.map((session) => session.start()));
+  }
+
+  private async startFirstTerminal(
+    profiles: ResolvedTerminalProfiles,
+  ): Promise<void> {
+    const preferredShell = profiles.visibleShells.find(
+      (shell) => shell.id === profiles.defaultShellId,
+    );
+    const startupOrder = preferredShell
+      ? [
+          preferredShell,
+          ...profiles.visibleShells.filter(
+            (shell) => shell.id !== preferredShell.id,
+          ),
+        ]
+      : profiles.visibleShells;
+    for (const [index, shell] of startupOrder.entries()) {
+      const attempt = await this.createTerminalSession(shell.id);
+      if (!attempt || attempt.started || this.disposed) return;
+      if (index === startupOrder.length - 1) return;
+
+      const terminalIndex = this.terminals.indexOf(attempt.terminal);
+      if (terminalIndex >= 0) this.terminals.splice(terminalIndex, 1);
+      if (this.nextOrdinal === attempt.terminal.ordinal + 1) {
+        this.nextOrdinal -= 1;
+      }
+      if (this.activeTerminalId === attempt.terminal.id) {
+        this.activeTerminalId = null;
+      }
+      this.updateLayout((layout) =>
+        closeTerminalTab(layout, attempt.terminal.id),
+      );
+      this.publish();
+      await attempt.terminal.dispose(true).catch(() => {});
+    }
+  }
+
+  private createSession(
+    shell: WorkspaceShell,
+    tab: TerminalTabLayout,
+  ): WorkspaceTerminalSession {
+    const terminal = new WorkspaceTerminalSession(
+      this.workspaceRoot,
+      shell,
+      this.discovery?.platform ?? "unknown",
+      {
+        id: tab.id,
+        ordinal: this.nextOrdinal,
+        cwd: tab.cwd,
+        scrollbackLines: workspaceDockStore.get(this.workspaceRoot).terminal
+          .scrollbackLines,
+        history: workspaceDockStore.readTerminalHistory(
+          this.workspaceRoot,
+          tab.id,
+        ),
+      },
+      {
+        onChange: this.publish,
+        onCwdChange: (terminalId, cwd) =>
+          this.updateLayout((layout) =>
+            setTerminalTabCwd(layout, terminalId, cwd),
+          ),
+        onOutputIdle: this.saveHistory,
+        onCommandFinished: (command) =>
+          workspaceDockStore.rememberCommand(this.workspaceRoot, command),
+      },
+    );
+    this.nextOrdinal += 1;
+    this.terminals.push(terminal);
+    return terminal;
+  }
+
+  private async createTerminalSession(
+    shellId: string,
+    cwd: string | null = null,
+  ): Promise<{
     terminal: WorkspaceTerminalSession;
     started: boolean;
   } | null> {
@@ -939,15 +1241,15 @@ export class WorkspaceTerminalStore {
       (candidate) => candidate.id === shellId,
     );
     if (!shell || this.disposed) return null;
-    const terminal = new WorkspaceTerminalSession(
-      this.workspaceRoot,
-      shell,
-      this.discovery?.platform ?? "unknown",
-      this.nextOrdinal,
-      this.publish,
-    );
-    this.nextOrdinal += 1;
-    this.terminals.push(terminal);
+    const tab: TerminalTabLayout = {
+      id: createTerminalId(),
+      shellId,
+      name: null,
+      color: null,
+      cwd,
+    };
+    const terminal = this.createSession(shell, tab);
+    this.updateLayout((layout) => addTerminalTab(layout, tab));
     this.activeTerminalId = terminal.id;
     this.publish();
     const started = await terminal.start();
@@ -957,7 +1259,121 @@ export class WorkspaceTerminalStore {
   async createTerminal(shellId: string): Promise<void> {
     if (this.disposed) return;
     if (!this.discovery) await this.initialize();
-    await this.createTerminalSession(shellId);
+    await this.createTerminalSession(
+      shellId,
+      this.find(this.activeTerminalId)?.view.cwd ?? null,
+    );
+  }
+
+  async splitActiveTerminal(direction: TerminalSplitDirection): Promise<void> {
+    if (this.disposed) return;
+    if (!this.discovery) await this.initialize();
+    const current = this.find(this.activeTerminalId);
+    const shellId = current?.shell.id ?? this.profiles?.defaultShellId;
+    if (!shellId) return;
+    const attempt = this.createTerminalSession(
+      shellId,
+      current?.view.cwd ?? null,
+    );
+    if (current) {
+      this.updateLayout((layout) =>
+        splitTerminal(layout, current.id, direction),
+      );
+    }
+    await attempt;
+  }
+
+  unsplit(): void {
+    this.updateLayout(unsplitTerminal);
+  }
+
+  private async defaultShell(): Promise<WorkspaceShell | null> {
+    if (!this.discovery) await this.initialize();
+    const profiles = this.profiles;
+    const shell =
+      profiles?.visibleShells.find(
+        (candidate) => candidate.id === profiles.defaultShellId,
+      ) ??
+      profiles?.visibleShells[0] ??
+      null;
+    if (!shell)
+      this.reportError(new Error("No shell is available to run this command."));
+    return shell;
+  }
+
+  async runInNewTerminal(
+    command: string,
+    name: string,
+    cwd: string | null = null,
+  ): Promise<void> {
+    if (this.disposed) return;
+    const shell = await this.defaultShell();
+    if (!shell) return;
+    const attempt = this.createTerminalSession(shell.id, cwd);
+    const terminalId = this.activeTerminalId;
+    if (terminalId) this.renameTerminal(terminalId, name);
+    const result = await attempt;
+    if (result?.started) result.terminal.runCommand(command);
+  }
+
+  async runConfiguration(
+    run: TerminalRunTask,
+    inputs: readonly WorkspaceRunInput[],
+  ): Promise<void> {
+    if (this.disposed) return;
+    const shell = await this.defaultShell();
+    if (!shell) return;
+    const { command, cwd, name } = terminalRunCommand(
+      run.task,
+      inputs,
+      run.status,
+      terminalShellKind(shell.kind),
+    );
+    await this.runInNewTerminal(command, name, cwd);
+  }
+
+  renameTerminal(terminalId: string, name: string): void {
+    this.updateLayout((layout) => renameTerminalTab(layout, terminalId, name));
+  }
+
+  colorTerminal(terminalId: string, color: TerminalColor | null): void {
+    this.updateLayout((layout) => colorTerminalTab(layout, terminalId, color));
+  }
+
+  setScrollbackLines(lines: number): void {
+    this.updateLayout((layout) =>
+      normalizeTerminalLayout({ ...layout, scrollbackLines: lines }),
+    );
+    const applied = workspaceDockStore.get(this.workspaceRoot).terminal
+      .scrollbackLines;
+    for (const terminal of this.terminals) terminal.setScrollbackLines(applied);
+  }
+
+  runCommand(terminalId: string, command: string): boolean {
+    const terminal = this.find(terminalId);
+    if (!terminal) return false;
+    const sent = terminal.runCommand(command);
+    if (sent) {
+      workspaceDockStore.rememberCommand(this.workspaceRoot, command);
+      terminal.fit(true);
+    }
+    return sent;
+  }
+
+  rerunLastCommand(terminalId: string): boolean {
+    return this.find(terminalId)?.rerunLastCommand() ?? false;
+  }
+
+  lastCommandOutput(terminalId: string): string | null {
+    return this.find(terminalId)?.lastCommandOutput() ?? null;
+  }
+
+  jumpToCommand(terminalId: string, direction: "previous" | "next"): void {
+    this.find(terminalId)?.jumpToCommand(direction);
+  }
+
+  searchTerminal(terminalId: string): TerminalFeatures["search"] | null {
+    return this.find(terminalId)?.features.search ?? null;
   }
 
   private updateProfileSettings(
@@ -1026,56 +1442,44 @@ export class WorkspaceTerminalStore {
   }
 
   selectTerminal(terminalId: string): void {
-    if (
-      terminalId === this.activeTerminalId ||
-      !this.terminals.some((terminal) => terminal.id === terminalId)
-    ) {
+    if (terminalId === this.activeTerminalId || !this.find(terminalId)) {
       return;
     }
     this.activeTerminalId = terminalId;
+    this.updateLayout((layout) => activateTerminalTab(layout, terminalId));
     this.publish();
   }
 
   mountTerminal(terminalId: string, container: HTMLDivElement): void {
-    this.terminals
-      .find((terminal) => terminal.id === terminalId)
-      ?.mount(container);
+    this.find(terminalId)?.mount(container);
   }
 
   unmountTerminal(terminalId: string): void {
-    this.terminals.find((terminal) => terminal.id === terminalId)?.unmount();
+    this.find(terminalId)?.unmount();
   }
 
   getTerminalSelection(terminalId: string): string {
-    return (
-      this.terminals
-        .find((terminal) => terminal.id === terminalId)
-        ?.getSelection() ?? ""
-    );
+    return this.find(terminalId)?.getSelection() ?? "";
   }
 
   async pasteToTerminal(terminalId: string): Promise<void> {
-    await this.terminals
-      .find((terminal) => terminal.id === terminalId)
-      ?.pasteFromClipboard();
+    await this.find(terminalId)?.pasteFromClipboard();
+  }
+
+  fitTerminal(terminalId: string, focus = false): void {
+    this.find(terminalId)?.fit(focus);
   }
 
   fitActiveTerminal(focus = false): void {
-    this.terminals
-      .find((terminal) => terminal.id === this.activeTerminalId)
-      ?.fit(focus);
+    this.find(this.activeTerminalId)?.fit(focus);
   }
 
   clearActiveTerminal(): void {
-    this.terminals
-      .find((terminal) => terminal.id === this.activeTerminalId)
-      ?.clear();
+    this.find(this.activeTerminalId)?.clear();
   }
 
   dismissActiveError(): void {
-    const terminal = this.terminals.find(
-      (terminal) => terminal.id === this.activeTerminalId,
-    );
+    const terminal = this.find(this.activeTerminalId);
     if (terminal?.view.error) {
       terminal.dismissError();
       return;
@@ -1092,15 +1496,11 @@ export class WorkspaceTerminalStore {
   }
 
   async startActiveTerminal(): Promise<void> {
-    await this.terminals
-      .find((terminal) => terminal.id === this.activeTerminalId)
-      ?.start();
+    await this.find(this.activeTerminalId)?.start();
   }
 
   async stopActiveTerminal(): Promise<void> {
-    await this.terminals
-      .find((terminal) => terminal.id === this.activeTerminalId)
-      ?.stop();
+    await this.find(this.activeTerminalId)?.stop();
   }
 
   async closeTerminal(terminalId: string): Promise<void> {
@@ -1109,9 +1509,17 @@ export class WorkspaceTerminalStore {
     );
     if (index < 0) return;
     const [terminal] = this.terminals.splice(index, 1);
+    this.updateLayout((layout) => closeTerminalTab(layout, terminalId));
+    workspaceDockStore.writeTerminalHistory(
+      this.workspaceRoot,
+      terminalId,
+      null,
+    );
     if (this.activeTerminalId === terminalId) {
       this.activeTerminalId =
-        this.terminals[Math.min(index, this.terminals.length - 1)]?.id ?? null;
+        workspaceDockStore.get(this.workspaceRoot).terminal.activeTabId ??
+        this.terminals[Math.min(index, this.terminals.length - 1)]?.id ??
+        null;
     }
     this.publish();
     try {
@@ -1124,6 +1532,7 @@ export class WorkspaceTerminalStore {
   async disposeAfterWorkspaceRemoval(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    for (const cleanup of this.cleanups.splice(0)) cleanup();
     const terminals = this.terminals.splice(0);
     this.activeTerminalId = null;
     this.publish();

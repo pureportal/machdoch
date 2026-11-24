@@ -63,7 +63,9 @@ export const DEFAULT_COMMAND_SHORTCUTS = {
   "instructions.file.save": "Mod+S",
   "mcp.config.save": "Mod+S",
   "workspaces.settings.save": "Mod+S",
-  "workspaces.terminal.toggle": "Mod+J",
+  "workspaces.terminal.toggle": "Mod+`",
+  "workspaces.files.quick-open": "Mod+P",
+  "workspaces.files.explorer": "Mod+Shift+E",
 } as const;
 
 export type DefaultCommandShortcutId = keyof typeof DEFAULT_COMMAND_SHORTCUTS;
