@@ -34,7 +34,7 @@ const reviewDone = {
 } as const;
 
 function actingMode(identity: GitIdentity): ActingMode {
-  return identity === "owner" ? "personal" : "organization";
+  return identity === "owner" ? "personal_first" : "organization";
 }
 
 function eventPullRequest(variables: AutomationVariables): {

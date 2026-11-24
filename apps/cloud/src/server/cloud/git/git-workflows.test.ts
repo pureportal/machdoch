@@ -254,6 +254,66 @@ it("lets every member connect an own account and act as themselves", async () =>
   ).toBeUndefined();
 });
 
+it("attributes pull request writes to the person and falls back to the workspace connection", async () => {
+  await createIssue("Attribution");
+  server.add(server.github, 1, { headRef: "plat-1-attribution" });
+  await connect("github");
+  const id = (await runtime.git.pullRequests.list(member, undefined))
+    .pullRequests[0]!.pullRequest.id;
+  const comment = async (body: string) =>
+    (await runtime.git.pullRequests.comment(member, id, body)).actingAs;
+  const posted = (path: string) =>
+    server
+      .callsTo(path, "POST")
+      .map((call) => [
+        call.authorization,
+        (call.body as { body: string }).body,
+      ]);
+  const viaWorkspace = (body: string) => [
+    `Bearer ${organizationToken}`,
+    `*member* via machdoch\n\n${body}`,
+  ];
+
+  expect(await comment("Looks good")).toBe("acme-bot");
+  await runtime.git.pullRequests.review(member, id, {
+    decision: "approve",
+    body: "",
+  });
+  await runtime.git.accounts.connect(member, "github", {
+    revision: 0,
+    apiUrl: githubApiUrl,
+    token: memberToken,
+  });
+  expect(await comment("Mine")).toBe("member-gh");
+  await runtime.git.pullRequests.review(member, id, {
+    decision: "comment",
+    body: "Personal review",
+  });
+  server.revoked.add(memberToken);
+  expect(await comment("Revoked")).toBe("acme-bot");
+  server.revoked.delete(memberToken);
+  await database.engine.query(
+    "UPDATE cloud_git_accounts SET expires_at=clock_timestamp() - interval '1 minute' WHERE user_id=$1",
+    [member.userId],
+  );
+  expect(await comment("Expired")).toBe("acme-bot");
+  await runtime.git.accounts.disconnect(member, "github", 1);
+  expect(await comment("Disconnected")).toBe("acme-bot");
+
+  expect(posted("/repos/acme/app/issues/1/comments")).toEqual([
+    viaWorkspace("Looks good"),
+    [`Bearer ${memberToken}`, "Mine"],
+    [`Bearer ${memberToken}`, "Revoked"],
+    viaWorkspace("Revoked"),
+    viaWorkspace("Expired"),
+    viaWorkspace("Disconnected"),
+  ]);
+  expect(posted("/repos/acme/app/pulls/1/reviews")).toEqual([
+    viaWorkspace(automationMarker),
+    [`Bearer ${memberToken}`, `Personal review\n\n${automationMarker}`],
+  ]);
+});
+
 it("runs automations for pushes on chosen branches and pull request comments", async () => {
   server.add(server.github, 4, { headRef: "feature/search", author: "ada" });
   await connect("github");
@@ -325,10 +385,7 @@ it("runs automations for pushes on chosen branches and pull request comments", a
     });
   await comment("@bot please look");
   await dispatch();
-  expect((await runs(replies.id))[0]).toMatchObject({
-    state: "failed",
-    error: expect.stringContaining("Connect your GitHub account"),
-  });
+  expect((await runs(replies.id))[0]).toMatchObject({ state: "succeeded" });
   await runtime.git.accounts.connect(owner, "github", {
     revision: 0,
     apiUrl: githubApiUrl,
@@ -339,6 +396,12 @@ it("runs automations for pushes on chosen branches and pull request comments", a
   expect((await runs(replies.id))[0]).toMatchObject({ state: "succeeded" });
   const posted = server.callsTo("/repos/acme/app/issues/4/comments", "POST");
   expect(posted).toEqual([
+    expect.objectContaining({
+      authorization: `Bearer ${organizationToken}`,
+      body: {
+        body: `*owner* via machdoch\n\nOn it, ada. feature/search\n\n${automationMarker}`,
+      },
+    }),
     expect.objectContaining({
       authorization: `Bearer ${ownerToken}`,
       body: {

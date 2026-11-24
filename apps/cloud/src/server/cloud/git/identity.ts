@@ -1,9 +1,6 @@
-import {
-  gitProviderLabels,
-  type GitProvider,
-} from "../../../lib/git-providers";
+import type { GitProvider } from "../../../lib/git-providers";
 import type { SettingsCipher } from "../../settings-crypto";
-import { CloudError, isCloudError } from "../access";
+import { isCloudError } from "../access";
 import { requireCredentialStorage } from "../credential-storage";
 import type { CloudDatabase, CloudSql } from "../database";
 import { decryptAccountSecret, encryptAccountSecret } from "./accounts";
@@ -11,7 +8,7 @@ import type { GitAccess } from "./git-client";
 import { gitConnection, type GitConnectionRecord } from "./connections";
 import { refreshOAuthToken, type OAuthTokens } from "./oauth";
 
-export type ActingMode = "personal_first" | "personal" | "organization";
+export type ActingMode = "personal_first" | "organization";
 
 export interface ActingAccess extends GitAccess {
   login: string;
@@ -28,12 +25,12 @@ interface PendingRefresh {
   expiresAt: Date;
 }
 
-function expiredSignIn(provider: GitProvider): CloudError {
-  return new CloudError(
-    409,
-    "git_account_expired",
-    `Your ${gitProviderLabels[provider]} sign-in expired. Sign in again in Account settings.`,
-  );
+export function attributed(
+  body: string,
+  acting: ActingAccess,
+  author: string,
+): string {
+  return acting.personal ? body : `*${author}* via machdoch\n\n${body}`;
 }
 
 export function organizationAccess(
@@ -168,7 +165,7 @@ export class GitIdentities {
     ).rows[0];
     if (!stored) return null;
     if (stored.expires_at && stored.expires_at.getTime() <= Date.now())
-      throw expiredSignIn(connection.provider);
+      return null;
     const cipher = await requireCredentialStorage(sql, this.cipher);
     await sql.query(
       "UPDATE cloud_git_accounts SET last_used_at=clock_timestamp() WHERE organization_id=$1 AND user_id=$2 AND provider=$3",
@@ -214,15 +211,10 @@ export class GitIdentities {
     userId: string,
     mode: ActingMode,
   ): Promise<ActingAccess> {
-    const organization = organizationAccess(connection);
-    if (mode === "organization") return organization;
-    const personal = await this.personal(sql, connection, userId);
-    if (personal) return personal;
-    if (mode === "personal_first") return organization;
-    throw new CloudError(
-      409,
-      "git_account_required",
-      `Connect your ${gitProviderLabels[connection.provider]} account in Account settings to act as yourself.`,
+    if (mode === "organization") return organizationAccess(connection);
+    return (
+      (await this.personal(sql, connection, userId)) ??
+      organizationAccess(connection)
     );
   }
 }

@@ -9,6 +9,7 @@ import {
   type GitIssueUpdate,
 } from "./git-client";
 import {
+  attributed,
   organizationAccess,
   type ActingAccess,
   type GitIdentities,
@@ -69,12 +70,6 @@ function changed(update: GitIssueUpdate): boolean {
     update.addLabels.length > 0 ||
     update.removeLabels.length > 0
   );
-}
-
-function attributedComment(comment: OutgoingComment): string {
-  return comment.acting.personal
-    ? `${comment.body}\n\n${automationMarker}`
-    : `*${comment.author}* via machdoch\n\n${comment.body}\n\n${automationMarker}`;
 }
 
 export class CloudGitIssueSync {
@@ -144,7 +139,11 @@ export class CloudGitIssueSync {
       gitClient(outgoing.acting, this.transport).commentOnIssue(
         claimed.fullName,
         claimed.number,
-        attributedComment(outgoing),
+        attributed(
+          `${outgoing.body}\n\n${automationMarker}`,
+          outgoing.acting,
+          outgoing.author,
+        ),
       );
     try {
       return await send(comment);
@@ -234,7 +233,12 @@ export class CloudGitIssueSync {
         id: comment.id,
         body: comment.body,
         author: comment.author,
-        acting: await this.acting(sql, connection, comment.authorId),
+        acting: await this.identities.acting(
+          sql,
+          connection,
+          comment.authorId,
+          "personal_first",
+        ),
       });
     return {
       connection,
@@ -249,25 +253,6 @@ export class CloudGitIssueSync {
       },
       comments,
     };
-  }
-
-  private async acting(
-    sql: CloudSql,
-    connection: GitConnectionRecord,
-    userId: string,
-  ): Promise<ActingAccess> {
-    try {
-      return await this.identities.acting(
-        sql,
-        connection,
-        userId,
-        "personal_first",
-      );
-    } catch (error) {
-      if (!isCloudError(error) || error.code !== "git_account_expired")
-        throw error;
-      return organizationAccess(connection);
-    }
   }
 
   private async record(

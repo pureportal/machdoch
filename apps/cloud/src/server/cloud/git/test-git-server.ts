@@ -33,6 +33,7 @@ export class FakeGitServer {
   readonly github = new Map<number, FakeChange>();
   readonly gitlab = new Map<number, FakeChange>();
   readonly logins = new Map<string, string>();
+  readonly revoked = new Set<string>();
   readonly gitlabUsers = new Map<string, number>();
   readonly deletedComments = new Set<string>();
   readonly branches = new Map<string, string>();
@@ -499,6 +500,8 @@ export class FakeGitServer {
       authorization,
     });
     const token = authorization?.replace(/^Bearer /u, "") ?? "";
+    if (this.revoked.has(token))
+      return Response.json({ message: "Bad credentials" }, { status: 401 });
     if (url.host === "logs.github.test")
       return new Response(
         this.jobLogs.get(Number(url.pathname.split("/").at(-1))) ?? "",
