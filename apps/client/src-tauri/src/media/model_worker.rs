@@ -8,7 +8,11 @@ use std::{
 
 use machdoch_process::SupervisedChild;
 
-use super::{worker_deadline::WorkerDeadline, worker_output::WorkerProgress, MediaResult};
+use super::{
+    worker_deadline::WorkerDeadline,
+    worker_output::{worker_failure_with_diagnostics, WorkerProgress},
+    MediaResult,
+};
 
 const RESPONSE_LIMIT: usize = 2 * 1024 * 1024;
 const DIAGNOSTIC_LIMIT: usize = 256 * 1024;
@@ -196,7 +200,7 @@ impl ResidentWorker {
                     if let Some(error) = result.get("error").and_then(|error| error.as_str()) {
                         return Err(error.to_string());
                     }
-                    if matches!(command, "generate" | "generate-video" | "generate-splat") {
+                    if matches!(command, "generate" | "generate-video" | "generate-splat" | "generate-mesh") {
                         let retention = envelope["retentionSeconds"]
                             .as_f64()
                             .filter(|seconds| {
@@ -235,7 +239,7 @@ impl ResidentWorker {
                 .diagnostics
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
-            format!("{error}\n{}", String::from_utf8_lossy(&tail))
+            worker_failure_with_diagnostics(error, &tail)
         })
     }
 

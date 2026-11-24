@@ -55,6 +55,22 @@ pub(super) fn drain(
     Ok(retained)
 }
 
+pub(super) fn worker_failure_with_diagnostics(summary: String, stderr: &[u8]) -> String {
+    const MAX_DETAIL_CHARS: usize = 4_096;
+
+    let diagnostic = String::from_utf8_lossy(stderr).trim().to_string();
+    if diagnostic.is_empty() || summary.contains(&diagnostic) {
+        return summary;
+    }
+    let detail_reversed = diagnostic
+        .chars()
+        .rev()
+        .take(MAX_DETAIL_CHARS)
+        .collect::<String>();
+    let detail = detail_reversed.chars().rev().collect::<String>();
+    format!("{summary}\nWorker diagnostics (tail):\n{detail}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
