@@ -509,7 +509,11 @@ async function route(
       ),
     });
   }
-  if (["chats", "chat-turns", "inference-budgets"].includes(path[0] ?? ""))
+  if (
+    ["chats", "chat-turns", "inference-budgets", "agent-sessions"].includes(
+      path[0] ?? "",
+    )
+  )
     return handleChatApi(runtime, request, actor);
   if (path[0] === "ai-providers")
     return handleAiProviderApi(runtime, request, actor);

@@ -109,6 +109,15 @@ export interface CloudChat {
   updatedAt: string;
   context: ChatContextEntity[];
 }
+export interface AgentSession extends CloudChat {
+  state: ChatState;
+  startedAt: string;
+}
+export interface AgentSessions {
+  running: AgentSession[];
+  recent: AgentSession[];
+}
+export const recentAgentSessions = 8;
 export interface AgentStep {
   id: string;
   tool: string;

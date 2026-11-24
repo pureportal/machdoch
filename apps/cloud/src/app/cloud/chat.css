@@ -1,19 +1,60 @@
-.cloud-agent-toggle {
+.cloud-statusbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  height: 34px;
+  padding: 0 8px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 10px 10px;
+  background: var(--background);
+}
+.cloud-agent-toggle,
+.cloud-session-tab,
+.cloud-session-history {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
+  height: 24px;
+  padding: 0 8px;
   border-radius: 6px;
-  color: var(--foreground);
+  color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 500;
 }
+.cloud-session-tab {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 240px;
+  border: 1px solid var(--border);
+  color: var(--foreground);
+}
+.cloud-session-tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-session-tab svg {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+.cloud-session-history {
+  padding: 0 6px;
+}
+.cloud-session-history:disabled {
+  opacity: 0.5;
+}
 .cloud-agent-toggle:hover,
-.cloud-agent-toggle[aria-expanded="true"] {
+.cloud-agent-toggle[aria-expanded="true"],
+.cloud-session-tab:hover,
+.cloud-session-tab[aria-pressed="true"],
+.cloud-session-history:not(:disabled):hover {
   background: var(--cloud-hover);
+  color: var(--foreground);
 }
 .cloud-agent-toggle svg {
   color: var(--primary);
@@ -26,7 +67,7 @@
   display: flex;
   flex-direction: column;
   width: min(440px, calc(100vw - 36px));
-  height: min(680px, calc(100dvh - 72px));
+  height: min(680px, calc(100dvh - 104px));
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--card);
@@ -560,16 +601,11 @@
     top: 64px;
     right: 8px;
     width: calc(100vw - 16px);
-    height: calc(100dvh - 72px - env(safe-area-inset-bottom));
+    height: calc(100dvh - 106px - env(safe-area-inset-bottom));
   }
-  .cloud-agent-toggle {
-    width: 36px;
-    height: 36px;
-    justify-content: center;
-    padding: 0;
-  }
-  .cloud-agent-toggle span {
-    display: none;
+  .cloud-statusbar {
+    border-radius: 0;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 .cloud-agent-action dl > div {

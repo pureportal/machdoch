@@ -160,8 +160,11 @@ body:has(.cloud-shell[data-cloud-tint]) .cloud-sidebar {
   font-weight: 500;
 }
 .cloud-workspace {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
+  min-height: calc(100dvh - 12px);
   margin: 6px 6px 6px 0;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -248,6 +251,7 @@ body:has(.cloud-shell[data-cloud-tint]) .cloud-sidebar {
   font-size: 10px;
 }
 .cloud-content {
+  flex: 1;
   --cloud-content-block-start: 20px;
   --cloud-content-inline: clamp(16px, 2.2vw, 32px);
   --cloud-content-block-end: 64px;

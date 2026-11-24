@@ -3,14 +3,7 @@
 import { holderCan } from "@/lib/cloud-permissions";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import {
-  History,
-  Maximize2,
-  Minus,
-  Sparkles,
-  SquarePen,
-  X,
-} from "lucide-react";
+import { History, Maximize2, Minus, SquarePen, X } from "lucide-react";
 import type { CloudChat } from "@/lib/cloud-chat-contract";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import { cloudRequest } from "../api-client";
@@ -128,25 +121,5 @@ export function AgentPanel({ workspace }: { workspace: CloudWorkspace }) {
         onCreated={(id, title) => shell.selectChat(id, title)}
       />
     </section>
-  );
-}
-
-export function AgentToggle() {
-  const shell = useAgentShell();
-  const pathname = usePathname();
-  if (pathname === "/cloud/chat" || pathname.startsWith("/cloud/chat/"))
-    return null;
-  return (
-    <button
-      type="button"
-      className="cloud-agent-toggle"
-      aria-label="Agent"
-      aria-expanded={shell.open}
-      aria-keyshortcuts="Control+j Meta+j"
-      onClick={() => (shell.open ? shell.minimizePanel() : shell.openPanel())}
-    >
-      <Sparkles size={14} aria-hidden="true" />
-      <span>Agent</span>
-    </button>
   );
 }

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import type {
   AgentAction,
+  AgentSession,
+  AgentSessions,
   ChatContextReference,
   ChatDetail,
   ChatMessage,
@@ -10,6 +12,10 @@ import type {
   CloudChat,
   CloudChatTurn,
   ProviderBudget,
+} from "../../../lib/cloud-chat-contract";
+import {
+  activeChatStates,
+  recentAgentSessions,
 } from "../../../lib/cloud-chat-contract";
 import {
   checkRevision,
@@ -28,9 +34,11 @@ import {
   addChatContext,
   chatColumns,
   chatDeadlineSeconds,
+  conversationChats,
   maximumChatInputBytes,
   readChat,
   readTurn,
+  timestamp,
   turnColumns,
 } from "./chat-records";
 import { lockInference, reapInference } from "./inference-records";
@@ -502,11 +510,40 @@ export class CloudChatStore {
       return (
         await sql.query<CloudChat & Record<string, unknown>>(
           `SELECT ${chatColumns} FROM cloud_chats ch
-        WHERE ch.organization_id=$1 AND ch.user_id=$2 AND ch.archived_at IS NULL AND ch.automation_id IS NULL AND ch.release_id IS NULL AND ch.pulse_job_id IS NULL AND ch.review_guide_id IS NULL AND ($3::uuid IS NULL OR (ch.updated_at,ch.id)<(SELECT updated_at,id FROM cloud_chats WHERE organization_id=$1 AND user_id=$2 AND id=$3))
+        WHERE ${conversationChats} AND ($3::uuid IS NULL OR (ch.updated_at,ch.id)<(SELECT updated_at,id FROM cloud_chats WHERE organization_id=$1 AND user_id=$2 AND id=$3))
         ORDER BY ch.updated_at DESC,ch.id DESC LIMIT 50`,
           [actor.organizationId, actor.userId, beforeId ?? null],
         )
       ).rows;
+    });
+  }
+
+  sessions(actor: CloudActor): Promise<AgentSessions> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor);
+      await lockInference(sql, actor.organizationId);
+      await reapInference(sql, actor.organizationId);
+      const read = async (running: boolean, limit: number | null) =>
+        (
+          await sql.query<AgentSession & Record<string, unknown>>(
+            `SELECT ${chatColumns},t.state,${timestamp("t.created_at")} AS "startedAt"
+            FROM cloud_chats ch
+            JOIN LATERAL (SELECT state,created_at FROM cloud_chat_turns WHERE organization_id=ch.organization_id AND chat_id=ch.id ORDER BY sequence DESC LIMIT 1) t ON true
+            WHERE ${conversationChats} AND (t.state=ANY($3::text[]))=$4
+            ORDER BY ch.updated_at DESC,ch.id DESC LIMIT $5`,
+            [
+              actor.organizationId,
+              actor.userId,
+              [...activeChatStates],
+              running,
+              limit,
+            ],
+          )
+        ).rows;
+      return {
+        running: await read(true, null),
+        recent: await read(false, recentAgentSessions),
+      };
     });
   }
 

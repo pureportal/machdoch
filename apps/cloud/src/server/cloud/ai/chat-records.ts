@@ -9,10 +9,12 @@ import { CloudError, requireMembership } from "../access";
 import type { CloudSql } from "../database";
 import { chatContextColumn, chatContextSource } from "./chat-context-sources";
 
-const timestamp = (column: string) =>
+export const timestamp = (column: string) =>
   `to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 
 export const chatColumns = `ch.id,ch.title,ch.revision,${timestamp("ch.updated_at")} AS "updatedAt",${chatContextColumn} AS context`;
+export const conversationChats =
+  "ch.organization_id=$1 AND ch.user_id=$2 AND ch.archived_at IS NULL AND ch.automation_id IS NULL AND ch.release_id IS NULL AND ch.pulse_job_id IS NULL AND ch.review_guide_id IS NULL";
 export const chatDeadlineSeconds = 300;
 export const maximumChatInputBytes = 256 * 1024;
 export const turnColumns = `id,sequence,provider_id AS "providerId",model,prompt,answer,state,revision,error_code AS "errorCode",request_id AS "requestId",

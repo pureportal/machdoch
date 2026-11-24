@@ -49,7 +49,8 @@ import { Sidebar } from "./sidebar";
 import { ToastProvider } from "./toast";
 import { TeamKeysProvider } from "./cloud-markdown";
 import { AgentShellProvider } from "./agent/agent-shell";
-import { AgentPanel, AgentToggle } from "./agent/agent-panel";
+import { AgentPanel } from "./agent/agent-panel";
+import { AgentStatusBar } from "./agent/agent-status-bar";
 import { favoritesChangedEvent, triageChangedEvent } from "./events";
 
 const unreadPollMs = 30_000;
@@ -342,7 +343,6 @@ export function CloudShell({
                   views={views}
                   canCreate={writable && workspace.teams.length > 0}
                 />
-                {holderCan(workspace.actor, "ai.chat") && <AgentToggle />}
                 {writable && workspace.teams.length > 0 && (
                   <Link
                     className="cloud-mobile-create"
@@ -359,6 +359,7 @@ export function CloudShell({
                 )}
                 {children}
               </main>
+              {holderCan(workspace.actor, "ai.chat") && <AgentStatusBar />}
             </div>
             {holderCan(workspace.actor, "ai.chat") && (
               <AgentPanel workspace={workspace} />

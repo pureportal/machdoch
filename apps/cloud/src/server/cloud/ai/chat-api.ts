@@ -39,6 +39,8 @@ export async function handleChatApi(
             .parse(url.searchParams.get("beforeSequence") ?? undefined),
         ),
       );
+    if (path[0] === "agent-sessions" && path.length === 1)
+      return Response.json(await runtime.chat.store.sessions(actor));
     if (path[0] === "inference-budgets" && path.length === 2)
       return Response.json(
         await runtime.chat.store.budget(actor, cloudId.parse(path[1])),
