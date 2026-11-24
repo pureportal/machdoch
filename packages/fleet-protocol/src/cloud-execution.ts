@@ -41,7 +41,10 @@ export const repositoryDirectorySchema = z
     (value) =>
       !value.startsWith("/") &&
       !/^[a-z]:/iu.test(value) &&
-      !/[\\\u0000-\u001f]/u.test(value) &&
+      !Array.from(value).some(
+        (character) =>
+          character === "\\" || (character.codePointAt(0) ?? 0) < 0x20,
+      ) &&
       value
         .split("/")
         .every((part) => part !== "" && part !== "." && part !== ".."),

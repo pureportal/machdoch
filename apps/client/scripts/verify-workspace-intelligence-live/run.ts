@@ -258,7 +258,7 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   fleet = await startVerificationFleet(root);
   const authentication = await page.request.post(
-    `${fleet.origin}/api/auth/login`,
+    `${fleet.origin}/api/v1/auth/login`,
     { headers: { Origin: fleet.origin }, data: fleet.owner },
   );
   assert.equal(authentication.status(), 200);

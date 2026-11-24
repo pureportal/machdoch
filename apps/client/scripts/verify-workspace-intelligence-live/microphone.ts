@@ -28,19 +28,17 @@ try {
     });
     const track = stream.getAudioTracks()[0];
     if (!track) throw new Error("No microphone track was returned.");
-    try {
-      const settings = track.getSettings();
-      return {
-        state: track.readyState,
-        enabled: track.enabled,
-        sampleRate: settings.sampleRate,
-        channelCount: settings.channelCount,
-      };
-    } finally {
-      stream.getTracks().forEach((current) => current.stop());
-      if (track.readyState !== "ended")
-        throw new Error("Microphone track did not stop.");
-    }
+    const settings = track.getSettings();
+    const capture = {
+      state: track.readyState,
+      enabled: track.enabled,
+      sampleRate: settings.sampleRate,
+      channelCount: settings.channelCount,
+    };
+    stream.getTracks().forEach((current) => current.stop());
+    if (track.readyState !== "ended")
+      throw new Error("Microphone track did not stop.");
+    return capture;
   });
   assert.equal((report.capture as { state: string }).state, "live");
   report.passed = true;

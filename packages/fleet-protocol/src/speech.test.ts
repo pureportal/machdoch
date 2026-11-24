@@ -3,7 +3,7 @@ import test from "node:test";
 import {speechRequestSchema} from "./speech.ts";
 import {createRemoteSpeechRuntime} from "../../speech/src/remote.ts";
 
-test("current speech resources, voice changes and measurements pass the actual Fleet invocation boundary",async()=>{
+void test("current speech resources, voice changes and measurements pass the actual Fleet invocation boundary",async()=>{
   const clientId="12345678-1234-4123-8123-123456789abc";const invocations:Array<{operation:string;input:Record<string,unknown>}>=[];
   const runtime=createRemoteSpeechRuntime(async original=>{
     const request=speechRequestSchema.parse(original);if(request.kind==="invoke")invocations.push(request.args.request);

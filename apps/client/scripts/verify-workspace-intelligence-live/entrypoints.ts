@@ -40,10 +40,13 @@ try {
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(15000);
   page.on("pageerror", (error) => errors.push(error.message));
-  const response = await page.request.post(`${fleet.origin}/api/auth/login`, {
-    headers: { Origin: fleet.origin },
-    data: fleet.owner,
-  });
+  const response = await page.request.post(
+    `${fleet.origin}/api/v1/auth/login`,
+    {
+      headers: { Origin: fleet.origin },
+      data: fleet.owner,
+    },
+  );
   assert.equal(response.status(), 200);
   await page.route(`${fleet.origin}/media-studio/**`, async (route) => {
     const path = resolve(

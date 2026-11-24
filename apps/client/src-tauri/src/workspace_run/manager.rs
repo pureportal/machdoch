@@ -2586,13 +2586,22 @@ mod tests {
         let _process_test = serialize_child_process_test();
         let workspace = temporary_workspace("completed-output");
         let manager = Arc::new(RunManager::default());
-        let events = Arc::new(Mutex::new(Vec::<RunWorkspaceSnapshot>::new()));
-        let event_output = events.clone();
+        let published_lines = Arc::new(Mutex::new(Vec::<String>::new()));
+        let snapshot_lines = published_lines.clone();
         manager.set_event_sink(Arc::new(move |snapshot| {
-            event_output
+            snapshot_lines.lock().expect("events should lock").extend(
+                snapshot
+                    .configurations
+                    .iter()
+                    .flat_map(|status| status.logs.iter().map(|entry| entry.line.clone())),
+            );
+        }));
+        let batch_lines = published_lines.clone();
+        manager.set_log_event_sink(Arc::new(move |batch| {
+            batch_lines
                 .lock()
                 .expect("events should lock")
-                .push(snapshot);
+                .extend(batch.entries.iter().map(|update| update.entry.line.clone()));
         }));
         let task = task_configuration(
             "command",
@@ -2625,16 +2634,18 @@ mod tests {
         assert!(completed.logs.iter().any(|entry| {
             matches!(entry.stream, RunLogStream::Stderr) && entry.line == "stderr-detail"
         }));
-        assert!(events
-            .lock()
-            .expect("events should lock")
-            .iter()
-            .any(|snapshot| snapshot.configurations.iter().any(|status| {
-                status
-                    .logs
-                    .iter()
-                    .any(|entry| entry.line == "stderr-detail")
-            })));
+        let published = || {
+            published_lines
+                .lock()
+                .expect("events should lock")
+                .iter()
+                .any(|line| line == "stderr-detail")
+        };
+        let event_deadline = Instant::now() + Duration::from_secs(2);
+        while !published() && Instant::now() < event_deadline {
+            thread::sleep(Duration::from_millis(25));
+        }
+        assert!(published());
         manager.shutdown();
         let _ = fs::remove_dir_all(workspace);
     }
@@ -3898,11 +3909,15 @@ mod tests {
             )
             .expect("task should start");
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !marker.exists() && Instant::now() < deadline {
+        let recorded = loop {
+            let recorded = fs::read_to_string(&marker).unwrap_or_default();
+            if !recorded.is_empty() || Instant::now() >= deadline {
+                break recorded;
+            }
             thread::sleep(Duration::from_millis(50));
-        }
+        };
         assert_eq!(
-            PathBuf::from(fs::read_to_string(&marker).expect("cwd marker should be readable"))
+            PathBuf::from(recorded)
                 .canonicalize()
                 .expect("recorded cwd should canonicalize"),
             application_directory
