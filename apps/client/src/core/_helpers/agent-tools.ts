@@ -21,6 +21,7 @@ import { createPackageToolDefinitions } from "./package-tool-definitions.js";
 import { createMachdochStateToolDefinitions } from "./machdoch-state-tool-definitions.js";
 import { createMachdochSessionToolDefinitions } from "./machdoch-session-tool-definitions.js";
 import { createAppControlToolDefinitions } from "./app-control-tool-definitions.js";
+import { createMediaStudioToolDefinitions } from "./media-studio-tool-definitions.js";
 import { createRunToolDefinitions } from "./run-tool-definitions.js";
 import { createSchedulerToolDefinitions } from "./scheduler-tool-definitions.js";
 import { createUtilityToolDefinitions } from "./utility-tool-definitions.js";
@@ -107,6 +108,7 @@ export const createToolDefinitions = (
     ...createMachdochStateToolDefinitions(),
     ...createMachdochSessionToolDefinitions(),
     ...createAppControlToolDefinitions(memory),
+    ...createMediaStudioToolDefinitions(),
     createWorkspaceAgentPresenceToolDefinition(),
     ...createUtilityToolDefinitions(),
     ...createMacroRecorderToolDefinitions(),

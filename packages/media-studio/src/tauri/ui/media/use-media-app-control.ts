@@ -1,5 +1,6 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import type {
+  MediaAssetRecord,
   MediaGenerationTarget,
   MediaModelCatalogSnapshot,
   MediaModelDescriptor,
@@ -13,7 +14,10 @@ import {
   type CivitaiModel,
   type CivitaiOptions,
 } from "../../../core/media/civitai.js";
-import { listSelectableMediaModels } from "../../../core/media/model-library.js";
+import {
+  listSelectableMediaModels,
+  mediaModelSupportsGenerationTarget,
+} from "../../../core/media/model-library.js";
 import type { AppControlAction } from "../app-control/app-control-registry";
 import {
   APP_CONTROL_LEVEL,
@@ -38,6 +42,11 @@ import {
 } from "./media-app-control-model";
 import { mediaImportQueue } from "./media-import-queue";
 import type { MediaGenerationQueueJob } from "./media-generation-queue";
+import { createMediaGenerationControlActions } from "./media-generation-app-control";
+import {
+  describeMediaTargetOptions,
+  findMediaTargetControl,
+} from "./media-target-controls";
 
 const SECTION_LABELS: Readonly<Record<MediaStudioSection, string>> = {
   generate: "Basic",
@@ -72,7 +81,14 @@ export interface MediaAppControlOptions {
   catalog: MediaModelCatalogSnapshot;
   runnableImageModelIds: readonly string[] | null;
   generationJobs: readonly MediaGenerationQueueJob[];
+  assets: readonly MediaAssetRecord[];
+  generationBlockedReason: string | null;
+  runtimeError: string | null;
+  runtimeReady: boolean;
+  startRuntimeSetup: () => Promise<void>;
   refreshCatalog: () => Promise<MediaModelCatalogSnapshot | null>;
+  importAsset: (path: string) => Promise<MediaAssetRecord>;
+  onGenerate: () => void;
   onSelectSection: (section: MediaStudioSection) => void;
   onSelectTarget: (target: MediaGenerationTarget) => void;
   onUseModel: (model: MediaModelDescriptor) => void;
@@ -85,13 +101,38 @@ export function useMediaAppControl({
   catalog,
   runnableImageModelIds,
   generationJobs,
+  assets,
+  generationBlockedReason,
+  runtimeError,
+  runtimeReady,
+  startRuntimeSetup,
   refreshCatalog,
+  importAsset,
+  onGenerate,
   onSelectSection,
   onSelectTarget,
   onUseModel,
 }: MediaAppControlOptions): void {
   const latest = useRef({ state, catalog });
   latest.current = { state, catalog };
+  const live = useRef({
+    generationJobs,
+    assets,
+    generationBlockedReason,
+    runtimeError,
+    runtimeReady,
+    startRuntimeSetup,
+    onGenerate,
+  });
+  live.current = {
+    generationJobs,
+    assets,
+    generationBlockedReason,
+    runtimeError,
+    runtimeReady,
+    startRuntimeSetup,
+    onGenerate,
+  };
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -190,7 +231,7 @@ export function useMediaAppControl({
     {
       id: "media.set_target",
       description:
-        "Choose what Basic creates: image, video, svg, audio, or splat (3D).",
+        "Choose what Basic creates: image, video, svg, audio, splat (3D Gaussian splat from one image with Idol), or mesh (3D GLB mesh from up to four views with Hunyuan3D-2mv).",
       effect: "write",
       input: {
         type: "object",
@@ -223,7 +264,7 @@ export function useMediaAppControl({
     {
       id: "media.set_image_options",
       description:
-        "Change Basic image output: aspect ratio, number of images, and seed (-1 for random).",
+        "Change Basic image output: aspect ratio, number of images, seed (-1 for random), quality, sampling steps and guidance (-1 for the model default).",
       effect: "write",
       input: {
         type: "object",
@@ -235,6 +276,9 @@ export function useMediaAppControl({
             minimum: -1,
             maximum: Number.MAX_SAFE_INTEGER,
           },
+          quality: { type: "string", enum: ["fast", "balanced", "quality"] },
+          steps: { type: "integer", minimum: -1, maximum: 100 },
+          guidance: { type: "number", minimum: -1, maximum: 20 },
         },
       },
       run: (input) =>
@@ -255,6 +299,31 @@ export function useMediaAppControl({
             ...(typeof input.seed === "number"
               ? { seed: input.seed < 0 ? null : input.seed }
               : {}),
+            ...(typeof input.quality === "string"
+              ? {
+                  modelPolicy: input.quality as typeof current.recipe.modelPolicy,
+                }
+              : {}),
+            ...(typeof input.steps === "number" ||
+            typeof input.guidance === "number"
+              ? {
+                  sampling: {
+                    ...current.recipe.sampling,
+                    ...(typeof input.steps === "number"
+                      ? {
+                          numInferenceSteps:
+                            input.steps < 0 ? null : input.steps,
+                        }
+                      : {}),
+                    ...(typeof input.guidance === "number"
+                      ? {
+                          guidanceScale:
+                            input.guidance < 0 ? null : input.guidance,
+                        }
+                      : {}),
+                  },
+                }
+              : {}),
           };
           return {
             state: { ...current, recipe },
@@ -262,22 +331,33 @@ export function useMediaAppControl({
               aspectRatio: recipe.aspectRatio,
               outputCount: recipe.outputCount,
               seed: recipe.seed ?? null,
+              quality: recipe.modelPolicy,
+              steps: recipe.sampling?.numInferenceSteps ?? null,
+              guidance: recipe.sampling?.guidanceScale ?? null,
             },
           };
         }),
     },
     {
       id: "media.list_models",
-      description: "List ready models for the current media type.",
+      description:
+        "List models for the current media type. Models that are not installed can be installed with media.install_model.",
       effect: "read",
       input: { type: "object", properties: {} },
       run: () => {
         const { state: current, catalog: currentCatalog } = latest.current;
-        return listSelectableMediaModels(currentCatalog.models, {
+        const ready = listSelectableMediaModels(currentCatalog.models, {
           target: current.target,
           allowedModelIds:
             current.target === "image" ? runnableImageModelIds : null,
-        }).map(describeMediaModel);
+        });
+        const installable = currentCatalog.models.filter(
+          (model) =>
+            !ready.includes(model) &&
+            mediaModelSupportsGenerationTarget(model, current.target) &&
+            model.management?.acquisition === "managed-install",
+        );
+        return [...ready, ...installable].map(describeMediaModel);
       },
     },
     {
@@ -617,7 +697,23 @@ export function useMediaAppControl({
         }
       },
     },
+    ...createMediaGenerationControlActions({
+      readState: () => latest.current.state,
+      readCatalog: () => latest.current.catalog,
+      readJobs: () => live.current.generationJobs,
+      readAssets: () => live.current.assets,
+      readBlockedReason: () => live.current.generationBlockedReason,
+      readRuntimeError: () => live.current.runtimeError,
+      readRuntimeReady: () => live.current.runtimeReady,
+      startRuntimeSetup: () => live.current.startRuntimeSetup(),
+      generate: () => live.current.onGenerate(),
+      apply: (transform) =>
+        apply((current) => ({ state: transform(current), result: null })),
+      importAsset,
+      refreshCatalog,
+    }),
   ];
+  const targetControl = findMediaTargetControl(state.target);
 
   useAppControlView(
     "media",
@@ -651,6 +747,17 @@ export function useMediaAppControl({
                     },
                   }
                 : {}),
+              ...(targetControl
+                ? {
+                    images: targetControl.readImages(current),
+                    options: Object.fromEntries(
+                      describeMediaTargetOptions(targetControl, current).map(
+                        (option) => [option.id, option.value],
+                      ),
+                    ),
+                  }
+                : {}),
+              generationBlockedReason,
               activeGenerations: generationJobs.filter((job) =>
                 ["queued", "running", "canceling"].includes(job.status),
               ).length,

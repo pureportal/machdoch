@@ -12,7 +12,7 @@ import {
 const SNAPSHOT_TIMEOUT_MS = 15_000;
 const ACTION_TIMEOUT_MS = 17 * 60_000;
 
-const createResult = (
+export const createAppControlToolResult = (
   name: string,
   result: unknown,
   trace: string,
@@ -22,7 +22,7 @@ const createResult = (
   traceLines: [trace],
 });
 
-const errorMessage = (error: unknown): string =>
+export const appControlErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 export const createAppControlToolDefinitions = (
@@ -56,7 +56,7 @@ export const createAppControlToolDefinitions = (
               timeoutMs: SNAPSHOT_TIMEOUT_MS,
             },
           );
-          return createResult(
+          return createAppControlToolResult(
             "get_machdoch_view",
             result,
             "get_machdoch_view -> read",
@@ -65,7 +65,7 @@ export const createAppControlToolDefinitions = (
           return createToolErrorResult(
             "",
             "get_machdoch_view",
-            errorMessage(error),
+            appControlErrorMessage(error),
           );
         }
       },
@@ -119,7 +119,7 @@ export const createAppControlToolDefinitions = (
               timeoutMs: ACTION_TIMEOUT_MS,
             },
           );
-          return createResult(
+          return createAppControlToolResult(
             "run_machdoch_action",
             result,
             `run_machdoch_action -> ${action}`,
@@ -128,7 +128,7 @@ export const createAppControlToolDefinitions = (
           return createToolErrorResult(
             "",
             "run_machdoch_action",
-            errorMessage(error),
+            appControlErrorMessage(error),
           );
         }
       },
