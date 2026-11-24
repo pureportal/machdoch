@@ -44,6 +44,7 @@ import {
   requireTeam,
   teamVisibility,
 } from "./access";
+import { readProjectStatuses } from "./project-statuses";
 import { requireTeamParent } from "./team-hierarchy";
 
 export const issueSummaryPageSize = 200;
@@ -236,6 +237,7 @@ export class CloudPlanning {
         members,
         teams,
         projects,
+        projectStatuses: await readProjectStatuses(sql, actor.organizationId),
         cycles,
         workflows: await readTeamWorkflows(sql, actor.organizationId, teamIds),
         gitProviders: accessCan(access, "git.view")

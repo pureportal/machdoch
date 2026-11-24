@@ -53,7 +53,7 @@ import { PersonAvatar } from "./person-avatar";
 import { ProjectEditor } from "./project-editor";
 import { CloudMarkdown } from "./cloud-markdown";
 import { formatProjectDate, ProjectOverview } from "./project-overview";
-import { projectStatusLabels, projectStatusStates } from "@/lib/project-status";
+import { projectStatusStates } from "@/lib/project-status";
 import { TaskBadge } from "./task-state";
 import { ProjectAi } from "./project-ai";
 import { useToast } from "./toast";
@@ -252,6 +252,7 @@ export function ProjectDetail({
   runs,
   clients,
   updates,
+  drafts,
   favorite,
   workspace,
 }: {
@@ -264,6 +265,7 @@ export function ProjectDetail({
   runs: CloudRun[];
   clients: ProjectClient[];
   updates: CloudProjectUpdate[];
+  drafts: CloudProjectUpdate[];
   favorite: boolean;
   workspace: CloudWorkspace;
 }) {
@@ -334,7 +336,7 @@ export function ProjectDetail({
               className="cloud-state"
               data-state={projectStatusStates[project.status]}
             >
-              {projectStatusLabels[project.status]}
+              {project.statusName}
             </span>
             <ProjectHealth update={updates[0]} />
           </div>
@@ -350,7 +352,11 @@ export function ProjectDetail({
           </Button>
           {writable && (
             <>
-              <ProjectEditor id={project.id} members={workspace.members} />
+              <ProjectEditor
+                id={project.id}
+                members={workspace.members}
+                statuses={workspace.projectStatuses}
+              />
               <CreateIssue
                 workspace={workspace}
                 teamId={project.teamId}
@@ -377,6 +383,7 @@ export function ProjectDetail({
           <ProjectUpdates
             project={project}
             updates={updates}
+            drafts={drafts}
             writable={writable}
             agent={holderCan(workspace.actor, "ai.chat")}
           />

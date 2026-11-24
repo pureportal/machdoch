@@ -341,7 +341,8 @@ it("lets Agent write Pulse updates with a TL;DR from an automation", async () =>
     "Lead with the TL;DR. Mention blockers.",
   );
   await runtime.pulse.writer.tick();
-  const [update] = await runtime.projectUpdates.list(owner, project.id);
+  expect(await runtime.projectUpdates.list(owner, project.id)).toEqual([]);
+  const [update] = await runtime.projectUpdates.drafts(owner, project.id);
   expect(update).toMatchObject({
     health: "at_risk",
     summary: "Payments slip a week because the provider API changed.",
@@ -349,7 +350,7 @@ it("lets Agent write Pulse updates with a TL;DR from an automation", async () =>
   });
   expect((await runtime.pulse.writer.jobs(owner))[0]).toMatchObject({
     state: "succeeded",
-    detail: "Posted 1 update",
+    detail: "Drafted 1 update",
   });
   expect(await runtime.chat.store.list(owner)).toEqual([]);
 });

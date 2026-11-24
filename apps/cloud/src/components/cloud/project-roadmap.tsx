@@ -6,7 +6,7 @@ import type {
   CloudWorkspace,
 } from "@/lib/cloud-contract";
 import type { CloudMilestone } from "@/lib/cloud-milestone-contract";
-import { projectStatusLabels, projectStatusStates } from "@/lib/project-status";
+import { projectStatusStates } from "@/lib/project-status";
 
 const dayMs = 86_400_000;
 const monthsVisible = 9;
@@ -156,7 +156,7 @@ export function ProjectRoadmap({
                     <span
                       className="cloud-state"
                       data-state={projectStatusStates[project.status]}
-                      title={projectStatusLabels[project.status]}
+                      title={project.statusName}
                     />
                     <span>{project.name}</span>
                   </Link>

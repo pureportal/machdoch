@@ -68,6 +68,8 @@ async function runServer(
   cloud.autopilot.loop.start();
   cloud.releases.loop.start();
   cloud.pulse.loop.start();
+  cloud.slas.loop.start();
+  cloud.projectUpdateReminders.start();
   cloud.activity.exportLoop.start();
   cloud.git.syncLoop.start();
   const clientMonitor = new CloudClientMonitor(cloud.database, getRuntime());

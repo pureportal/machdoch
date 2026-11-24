@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { projectUpdateCadences } from "./cloud-contract";
 
 export const settingScopes = ["user", "organization", "team"] as const;
 export type SettingScope = (typeof settingScopes)[number];
@@ -13,6 +14,7 @@ export const userSettingSchemas = {
 
 export const organizationSettingSchemas = {
   "agent.instructions": instructions,
+  "projects.updateCadence": z.enum(projectUpdateCadences),
 } as const;
 
 export const teamSettingSchemas = {

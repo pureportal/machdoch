@@ -13,7 +13,6 @@ import {
   cloudRequest,
   createCommandSender,
 } from "./api-client";
-import { projectStatusLabels } from "@/lib/project-status";
 import { ProjectPlanningFields, type ProjectPlanning } from "./project-fields";
 
 type ProjectDraft = Pick<CloudProject, "name" | "description"> &
@@ -22,6 +21,8 @@ const draftFields = [
   "name",
   "description",
   "status",
+  "statusId",
+  "updateCadence",
   "leadId",
   "startsOn",
   "targetOn",
@@ -32,6 +33,8 @@ function draftOf(project: CloudProject): ProjectDraft {
     name: project.name,
     description: project.description,
     status: project.status,
+    statusId: project.statusId,
+    updateCadence: project.updateCadence,
     leadId: project.leadId,
     startsOn: project.startsOn,
     targetOn: project.targetOn,
@@ -41,9 +44,11 @@ function draftOf(project: CloudProject): ProjectDraft {
 export function ProjectEditor({
   id,
   members,
+  statuses,
 }: {
   id: string;
   members: CloudWorkspace["members"];
+  statuses: CloudWorkspace["projectStatuses"];
 }) {
   const router = useRouter();
   const sender = useRef(createCommandSender());
@@ -157,6 +162,7 @@ export function ProjectEditor({
             <ProjectPlanningFields
               idPrefix={`project-${id}`}
               members={members}
+              statuses={statuses}
               value={draft}
               onChange={(planning) => setDraft({ ...draft, ...planning })}
             />
@@ -170,7 +176,7 @@ export function ProjectEditor({
             <h3>Latest saved version</h3>
             <p className="break-words font-medium">{conflict.name}</p>
             <p className="text-sm text-muted-foreground">
-              {projectStatusLabels[conflict.status]}
+              {conflict.statusName}
               {conflict.targetOn ? ` · Target ${conflict.targetOn}` : ""}
             </p>
             {conflict.description && (

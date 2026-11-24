@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { ProjectDetail } from "@/components/cloud/project-detail";
 import { cloudId } from "@/lib/cloud-contract";
+import { holderCan } from "@/lib/cloud-permissions";
 import { withoutIssueFilterFields } from "@/lib/issue-filter-editing";
 import { parseIssueFilterTree } from "@/lib/issue-filter-model";
 import { isCloudError } from "@/server/cloud/access";
@@ -35,6 +36,7 @@ export default async function ProjectPage({
       runs,
       clients,
       updates,
+      drafts,
       favorites,
       labels,
     ] = await Promise.all([
@@ -53,6 +55,9 @@ export default async function ProjectPage({
       runtime.execution.runs.listForProject(actor, id.data),
       runtime.execution.workers.listForProject(actor, id.data),
       runtime.projectUpdates.list(actor, id.data),
+      holderCan(workspace.actor, "planning.edit")
+        ? runtime.projectUpdates.drafts(actor, id.data)
+        : [],
       runtime.favorites.list(actor),
       runtime.labels.listVisible(actor),
     ]);
@@ -67,6 +72,7 @@ export default async function ProjectPage({
         runs={runs}
         clients={clients}
         updates={updates}
+        drafts={drafts}
         favorite={favorites.some(
           (entry) => entry.kind === "project" && entry.id === id.data,
         )}

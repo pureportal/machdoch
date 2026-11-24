@@ -2,34 +2,49 @@
 
 import {
   projectStatuses,
+  projectUpdateCadences,
   type CloudProject,
   type CloudWorkspace,
+  type ProjectUpdateCadence,
 } from "@/lib/cloud-contract";
-import { projectStatusLabels } from "@/lib/project-status";
+import {
+  projectStatusLabels,
+  projectUpdateCadenceLabels,
+} from "@/lib/project-status";
 import { Field } from "@/components/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
 export type ProjectPlanning = Pick<
   CloudProject,
-  "status" | "leadId" | "startsOn" | "targetOn"
->;
+  "status" | "statusId" | "leadId" | "startsOn" | "targetOn"
+> & { updateCadence?: ProjectUpdateCadence };
 
-export const initialProjectPlanning: ProjectPlanning = {
-  status: "planned",
-  leadId: null,
-  startsOn: null,
-  targetOn: null,
-};
+export function initialProjectPlanning(
+  statuses: CloudWorkspace["projectStatuses"],
+): ProjectPlanning {
+  const status =
+    statuses.find((candidate) => candidate.category === "planned") ??
+    statuses[0]!;
+  return {
+    status: status.category,
+    statusId: status.id,
+    leadId: null,
+    startsOn: null,
+    targetOn: null,
+  };
+}
 
 export function ProjectPlanningFields({
   idPrefix,
   members,
+  statuses,
   value,
   onChange,
 }: {
   idPrefix: string;
   members: CloudWorkspace["members"];
+  statuses: CloudWorkspace["projectStatuses"];
   value: ProjectPlanning;
   onChange: (value: ProjectPlanning) => void;
 }) {
@@ -39,18 +54,28 @@ export function ProjectPlanningFields({
         <Field label="Status" htmlFor={`${idPrefix}-status`}>
           <Select
             id={`${idPrefix}-status`}
-            value={value.status}
-            onChange={(event) =>
+            value={value.statusId}
+            onChange={(event) => {
+              const status = statuses.find(
+                (candidate) => candidate.id === event.target.value,
+              )!;
               onChange({
                 ...value,
-                status: event.target.value as CloudProject["status"],
-              })
-            }
+                statusId: status.id,
+                status: status.category,
+              });
+            }}
           >
-            {projectStatuses.map((status) => (
-              <option key={status} value={status}>
-                {projectStatusLabels[status]}
-              </option>
+            {projectStatuses.map((category) => (
+              <optgroup key={category} label={projectStatusLabels[category]}>
+                {statuses
+                  .filter((status) => status.category === category)
+                  .map((status) => (
+                    <option key={status.id} value={status.id}>
+                      {status.name}
+                    </option>
+                  ))}
+              </optgroup>
             ))}
           </Select>
         </Field>
@@ -94,6 +119,26 @@ export function ProjectPlanningFields({
           />
         </Field>
       </div>
+      {value.updateCadence && (
+        <Field label="Update cadence" htmlFor={`${idPrefix}-cadence`}>
+          <Select
+            id={`${idPrefix}-cadence`}
+            value={value.updateCadence}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                updateCadence: event.target.value as ProjectUpdateCadence,
+              })
+            }
+          >
+            {projectUpdateCadences.map((cadence) => (
+              <option key={cadence} value={cadence}>
+                {projectUpdateCadenceLabels[cadence]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
     </>
   );
 }

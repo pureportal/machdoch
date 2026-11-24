@@ -28,7 +28,7 @@ const initiativeColumns = `n.id,n.name,n.description,n.status,n.owner_id AS "own
   (SELECT count(*)::integer FROM cloud_initiative_projects l JOIN cloud_issues i ON i.organization_id=l.organization_id AND i.project_id=l.project_id
     WHERE l.organization_id=n.organization_id AND l.initiative_id=n.id AND l.project_id IN (${visibleProjects}) AND NOT i.archived AND i.state='complete') AS "completedIssues",
   (SELECT u.health FROM cloud_initiative_projects l
-    JOIN LATERAL (SELECT x.health FROM cloud_project_updates x WHERE x.organization_id=l.organization_id AND x.project_id=l.project_id ORDER BY x.created_at DESC,x.id DESC LIMIT 1) u ON true
+    JOIN LATERAL (SELECT x.health FROM cloud_project_updates x WHERE x.organization_id=l.organization_id AND x.project_id=l.project_id AND NOT x.draft ORDER BY x.created_at DESC,x.id DESC LIMIT 1) u ON true
     WHERE l.organization_id=n.organization_id AND l.initiative_id=n.id AND l.project_id IN (${visibleProjects})
     ORDER BY CASE u.health WHEN 'off_track' THEN 0 WHEN 'at_risk' THEN 1 ELSE 2 END LIMIT 1) AS health`;
 

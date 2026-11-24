@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CloudOrganization } from "./cloud-administration-contract";
+import type { CloudProjectStatus } from "./cloud-project-status-contract";
 import type { CloudTeamWorkflow } from "./cloud-workflow-contract";
 import type { PullRequestStage } from "./git-automation";
 import type { GitProvider } from "./git-providers";
@@ -83,6 +84,14 @@ export const projectStatuses = [
   "completed",
   "canceled",
 ] as const;
+export type ProjectStatusCategory = (typeof projectStatuses)[number];
+export const projectUpdateCadences = [
+  "none",
+  "weekly",
+  "biweekly",
+  "monthly",
+] as const;
+export type ProjectUpdateCadence = (typeof projectUpdateCadences)[number];
 const projectDatesValid = (value: {
   startsOn?: string | null;
   targetOn?: string | null;
@@ -97,6 +106,8 @@ export const projectInputSchema = z
     name,
     description: z.string().max(20_000).default(""),
     status: z.enum(projectStatuses).optional(),
+    statusId: cloudId.optional(),
+    updateCadence: z.enum(projectUpdateCadences).optional(),
     leadId: cloudId.nullable().optional(),
     startsOn: z.iso.date().nullable().optional(),
     targetOn: z.iso.date().nullable().optional(),
@@ -108,6 +119,8 @@ export const projectUpdateSchema = z
     name,
     description: z.string().max(20_000),
     status: z.enum(projectStatuses),
+    statusId: cloudId.optional(),
+    updateCadence: z.enum(projectUpdateCadences).optional(),
     leadId: cloudId.nullable(),
     startsOn: z.iso.date().nullable(),
     targetOn: z.iso.date().nullable(),
@@ -212,7 +225,10 @@ export interface CloudProject {
   teamId: string;
   name: string;
   description: string;
-  status: (typeof projectStatuses)[number];
+  status: ProjectStatusCategory;
+  statusId: string;
+  statusName: string;
+  updateCadence: ProjectUpdateCadence;
   leadId: string | null;
   startsOn: string | null;
   targetOn: string | null;
@@ -298,6 +314,7 @@ export interface CloudWorkspace {
   members: CloudMember[];
   teams: CloudTeam[];
   projects: CloudProject[];
+  projectStatuses: CloudProjectStatus[];
   cycles: CloudCycle[];
   workflows: CloudTeamWorkflow[];
   gitProviders: GitProvider[];

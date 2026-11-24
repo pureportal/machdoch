@@ -314,4 +314,6 @@ export function issueFilterSql(
   }
   return { where: clauses.join(" AND "), parameters };
 }
-export const projectColumns = `id,team_id AS "teamId",name,description,status,lead_id AS "leadId",to_char(starts_on,'YYYY-MM-DD') AS "startsOn",to_char(target_on,'YYYY-MM-DD') AS "targetOn",revision`;
+export const projectColumns = `id,team_id AS "teamId",name,description,status,status_id AS "statusId",
+  (SELECT s.name FROM cloud_project_statuses s WHERE s.organization_id=cloud_projects.organization_id AND s.id=cloud_projects.status_id) AS "statusName",
+  update_cadence AS "updateCadence",lead_id AS "leadId",to_char(starts_on,'YYYY-MM-DD') AS "startsOn",to_char(target_on,'YYYY-MM-DD') AS "targetOn",revision`;

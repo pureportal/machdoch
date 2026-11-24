@@ -144,8 +144,8 @@ async function projectSection(
       `SELECT p.name,p.description,p.status,u.name AS lead,to_char(p.starts_on,'YYYY-MM-DD') AS "startsOn",to_char(p.target_on,'YYYY-MM-DD') AS "targetOn",
         (SELECT count(*)::integer FROM cloud_issues i WHERE i.organization_id=p.organization_id AND i.project_id=p.id AND NOT i.archived AND i.state<>'canceled') AS total,
         (SELECT count(*)::integer FROM cloud_issues i WHERE i.organization_id=p.organization_id AND i.project_id=p.id AND NOT i.archived AND i.state='complete') AS completed,
-        (SELECT health FROM cloud_project_updates x WHERE x.organization_id=p.organization_id AND x.project_id=p.id ORDER BY x.created_at DESC,x.id DESC LIMIT 1) AS health,
-        (SELECT body FROM cloud_project_updates x WHERE x.organization_id=p.organization_id AND x.project_id=p.id ORDER BY x.created_at DESC,x.id DESC LIMIT 1) AS update
+        (SELECT health FROM cloud_project_updates x WHERE x.organization_id=p.organization_id AND x.project_id=p.id AND NOT x.draft ORDER BY x.created_at DESC,x.id DESC LIMIT 1) AS health,
+        (SELECT body FROM cloud_project_updates x WHERE x.organization_id=p.organization_id AND x.project_id=p.id AND NOT x.draft ORDER BY x.created_at DESC,x.id DESC LIMIT 1) AS update
       FROM cloud_projects p JOIN cloud_teams t ON t.organization_id=p.organization_id AND t.id=p.team_id
       JOIN cloud_memberships m ON m.organization_id=p.organization_id AND m.user_id=$2
       LEFT JOIN cloud_users u ON u.id=p.lead_id

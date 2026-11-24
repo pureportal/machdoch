@@ -1,4 +1,4 @@
-import type { CloudProject } from "./cloud-contract";
+import type { CloudProject, ProjectUpdateCadence } from "./cloud-contract";
 
 export const projectStatusLabels: Record<CloudProject["status"], string> = {
   backlog: "Backlog",
@@ -20,3 +20,11 @@ export const projectStatusStates: Record<
   completed: "complete",
   canceled: "canceled",
 };
+
+export const projectUpdateCadenceLabels: Record<ProjectUpdateCadence, string> =
+  {
+    none: "None",
+    weekly: "Weekly",
+    biweekly: "Every two weeks",
+    monthly: "Monthly",
+  };

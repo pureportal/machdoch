@@ -57,7 +57,9 @@ export function PlanningCreateDialog({
 }) {
   const sender = useRef(createCommandSender());
   const router = useRouter();
-  const [planning, setPlanning] = useState(initialProjectPlanning);
+  const [planning, setPlanning] = useState(() =>
+    initialProjectPlanning(workspace.projectStatuses),
+  );
   const [teamName, setTeamName] = useState("");
   const [key, setKey] = useState<string | null>(null);
   const [teamId, setTeamId] = useState(workspace.teams[0]?.id ?? "");
@@ -85,7 +87,7 @@ export function PlanningCreateDialog({
         onOpenChange(next);
         if (!next) {
           sender.current = createCommandSender();
-          setPlanning(initialProjectPlanning);
+          setPlanning(initialProjectPlanning(workspace.projectStatuses));
           setTeamName("");
           setKey(null);
           setStartsOn(null);
@@ -197,6 +199,7 @@ export function PlanningCreateDialog({
           <ProjectPlanningFields
             idPrefix="catalog-project"
             members={workspace.members}
+            statuses={workspace.projectStatuses}
             value={planning}
             onChange={setPlanning}
           />

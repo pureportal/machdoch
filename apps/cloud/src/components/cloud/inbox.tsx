@@ -32,6 +32,7 @@ const priorityKinds: InboxEntry["kind"][] = [
   "loop_input",
   "loop_approval",
   "sla_breached",
+  "project_update_due",
 ];
 const loopKinds: InboxEntry["kind"][] = [
   "loop_input",
@@ -53,10 +54,14 @@ function describe(entry: InboxEntry): string {
   if (entry.kind === "loop_approval") return `Approval needed: ${entry.detail}`;
   if (entry.kind === "loop_message") return entry.detail;
   if (entry.kind === "sla_breached") return "SLA breached";
+  if (entry.kind === "project_update_due") return "Project update due";
+  if (entry.kind === "project_update_drafted")
+    return "Project update drafted for review";
   return `AI task ${(entry.runState ?? "finished").replaceAll("_", " ")}${entry.detail ? `: ${entry.detail}` : ""}`;
 }
 
 function entryHref(entry: InboxEntry): string {
+  if (entry.projectId) return `/cloud/projects/${entry.projectId}`;
   if (loopKinds.includes(entry.kind) && entry.loopId)
     return `/cloud/loops/${entry.loopId}?run=${entry.automationRunId}`;
   return entry.kind === "task_finished" && entry.runId
@@ -86,7 +91,11 @@ function IssuePreview({ entry }: { entry: InboxEntry }) {
       <header>
         <span className="cloud-issue-key">
           {entry.issueIdentifier ??
-            (loopKinds.includes(entry.kind) ? "Loop" : "AI task")}
+            (entry.projectId
+              ? "Project"
+              : loopKinds.includes(entry.kind)
+                ? "Loop"
+                : "AI task")}
         </span>
         <Button asChild variant="ghost" size="sm">
           <Link href={entryHref(entry)} prefetch={false}>
@@ -95,7 +104,9 @@ function IssuePreview({ entry }: { entry: InboxEntry }) {
           </Link>
         </Button>
       </header>
-      <h2>{entry.issueTitle ?? entry.runTitle ?? entry.actor}</h2>
+      <h2>
+        {entry.issueTitle ?? entry.projectName ?? entry.runTitle ?? entry.actor}
+      </h2>
       <p className="cloud-inbox-preview-event">
         <PersonAvatar name={entry.actor ?? "?"} className="cloud-avatar-tiny" />
         {describe(entry)}
@@ -312,7 +323,10 @@ export function Inbox({ initial }: { initial: InboxEntry[] }) {
                         </span>
                       )}
                       <span>
-                        {entry.issueTitle ?? entry.runTitle ?? entry.actor}
+                        {entry.issueTitle ??
+                          entry.projectName ??
+                          entry.runTitle ??
+                          entry.actor}
                       </span>
                     </span>
                     <span className="cloud-inbox-detail">

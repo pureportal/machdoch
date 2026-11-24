@@ -21,7 +21,12 @@ import { LoopSettingsPanel } from "./loop-settings";
 import { PersonAvatar } from "./person-avatar";
 import { AiProviderSettings } from "./provider-settings";
 import { PulseInstructionsEditor } from "./pulse-instructions";
-import { AgentInstructionsSetting, ReviewPreferences } from "./setting-forms";
+import { ProjectStatusManager } from "./project-status-manager";
+import {
+  AgentInstructionsSetting,
+  ProjectUpdateCadenceSetting,
+  ReviewPreferences,
+} from "./setting-forms";
 import { CloudSettings, type AdministrationSection } from "./settings";
 import { SlaManager } from "./sla-manager";
 import { SsoAccount } from "./sso-account";
@@ -249,6 +254,26 @@ export async function SettingsSectionContent({
             />
           )}
         </TeamRows>
+      );
+    case "project-statuses":
+      return (
+        <ProjectStatusManager
+          statuses={workspace.projectStatuses}
+          writable={writable}
+        />
+      );
+    case "project-updates":
+      return (
+        <div className="cloud-settings">
+          <ProjectUpdateCadenceSetting
+            cadence={
+              (await runtime.settings.organization(actor))[
+                "projects.updateCadence"
+              ] ?? "none"
+            }
+            writable={writable}
+          />
+        </div>
       );
     case "workflow-states":
       return (

@@ -15,7 +15,7 @@ import type { CloudInitiative } from "@/lib/cloud-initiative-contract";
 import { PersonAvatar } from "./person-avatar";
 import { RelativeTime } from "./relative-time";
 import { ProjectEditor } from "./project-editor";
-import { projectStatusLabels, projectStatusStates } from "@/lib/project-status";
+import { projectStatusStates } from "@/lib/project-status";
 
 const targetFormat = new Intl.DateTimeFormat("en", {
   month: "short",
@@ -240,7 +240,7 @@ export function ProjectTable({
                   <span
                     role="cell"
                     className="cloud-project-progress-cell"
-                    title={`${projectStatusLabels[project.status]} · ${counts?.completed ?? 0} of ${counts?.total ?? 0} completed`}
+                    title={`${project.statusName} · ${counts?.completed ?? 0} of ${counts?.total ?? 0} completed`}
                   >
                     <ProgressRing percent={percent} />
                     {percent}%
@@ -250,6 +250,7 @@ export function ProjectTable({
                       <ProjectEditor
                         id={project.id}
                         members={workspace.members}
+                        statuses={workspace.projectStatuses}
                       />
                     )}
                   </span>

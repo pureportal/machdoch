@@ -12,6 +12,7 @@ import {
 } from "@/lib/cloud-project-update-contract";
 import { Button } from "@/components/ui/button";
 import { createCommandSender } from "./api-client";
+import { ProjectUpdateDraft } from "./project-update-draft";
 import { PulseWriter } from "./pulse-writer";
 import { UpdateAuthor } from "./update-author";
 import { RelativeTime } from "./relative-time";
@@ -20,11 +21,13 @@ import { useToast } from "./toast";
 export function ProjectUpdates({
   project,
   updates,
+  drafts,
   writable,
   agent,
 }: {
   project: { id: string; name: string };
   updates: CloudProjectUpdate[];
+  drafts: CloudProjectUpdate[];
   writable: boolean;
   agent: boolean;
 }) {
@@ -57,6 +60,9 @@ export function ProjectUpdates({
           </div>
         )}
       </header>
+      {drafts.map((draft) => (
+        <ProjectUpdateDraft key={draft.id} draft={draft} />
+      ))}
       {writing && (
         <form
           className="cloud-project-update-form"

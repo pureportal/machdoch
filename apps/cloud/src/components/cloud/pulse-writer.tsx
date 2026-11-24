@@ -49,7 +49,7 @@ export function PulseWriter({
           known.current = result.jobs;
           setJobs(result.jobs);
           for (const job of finished)
-            if (job.state === "succeeded") toast(job.detail || "Posted");
+            if (job.state === "succeeded") toast(job.detail || "Drafted");
             else
               toast(job.error ?? "Agent could not write the update.", "error");
           if (finished.length) router.refresh();
@@ -64,11 +64,9 @@ export function PulseWriter({
   }, [refresh]);
   useEffect(() => {
     if (!waiting.length) return;
-    const stop = pollWhileVisible(
-      () => refresh(),
-      pollMs,
-      { immediate: false },
-    );
+    const stop = pollWhileVisible(() => refresh(), pollMs, {
+      immediate: false,
+    });
     return stop;
   }, [waiting.length, refresh]);
   if (waiting.length)

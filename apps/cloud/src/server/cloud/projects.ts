@@ -5,6 +5,7 @@ import type {
   CloudProject,
   CloudProjectProgress,
   ProjectInput,
+  ProjectStatusCategory,
   ProjectUpdate,
 } from "../../lib/cloud-contract";
 import {
@@ -19,6 +20,7 @@ import {
 import type { CloudDatabase, CloudSql } from "./database";
 import { projectColumns } from "./planning-queries";
 import { queueAutomationEvents } from "./automation/automation-events";
+import { readOrganizationSettings } from "./settings-store";
 
 export async function readProject(
   sql: CloudSql,
@@ -46,6 +48,29 @@ export async function readProject(
       [actor.organizationId, id],
     )
   ).rows[0]!;
+}
+
+async function resolveStatus(
+  sql: CloudSql,
+  actor: CloudActor,
+  statusId: string | undefined,
+  category: ProjectStatusCategory,
+): Promise<{ id: string; category: ProjectStatusCategory }> {
+  const status = (
+    await sql.query<{ id: string; category: ProjectStatusCategory }>(
+      statusId
+        ? "SELECT id,category FROM cloud_project_statuses WHERE organization_id=$1 AND id=$2"
+        : "SELECT id,category FROM cloud_project_statuses WHERE organization_id=$1 AND category=$2 ORDER BY position,created_at,id LIMIT 1",
+      [actor.organizationId, statusId ?? category],
+    )
+  ).rows[0];
+  if (!status)
+    throw new CloudError(
+      422,
+      "project_status_unavailable",
+      "Choose an existing project status.",
+    );
+  return status;
 }
 
 async function requireLead(
@@ -109,16 +134,31 @@ export class CloudProjects {
         { kind: "project.create", input },
         async () => {
           await requireLead(sql, actor, input.leadId ?? null);
+          const status = await resolveStatus(
+            sql,
+            actor,
+            input.statusId,
+            input.status ?? "planned",
+          );
+          const updateCadence =
+            input.updateCadence ??
+            (await readOrganizationSettings(sql, actor.organizationId))[
+              "projects.updateCadence"
+            ] ??
+            "none";
           const id = randomUUID();
           await sql.query(
-            "INSERT INTO cloud_projects (organization_id,id,team_id,name,description,status,lead_id,starts_on,target_on) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+            `INSERT INTO cloud_projects (organization_id,id,team_id,name,description,status,status_id,update_cadence,lead_id,starts_on,target_on)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
             [
               actor.organizationId,
               id,
               input.teamId,
               input.name,
               input.description,
-              input.status ?? "planned",
+              status.category,
+              status.id,
+              updateCadence,
               input.leadId ?? null,
               input.startsOn ?? null,
               input.targetOn ?? null,
@@ -161,10 +201,16 @@ export class CloudProjects {
         { kind: "project.update", id, input },
         async () => {
           checkRevision(project.revision, input.revision);
+          const status =
+            input.statusId === undefined && input.status === project.status
+              ? { id: project.statusId, category: project.status }
+              : await resolveStatus(sql, actor, input.statusId, input.status);
+          const updateCadence = input.updateCadence ?? project.updateCadence;
           if (
             project.name === input.name &&
             project.description === input.description &&
-            project.status === input.status &&
+            project.statusId === status.id &&
+            project.updateCadence === updateCadence &&
             project.leadId === input.leadId &&
             project.startsOn === input.startsOn &&
             project.targetOn === input.targetOn
@@ -173,16 +219,22 @@ export class CloudProjects {
           if (input.leadId !== project.leadId)
             await requireLead(sql, actor, input.leadId);
           await sql.query(
-            "UPDATE cloud_projects SET name=$3,description=$4,status=$5,lead_id=$6,starts_on=$7,target_on=$8,revision=revision+1 WHERE organization_id=$1 AND id=$2",
+            `UPDATE cloud_projects SET name=$3,description=$4,status=$5,status_id=$6,lead_id=$7,starts_on=$8,target_on=$9,
+               update_cadence_since=CASE WHEN update_cadence<>$10 THEN clock_timestamp() ELSE update_cadence_since END,
+               update_reminded_at=CASE WHEN update_cadence<>$10 THEN NULL ELSE update_reminded_at END,
+               update_cadence=$10,revision=revision+1
+             WHERE organization_id=$1 AND id=$2`,
             [
               actor.organizationId,
               id,
               input.name,
               input.description,
-              input.status,
+              status.category,
+              status.id,
               input.leadId,
               input.startsOn,
               input.targetOn,
+              updateCadence,
             ],
           );
           await recordEvent(
@@ -202,7 +254,8 @@ export class CloudProjects {
               {
                 kind: "project_event",
                 event:
-                  input.status === "completed" && project.status !== "completed"
+                  status.category === "completed" &&
+                  project.status !== "completed"
                     ? "completed"
                     : "updated",
                 projectId: id,

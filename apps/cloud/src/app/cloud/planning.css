@@ -171,16 +171,16 @@
 .cloud-label-list > [data-archived] {
   opacity: 0.5;
 }
-.cloud-sla-list {
+.cloud-setting-list {
   display: grid;
   gap: 2px;
 }
-.cloud-sla-list > li {
+.cloud-setting-list > li {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.cloud-sla-list > li > :first-child {
+.cloud-setting-list > li > :first-child {
   flex: 1;
   display: flex;
   justify-content: space-between;
@@ -189,7 +189,7 @@
   border-radius: 6px;
   text-align: left;
 }
-.cloud-sla-list > li > button:first-child:hover {
+.cloud-setting-list > li > button:first-child:hover {
   background: var(--accent);
 }
 .cloud-issue-sla {

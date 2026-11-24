@@ -95,7 +95,11 @@ import type { SettingsCipher } from "../settings-crypto";
 import { CloudChatStore } from "./ai/chat-store";
 import { CloudAgentTools } from "./ai/agent-tools";
 import { CloudAgentActions } from "./ai/agent-actions";
-import { CloudProjectUpdates } from "./project-updates";
+import { CloudProjectStatuses } from "./project-statuses";
+import {
+  CloudProjectUpdates,
+  projectUpdateReminderBatchSize,
+} from "./project-updates";
 import { CloudPulse } from "./pulse/pulse";
 import { CloudSlas, slaSweepBatchSize } from "./slas";
 import { CloudTeamHomes } from "./team-homes";
@@ -183,6 +187,8 @@ export interface CloudRuntime {
   projects: CloudProjects;
   milestones: CloudProjectMilestones;
   projectUpdates: CloudProjectUpdates;
+  projectStatuses: CloudProjectStatuses;
+  projectUpdateReminders: CloudPeriodicLoop;
   teamHomes: CloudTeamHomes;
   initiatives: CloudInitiatives;
   triage: CloudTriage;
@@ -394,7 +400,7 @@ export function createCloudRuntime(
     runs,
   });
   let wakePulse = () => {};
-  const pulse = new CloudPulse(database, chatStore, agentActions, () =>
+  const pulse = new CloudPulse(database, chatStore, projectUpdates, () =>
     wakePulse(),
   );
   const pulseLoop = new CloudPeriodicLoop(
@@ -610,6 +616,12 @@ export function createCloudRuntime(
     projects,
     milestones,
     projectUpdates,
+    projectStatuses: new CloudProjectStatuses(database),
+    projectUpdateReminders: new CloudPeriodicLoop(
+      "Project update reminders",
+      () => projectUpdates.remindDue(),
+      projectUpdateReminderBatchSize,
+    ),
     teamHomes: new CloudTeamHomes(database),
     initiatives,
     triage,
@@ -713,6 +725,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   await runtime.releases.loop.close();
   await runtime.pulse.loop.close();
   await runtime.slas.loop.close();
+  await runtime.projectUpdateReminders.close();
   await runtime.activity.exportLoop.close();
   await runtime.git.syncLoop.close();
   await runtime.authentication.mailWorker.close();
@@ -731,6 +744,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.releases.loop.start();
   runtime.pulse.loop.start();
   runtime.slas.loop.start();
+  runtime.projectUpdateReminders.start();
   runtime.activity.exportLoop.start();
   runtime.git.syncLoop.start();
   if (hostedOrigin) runtime.execution.hostedRunners.start(hostedOrigin);
@@ -758,6 +772,7 @@ export async function closeCloudRuntime(): Promise<void> {
     await current.releases.loop.close();
     await current.pulse.loop.close();
     await current.slas.loop.close();
+    await current.projectUpdateReminders.close();
     await current.activity.exportLoop.close();
     await current.git.syncLoop.close();
     await current.authentication.mailWorker.close();

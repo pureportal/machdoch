@@ -13,6 +13,8 @@ export const inboxKinds = [
   "loop_approval",
   "loop_message",
   "sla_breached",
+  "project_update_due",
+  "project_update_drafted",
 ] as const;
 export type InboxKind = (typeof inboxKinds)[number];
 
@@ -46,4 +48,6 @@ export interface InboxEntry {
   runState: RunState | null;
   automationRunId: string | null;
   loopId: string | null;
+  projectId: string | null;
+  projectName: string | null;
 }

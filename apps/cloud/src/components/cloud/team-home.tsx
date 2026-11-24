@@ -20,7 +20,7 @@ import type {
 import type { CycleBurnupPoint } from "@/lib/cloud-cycle-contract";
 import type { CloudProjectUpdate } from "@/lib/cloud-project-update-contract";
 import type { CloudTeamHome } from "@/lib/cloud-team-contract";
-import { projectStatusLabels, projectStatusStates } from "@/lib/project-status";
+import { projectStatusStates } from "@/lib/project-status";
 import { Button } from "@/components/ui/button";
 import { CycleBurnupChart } from "./cycle-burnup-chart";
 import { CycleDates } from "./cycle-dates";
@@ -187,7 +187,7 @@ export function TeamHome({
                         className="cloud-state"
                         data-state={projectStatusStates[project.status]}
                       >
-                        {projectStatusLabels[project.status]}
+                        {project.statusName}
                       </span>
                       <ProjectHealth
                         update={updates.find(

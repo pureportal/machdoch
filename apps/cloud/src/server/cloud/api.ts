@@ -36,6 +36,7 @@ import { invitationInputSchema } from "../../lib/cloud-invitation-contract";
 import { recurrencePreviewSchema } from "../../lib/cloud-recurrence-contract";
 import { handleScheduleApi } from "./automation/api";
 import { handlePulseApi } from "./pulse/api";
+import { handleProjectStatusApi } from "./project-status-api";
 import { handleSlaApi } from "./sla-api";
 import { teamResourceInputSchema } from "../../lib/cloud-team-contract";
 import {
@@ -410,6 +411,8 @@ async function route(
   if (path[0] === "loops") return handleLoopApi(runtime, request, actor);
   if (path[0] === "pulse") return handlePulseApi(runtime, request, actor);
   if (path[0] === "slas") return handleSlaApi(runtime, request, actor);
+  if (path[0] === "project-statuses")
+    return handleProjectStatusApi(runtime, request, actor);
   if (releaseRoutePrefixes.has(path[0] ?? ""))
     return handleReleaseApi(runtime, request, actor);
   if (isAttachmentRoute(path))
@@ -612,6 +615,27 @@ async function route(
     return Response.json({
       updates: await runtime.projectUpdates.list(actor, cloudId.parse(path[1])),
     });
+  if (
+    method === "GET" &&
+    path[0] === "projects" &&
+    path.length === 4 &&
+    path[2] === "updates" &&
+    path[3] === "drafts"
+  )
+    return Response.json({
+      drafts: await runtime.projectUpdates.drafts(
+        actor,
+        cloudId.parse(path[1]),
+      ),
+    });
+  if (
+    method === "DELETE" &&
+    path[0] === "project-updates" &&
+    path.length === 2
+  ) {
+    await runtime.projectUpdates.discard(actor, cloudId.parse(path[1]));
+    return Response.json({ ok: true });
+  }
   if (method === "POST" && path[0] === "milestones" && path[2] === "remove") {
     await runtime.milestones.remove(actor, cloudId.parse(path[1]));
     return Response.json({ ok: true });
@@ -739,7 +763,7 @@ async function route(
     return Response.json(
       await runtime.poker.get(actor, cloudId.parse(path[1])),
     );
-  if (["POST", "PATCH"].includes(method)) {
+  if (["POST", "PATCH", "PUT"].includes(method)) {
     const key = cloudId.safeParse(request.headers.get("idempotency-key"));
     if (!key.success)
       throw new CloudError(
@@ -1186,6 +1210,20 @@ async function route(
           await readBody(request, projectUpdateInputSchema),
         ),
         { status: 201 },
+      );
+    if (
+      method === "POST" &&
+      path[0] === "project-updates" &&
+      path.length === 3 &&
+      path[2] === "publish"
+    )
+      return Response.json(
+        await runtime.projectUpdates.publish(
+          actor,
+          key.data,
+          cloudId.parse(path[1]),
+          await readBody(request, projectUpdateInputSchema),
+        ),
       );
     if (method === "PATCH" && path[0] === "milestones" && path.length === 2)
       return Response.json(

@@ -39,7 +39,15 @@ export const settingsSections = {
   notifications: {
     group: "personal",
     label: "Notifications",
-    keywords: ["inbox", "email", "slack", "teams", "mobile", "snooze", "quiet hours"],
+    keywords: [
+      "inbox",
+      "email",
+      "slack",
+      "teams",
+      "mobile",
+      "snooze",
+      "quiet hours",
+    ],
     view: null,
     manage: null,
   },
@@ -70,14 +78,31 @@ export const settingsSections = {
   "connected-accounts": {
     group: "personal",
     label: "Connected accounts",
-    keywords: ["github", "gitlab", "slack", "teams", "calendar", "google", "outlook", "out of office", "mcp"],
+    keywords: [
+      "github",
+      "gitlab",
+      "slack",
+      "teams",
+      "calendar",
+      "google",
+      "outlook",
+      "out of office",
+      "mcp",
+    ],
     view: null,
     manage: null,
   },
   "agent-personalization": {
     group: "personal",
     label: "Agent personalization",
-    keywords: ["instructions", "harness", "model", "placement", "mcp", "repositories"],
+    keywords: [
+      "instructions",
+      "harness",
+      "model",
+      "placement",
+      "mcp",
+      "repositories",
+    ],
     view: null,
     manage: null,
   },
@@ -128,7 +153,7 @@ export const settingsSections = {
     label: "Updates",
     keywords: ["project updates", "cadence", "reminders"],
     view: null,
-    manage: "planning.edit",
+    manage: "settings.manage",
   },
   ai: {
     group: "features",
@@ -140,14 +165,28 @@ export const settingsSections = {
   execution: {
     group: "features",
     label: "Execution",
-    keywords: ["sandbox", "runner", "client", "device", "profiles", "autopilot"],
+    keywords: [
+      "sandbox",
+      "runner",
+      "client",
+      "device",
+      "profiles",
+      "autopilot",
+    ],
     view: ["ai.manage"],
     manage: "ai.manage",
   },
   loops: {
     group: "features",
     label: "Loops",
-    keywords: ["automations", "schedules", "trusted sources", "triggers", "budget", "code access"],
+    keywords: [
+      "automations",
+      "schedules",
+      "trusted sources",
+      "triggers",
+      "budget",
+      "code access",
+    ],
     view: null,
     manage: "settings.manage",
   },
@@ -324,7 +363,9 @@ export function settingsNavigation(
       if (access === "hidden" || !settingsSectionMatches(id, query)) return [];
       return [{ id, label: section.label, href: settingsHref(id), access }];
     });
-    return entries.length ? [{ id: group.id, label: group.label, entries }] : [];
+    return entries.length
+      ? [{ id: group.id, label: group.label, entries }]
+      : [];
   });
 }
 

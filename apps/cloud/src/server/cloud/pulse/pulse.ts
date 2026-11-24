@@ -11,7 +11,7 @@ import { derivedCommandId } from "../command-ids";
 import type { CloudDatabase, CloudSql } from "../database";
 import { readProject } from "../projects";
 import type { CloudChatStore } from "../ai/chat-store";
-import type { CloudAgentActions } from "../ai/agent-actions";
+import type { CloudProjectUpdates } from "../project-updates";
 
 const timestamp = `'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'`;
 const jobColumns = `id,project_ids AS "projectIds",state,detail,error,chat_id AS "chatId",
@@ -71,11 +71,11 @@ export function pulsePrompt(
     instructions,
     "</pulse-instructions>",
     "",
-    "Nobody can answer questions, so do not call ask_user. Your updates are posted automatically.",
+    "Nobody can answer questions, so do not call ask_user. Your updates are saved as drafts that each project lead reviews before posting.",
   ].join("\n");
 }
 
-export function pulseUpdatesToPost(
+export function pulseUpdatesToDraft(
   actions: AgentAction[],
   projectIds: string[],
 ): AgentAction[] {
@@ -94,7 +94,7 @@ export class CloudPulse {
   constructor(
     private readonly database: CloudDatabase,
     private readonly chat: CloudChatStore,
-    private readonly agentActions: CloudAgentActions,
+    private readonly projectUpdates: CloudProjectUpdates,
     private readonly wake: () => void,
   ) {}
 
@@ -273,26 +273,37 @@ export class CloudPulse {
       return true;
     }
     const actor = { organizationId: job.organizationId, userId: job.actorId };
-    const applied: AgentAction[] = [];
-    const failed: AgentAction[] = [];
-    for (const action of pulseUpdatesToPost(turn.actions, job.projectIds)) {
-      const result = await this.agentActions.apply(
-        actor,
-        job.turnId,
-        action.id,
-      );
-      (result.state === "applied" ? applied : failed).push(result);
+    let drafted = 0;
+    const errors: string[] = [];
+    for (const action of pulseUpdatesToDraft(turn.actions, job.projectIds)) {
+      if (action.kind !== "project_update") continue;
+      try {
+        await this.projectUpdates.create(
+          actor,
+          derivedCommandId(action.id, "pulse-draft"),
+          action.projectId,
+          {
+            health: action.health,
+            summary: action.summary,
+            body: action.body,
+          },
+          { generated: true, draft: true },
+        );
+        drafted++;
+      } catch (error) {
+        if (!isCloudError(error)) throw error;
+        errors.push(`${action.projectName}: ${error.message}`);
+      }
     }
-    const errors = failed
-      .map((action) => `${action.title}: ${action.error}`)
-      .join(" · ");
     await this.finish(
       job,
-      applied.length ? "succeeded" : "failed",
-      applied.length
-        ? `Posted ${applied.length} ${applied.length === 1 ? "update" : "updates"}`
+      drafted ? "succeeded" : "failed",
+      drafted
+        ? `Drafted ${drafted} ${drafted === 1 ? "update" : "updates"}`
         : "",
-      applied.length ? errors || null : errors || "Agent wrote no updates.",
+      drafted
+        ? errors.join(" · ") || null
+        : errors.join(" · ") || "Agent wrote no updates.",
     );
     return true;
   }

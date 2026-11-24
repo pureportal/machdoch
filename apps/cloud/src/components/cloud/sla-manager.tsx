@@ -100,7 +100,7 @@ export function SlaManager({
             </p>
           )}
           {!loading && (
-            <ul className="cloud-sla-list">
+            <ul className="cloud-setting-list">
               {policies.length === 0 && (
                 <li className="text-sm text-muted-foreground">No SLAs yet.</li>
               )}

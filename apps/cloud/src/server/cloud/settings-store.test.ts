@@ -6,9 +6,16 @@ import {
   defaultEstimateScale,
   type CloudActor,
 } from "../../lib/cloud-contract";
+import { hashOwnerPasswordAsync } from "../crypto";
+import { handleCloudApi } from "./api";
 import { cloudMigrations } from "./database";
+import {
+  cloudCsrfCookie,
+  cloudCsrfHeader,
+  cloudSessionCookie,
+} from "./identity";
 import { createCloudRuntime, type CloudRuntime } from "./runtime";
-import { createTestCloudDatabase } from "./test-database";
+import { createTestCloudDatabase, verifyTestSession } from "./test-database";
 
 let database: Awaited<ReturnType<typeof createTestCloudDatabase>>;
 let runtime: CloudRuntime;
@@ -67,9 +74,9 @@ describe("nested teams", () => {
       parentId: teamId,
     });
     const workspace = await runtime.planning.workspace(owner);
-    expect(
-      workspace.teams.find((team) => team.id === child.id)?.parentId,
-    ).toBe(teamId);
+    expect(workspace.teams.find((team) => team.id === child.id)?.parentId).toBe(
+      teamId,
+    );
     const parent = workspace.teams.find((team) => team.id === teamId)!;
     await expect(
       runtime.administration.updateTeam(owner, randomUUID(), teamId, {
@@ -157,6 +164,42 @@ describe("settings scopes", () => {
     expect(await runtime.settings.team(viewer, otherTeamId)).toEqual({});
   });
 
+  it("writes settings through the HTTP API", async () => {
+    const password = "cloud-settings-password-31";
+    await database.engine.query(
+      "UPDATE cloud_users SET password_hash=$2 WHERE id=$1",
+      [owner.userId, await hashOwnerPasswordAsync(password)],
+    );
+    const session = await runtime.identity.login(
+      "owner@example.test",
+      password,
+    );
+    await verifyTestSession(database, session.sessionToken);
+    const response = await handleCloudApi(
+      new Request("https://cloud.example.test/api/v1/settings", {
+        method: "PUT",
+        headers: {
+          cookie: `${cloudSessionCookie}=${session.sessionToken}; ${cloudCsrfCookie}=${session.csrfToken}`,
+          origin: "https://cloud.example.test",
+          "content-type": "application/json",
+          [cloudCsrfHeader]: session.csrfToken,
+          "idempotency-key": randomUUID(),
+        },
+        body: JSON.stringify({
+          scope: "organization",
+          key: "projects.updateCadence",
+          value: "biweekly",
+        }),
+      }),
+      "127.0.0.1",
+      runtime,
+    );
+    expect(response.status).toBe(200);
+    expect(await runtime.settings.organization(viewer)).toEqual({
+      "projects.updateCadence": "biweekly",
+    });
+  });
+
   it("rejects unknown keys and invalid values", async () => {
     await expect(
       runtime.settings.setPersonal(member, randomUUID(), "unknown", true),
@@ -181,7 +224,10 @@ it("migrates existing teams to top-level teams with empty settings", async () =>
     const index = cloudMigrations.indexOf("070-settings-scopes.sql");
     for (const name of cloudMigrations.slice(0, index))
       await engine.exec(
-        await readFile(new URL(`./migrations/${name}`, import.meta.url), "utf8"),
+        await readFile(
+          new URL(`./migrations/${name}`, import.meta.url),
+          "utf8",
+        ),
       );
     const organizationId = randomUUID();
     const existingTeamId = randomUUID();
@@ -195,7 +241,10 @@ it("migrates existing teams to top-level teams with empty settings", async () =>
     );
     for (const name of cloudMigrations.slice(index))
       await engine.exec(
-        await readFile(new URL(`./migrations/${name}`, import.meta.url), "utf8"),
+        await readFile(
+          new URL(`./migrations/${name}`, import.meta.url),
+          "utf8",
+        ),
       );
     expect(
       (
@@ -206,10 +255,9 @@ it("migrates existing teams to top-level teams with empty settings", async () =>
       ).rows,
     ).toEqual([{ parent_team_id: null }]);
     await expect(
-      engine.query(
-        "UPDATE cloud_teams SET parent_team_id=id WHERE id=$1",
-        [existingTeamId],
-      ),
+      engine.query("UPDATE cloud_teams SET parent_team_id=id WHERE id=$1", [
+        existingTeamId,
+      ]),
     ).rejects.toThrow();
     await engine.query(
       "INSERT INTO cloud_team_settings (organization_id,team_id,key,value,updated_by) VALUES ($1,$2,'agent.instructions','\"x\"',$3)",

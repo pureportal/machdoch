@@ -488,7 +488,7 @@ ${automationMarker}`,
         derivedCommandId(action.id, "project-update"),
         action.projectId,
         { health: action.health, summary: action.summary, body: action.body },
-        true,
+        { generated: true },
       );
       return {
         kind: "project",
