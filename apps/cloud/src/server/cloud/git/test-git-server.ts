@@ -56,7 +56,19 @@ export class FakeGitServer {
   readonly branchRules: unknown[] = [];
   readonly checkRuns = new Map<
     string,
-    { name: string; status: string; conclusion: string | null }[]
+    {
+      id?: number;
+      name: string;
+      status: string;
+      conclusion: string | null;
+      app?: { slug: string };
+      output?: { title?: string; summary?: string; text?: string };
+    }[]
+  >();
+  readonly jobLogs = new Map<number, string>();
+  readonly reviewComments = new Map<
+    number,
+    { author: string; body: string; path: string; line: number }[]
   >();
   readonly reviews = new Map<number, { login: string; state: string }[]>();
   readonly teams = new Map<string, string[]>();
@@ -253,10 +265,22 @@ export class FakeGitServer {
     }
     if (/^\/repos\/acme\/app\/commits\/[0-9a-f]{40}\/check-runs$/u.test(path))
       return json({
-        check_runs: this.checkRuns.get(path.split("/")[5]!) ?? [
-          { name: "unit", status: "completed", conclusion: "success" },
-        ],
+        check_runs: (
+          this.checkRuns.get(path.split("/")[5]!) ?? [
+            { name: "unit", status: "completed", conclusion: "success" },
+          ]
+        ).map((run, index) => ({ id: index + 1, ...run })),
       });
+    const jobLog = /^\/repos\/acme\/app\/actions\/jobs\/(\d+)\/logs$/u.exec(
+      path,
+    );
+    if (jobLog)
+      return this.jobLogs.has(Number(jobLog[1]))
+        ? new Response(null, {
+            status: 302,
+            headers: { location: `https://logs.github.test/jobs/${jobLog[1]}` },
+          })
+        : json({ message: "Not Found" }, 404);
     if (path === "/repos/acme/app/rules/branches/main")
       return json(this.branchRules);
     if (path === "/repos/acme/app/branches/main")
@@ -344,7 +368,22 @@ export class FakeGitServer {
           submitted_at: this.later(),
         })),
       );
-    if (["comments", "commits"].includes(match[2])) return json([]);
+    if (match[2] === "comments")
+      return json(
+        (this.reviewComments.get(change.number) ?? []).map(
+          (comment, index) => ({
+            id: index + 1,
+            user: { login: comment.author },
+            body: comment.body,
+            path: comment.path,
+            line: comment.line,
+            diff_hunk: "@@ -1 +1 @@",
+            html_url: `https://github.test/acme/app/pull/${change.number}#discussion_r${index + 1}`,
+            created_at: this.later(),
+          }),
+        ),
+      );
+    if (match[2] === "commits") return json([]);
     return json({ message: "Not Found" }, 404);
   }
 
@@ -424,6 +463,10 @@ export class FakeGitServer {
       authorization,
     });
     const token = authorization?.replace(/^Bearer /u, "") ?? "";
+    if (url.host === "logs.github.test")
+      return new Response(
+        this.jobLogs.get(Number(url.pathname.split("/").at(-1))) ?? "",
+      );
     if (
       method === "POST" &&
       ["/login/oauth/access_token", "/oauth/token"].includes(url.pathname)

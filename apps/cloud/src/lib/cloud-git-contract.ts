@@ -339,6 +339,7 @@ export interface CloudPullRequestDetails {
   issues: CloudLinkedIssue[];
   issueSuggestion: boolean;
   canMerge: boolean;
+  fixable: boolean;
   actingAs: string;
   agentLogin: string;
   mergeMethods: GitMergeMethod[];

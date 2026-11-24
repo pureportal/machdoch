@@ -15,6 +15,7 @@ import type {
   PullRequestState,
 } from "../../../lib/git-automation";
 import type { GitMergePolicy } from "../../../lib/auto-merge";
+import type { GitCheckLog } from "../../../lib/pull-request-fixes";
 import type { GitProvider } from "../../../lib/git-providers";
 import { GitHubClient } from "./github-client";
 import { GitLabClient } from "./gitlab-client";
@@ -99,6 +100,7 @@ export interface GitClient {
   pullRequests(fullName: string): Promise<GitPullRequestRecord[]>;
   pullRequest(fullName: string, number: number): Promise<GitPullRequestRecord>;
   checks(fullName: string, number: number, headSha: string): Promise<GitChecks>;
+  failedCheckLogs(fullName: string, headSha: string): Promise<GitCheckLog[]>;
   commitStatus(
     fullName: string,
     sha: string,

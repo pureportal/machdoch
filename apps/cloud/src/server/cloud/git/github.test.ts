@@ -135,8 +135,9 @@ const transport = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const runs = checkRuns.get(checks[1]!) ?? passing;
     return json({
       total_count: runs.length,
-      check_runs: runs.map((run) => ({
+      check_runs: runs.map((run, index) => ({
         ...run,
+        id: index + 1,
         html_url: `https://github.test/runs/${run.name}`,
       })),
     });

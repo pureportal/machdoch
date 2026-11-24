@@ -59,6 +59,7 @@ import { CloudCycles } from "./cycles";
 import { CloudComments } from "./comments";
 import { CloudExecutionProfiles } from "./execution/profiles";
 import { CloudRuns } from "./execution/runs";
+import { CloudPullRequestFixes } from "./execution/pull-request-fixes";
 import { CloudWorkers } from "./execution/workers";
 import { CloudHostedRunners } from "./execution/hosted-runners";
 import { CloudSandboxRuntime } from "./execution/sandbox-runtime";
@@ -257,6 +258,7 @@ export interface CloudRuntime {
     repositories: CloudRepositories;
     uploads: CloudArtifactUploads;
     artifacts: CloudArtifacts;
+    pullRequestFixes: CloudPullRequestFixes;
   };
 }
 
@@ -758,6 +760,7 @@ export function createCloudRuntime(
       ),
       uploads: new CloudArtifactUploads(database),
       artifacts: new CloudArtifacts(database),
+      pullRequestFixes: new CloudPullRequestFixes(database, pullRequests),
     },
   };
 }

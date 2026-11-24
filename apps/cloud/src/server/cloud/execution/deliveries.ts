@@ -30,6 +30,8 @@ import type { CloudGitSync } from "../git/sync";
 import { mergeReadiness } from "../git/merge-readiness";
 import { pushCandidate } from "./candidate-push";
 import { sandboxStatusContext } from "./pull-request-tasks";
+import { readRunChanges } from "./reviews";
+import { pullRequestFixComment } from "../../../lib/pull-request-fixes";
 
 const batchSize = 5;
 const maximumAttempts = 6;
@@ -636,6 +638,12 @@ export class CloudDeliveries {
           [delivery.organization_id, repository.id, delivery.branch],
         )
       ).rows[0],
+      changes: await readRunChanges(
+        sql,
+        delivery.organization_id,
+        delivery.run_id,
+        delivery.head_sha,
+      ),
     }));
     await this.push({
       cacheDirectory: this.cacheDirectory,
@@ -682,14 +690,14 @@ export class CloudDeliveries {
       await client.comment(
         repository.fullName,
         record.number,
-        [
-          `**Machdoch ${run.manifest.subject.purpose === "resolve" ? "conflict resolution" : "fix"}:** ${run.summary?.trim() || "Pushed a change."}`,
+        pullRequestFixComment({
+          purpose:
+            run.manifest.subject.purpose === "resolve" ? "resolve" : "fix",
+          summary: run.summary,
+          changes: prepared.changes,
           review,
-          taskLink,
-        ]
-          .filter(Boolean)
-          .join("\n\n")
-          .slice(0, 60_000),
+          link: taskLink,
+        }),
       );
     await this.update(delivery, delivery.auto_merge ? "merging" : "open", {
       pullRequest: { id, record },

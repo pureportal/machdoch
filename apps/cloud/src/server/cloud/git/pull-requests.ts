@@ -17,6 +17,11 @@ import {
 } from "../../../lib/git-automation";
 import { automationMarker, type GitEventKind } from "../../../lib/git-events";
 import { pullRequestStacks } from "../../../lib/pull-request-stacks";
+import {
+  pullRequestFixSubject,
+  type PullRequestFixTask,
+} from "../../../lib/pull-request-fixes";
+import { pullRequestProfileId } from "../execution/pull-request-tasks";
 import type { SettingsCipher } from "../../settings-crypto";
 import {
   accessCan,
@@ -87,6 +92,7 @@ interface VisiblePullRequest {
   repository: StoredRepository;
   connection: GitConnectionRecord;
   canAct: boolean;
+  canFix: boolean;
 }
 
 async function visibleRows(
@@ -362,6 +368,7 @@ export class CloudGitPullRequests {
         row.connectionId,
       ),
       canAct: accessCan(access, "git.act"),
+      canFix: accessCan(access, "ai.tasks"),
     };
   }
 
@@ -438,7 +445,7 @@ export class CloudGitPullRequests {
         review: reviewDecision(reviews.map((review) => review.state)),
       },
     });
-    const { updated, actingAs, issueSuggestion } =
+    const { updated, actingAs, issueSuggestion, fixable } =
       await this.database.transaction(async (sql) => {
         const current = await this.visible(sql, actor, id);
         const suggestion = await sql.query(
@@ -448,6 +455,10 @@ export class CloudGitPullRequests {
         return {
           updated: current,
           issueSuggestion: current.canAct && suggestion.rows.length > 0,
+          fixable:
+            current.canFix &&
+            current.pullRequest.state === "open" &&
+            (await pullRequestProfileId(sql, actor, id)) !== null,
           actingAs: await this.identities.actingLogin(
             sql,
             current.connection,
@@ -469,9 +480,49 @@ export class CloudGitPullRequests {
       issues: updated.issues,
       issueSuggestion,
       canMerge: updated.canAct && updated.pullRequest.state === "open",
+      fixable,
       actingAs,
       agentLogin: updated.connection.account,
       mergeMethods: [...client.mergeMethods],
+    };
+  }
+
+  async fixSubject(
+    actor: CloudActor,
+    id: string,
+    task: PullRequestFixTask,
+  ): Promise<{
+    headSha: string;
+    objective: string;
+    acceptanceCriteria: string;
+  }> {
+    const visible = await this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "ai.tasks");
+      return this.visible(sql, actor, id);
+    });
+    const { repository, number, headSha, state } = visible.pullRequest;
+    if (state !== "open")
+      throw new CloudError(409, "git_closed", "This pull request is closed.");
+    const client = gitClient(visible.connection, this.transport);
+    const [failures, comments] = await Promise.all([
+      task === "checks" ? client.failedCheckLogs(repository, headSha) : [],
+      task === "review" ? client.reviewComments(repository, number) : [],
+    ]);
+    if (task === "checks" && !failures.length)
+      throw new CloudError(
+        409,
+        "checks_passing",
+        "No checks failed on the latest commit.",
+      );
+    if (task === "review" && !comments.length)
+      throw new CloudError(
+        409,
+        "no_review_comments",
+        "This pull request has no review comments.",
+      );
+    return {
+      headSha,
+      ...pullRequestFixSubject(task, { failures, comments }),
     };
   }
 

@@ -25,7 +25,16 @@ import {
   type GitRepositoryRecord,
   type GitWebhookTarget,
 } from "./git-client";
-import { absentAsNull, gitRequest, type GitRequestInit } from "./git-http";
+import {
+  absentAsNull,
+  gitRequest,
+  gitTextTail,
+  type GitRequestInit,
+} from "./git-http";
+import {
+  checkLogByteLimit,
+  type GitCheckLog,
+} from "../../../lib/pull-request-fixes";
 
 const projectSchema = z.object({
   id: z.number(),
@@ -126,6 +135,7 @@ const statusSchema = z.object({
   name: z.string(),
   status: z.string(),
   target_url: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
 });
 
 const diffSchema = z.object({
@@ -280,6 +290,17 @@ export class GitLabClient implements GitClient {
     _number: number,
     headSha: string,
   ): Promise<GitChecks> {
+    const runs: GitCheckRun[] = (
+      await this.latestStatuses(fullName, headSha)
+    ).map((status) => ({
+      name: status.name,
+      state: statusState(status.status),
+      url: status.target_url ?? null,
+    }));
+    return { conclusion: checksState(runs.map((run) => run.state)), runs };
+  }
+
+  private async latestStatuses(fullName: string, headSha: string) {
     const statuses = await this.request(
       `${this.project(fullName)}/repository/commits/${headSha}/statuses?per_page=100`,
       z.array(statusSchema),
@@ -288,12 +309,32 @@ export class GitLabClient implements GitClient {
     for (const status of statuses)
       if ((latest.get(status.name)?.id ?? -1) < status.id)
         latest.set(status.name, status);
-    const runs: GitCheckRun[] = [...latest.values()].map((status) => ({
-      name: status.name,
-      state: statusState(status.status),
-      url: status.target_url ?? null,
-    }));
-    return { conclusion: checksState(runs.map((run) => run.state)), runs };
+    return [...latest.values()];
+  }
+
+  async failedCheckLogs(
+    fullName: string,
+    headSha: string,
+  ): Promise<GitCheckLog[]> {
+    const failed = (await this.latestStatuses(fullName, headSha)).filter(
+      (status) => statusState(status.status) === "failure",
+    );
+    return Promise.all(
+      failed.map(async (status) => ({
+        name: status.name,
+        url: status.target_url ?? null,
+        log:
+          (await gitTextTail(
+            "gitlab",
+            this.transport,
+            `${this.access.apiUrl}${this.project(fullName)}/jobs/${status.id}/trace`,
+            { Authorization: `Bearer ${this.access.token}` },
+            checkLogByteLimit,
+          ).catch(absentAsNull)) ??
+          status.description ??
+          "",
+      })),
+    );
   }
 
   async mergeBase(

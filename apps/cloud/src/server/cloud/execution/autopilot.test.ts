@@ -1011,6 +1011,187 @@ it("resolves merge conflicts in a sandbox that knows the base branch", async () 
   ).toMatchObject({ state: "merged" });
 }, 60_000);
 
+it("fixes failing checks from their logs and addresses review comments on the pull request", async () => {
+  const head = sha(110);
+  const fixed = sha(111);
+  const addressed = sha(112);
+  const change = server.add(server.github, 9, {
+    title: "Rename the greeting",
+    headRef: "feature/greeting",
+    headSha: head,
+  });
+  server.checkRuns.set(head, [
+    {
+      name: "unit",
+      status: "completed",
+      conclusion: "failure",
+      app: { slug: "github-actions" },
+    },
+    {
+      name: "lint",
+      status: "completed",
+      conclusion: "success",
+      app: { slug: "github-actions" },
+    },
+  ]);
+  server.jobLogs.set(
+    1,
+    [
+      "2026-11-02T10:00:00.0000000Z ##[group]Run pnpm test",
+      '2026-11-02T10:00:01.0000000Z Expected: "Guten Tag"',
+      '2026-11-02T10:00:01.1000000Z Received: "Hallo"',
+      "2026-11-02T10:00:02.0000000Z ##[error]Process completed with exit code 1.",
+      "2026-11-02T10:00:03.0000000Z Post job cleanup.",
+    ].join("\n"),
+  );
+  await sync();
+  const pullRequestId = (await runtime.git.pullRequests.find(
+    owner,
+    "acme/app",
+    9,
+  ))!;
+  await expect(
+    runtime.execution.pullRequestFixes.start(
+      owner,
+      randomUUID(),
+      pullRequestId,
+      "review",
+    ),
+  ).rejects.toMatchObject({ status: 409, code: "no_review_comments" });
+
+  const key = randomUUID();
+  const started = await runtime.execution.pullRequestFixes.start(
+    owner,
+    key,
+    pullRequestId,
+    "checks",
+  );
+  expect(
+    await runtime.execution.pullRequestFixes.start(
+      owner,
+      key,
+      pullRequestId,
+      "checks",
+    ),
+  ).toEqual(started);
+  await expect(
+    runtime.execution.pullRequestFixes.start(
+      owner,
+      randomUUID(),
+      pullRequestId,
+      "checks",
+    ),
+  ).rejects.toMatchObject({ status: 409, code: "fix_running" });
+  const logCalls = server.calls.filter(
+    (call) => call.host === "logs.github.test",
+  );
+  expect(logCalls.length).toBeGreaterThan(0);
+  expect(logCalls.every((call) => call.authorization === null)).toBe(true);
+  expect(
+    server.callsTo("/repos/acme/app/actions/jobs/2/logs", "GET"),
+  ).toHaveLength(0);
+
+  const { claim, worker } = await claimTask({ base: head, candidate: fixed });
+  expect(claim.runId).toBe(started.id);
+  expect(claim.manifest.subject).toMatchObject({
+    kind: "pull_request",
+    purpose: "fix",
+    id: pullRequestId,
+    headSha: head,
+  });
+  expect(claim.manifest.objective).toContain(
+    '## unit\n```text\n##[group]Run pnpm test\nExpected: "Guten Tag"\nReceived: "Hallo"\n##[error]Process completed with exit code 1.\n```',
+  );
+  expect(claim.manifest.objective).not.toContain("## lint");
+  expect(claim.manifest.objective).not.toContain("Post job cleanup");
+  expect(claim.manifest.objective).toContain(
+    "Start your summary with the cause of each failure",
+  );
+  await review(
+    worker,
+    claim,
+    1,
+    { decision: "approve", summary: "The test passes.", findings: [] },
+    fixed,
+  );
+  await runtime.execution.leases.finish(worker, finish(claim, fixed));
+  await deliver();
+  expect(pushes.at(-1)).toMatchObject({
+    branch: "feature/greeting",
+    baseCommit: head,
+    candidateCommit: fixed,
+  });
+  expect(change.headSha).toBe(fixed);
+  const [fixComment] = server.callsTo(
+    "/repos/acme/app/issues/9/comments",
+    "POST",
+  );
+  const fixBody = (fixComment!.body as { body: string }).body;
+  expect(fixBody).toContain(
+    "**Machdoch fix:** ## What changed\nThe greeting now reads Guten Tag.",
+  );
+  expect(fixBody).toContain("**Changed files**\n- `locales/de.json` +");
+  expect(fixBody).toContain(`/cloud/tasks/${claim.runId}`);
+
+  expect(change.state).toBe("merged");
+  await expect(
+    runtime.execution.pullRequestFixes.start(
+      owner,
+      randomUUID(),
+      pullRequestId,
+      "checks",
+    ),
+  ).rejects.toMatchObject({ status: 409, code: "git_closed" });
+
+  const reviewed = sha(113);
+  server.add(server.github, 10, {
+    title: "Test the greeting",
+    headRef: "feature/greeting-tests",
+    headSha: reviewed,
+  });
+  server.reviewComments.set(10, [
+    {
+      author: "lead",
+      body: "Use the informal greeting in the tests.",
+      path: "src/greeting.test.ts",
+      line: 4,
+    },
+  ]);
+  await sync();
+  const reviewedId = (await runtime.git.pullRequests.find(
+    owner,
+    "acme/app",
+    10,
+  ))!;
+  await expect(
+    runtime.execution.pullRequestFixes.start(
+      owner,
+      randomUUID(),
+      reviewedId,
+      "checks",
+    ),
+  ).rejects.toMatchObject({ status: 409, code: "checks_passing" });
+  const reviewRun = await runtime.execution.pullRequestFixes.start(
+    owner,
+    randomUUID(),
+    reviewedId,
+    "review",
+  );
+  const next = await claimTask({ base: reviewed, candidate: addressed });
+  expect(next.claim.runId).toBe(reviewRun.id);
+  expect(next.claim.manifest.subject).toMatchObject({
+    purpose: "fix",
+    id: reviewedId,
+    headSha: reviewed,
+  });
+  expect(next.claim.manifest.objective).toContain(
+    "## src/greeting.test.ts:4 (lead)\nUse the informal greeting in the tests.",
+  );
+  expect(next.claim.manifest.objective).toContain(
+    "say what you changed for each comment",
+  );
+}, 60_000);
+
 it("stops starting fix tasks after three rounds", async () => {
   const automations = await sandboxAutomations();
   await aiIssue("Use a formal German greeting");

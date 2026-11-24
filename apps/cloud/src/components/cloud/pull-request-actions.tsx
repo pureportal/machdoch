@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 import {
   CirclePlus,
   GitMerge,
@@ -16,16 +17,15 @@ import type {
 } from "@/lib/cloud-git-contract";
 import { gitProviderLabels } from "@/lib/git-providers";
 import {
-  pullRequestChecksPrompt,
   pullRequestConflictPrompt,
-  pullRequestReviewPrompt,
-  pullRequestSessionTitle,
+  pullRequestConflictSessionTitle,
   type PromptIssue,
 } from "@/lib/pull-request-prompts";
+import type { PullRequestFixTask } from "@/lib/pull-request-fixes";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import { cloudRequest } from "./api-client";
+import { cloudRequest, createCommandSender } from "./api-client";
 import { ClientLaunch } from "./client-launch";
 import { hasConflicts } from "./pull-request-overview";
 import { useToast } from "./toast";
@@ -60,6 +60,11 @@ export function PullRequestActions({
   onRetargeted: (pullRequest: CloudPullRequest) => void;
 }) {
   const toast = useToast();
+  const router = useRouter();
+  const [startingFix, setStartingFix] = useState<PullRequestFixTask | null>(
+    null,
+  );
+  const fixSender = useRef(createCommandSender());
   const [method, setMethod] = useState<GitMergeMethod>(
     details.mergeMethods[0] ?? "squash",
   );
@@ -78,37 +83,43 @@ export function PullRequestActions({
       url: `${location.origin}/cloud/issues/${issue.id}`,
     }));
   const agent = launch && open;
-  const tasks = [
-    agent &&
-      conflicts && {
-        task: "conflicts" as const,
-        label: "Resolve conflicts",
-        icon: <GitMerge />,
-        prompt: () => pullRequestConflictPrompt(pullRequest, issues()),
-      },
-    agent &&
+  const conflictTask = agent && conflicts;
+  const fixTasks = [
+    details.fixable &&
       failed.length > 0 && {
         task: "checks" as const,
         label: "Fix checks",
         icon: <Wrench />,
-        prompt: () => pullRequestChecksPrompt(pullRequest, failed, issues()),
       },
-    agent &&
+    details.fixable &&
       details.comments.length > 0 && {
         task: "review" as const,
         label: "Address comments",
         icon: <MessageSquareCode />,
-        prompt: () =>
-          pullRequestReviewPrompt(pullRequest, details.comments, issues()),
       },
   ].filter((entry) => entry !== false);
+  const startFix = (task: PullRequestFixTask) => {
+    setStartingFix(task);
+    void fixSender
+      .current<{ id: string }>(`pull-requests/${pullRequest.id}/fix`, { task })
+      .then(({ id }) => router.push(`/cloud/tasks/${id}`))
+      .catch((reason: Error) => {
+        toast(reason.message, "error");
+        setStartingFix(null);
+      });
+  };
   const updatable =
     details.canMerge &&
     pullRequest.mergeableState === "behind" &&
     !conflicts &&
     !updateRequested;
   const retargetTo = details.canMerge ? pullRequest.stack?.retargetTo : null;
-  if (!tasks.length && !details.canMerge && !details.issueSuggestion)
+  if (
+    !conflictTask &&
+    !fixTasks.length &&
+    !details.canMerge &&
+    !details.issueSuggestion
+  )
     return null;
   return (
     <div className="cloud-pull-request-actions">
@@ -133,20 +144,32 @@ export function PullRequestActions({
           Create issue
         </Button>
       )}
-      {tasks.map((entry) => (
+      {conflictTask && (
         <ClientLaunch
-          key={entry.task}
-          label={entry.label}
-          icon={entry.icon}
+          label="Resolve conflicts"
+          icon={<GitMerge />}
           variant="outline"
           branch={pullRequest.headRef}
           worktreeByDefault
           startByDefault
           draft={() => ({
-            title: pullRequestSessionTitle(entry.task, pullRequest, issues()),
-            prompt: entry.prompt(),
+            title: pullRequestConflictSessionTitle(pullRequest, issues()),
+            prompt: pullRequestConflictPrompt(pullRequest, issues()),
           })}
         />
+      )}
+      {fixTasks.map((entry) => (
+        <Button
+          key={entry.task}
+          variant="outline"
+          size="sm"
+          aria-busy={startingFix === entry.task}
+          disabled={startingFix !== null}
+          onClick={() => startFix(entry.task)}
+        >
+          {entry.icon}
+          {entry.label}
+        </Button>
       ))}
       {updatable && (
         <Button

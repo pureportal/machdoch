@@ -20,6 +20,7 @@ import {
   pullRequestListQuerySchema,
 } from "../../../lib/cloud-git-contract";
 import type { GitProvider } from "../../../lib/git-providers";
+import { pullRequestFixInputSchema } from "../../../lib/pull-request-fixes";
 import { CloudError } from "../access";
 import type { GitHubSignInTarget } from "./github-sign-in";
 import { readBody, readRawBody } from "../request-body";
@@ -273,6 +274,15 @@ async function handlePullRequests(
         cloudId.parse(request.headers.get("idempotency-key")),
         id,
         await readBody(request, gitReviewGuideInputSchema),
+      ),
+    );
+  if (route === "POST fix")
+    return Response.json(
+      await runtime.execution.pullRequestFixes.start(
+        actor,
+        cloudId.parse(request.headers.get("idempotency-key")),
+        id,
+        (await readBody(request, pullRequestFixInputSchema)).task,
       ),
     );
   if (route === "POST merge")

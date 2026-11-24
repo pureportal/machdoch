@@ -28,7 +28,16 @@ import {
   type GitWebhookTarget,
 } from "./git-client";
 import { CloudError } from "../access";
-import { absentAsNull, gitRequest, type GitRequestInit } from "./git-http";
+import {
+  absentAsNull,
+  gitRequest,
+  gitTextTail,
+  type GitRequestInit,
+} from "./git-http";
+import {
+  checkLogByteLimit,
+  type GitCheckLog,
+} from "../../../lib/pull-request-fixes";
 
 export const githubWebhookEvents = [
   "push",
@@ -139,6 +148,7 @@ const combinedStatusSchema = z.object({
       context: z.string(),
       state: z.string(),
       target_url: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
     }),
   ),
 });
@@ -152,11 +162,21 @@ function commitStatusState(state: string): CheckRunState {
 const checkRunsSchema = z.object({
   check_runs: z.array(
     z.object({
+      id: z.number(),
       name: z.string(),
       status: z.string(),
       conclusion: z.string().nullable(),
       html_url: z.string().nullable().optional(),
       details_url: z.string().nullable().optional(),
+      app: z.object({ slug: z.string() }).nullable().optional(),
+      output: z
+        .object({
+          title: z.string().nullable().optional(),
+          summary: z.string().nullable().optional(),
+          text: z.string().nullable().optional(),
+        })
+        .nullable()
+        .optional(),
     }),
   ),
 });
@@ -234,6 +254,14 @@ export class GitHubClient implements GitClient {
     return this.send(`${this.access.apiUrl}${path}`, schema, init);
   }
 
+  private headers(): Record<string, string> {
+    return {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${this.access.token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
+  }
+
   private send<T>(
     url: string,
     schema: z.ZodType<T>,
@@ -241,11 +269,7 @@ export class GitHubClient implements GitClient {
   ): Promise<T> {
     return gitRequest("github", this.transport, url, schema, {
       ...init,
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${this.access.token}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
+      headers: this.headers(),
     });
   }
 
@@ -454,6 +478,55 @@ export class GitHubClient implements GitClient {
       })),
     ];
     return { conclusion: checksState(runs.map((run) => run.state)), runs };
+  }
+
+  async failedCheckLogs(
+    fullName: string,
+    headSha: string,
+  ): Promise<GitCheckLog[]> {
+    const [result, combined] = await Promise.all([
+      this.request(
+        `/repos/${fullName}/commits/${headSha}/check-runs?per_page=100`,
+        checkRunsSchema,
+      ),
+      this.request(
+        `/repos/${fullName}/commits/${headSha}/status`,
+        combinedStatusSchema,
+      ),
+    ]);
+    const runs = await Promise.all(
+      result.check_runs
+        .filter(
+          (run) => checkRunState(run.status, run.conclusion) === "failure",
+        )
+        .map(async (run) => ({
+          name: run.name,
+          url: run.html_url ?? run.details_url ?? null,
+          log:
+            (run.app?.slug === "github-actions"
+              ? await gitTextTail(
+                  "github",
+                  this.transport,
+                  `${this.access.apiUrl}/repos/${fullName}/actions/jobs/${run.id}/logs`,
+                  this.headers(),
+                  checkLogByteLimit,
+                ).catch(absentAsNull)
+              : null) ??
+            [run.output?.title, run.output?.summary, run.output?.text]
+              .filter(Boolean)
+              .join("\n\n"),
+        })),
+    );
+    return [
+      ...runs,
+      ...combined.statuses
+        .filter((status) => commitStatusState(status.state) === "failure")
+        .map((status) => ({
+          name: status.context,
+          url: status.target_url ?? null,
+          log: status.description ?? "",
+        })),
+    ];
   }
 
   async mergeBase(
