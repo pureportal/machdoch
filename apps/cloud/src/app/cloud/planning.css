@@ -220,6 +220,37 @@
   align-items: end;
   gap: 8px;
 }
+.cloud-notification-chat {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.cloud-notification-quiet-hours {
+  display: grid;
+  grid-template-columns: 140px 140px minmax(0, 260px);
+  gap: 12px;
+}
+.cloud-notification-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.cloud-notification-matrix :is(th, td) {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+.cloud-notification-matrix tr > :first-child {
+  text-align: left;
+  font-weight: 400;
+}
+.cloud-notification-matrix thead th {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.cloud-notification-matrix input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
 @media (max-width: 1100px) {
   .cloud-project-directory > li {
     grid-template-columns: auto minmax(0, 1fr) minmax(110px, 150px) 28px auto;

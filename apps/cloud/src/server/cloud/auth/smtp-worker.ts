@@ -1,12 +1,12 @@
 import { parentPort, workerData } from "node:worker_threads";
 import nodemailer from "nodemailer";
 import type { SmtpConnection } from "./email-settings";
-import type { SignInMail } from "./mail-store";
+import type { OutgoingMail } from "./smtp";
 import type { MailFailureCode } from "../../../lib/cloud-email-contract";
 
 const input = workerData as
   | { kind: "verify"; connection: SmtpConnection; ca: string[] }
-  | { kind: "send"; mail: SignInMail; ca: string[] };
+  | { kind: "send"; mail: OutgoingMail; ca: string[] };
 const connection =
   input.kind === "send" ? input.mail.connection : input.connection;
 const transport = nodemailer.createTransport({
@@ -37,11 +37,11 @@ try {
   else {
     const mail = input.mail;
     const result = await transport.sendMail({
-      from: { address: connection.from, name: mail.organization },
+      from: { address: connection.from, name: mail.senderName },
       to: mail.recipient,
       messageId: mail.messageId,
-      subject: `Sign in to ${mail.organization}`,
-      text: `Open this link to review and confirm your sign-in:\n\n${mail.url}\n\n${mail.connectionFlow ? "To finish connecting the app, open this link on the device where you started.\n\n" : ""}This link is valid for 10 minutes after it was requested. If you did not request it, ignore this email.`,
+      subject: mail.subject,
+      text: mail.text,
       disableFileAccess: true,
       disableUrlAccess: true,
     });

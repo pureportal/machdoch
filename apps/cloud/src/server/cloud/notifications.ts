@@ -5,6 +5,11 @@ import type {
   InboxKind,
   InboxUpdate,
 } from "../../lib/cloud-inbox-contract";
+import {
+  deliveryChannels,
+  notificationPreferenceMatrix,
+  type NotificationChannel,
+} from "../../lib/notification-preferences";
 import { requireMembership, teamVisibility } from "./access";
 import type { PullRequestStage } from "../../lib/git-automation";
 import type { CloudDatabase, CloudSql } from "./database";
@@ -44,24 +49,53 @@ async function insertNotification(
     detail: string;
   },
 ): Promise<void> {
-  await sql.query(
-    `INSERT INTO cloud_notifications (organization_id,id,user_id,team_id,kind,issue_id,run_id,actor_id,automation,detail,automation_run_id,project_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
-    [
-      entry.organizationId,
-      randomUUID(),
-      entry.userId,
-      entry.teamId,
-      entry.kind,
-      entry.issueId,
-      entry.runId,
-      entry.actorId,
-      entry.automation ?? null,
-      excerpt(entry.detail),
-      entry.automationRunId ?? null,
-      entry.projectId ?? null,
-    ],
+  const recipient = (
+    await sql.query<{
+      overrides: { channel: NotificationChannel; enabled: boolean }[];
+      email: boolean;
+      chat: boolean;
+      mobile: boolean;
+    }>(
+      `SELECT COALESCE((SELECT json_agg(json_build_object('channel',channel,'enabled',enabled)) FROM cloud_notification_preferences WHERE organization_id=$1 AND user_id=$2 AND kind=$3),'[]') AS overrides,
+         EXISTS (SELECT 1 FROM cloud_email_settings WHERE organization_id=$1 AND enabled) AS email,
+         EXISTS (SELECT 1 FROM cloud_notification_chat_targets WHERE organization_id=$1 AND user_id=$2) AS chat,
+         EXISTS (SELECT 1 FROM cloud_push_subscriptions WHERE organization_id=$1 AND user_id=$2) AS mobile`,
+      [entry.organizationId, entry.userId, entry.kind],
+    )
+  ).rows[0]!;
+  const preferences = notificationPreferenceMatrix(
+    recipient.overrides.map((override) => ({ kind: entry.kind, ...override })),
+  )[entry.kind];
+  const channels = deliveryChannels.filter(
+    (channel) => preferences[channel] && recipient[channel],
   );
+  if (!preferences.in_app && !channels.length) return;
+  const id = (
+    await sql.query<{ id: string }>(
+      `INSERT INTO cloud_notifications (organization_id,id,user_id,team_id,kind,issue_id,run_id,actor_id,automation,detail,automation_run_id,project_id,inbox)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING RETURNING id`,
+      [
+        entry.organizationId,
+        randomUUID(),
+        entry.userId,
+        entry.teamId,
+        entry.kind,
+        entry.issueId,
+        entry.runId,
+        entry.actorId,
+        entry.automation ?? null,
+        excerpt(entry.detail),
+        entry.automationRunId ?? null,
+        entry.projectId ?? null,
+        preferences.in_app,
+      ],
+    )
+  ).rows[0]?.id;
+  if (id && channels.length)
+    await sql.query(
+      "INSERT INTO cloud_notification_deliveries (organization_id,notification_id,channel) SELECT $1,$2,unnest($3::text[])",
+      [entry.organizationId, id, channels],
+    );
 }
 
 export async function notifyProjectLead(
@@ -295,6 +329,21 @@ export async function notifyRunFinished(
   });
 }
 
+export const inboxEntryColumns = `n.id,n.kind,n.detail,n.read_at IS NOT NULL AS read,
+             to_char(n.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
+             COALESCE(n.automation,author.name) AS actor,n.issue_id AS "issueId",i.identifier AS "issueIdentifier",i.title AS "issueTitle",i.state AS "issueState",
+             n.run_id AS "runId",r.title AS "runTitle",r.state AS "runState",
+             n.automation_run_id AS "automationRunId",ar.automation_id AS "loopId",
+             n.project_id AS "projectId",p.name AS "projectName"`;
+export const inboxEntrySource = `FROM cloud_notifications n
+           JOIN cloud_teams t ON t.organization_id=n.organization_id AND t.id=n.team_id
+           JOIN cloud_memberships m ON m.organization_id=n.organization_id AND m.user_id=n.user_id
+           LEFT JOIN cloud_issues i ON i.organization_id=n.organization_id AND i.id=n.issue_id
+           LEFT JOIN cloud_runs r ON r.organization_id=n.organization_id AND r.id=n.run_id
+           LEFT JOIN cloud_automation_runs ar ON ar.organization_id=n.organization_id AND ar.id=n.automation_run_id
+           LEFT JOIN cloud_projects p ON p.organization_id=n.organization_id AND p.id=n.project_id
+           LEFT JOIN cloud_users author ON author.id=n.actor_id`;
+
 export class CloudInbox {
   constructor(private readonly database: CloudDatabase) {}
 
@@ -303,21 +352,8 @@ export class CloudInbox {
       await requireMembership(sql, actor);
       return (
         await sql.query<InboxEntry & Record<string, unknown>>(
-          `SELECT n.id,n.kind,n.detail,n.read_at IS NOT NULL AS read,
-             to_char(n.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
-             COALESCE(n.automation,author.name) AS actor,n.issue_id AS "issueId",i.identifier AS "issueIdentifier",i.title AS "issueTitle",i.state AS "issueState",
-             n.run_id AS "runId",r.title AS "runTitle",r.state AS "runState",
-             n.automation_run_id AS "automationRunId",ar.automation_id AS "loopId",
-             n.project_id AS "projectId",p.name AS "projectName"
-           FROM cloud_notifications n
-           JOIN cloud_teams t ON t.organization_id=n.organization_id AND t.id=n.team_id
-           JOIN cloud_memberships m ON m.organization_id=n.organization_id AND m.user_id=n.user_id
-           LEFT JOIN cloud_issues i ON i.organization_id=n.organization_id AND i.id=n.issue_id
-           LEFT JOIN cloud_runs r ON r.organization_id=n.organization_id AND r.id=n.run_id
-           LEFT JOIN cloud_automation_runs ar ON ar.organization_id=n.organization_id AND ar.id=n.automation_run_id
-           LEFT JOIN cloud_projects p ON p.organization_id=n.organization_id AND p.id=n.project_id
-           LEFT JOIN cloud_users author ON author.id=n.actor_id
-           WHERE n.organization_id=$1 AND n.user_id=$2 AND n.dismissed_at IS NULL AND ${teamVisibility}
+          `SELECT ${inboxEntryColumns} ${inboxEntrySource}
+           WHERE n.organization_id=$1 AND n.user_id=$2 AND n.inbox AND n.dismissed_at IS NULL AND ${teamVisibility}
            ORDER BY n.created_at DESC,n.id LIMIT ${pageSize}`,
           [actor.organizationId, actor.userId],
         )
@@ -332,7 +368,7 @@ export class CloudInbox {
         `SELECT count(*)::integer AS count FROM cloud_notifications n
          JOIN cloud_teams t ON t.organization_id=n.organization_id AND t.id=n.team_id
          JOIN cloud_memberships m ON m.organization_id=n.organization_id AND m.user_id=n.user_id
-         WHERE n.organization_id=$1 AND n.user_id=$2 AND n.read_at IS NULL AND n.dismissed_at IS NULL AND ${teamVisibility}`,
+         WHERE n.organization_id=$1 AND n.user_id=$2 AND n.inbox AND n.read_at IS NULL AND n.dismissed_at IS NULL AND ${teamVisibility}`,
         [actor.organizationId, actor.userId],
       );
       return result.rows[0]!.count;

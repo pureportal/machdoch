@@ -19,6 +19,7 @@ import { GitAccountSettings } from "./git-accounts";
 import { GitSettings } from "./git-settings";
 import { LabelManager } from "./label-manager";
 import { LoopSettingsPanel } from "./loop-settings";
+import { NotificationSettingsPanel } from "./notification-settings";
 import { PersonAvatar } from "./person-avatar";
 import { AiProviderSettings } from "./provider-settings";
 import { PulseInstructionsEditor } from "./pulse-instructions";
@@ -313,6 +314,15 @@ export async function SettingsSectionContent({
             </header>
           </section>
         </div>
+      );
+    case "notifications":
+      return (
+        <NotificationSettingsPanel
+          settings={await runtime.notifications.settings.get(actor)}
+          timeZones={[
+            ...new Set(["UTC", ...Intl.supportedValuesOf("timeZone")]),
+          ]}
+        />
       );
     default: {
       const link = sectionLinks[section];

@@ -107,6 +107,12 @@ import { CloudFavorites, CloudIssueSubscriptions } from "./favorites";
 import { CloudInitiatives } from "./initiatives";
 import { CloudTriage } from "./triage";
 import { CloudCustomerRequests } from "./customer-requests";
+import { CloudNotificationSettingsService } from "./notification-settings";
+import {
+  CloudNotificationDelivery,
+  defaultNotificationTransports,
+  notificationDeliveryBatchSize,
+} from "./notification-delivery";
 import { CloudSidebar } from "./sidebar";
 import { CloudSettingsStore } from "./settings-store";
 import { CloudCliLogins } from "./ai/cli-login";
@@ -194,6 +200,10 @@ export interface CloudRuntime {
   initiatives: CloudInitiatives;
   triage: CloudTriage;
   customerRequests: CloudCustomerRequests;
+  notifications: {
+    settings: CloudNotificationSettingsService;
+    loop: CloudPeriodicLoop;
+  };
   sidebar: CloudSidebar;
   settings: CloudSettingsStore;
   favorites: CloudFavorites;
@@ -404,6 +414,12 @@ export function createCloudRuntime(
   let wakePulse = () => {};
   const pulse = new CloudPulse(database, chatStore, projectUpdates, () =>
     wakePulse(),
+  );
+  const notificationDelivery = new CloudNotificationDelivery(
+    database,
+    options.credentialsCipher ?? null,
+    origin,
+    defaultNotificationTransports,
   );
   const pulseLoop = new CloudPeriodicLoop(
     "Pulse writing",
@@ -628,6 +644,17 @@ export function createCloudRuntime(
     initiatives,
     triage,
     customerRequests: new CloudCustomerRequests(database, origin),
+    notifications: {
+      settings: new CloudNotificationSettingsService(
+        database,
+        options.credentialsCipher ?? null,
+      ),
+      loop: new CloudPeriodicLoop(
+        "Notification delivery",
+        () => notificationDelivery.deliverDue(notificationDeliveryBatchSize),
+        notificationDeliveryBatchSize,
+      ),
+    },
     sidebar: new CloudSidebar(database),
     settings: new CloudSettingsStore(database),
     favorites: new CloudFavorites(database),
@@ -729,6 +756,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   await runtime.pulse.loop.close();
   await runtime.slas.loop.close();
   await runtime.projectUpdateReminders.close();
+  await runtime.notifications.loop.close();
   await runtime.activity.exportLoop.close();
   await runtime.git.syncLoop.close();
   await runtime.authentication.mailWorker.close();
@@ -748,6 +776,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.pulse.loop.start();
   runtime.slas.loop.start();
   runtime.projectUpdateReminders.start();
+  runtime.notifications.loop.start();
   runtime.activity.exportLoop.start();
   runtime.git.syncLoop.start();
   if (hostedOrigin) runtime.execution.hostedRunners.start(hostedOrigin);
@@ -776,6 +805,7 @@ export async function closeCloudRuntime(): Promise<void> {
     await current.pulse.loop.close();
     await current.slas.loop.close();
     await current.projectUpdateReminders.close();
+    await current.notifications.loop.close();
     await current.activity.exportLoop.close();
     await current.git.syncLoop.close();
     await current.authentication.mailWorker.close();

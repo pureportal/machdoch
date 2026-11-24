@@ -15,6 +15,11 @@ import {
 import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 import type { CloudIssue } from "@/lib/cloud-contract";
 import type { InboxEntry, InboxUpdate } from "@/lib/cloud-inbox-contract";
+import {
+  describeInboxEntry,
+  inboxEntryPath,
+  loopInboxKinds,
+} from "@/lib/inbox-entries";
 import { Button } from "@/components/ui/button";
 import { cloudRequest } from "./api-client";
 import { IssuePriority } from "./issue-priority";
@@ -34,40 +39,7 @@ const priorityKinds: InboxEntry["kind"][] = [
   "sla_breached",
   "project_update_due",
 ];
-const loopKinds: InboxEntry["kind"][] = [
-  "loop_input",
-  "loop_approval",
-  "loop_message",
-];
 type InboxTab = "priority" | "other";
-
-function describe(entry: InboxEntry): string {
-  const actor = entry.actor ?? "Someone";
-  if (entry.kind === "assigned") return `${actor} assigned you`;
-  if (entry.kind === "mentioned")
-    return `${actor} mentioned you: ${entry.detail}`;
-  if (entry.kind === "commented") return `${actor} commented: ${entry.detail}`;
-  if (entry.kind === "status_changed")
-    return `${actor} changed the status to ${entry.detail}`;
-  if (entry.kind === "pull_request") return entry.detail;
-  if (entry.kind === "loop_input") return `Input needed: ${entry.detail}`;
-  if (entry.kind === "loop_approval") return `Approval needed: ${entry.detail}`;
-  if (entry.kind === "loop_message") return entry.detail;
-  if (entry.kind === "sla_breached") return "SLA breached";
-  if (entry.kind === "project_update_due") return "Project update due";
-  if (entry.kind === "project_update_drafted")
-    return "Project update drafted for review";
-  return `AI task ${(entry.runState ?? "finished").replaceAll("_", " ")}${entry.detail ? `: ${entry.detail}` : ""}`;
-}
-
-function entryHref(entry: InboxEntry): string {
-  if (entry.projectId) return `/cloud/projects/${entry.projectId}`;
-  if (loopKinds.includes(entry.kind) && entry.loopId)
-    return `/cloud/loops/${entry.loopId}?run=${entry.automationRunId}`;
-  return entry.kind === "task_finished" && entry.runId
-    ? `/cloud/tasks/${entry.runId}`
-    : `/cloud/issues/${entry.issueId}`;
-}
 
 function IssuePreview({ entry }: { entry: InboxEntry }) {
   const [issue, setIssue] = useState<CloudIssue | null>(null);
@@ -93,12 +65,12 @@ function IssuePreview({ entry }: { entry: InboxEntry }) {
           {entry.issueIdentifier ??
             (entry.projectId
               ? "Project"
-              : loopKinds.includes(entry.kind)
+              : loopInboxKinds.includes(entry.kind)
                 ? "Loop"
                 : "AI task")}
         </span>
         <Button asChild variant="ghost" size="sm">
-          <Link href={entryHref(entry)} prefetch={false}>
+          <Link href={inboxEntryPath(entry)} prefetch={false}>
             Open
             <ArrowUpRight />
           </Link>
@@ -109,7 +81,7 @@ function IssuePreview({ entry }: { entry: InboxEntry }) {
       </h2>
       <p className="cloud-inbox-preview-event">
         <PersonAvatar name={entry.actor ?? "?"} className="cloud-avatar-tiny" />
-        {describe(entry)}
+        {describeInboxEntry(entry)}
         <RelativeTime value={entry.createdAt} />
       </p>
       {issue && (
@@ -308,7 +280,7 @@ export function Inbox({ initial }: { initial: InboxEntry[] }) {
                     <span className="cloud-icon-tile cloud-inbox-icon">
                       <GitPullRequest size={14} aria-hidden="true" />
                     </span>
-                  ) : loopKinds.includes(entry.kind) ? (
+                  ) : loopInboxKinds.includes(entry.kind) ? (
                     <span className="cloud-icon-tile cloud-inbox-icon">
                       <Repeat size={14} aria-hidden="true" />
                     </span>
@@ -330,7 +302,7 @@ export function Inbox({ initial }: { initial: InboxEntry[] }) {
                       </span>
                     </span>
                     <span className="cloud-inbox-detail">
-                      {describe(entry)}
+                      {describeInboxEntry(entry)}
                     </span>
                   </span>
                   <span className="cloud-inbox-meta">

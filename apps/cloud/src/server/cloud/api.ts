@@ -42,6 +42,7 @@ import {
   handleCustomerRequestIntake,
   isCustomerRequestIntakeRoute,
 } from "./customer-request-api";
+import { handleNotificationSettingsApi } from "./notification-settings-api";
 import { handleSlaApi } from "./sla-api";
 import { teamResourceInputSchema } from "../../lib/cloud-team-contract";
 import {
@@ -420,6 +421,8 @@ async function route(
   if (path[0] === "slas") return handleSlaApi(runtime, request, actor);
   if (path[0] === "customers" || path[0] === "customer-requests")
     return handleCustomerRequestApi(runtime, request, actor, path);
+  if (path[0] === "notification-settings")
+    return handleNotificationSettingsApi(runtime, request, actor, path);
   if (path[0] === "project-statuses")
     return handleProjectStatusApi(runtime, request, actor);
   if (releaseRoutePrefixes.has(path[0] ?? ""))
