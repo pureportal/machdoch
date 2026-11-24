@@ -11,10 +11,12 @@ import {
   type CloudActor,
   type IssueFilters,
 } from "../../../lib/cloud-contract";
-import type {
-  AgentAction,
-  AgentQuestion,
-  AgentStep,
+import {
+  maximumStepEntities,
+  type AgentAction,
+  type AgentEntity,
+  type AgentQuestion,
+  type AgentStep,
 } from "../../../lib/cloud-chat-contract";
 import {
   noneFilterValue,
@@ -61,6 +63,10 @@ function serialize(value: unknown): string {
   return text.length > maximumToolOutputCharacters
     ? `${text.slice(0, maximumToolOutputCharacters)}… (truncated; narrow the request for more)`
     : text;
+}
+
+function issueEntity(issue: { id: string; identifier: string }): AgentEntity {
+  return { kind: "issue", id: issue.id, label: issue.identifier };
 }
 
 function excerpt(text: string, length: number): string {
@@ -165,6 +171,7 @@ const readTools: AgentTool[] = [
             .map((issue) => workspace.issueSummary(issue)),
           more: issues.length > limit,
         },
+        entities: issues.slice(0, limit).map(issueEntity),
         label: `Found ${Math.min(issues.length, limit)}${issues.length > limit ? "+" : ""} issue${issues.length === 1 ? "" : "s"}${input.query ? ` for “${excerpt(input.query, 40)}”` : ""}`,
       };
     },
@@ -278,6 +285,7 @@ const readTools: AgentTool[] = [
           })),
         },
         label: `Read ${issue.identifier}`,
+        entities: [issueEntity(issue)],
       };
     },
   }),
@@ -324,6 +332,7 @@ const readTools: AgentTool[] = [
               : null,
         },
         label: `Read ${page.length} comment${page.length === 1 ? "" : "s"} on ${issue.identifier}`,
+        entities: [issueEntity(issue)],
       };
     },
   }),
@@ -377,6 +386,11 @@ const readTools: AgentTool[] = [
           };
         }),
         label: `Listed ${projects.length} project${projects.length === 1 ? "" : "s"}`,
+        entities: projects.map((project) => ({
+          kind: "project",
+          id: project.id,
+          label: project.name,
+        })),
       };
     },
   }),
@@ -434,6 +448,7 @@ const readTools: AgentTool[] = [
           issues: issues.map((issue) => workspace.issueSummary(issue)),
         },
         label: `Read project ${detail.name}`,
+        entities: [{ kind: "project", id: detail.id, label: detail.name }],
       };
     },
   }),
@@ -464,6 +479,11 @@ const readTools: AgentTool[] = [
           description: excerpt(initiative.description, 400),
         })),
         label: `Listed ${initiatives.length} initiative${initiatives.length === 1 ? "" : "s"}`,
+        entities: initiatives.map((initiative) => ({
+          kind: "initiative",
+          id: initiative.id,
+          label: initiative.name,
+        })),
       };
     },
   }),
@@ -495,6 +515,11 @@ const readTools: AgentTool[] = [
           capacity: cycle.capacity,
         })),
         label: `Listed ${cycles.length} cycle${cycles.length === 1 ? "" : "s"}`,
+        entities: cycles.map((cycle) => ({
+          kind: "cycle",
+          id: cycle.id,
+          label: cycle.name,
+        })),
       };
     },
   }),
@@ -533,6 +558,9 @@ const readTools: AgentTool[] = [
           })),
         },
         label: `Read ${detail.cycle.name}`,
+        entities: [
+          { kind: "cycle", id: detail.cycle.id, label: detail.cycle.name },
+        ],
       };
     },
   }),
@@ -568,6 +596,7 @@ const readTools: AgentTool[] = [
             )?.name ?? null,
         },
         label: `Read team ${team.name}`,
+        entities: [{ kind: "team", id: team.id, label: team.name }],
       };
     },
   }),
@@ -650,11 +679,18 @@ export class CloudAgentSession {
 
   async execute(call: AgentModelToolCall): Promise<AgentToolResult> {
     const tool = tools.find((entry) => entry.name === call.name);
-    const step = (label: string, failed: boolean): AgentStep => ({
+    const step = (
+      label: string,
+      failed: boolean,
+      entities: AgentEntity[] = [],
+    ): AgentStep => ({
       id: call.id,
       tool: call.name,
       label,
       failed,
+      ...(entities.length
+        ? { entities: entities.slice(0, maximumStepEntities) }
+        : {}),
     });
     if (!tool)
       return {
@@ -685,7 +721,7 @@ export class CloudAgentSession {
         output: serialize(outcome.output),
         isError: false,
         terminal: tool.terminal === true,
-        step: step(outcome.label, false),
+        step: step(outcome.label, false, outcome.entities),
         question: outcome.question,
         action: outcome.proposal
           ? ({

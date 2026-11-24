@@ -1,3 +1,6 @@
+.cloud-workspace:has(> .cloud-statusbar) {
+  --cloud-statusbar-height: 34px;
+}
 .cloud-statusbar {
   position: sticky;
   bottom: 0;
@@ -199,6 +202,7 @@
 }
 .cloud-agent-steps li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   color: var(--muted-foreground);
@@ -210,6 +214,13 @@
 }
 .cloud-agent-steps li[data-failed] svg {
   color: var(--cloud-danger);
+}
+.cloud-step-entity {
+  color: var(--foreground);
+  text-decoration: none;
+}
+.cloud-step-entity:hover {
+  text-decoration: underline;
 }
 .cloud-entity-chip {
   display: inline-flex;
@@ -498,7 +509,7 @@
 .cloud-agent-page {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
-  height: calc(100dvh - 59px);
+  height: calc(100dvh - 59px - var(--cloud-statusbar-height, 0px));
   min-height: 480px;
   margin: calc(-1 * var(--cloud-content-block-start))
     calc(-1 * var(--cloud-content-inline))
@@ -592,7 +603,7 @@
 @media (max-width: 800px) {
   .cloud-agent-page {
     grid-template-columns: minmax(0, 1fr);
-    height: calc(100dvh - 57px);
+    height: calc(100dvh - 57px - var(--cloud-statusbar-height, 0px));
   }
   .cloud-agent-history {
     display: none;

@@ -199,7 +199,8 @@ function describeAction(
     case "git_update_branch":
       return `Update the pull request branch ${gitActor(action.identity)}`;
     case "git_retarget":
-      return `Retarget the stacked pull request onto its merged base ${gitActor(action.identity)}`;    case "request_input":
+      return `Retarget the stacked pull request onto its merged base ${gitActor(action.identity)}`;
+    case "request_input":
       return `Ask for input and store it as ${action.key}`;
     case "goal":
       return `Work toward a goal for up to ${action.maxIterations} iteration${action.maxIterations === 1 ? "" : "s"}`;
@@ -277,6 +278,11 @@ export const automationTools: AgentTool[] = [
       return {
         output,
         label: `Listed ${automations.length} automation${automations.length === 1 ? "" : "s"}`,
+        entities: automations.map((automation) => ({
+          kind: "loop",
+          id: automation.id,
+          label: automation.name,
+        })),
       };
     },
   }),
@@ -320,6 +326,7 @@ export const automationTools: AgentTool[] = [
           })),
         },
         label: `Read automation ${automation.name}`,
+        entities: [{ kind: "loop", id: automation.id, label: automation.name }],
       };
     },
   }),

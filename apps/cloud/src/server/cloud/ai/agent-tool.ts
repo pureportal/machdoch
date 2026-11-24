@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type {
   AgentAction,
+  AgentEntity,
   AgentQuestion,
 } from "../../../lib/cloud-chat-contract";
 import type { CloudPlanning } from "../planning";
@@ -56,6 +57,7 @@ export type AgentProposal = Omit<
 export interface AgentToolOutcome {
   output: unknown;
   label: string;
+  entities?: AgentEntity[];
   question?: AgentQuestion;
   proposal?: AgentProposal;
 }

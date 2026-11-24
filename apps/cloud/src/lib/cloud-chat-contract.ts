@@ -118,11 +118,29 @@ export interface AgentSessions {
   recent: AgentSession[];
 }
 export const recentAgentSessions = 8;
+export const agentEntityKinds = [
+  "issue",
+  "project",
+  "initiative",
+  "cycle",
+  "team",
+  "pull_request",
+  "release",
+  "loop",
+] as const;
+export type AgentEntityKind = (typeof agentEntityKinds)[number];
+export interface AgentEntity {
+  kind: AgentEntityKind;
+  id: string;
+  label: string;
+}
+export const maximumStepEntities = 6;
 export interface AgentStep {
   id: string;
   tool: string;
   label: string;
   failed: boolean;
+  entities?: AgentEntity[];
 }
 export interface AgentQuestion {
   text: string;

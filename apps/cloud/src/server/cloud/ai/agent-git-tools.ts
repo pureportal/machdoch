@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AgentEntity } from "../../../lib/cloud-chat-contract";
 import type { CloudPullRequest } from "../../../lib/cloud-git-contract";
 import { gitReviewDecisionInputs } from "../../../lib/cloud-git-contract";
 import { pullRequestStages } from "../../../lib/git-automation";
@@ -79,6 +80,14 @@ function reference(pullRequest: CloudPullRequest): string {
   return `${pullRequest.repository}#${pullRequest.number}`;
 }
 
+function entity(pullRequest: CloudPullRequest): AgentEntity {
+  return {
+    kind: "pull_request",
+    id: pullRequest.id,
+    label: reference(pullRequest),
+  };
+}
+
 export const gitTools: AgentTool[] = [
   agentTool({
     name: "list_pull_requests",
@@ -98,6 +107,7 @@ export const gitTools: AgentTool[] = [
           })),
         },
         label: `Found ${list.pullRequests.length} pull request${list.pullRequests.length === 1 ? "" : "s"}`,
+        entities: list.pullRequests.map((entry) => entity(entry.pullRequest)),
       };
     },
   }),
@@ -141,6 +151,7 @@ export const gitTools: AgentTool[] = [
           }),
         },
         label: `Read ${reference(details.pullRequest)}`,
+        entities: [entity(details.pullRequest)],
       };
     },
   }),

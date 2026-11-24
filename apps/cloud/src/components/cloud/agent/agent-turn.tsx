@@ -20,9 +20,11 @@ import {
   X,
 } from "lucide-react";
 import { CloudMarkdown } from "../cloud-markdown";
+import { agentEntityHref, agentStepSegments } from "@/lib/agent-entity-links";
 import {
   chatErrorMessages,
   type AgentAction,
+  type AgentStep,
   type ChatContextEntity,
   type ChatContextKind,
   type CloudChatTurn,
@@ -121,6 +123,39 @@ function useNow(active: boolean): number {
   return now;
 }
 
+function StepLabel({ step }: { step: AgentStep }) {
+  const { label, trailing } = agentStepSegments(step);
+  return (
+    <>
+      <span>
+        {label.map((segment) =>
+          typeof segment === "string" ? (
+            segment
+          ) : (
+            <Link
+              key={`${segment.kind}:${segment.id}`}
+              className="cloud-step-entity"
+              href={agentEntityHref(segment)}
+            >
+              {segment.label}
+            </Link>
+          ),
+        )}
+      </span>
+      {trailing.map((entity) => (
+        <Link
+          key={`${entity.kind}:${entity.id}`}
+          className="cloud-entity-chip"
+          data-kind={entity.kind}
+          href={agentEntityHref(entity)}
+        >
+          {entity.label}
+        </Link>
+      ))}
+    </>
+  );
+}
+
 function AgentProgress({
   turn,
   active,
@@ -172,7 +207,7 @@ function AgentProgress({
             ) : (
               <Check size={12} aria-hidden="true" />
             )}
-            <span>{step.label}</span>
+            <StepLabel step={step} />
           </li>
         ))}
       </ol>

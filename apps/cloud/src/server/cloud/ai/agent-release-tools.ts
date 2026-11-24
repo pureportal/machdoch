@@ -46,6 +46,13 @@ export const releaseTools: AgentTool[] = [
       });
       return {
         label: `Read ${releaseTitle(product, release)}`,
+        entities: [
+          {
+            kind: "release",
+            id: release.id,
+            label: releaseTitle(product, release),
+          },
+        ],
         output: {
           id: release.id,
           title: releaseTitle(product, release),

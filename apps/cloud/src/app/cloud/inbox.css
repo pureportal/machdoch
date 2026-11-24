@@ -1,7 +1,7 @@
 .cloud-inbox-layout {
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
-  height: calc(100dvh - 59px);
+  height: calc(100dvh - 59px - var(--cloud-statusbar-height, 0px));
   min-height: 480px;
   margin: calc(-1 * var(--cloud-content-block-start))
     calc(-1 * var(--cloud-content-inline))
