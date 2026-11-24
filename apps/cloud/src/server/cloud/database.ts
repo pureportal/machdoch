@@ -79,6 +79,7 @@ export const cloudMigrations = [
   "076-project-statuses-updates.sql",
   "077-customer-requests.sql",
   "078-notification-preferences.sql",
+  "079-git-connections.sql",
 ];
 
 export interface CloudSql {

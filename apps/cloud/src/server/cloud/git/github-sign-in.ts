@@ -278,14 +278,21 @@ export class CloudGitHubSignIn {
   }
 
   private async connect(actor: CloudActor, token: string): Promise<string> {
-    const current = (await this.connections.get(actor)).connections.github;
-    await this.connections.connect(actor, randomUUID(), "github", {
-      revision: current?.revision ?? 0,
-      apiUrl: defaultGitApiUrls.github,
-      token,
-      automate: current?.automate ?? true,
-    });
-    return (await this.connections.get(actor)).connections.github!.account;
+    const { id } = await this.connections.connect(
+      actor,
+      randomUUID(),
+      "github",
+      {
+        revision: 0,
+        apiUrl: defaultGitApiUrls.github,
+        token,
+        automate: true,
+        codeAccess: true,
+      },
+    );
+    return (await this.connections.get(actor)).connections.find(
+      (connection) => connection.id === id,
+    )!.account;
   }
 
   private async link(actor: CloudActor, token: string): Promise<string> {

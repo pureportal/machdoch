@@ -37,7 +37,7 @@ const syncIntervalMinutes = 5;
 const openPullRequestRefreshMinutes = 2;
 const deliveryRetentionDays = 7;
 
-export const repositoryColumns = `r.id,r.provider,r.full_name AS "fullName",r.default_branch AS "defaultBranch",r.web_url AS "webUrl"`;
+export const repositoryColumns = `r.id,r.connection_id AS "connectionId",r.provider,r.full_name AS "fullName",r.default_branch AS "defaultBranch",r.web_url AS "webUrl"`;
 
 export interface PullRequestSignalsUpdate {
   checks: GitChecksState;
@@ -52,7 +52,7 @@ export interface StoreOptions {
 
 export type SyncConnection = Pick<
   GitConnectionRecord,
-  "organizationId" | "actorId" | "automate" | "provider" | "apiUrl"
+  "id" | "organizationId" | "actorId" | "automate" | "provider" | "apiUrl"
 >;
 
 type StoredPullRequest = {
@@ -479,15 +479,15 @@ export class CloudGitSync {
   }
 
   private async recordError(
-    connection: Pick<SyncConnection, "organizationId" | "provider">,
+    connection: Pick<GitConnectionRecord, "organizationId" | "id">,
     message: string | null,
   ) {
     await this.database.transaction((sql) =>
       sql.query(
-        "UPDATE cloud_git_connections SET last_error=$3 WHERE organization_id=$1 AND provider=$2",
+        "UPDATE cloud_git_connections SET last_error=$3 WHERE organization_id=$1 AND id=$2",
         [
           connection.organizationId,
-          connection.provider,
+          connection.id,
           message?.slice(0, 500) ?? null,
         ],
       ),
@@ -503,28 +503,28 @@ export class CloudGitSync {
         `DELETE FROM cloud_git_deliveries WHERE received_at < clock_timestamp() - interval '${deliveryRetentionDays} days'`,
       );
       const due = (
-        await sql.query<{ organization_id: string; provider: GitProvider }>(
-          `SELECT organization_id,provider FROM cloud_git_connections
+        await sql.query<{ organization_id: string; id: string }>(
+          `SELECT organization_id,id FROM cloud_git_connections
           WHERE sync_requested_at IS NOT NULL OR synced_at IS NULL OR synced_at < clock_timestamp() - interval '${syncIntervalMinutes} minutes'
           ORDER BY sync_requested_at NULLS LAST, synced_at NULLS FIRST LIMIT 1 FOR UPDATE SKIP LOCKED`,
         )
       ).rows[0];
       if (!due) return null;
       await sql.query(
-        "UPDATE cloud_git_connections SET synced_at=clock_timestamp(),sync_requested_at=NULL WHERE organization_id=$1 AND provider=$2",
-        [due.organization_id, due.provider],
+        "UPDATE cloud_git_connections SET synced_at=clock_timestamp(),sync_requested_at=NULL WHERE organization_id=$1 AND id=$2",
+        [due.organization_id, due.id],
       );
       return {
         connection: await gitConnection(
           sql,
           this.cipher,
           due.organization_id,
-          due.provider,
+          due.id,
         ),
         repositories: (
           await sql.query<StoredRepository & { syncedAt: Date | null }>(
-            `SELECT ${repositoryColumns},r.synced_at AS "syncedAt" FROM cloud_git_repositories r WHERE r.organization_id=$1 AND r.provider=$2`,
-            [due.organization_id, due.provider],
+            `SELECT ${repositoryColumns},r.synced_at AS "syncedAt" FROM cloud_git_repositories r WHERE r.organization_id=$1 AND r.connection_id=$2`,
+            [due.organization_id, due.id],
           )
         ).rows,
       };
@@ -595,7 +595,7 @@ export class CloudGitSync {
           sql,
           this.cipher,
           row.organizationId,
-          row.provider,
+          row.connectionId,
         ),
       };
     });
@@ -635,7 +635,7 @@ export class CloudGitSync {
           sql,
           this.cipher,
           row.organizationId,
-          row.provider,
+          row.connectionId,
         ),
       };
     });

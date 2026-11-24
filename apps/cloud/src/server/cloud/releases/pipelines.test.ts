@@ -36,21 +36,29 @@ async function createIssue(title: string) {
   );
 }
 
+let connectionId: string;
+
 async function sync() {
-  await runtime.git.connections.requestSync(owner, "github");
+  await runtime.git.connections.requestSync(owner, connectionId);
   for (let round = 0; round < 50; round++)
     if (!(await runtime.git.sync.tick())) return;
   throw new Error("Git sync did not settle.");
 }
 
 async function connect(): Promise<string> {
-  await runtime.git.connections.connect(owner, randomUUID(), "github", {
-    revision: 0,
-    apiUrl: githubApiUrl,
-    token: organizationToken,
-    automate: true,
-  });
-  await runtime.git.connections.addRepository(owner, "github", "acme/app");
+  ({ id: connectionId } = await runtime.git.connections.connect(
+    owner,
+    randomUUID(),
+    "github",
+    {
+      revision: 0,
+      apiUrl: githubApiUrl,
+      token: organizationToken,
+      automate: true,
+      codeAccess: true,
+    },
+  ));
+  await runtime.git.connections.addRepository(owner, connectionId, "acme/app");
   await sync();
   return (await runtime.git.connections.repositories(owner))[0]!.id;
 }
@@ -72,8 +80,7 @@ async function createPipeline(input: Record<string, unknown>) {
 }
 
 async function deliverGitHub(event: string, payload: unknown) {
-  const connection = (await runtime.git.connections.get(owner)).connections
-    .github!;
+  const connection = (await runtime.git.connections.get(owner)).connections[0]!;
   const body = JSON.stringify(payload);
   const response = await handleCloudApi(
     new Request(

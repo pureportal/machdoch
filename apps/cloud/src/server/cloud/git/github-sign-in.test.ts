@@ -93,8 +93,7 @@ it("connects GitHub with a device code instead of a pasted token", async () => {
     state: "signed-in",
     account: "octocat",
   });
-  const connection = (await runtime.git.connections.get(owner)).connections
-    .github;
+  const [connection] = (await runtime.git.connections.get(owner)).connections;
   expect(connection).toMatchObject({
     account: "octocat",
     apiUrl: "https://api.github.com",

@@ -51,13 +51,13 @@ export class GitIdentities {
     return this.database.transaction(async (sql) => {
       const expiring = (
         await sql.query<{
-          provider: GitProvider;
+          oauth_connection_id: string;
           api_url: string;
           refresh_secret: Uint8Array;
           expires_at: Date;
         }>(
-          `SELECT provider,api_url,refresh_secret,expires_at FROM cloud_git_accounts
-          WHERE organization_id=$1 AND user_id=$2 AND refresh_secret IS NOT NULL
+          `SELECT oauth_connection_id,api_url,refresh_secret,expires_at FROM cloud_git_accounts
+          WHERE organization_id=$1 AND user_id=$2 AND refresh_secret IS NOT NULL AND oauth_connection_id IS NOT NULL
           AND expires_at < clock_timestamp() + $3 * interval '1 millisecond'`,
           [organizationId, userId, refreshMarginMs],
         )
@@ -70,7 +70,7 @@ export class GitIdentities {
           sql,
           this.cipher,
           organizationId,
-          account.provider,
+          account.oauth_connection_id,
         );
         const oauth = connection.oauth;
         if (!oauth || connection.apiUrl !== account.api_url) continue;

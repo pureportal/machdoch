@@ -181,15 +181,16 @@ it("resolves view, filter, project, document and repository context", async () =
     "INSERT INTO cloud_document_sections (organization_id,id,document_id,position,heading,body) VALUES ($1,$2,$3,1,'Deploy','Use the pipeline')",
     [owner.organizationId, randomUUID(), documentId],
   );
+  const connectionId = randomUUID();
   await database.engine.query(
-    `INSERT INTO cloud_git_connections (organization_id,provider,api_url,secret,token_prefix,account,webhook_id,webhook_secret,actor_id)
-    VALUES ($1,'github','https://api.github.test','\\x00','ghp','acme',$2,'\\x00',$3)`,
-    [owner.organizationId, randomUUID(), owner.userId],
+    `INSERT INTO cloud_git_connections (organization_id,id,provider,api_url,secret,token_prefix,account,webhook_id,webhook_secret,actor_id)
+    VALUES ($1,$4,'github','https://api.github.test','\\x00','ghp','acme',$2,'\\x00',$3)`,
+    [owner.organizationId, randomUUID(), owner.userId, connectionId],
   );
   const repositoryId = randomUUID();
   await database.engine.query(
-    "INSERT INTO cloud_git_repositories (organization_id,id,provider,external_id,full_name,default_branch,private) VALUES ($1,$2,'github',7,'acme/app','main',true)",
-    [owner.organizationId, repositoryId],
+    "INSERT INTO cloud_git_repositories (organization_id,id,connection_id,provider,external_id,full_name,default_branch,private) VALUES ($1,$2,$3,'github',7,'acme/app','main',true)",
+    [owner.organizationId, repositoryId, connectionId],
   );
   const id = await createLoop(
     [{ kind: "comment", body: "Read" }],

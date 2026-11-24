@@ -7,6 +7,7 @@ import { usersForLogins } from "./accounts";
 
 export type StoredRepository = {
   id: string;
+  connectionId: string;
   provider: GitProvider;
   fullName: string;
   defaultBranch: string;

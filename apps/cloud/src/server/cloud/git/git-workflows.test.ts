@@ -45,23 +45,32 @@ async function createIssue(title: string) {
   );
 }
 
+const connectionIds: Partial<Record<GitProvider, string>> = {};
+
 async function connect(provider: GitProvider) {
-  await runtime.git.connections.connect(owner, randomUUID(), provider, {
-    revision: 0,
-    apiUrl: provider === "github" ? githubApiUrl : gitlabApiUrl,
-    token: provider === "github" ? organizationToken : gitlabToken,
-    automate: true,
-  });
+  const { id } = await runtime.git.connections.connect(
+    owner,
+    randomUUID(),
+    provider,
+    {
+      revision: 0,
+      apiUrl: provider === "github" ? githubApiUrl : gitlabApiUrl,
+      token: provider === "github" ? organizationToken : gitlabToken,
+      automate: true,
+      codeAccess: true,
+    },
+  );
+  connectionIds[provider] = id;
   await runtime.git.connections.addRepository(
     owner,
-    provider,
+    id,
     provider === "github" ? "acme/app" : gitlabProject,
   );
   await sync(provider);
 }
 
 async function sync(provider: GitProvider) {
-  await runtime.git.connections.requestSync(owner, provider);
+  await runtime.git.connections.requestSync(owner, connectionIds[provider]!);
   for (let round = 0; round < 50; round++)
     if (!(await runtime.git.sync.tick())) return;
   throw new Error("Git sync did not settle.");
@@ -85,9 +94,9 @@ async function runs(automationId: string) {
 }
 
 async function webhook(provider: GitProvider) {
-  const connection = (await runtime.git.connections.get(owner)).connections[
-    provider
-  ]!;
+  const connection = (
+    await runtime.git.connections.get(owner)
+  ).connections.find((entry) => entry.provider === provider)!;
   return {
     id: connection.webhookUrl.split("/").at(-1)!,
     secret: connection.webhookSecret,
@@ -420,13 +429,19 @@ it("connects GitLab, syncs merge requests and accepts only verified webhooks", a
   const hook = server.callsTo(/\/hooks$/u, "POST")[0]!;
   const administration = await runtime.git.connections.get(owner);
   expect(hook.body).toMatchObject({
-    url: administration.connections.gitlab!.webhookUrl,
-    token: administration.connections.gitlab!.webhookSecret,
+    url: administration.connections.find(
+      (entry) => entry.provider === "gitlab",
+    )!.webhookUrl,
+    token: administration.connections.find(
+      (entry) => entry.provider === "gitlab",
+    )!.webhookSecret,
     push_events: true,
     merge_requests_events: true,
     note_events: true,
   });
-  expect(administration.connections.gitlab).toMatchObject({
+  expect(
+    administration.connections.find((entry) => entry.provider === "gitlab"),
+  ).toMatchObject({
     account: "acme-gitlab-bot",
     repositories: [{ fullName: gitlabProject, webhook: true }],
   });
@@ -525,25 +540,32 @@ it("lets members sign in with GitLab, rejects reused sign-ins and refreshes expi
   await expect(runtime.git.oauth.start(member, "gitlab")).rejects.toMatchObject(
     { code: "git_oauth_unconfigured" },
   );
-  const current = (await runtime.git.connections.get(owner)).connections
-    .gitlab!;
+  const current = (await runtime.git.connections.get(owner)).connections.find(
+    (entry) => entry.provider === "gitlab",
+  )!;
   await expect(
     runtime.git.connections.connect(owner, randomUUID(), "gitlab", {
+      connectionId: current.id,
       revision: current.revision,
       apiUrl: gitlabApiUrl,
       automate: true,
+      codeAccess: true,
       oauthClientId: "gitlab-app",
     }),
   ).rejects.toMatchObject({ code: "git_oauth_secret_required" });
   await runtime.git.connections.connect(owner, randomUUID(), "gitlab", {
+    connectionId: current.id,
     revision: current.revision,
     apiUrl: gitlabApiUrl,
     automate: true,
+    codeAccess: true,
     oauthClientId: "gitlab-app",
     oauthClientSecret: "gitlab-app-secret",
   });
   const administration = await runtime.git.connections.get(owner);
-  expect(administration.connections.gitlab).toMatchObject({
+  expect(
+    administration.connections.find((entry) => entry.provider === "gitlab"),
+  ).toMatchObject({
     oauthClientId: "gitlab-app",
     oauthCallbackUrl:
       "https://cloud.example.test/api/v1/integrations/gitlab/oauth/callback",
@@ -561,7 +583,9 @@ it("lets members sign in with GitLab, rejects reused sign-ins and refreshes expi
   );
   expect(Object.fromEntries(authorize.searchParams)).toMatchObject({
     client_id: "gitlab-app",
-    redirect_uri: administration.connections.gitlab!.oauthCallbackUrl,
+    redirect_uri: administration.connections.find(
+      (entry) => entry.provider === "gitlab",
+    )!.oauthCallbackUrl,
     response_type: "code",
     scope: "api",
   });
@@ -585,7 +609,9 @@ it("lets members sign in with GitLab, rejects reused sign-ins and refreshes expi
     client_secret: "gitlab-app-secret",
     grant_type: "authorization_code",
     code: "code-1",
-    redirect_uri: administration.connections.gitlab!.oauthCallbackUrl,
+    redirect_uri: administration.connections.find(
+      (entry) => entry.provider === "gitlab",
+    )!.oauthCallbackUrl,
   });
   expect(
     (await runtime.git.accounts.get(member)).accounts.gitlab,

@@ -584,3 +584,63 @@
 .cloud-pull-request-stacked {
   flex-shrink: 0;
 }
+.cloud-git-connection {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.cloud-git-connection > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cloud-git-connection > header > div {
+  flex: 1;
+}
+.cloud-git-connection h3 {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-git-connection > header p {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-git-code-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cloud-git-status[data-state-kind="error"] {
+  border-color: var(--destructive);
+  color: var(--destructive);
+}
+.cloud-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+}
+.cloud-menu-item[data-highlighted] {
+  background: var(--cloud-hover);
+}
+.cloud-menu-item[data-disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.cloud-menu-item[data-destructive] {
+  color: var(--destructive);
+}

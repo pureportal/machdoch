@@ -28,10 +28,9 @@ import type { StoredRun } from "./records";
 import { requireWorker, type WorkerIdentity } from "./workers";
 import { isPullRequestCheck } from "@machdoch/fleet-protocol/cloud-execution";
 import type { GitPullRequestFile } from "../../../lib/cloud-git-contract";
-import type { GitProvider } from "../../../lib/git-providers";
 import type { SettingsCipher } from "../../settings-crypto";
 import { gitClient } from "../git/git-client";
-import { gitConnection } from "../git/connections";
+import { gitConnection, requireCodeAccess } from "../git/connections";
 
 const promptDiffBytes = 160 * 1024;
 const analyzedDiffBytes = 8 * 1024 * 1024;
@@ -303,11 +302,11 @@ export class CloudRunReviews {
         return null;
       const row = (
         await sql.query<{
-          provider: GitProvider;
+          connection_id: string;
           full_name: string;
           number: number;
         }>(
-          `SELECT r.provider,r.full_name,p.number FROM cloud_git_pull_requests p
+          `SELECT r.connection_id,r.full_name,p.number FROM cloud_git_pull_requests p
           JOIN cloud_git_repositories r ON r.organization_id=p.organization_id AND r.id=p.repository_id
           WHERE p.organization_id=$1 AND p.id=$2`,
           [worker.organizationId, subject.id],
@@ -321,11 +320,13 @@ export class CloudRunReviews {
         );
       return {
         ...row,
-        connection: await gitConnection(
-          sql,
-          this.cipher,
-          worker.organizationId,
-          row.provider,
+        connection: requireCodeAccess(
+          await gitConnection(
+            sql,
+            this.cipher,
+            worker.organizationId,
+            row.connection_id,
+          ),
         ),
       };
     });

@@ -20,9 +20,8 @@ import type { CloudDatabase, CloudSql } from "../database";
 import { fenceRun, lockExecution, readProfile, readRun } from "./records";
 import { readInferenceProvider } from "../ai/budgets";
 import { requireFetchableRepository } from "../git/repository-access";
-import { gitConnection } from "../git/connections";
+import { gitConnection, requireCodeAccess } from "../git/connections";
 import { gitClient } from "../git/git-client";
-import type { GitProvider } from "../../../lib/git-providers";
 import type { SettingsCipher } from "../../settings-crypto";
 import { detectRepositoryChecks } from "./check-detection";
 
@@ -75,22 +74,24 @@ export class CloudExecutionProfiles {
       await requireMembership(sql, actor, "ai.manage");
       const row = (
         await sql.query<{
-          provider: GitProvider;
+          connection_id: string;
           full_name: string;
           default_branch: string;
         }>(
-          "SELECT provider,full_name,default_branch FROM cloud_git_repositories WHERE organization_id=$1 AND lower(web_url)=lower($2)",
+          "SELECT connection_id,full_name,default_branch FROM cloud_git_repositories WHERE organization_id=$1 AND lower(web_url)=lower($2)",
           [actor.organizationId, repository.replace(/\.git$/u, "")],
         )
       ).rows[0];
       if (!row) return null;
       return {
         ...row,
-        connection: await gitConnection(
-          sql,
-          this.cipher,
-          actor.organizationId,
-          row.provider,
+        connection: requireCodeAccess(
+          await gitConnection(
+            sql,
+            this.cipher,
+            actor.organizationId,
+            row.connection_id,
+          ),
         ),
       };
     });

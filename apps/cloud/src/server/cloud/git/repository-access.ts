@@ -2,7 +2,7 @@ import type { GitProvider } from "../../../lib/git-providers";
 import type { SettingsCipher } from "../../settings-crypto";
 import { CloudError } from "../access";
 import type { CloudSql } from "../database";
-import { gitConnection } from "./connections";
+import { gitConnection, requireCodeAccess } from "./connections";
 
 const publicHost = "github.com";
 
@@ -23,14 +23,14 @@ async function connectedRepository(
   sql: CloudSql,
   organizationId: string,
   url: string,
-): Promise<GitProvider | null> {
+): Promise<{ provider: GitProvider; connectionId: string } | null> {
   return (
     (
-      await sql.query<{ provider: GitProvider }>(
-        "SELECT provider FROM cloud_git_repositories WHERE organization_id=$1 AND lower(web_url)=$2 LIMIT 1",
+      await sql.query<{ provider: GitProvider; connectionId: string }>(
+        `SELECT provider,connection_id AS "connectionId" FROM cloud_git_repositories WHERE organization_id=$1 AND lower(web_url)=$2 LIMIT 1`,
         [organizationId, repositoryKey(url)],
       )
-    ).rows[0]?.provider ?? null
+    ).rows[0] ?? null
   );
 }
 
@@ -69,11 +69,13 @@ export async function repositoryAuthorization(
   organizationId: string,
   url: string,
 ): Promise<string | null> {
-  const provider = await connectedRepository(sql, organizationId, url);
-  if (!provider) {
+  const repository = await connectedRepository(sql, organizationId, url);
+  if (!repository) {
     await requireFetchableRepository(sql, organizationId, url);
     return null;
   }
-  const connection = await gitConnection(sql, cipher, organizationId, provider);
-  return `Basic ${Buffer.from(`${tokenUsers[provider]}:${connection.token}`).toString("base64")}`;
+  const connection = requireCodeAccess(
+    await gitConnection(sql, cipher, organizationId, repository.connectionId),
+  );
+  return `Basic ${Buffer.from(`${tokenUsers[repository.provider]}:${connection.token}`).toString("base64")}`;
 }

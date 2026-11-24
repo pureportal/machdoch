@@ -175,42 +175,44 @@ async function handleGitSettings(
   }
   if (path[1] === "github" && path[2] === "sign-in")
     return gitHubSignIn(runtime, request, actor, "connection", path.slice(3));
-  const provider = gitProviderSchema.parse(path[1]);
-  const route = `${method} ${path.slice(2).join("/")}`;
-  if (route === "PUT ")
-    return Response.json(
-      await connections.connect(
+  if (path[1] === "connections" && path.length >= 3) {
+    const connectionId = cloudId.parse(path[2]);
+    const route = `${method} ${path.slice(3).join("/")}`;
+    if (route === "DELETE ") {
+      await connections.disconnect(
         actor,
-        idempotencyKey(request),
-        provider,
-        await readBody(request, gitConnectionInputSchema),
-      ),
-    );
-  if (route === "DELETE ") {
-    await connections.disconnect(
+        connectionId,
+        (await readBody(request, gitRevisionSchema)).revision,
+      );
+      return Response.json({ ok: true });
+    }
+    if (route === "POST sync") {
+      await connections.requestSync(actor, connectionId);
+      return Response.json({ ok: true });
+    }
+    if (route === "GET repositories/available")
+      return Response.json({
+        repositories: await connections.available(actor, connectionId),
+      });
+    if (route === "POST repositories")
+      return Response.json(
+        await connections.addRepository(
+          actor,
+          connectionId,
+          (await readBody(request, gitRepositoryInputSchema)).fullName,
+        ),
+      );
+    return null;
+  }
+  if (path.length !== 2 || method !== "PUT") return null;
+  return Response.json(
+    await connections.connect(
       actor,
-      provider,
-      (await readBody(request, gitRevisionSchema)).revision,
-    );
-    return Response.json({ ok: true });
-  }
-  if (route === "POST sync") {
-    await connections.requestSync(actor, provider);
-    return Response.json({ ok: true });
-  }
-  if (route === "GET repositories/available")
-    return Response.json({
-      repositories: await connections.available(actor, provider),
-    });
-  if (route === "POST repositories")
-    return Response.json(
-      await connections.addRepository(
-        actor,
-        provider,
-        (await readBody(request, gitRepositoryInputSchema)).fullName,
-      ),
-    );
-  return null;
+      idempotencyKey(request),
+      gitProviderSchema.parse(path[1]),
+      await readBody(request, gitConnectionInputSchema),
+    ),
+  );
 }
 
 async function handlePullRequests(

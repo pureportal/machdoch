@@ -36,13 +36,21 @@ export class CloudGitOAuth {
       );
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor);
-      const connection = await gitConnection(
-        sql,
-        this.cipher,
-        actor.organizationId,
-        provider,
-      );
-      if (!connection.oauth)
+      const connectionId = (
+        await sql.query<{ id: string }>(
+          "SELECT id FROM cloud_git_connections WHERE organization_id=$1 AND provider=$2 ORDER BY oauth_client_id IS NULL,connected_at LIMIT 1",
+          [actor.organizationId, provider],
+        )
+      ).rows[0]?.id;
+      const connection = connectionId
+        ? await gitConnection(
+            sql,
+            this.cipher,
+            actor.organizationId,
+            connectionId,
+          )
+        : null;
+      if (!connection?.oauth)
         throw new CloudError(
           409,
           "git_oauth_unconfigured",
@@ -53,8 +61,14 @@ export class CloudGitOAuth {
       );
       const state = randomBytes(32).toString("base64url");
       await sql.query(
-        "INSERT INTO cloud_git_oauth_states (state_hash,organization_id,user_id,provider) VALUES ($1,$2,$3,$4)",
-        [stateHash(state), actor.organizationId, actor.userId, provider],
+        "INSERT INTO cloud_git_oauth_states (state_hash,organization_id,user_id,provider,connection_id) VALUES ($1,$2,$3,$4,$5)",
+        [
+          stateHash(state),
+          actor.organizationId,
+          actor.userId,
+          provider,
+          connection.id,
+        ],
       );
       return {
         url: oauthAuthorizeUrl(
@@ -75,9 +89,13 @@ export class CloudGitOAuth {
   ): Promise<void> {
     const pending = await this.database.transaction(async (sql) => {
       const claimed = (
-        await sql.query<{ organization_id: string; user_id: string }>(
+        await sql.query<{
+          organization_id: string;
+          user_id: string;
+          connection_id: string;
+        }>(
           `DELETE FROM cloud_git_oauth_states WHERE state_hash=$1 AND provider=$2
-          AND created_at > clock_timestamp() - interval '${stateLifetimeMinutes} minutes' RETURNING organization_id,user_id`,
+          AND created_at > clock_timestamp() - interval '${stateLifetimeMinutes} minutes' RETURNING organization_id,user_id,connection_id`,
           [stateHash(state), provider],
         )
       ).rows[0];
@@ -96,7 +114,7 @@ export class CloudGitOAuth {
           sql,
           this.cipher,
           claimed.organization_id,
-          provider,
+          claimed.connection_id,
         ),
       };
     });
@@ -133,6 +151,7 @@ export class CloudGitOAuth {
           token: tokens.accessToken,
           refreshToken: tokens.refreshToken,
           expiresAt: tokens.expiresAt,
+          oauthConnectionId: connection.id,
         },
       );
     });

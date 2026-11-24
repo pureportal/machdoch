@@ -112,6 +112,7 @@ export async function saveAccount(
     apiUrl: string;
     login: string;
     revision: number | null;
+    oauthConnectionId: string | null;
   } & StoredTokens,
 ): Promise<{ revision: number }> {
   const identity = { ...account, ...actor };
@@ -141,9 +142,9 @@ export async function saveAccount(
     );
   const updated = (
     await sql.query<{ revision: number }>(
-      `INSERT INTO cloud_git_accounts (organization_id,user_id,provider,api_url,secret,token_prefix,login,refresh_secret,expires_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      ON CONFLICT (organization_id,user_id,provider) DO UPDATE SET api_url=$4,secret=$5,token_prefix=$6,login=$7,refresh_secret=$8,expires_at=$9,
+      `INSERT INTO cloud_git_accounts (organization_id,user_id,provider,api_url,secret,token_prefix,login,refresh_secret,expires_at,oauth_connection_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT (organization_id,user_id,provider) DO UPDATE SET api_url=$4,secret=$5,token_prefix=$6,login=$7,refresh_secret=$8,expires_at=$9,oauth_connection_id=$10,
       revision=cloud_git_accounts.revision+1,connected_at=clock_timestamp(),last_error=NULL
       RETURNING revision`,
       [
@@ -163,6 +164,7 @@ export async function saveAccount(
             )
           : null,
         account.expiresAt,
+        account.oauthConnectionId,
       ],
     )
   ).rows[0]!;
@@ -226,7 +228,8 @@ export class CloudGitAccounts {
           apiUrl: string;
           oauth: boolean;
         }>(
-          `SELECT provider,api_url AS "apiUrl",oauth_client_id IS NOT NULL AS oauth FROM cloud_git_connections WHERE organization_id=$1`,
+          `SELECT DISTINCT ON (provider) provider,api_url AS "apiUrl",oauth_client_id IS NOT NULL AS oauth FROM cloud_git_connections
+          WHERE organization_id=$1 ORDER BY provider,oauth_client_id IS NULL,connected_at`,
           [actor.organizationId],
         )
       ).rows;
@@ -275,6 +278,7 @@ export class CloudGitAccounts {
           token: input.token,
           refreshToken: null,
           expiresAt: null,
+          oauthConnectionId: null,
         },
       );
     });

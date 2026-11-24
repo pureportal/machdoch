@@ -10,7 +10,6 @@ import type {
 } from "../../../lib/cloud-git-contract";
 import {
   gitProviderLabels,
-  gitProviders,
   type GitProvider,
 } from "../../../lib/git-providers";
 import type { SettingsCipher } from "../../settings-crypto";
@@ -71,6 +70,7 @@ function oauthContext(
 }
 
 export interface GitConnectionRecord extends GitAccess {
+  id: string;
   organizationId: string;
   account: string;
   oauth: OAuthApp | null;
@@ -78,9 +78,11 @@ export interface GitConnectionRecord extends GitAccess {
   webhookSecret: string;
   actorId: string;
   automate: boolean;
+  codeAccess: boolean;
 }
 
 type StoredConnection = {
+  id: string;
   organization_id: string;
   provider: GitProvider;
   api_url: string;
@@ -90,16 +92,29 @@ type StoredConnection = {
   webhook_secret: Uint8Array;
   actor_id: string;
   automate: boolean;
+  code_access: boolean;
   oauth_client_id: string | null;
   oauth_secret: Uint8Array | null;
 };
 
-function unconfigured(provider: GitProvider): CloudError {
+function unconfigured(): CloudError {
   return new CloudError(
-    409,
+    404,
     "git_unconfigured",
-    `Connect ${gitProviderLabels[provider]} first.`,
+    "This Git connection is unavailable.",
   );
+}
+
+export function requireCodeAccess(
+  connection: GitConnectionRecord,
+): GitConnectionRecord {
+  if (!connection.codeAccess)
+    throw new CloudError(
+      409,
+      "git_code_access",
+      `Code access is off for ${connection.account}.`,
+    );
+  return connection;
 }
 
 function unlock(
@@ -108,6 +123,7 @@ function unlock(
 ): GitConnectionRecord {
   try {
     return {
+      id: row.id,
       organizationId: row.organization_id,
       provider: row.provider,
       apiUrl: row.api_url,
@@ -127,6 +143,7 @@ function unlock(
         .toString("utf8"),
       actorId: row.actor_id,
       automate: row.automate,
+      codeAccess: row.code_access,
       oauth:
         row.oauth_client_id && row.oauth_secret
           ? {
@@ -154,22 +171,22 @@ function unlock(
 }
 
 const storedColumns =
-  "organization_id,provider,api_url,account,secret,webhook_id,webhook_secret,actor_id,automate,oauth_client_id,oauth_secret";
+  "id,organization_id,provider,api_url,account,secret,webhook_id,webhook_secret,actor_id,automate,code_access,oauth_client_id,oauth_secret";
 
 export async function gitConnection(
   sql: CloudSql,
   cipher: SettingsCipher | null,
   organizationId: string,
-  provider: GitProvider,
+  connectionId: string,
 ): Promise<GitConnectionRecord> {
   const storage = await requireCredentialStorage(sql, cipher);
   const row = (
     await sql.query<StoredConnection>(
-      `SELECT ${storedColumns} FROM cloud_git_connections WHERE organization_id=$1 AND provider=$2`,
-      [organizationId, provider],
+      `SELECT ${storedColumns} FROM cloud_git_connections WHERE organization_id=$1 AND id=$2`,
+      [organizationId, connectionId],
     )
   ).rows[0];
-  if (!row) throw unconfigured(provider);
+  if (!row) throw unconfigured();
   return unlock(storage, row);
 }
 
@@ -204,60 +221,52 @@ export class CloudGitConnections {
     return `${this.origin}/api/v1/integrations/${provider}/webhooks/${webhookId}`;
   }
 
-  private async read(
-    sql: CloudSql,
-    organizationId: string,
-    provider: GitProvider,
-  ): Promise<GitConnection | null> {
-    const row = (
-      await sql.query<
-        Omit<
-          GitConnection,
-          "webhookUrl" | "webhookSecret" | "repositories" | "oauthCallbackUrl"
-        >
-      >(
-        `SELECT provider,api_url AS "apiUrl",account,token_prefix AS "tokenPrefix",automate,revision,oauth_client_id AS "oauthClientId",
-        to_char(connected_at AT TIME ZONE 'UTC',${timestamp}) AS "connectedAt",
-        to_char(synced_at AT TIME ZONE 'UTC',${timestamp}) AS "syncedAt",last_error AS "lastError"
-        FROM cloud_git_connections WHERE organization_id=$1 AND provider=$2`,
-        [organizationId, provider],
-      )
-    ).rows[0];
-    if (!row) return null;
-    const record = await gitConnection(
-      sql,
-      this.cipher,
-      organizationId,
-      provider,
-    );
-    const repositories = (
-      await sql.query<GitRepository & Record<string, unknown>>(
-        `SELECT id,full_name AS "fullName",private,default_branch AS "defaultBranch",hook_id IS NOT NULL AS webhook,
-        to_char(synced_at AT TIME ZONE 'UTC',${timestamp}) AS "syncedAt"
-        FROM cloud_git_repositories WHERE organization_id=$1 AND provider=$2 ORDER BY lower(full_name)`,
-        [organizationId, provider],
-      )
-    ).rows;
-    return {
-      ...row,
-      webhookUrl: this.webhookUrl(provider, record.webhookId),
-      oauthCallbackUrl: this.oauthCallbackUrl(provider),
-      webhookSecret: record.webhookSecret,
-      repositories,
-    };
-  }
-
   get(actor: CloudActor): Promise<GitAdministration> {
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "git.manage");
-      const connections: GitAdministration["connections"] = {};
-      for (const provider of gitProviders) {
-        const connection = await this.read(sql, actor.organizationId, provider);
-        if (connection) connections[provider] = connection;
+      const rows = (
+        await sql.query<
+          Omit<
+            GitConnection,
+            "webhookUrl" | "webhookSecret" | "repositories" | "oauthCallbackUrl"
+          >
+        >(
+          `SELECT c.id,c.provider,c.api_url AS "apiUrl",c.account,c.token_prefix AS "tokenPrefix",c.automate,c.code_access AS "codeAccess",
+          c.revision,c.oauth_client_id AS "oauthClientId",u.name AS "enabledBy",
+          to_char(c.connected_at AT TIME ZONE 'UTC',${timestamp}) AS "connectedAt",
+          to_char(c.synced_at AT TIME ZONE 'UTC',${timestamp}) AS "syncedAt",c.last_error AS "lastError"
+          FROM cloud_git_connections c LEFT JOIN cloud_users u ON u.id=c.actor_id
+          WHERE c.organization_id=$1 ORDER BY c.provider,c.connected_at,c.id`,
+          [actor.organizationId],
+        )
+      ).rows;
+      const connections: GitConnection[] = [];
+      for (const row of rows) {
+        const record = await gitConnection(
+          sql,
+          this.cipher,
+          actor.organizationId,
+          row.id,
+        );
+        const repositories = (
+          await sql.query<GitRepository & Record<string, unknown>>(
+            `SELECT id,full_name AS "fullName",private,default_branch AS "defaultBranch",hook_id IS NOT NULL AS webhook,
+            to_char(synced_at AT TIME ZONE 'UTC',${timestamp}) AS "syncedAt"
+            FROM cloud_git_repositories WHERE organization_id=$1 AND connection_id=$2 ORDER BY lower(full_name)`,
+            [actor.organizationId, row.id],
+          )
+        ).rows;
+        connections.push({
+          ...row,
+          webhookUrl: this.webhookUrl(row.provider, record.webhookId),
+          oauthCallbackUrl: this.oauthCallbackUrl(row.provider),
+          webhookSecret: record.webhookSecret,
+          repositories,
+        });
       }
       return {
         connections,
-        automations: Object.keys(connections).length
+        automations: connections.length
           ? await readStatusRules(sql, actor.organizationId)
           : [],
         credentialStorageAvailable: this.cipher !== null,
@@ -282,11 +291,11 @@ export class CloudGitConnections {
     key: string,
     provider: GitProvider,
     input: GitConnectionInput,
-  ): Promise<{ revision: number }> {
+  ): Promise<{ id: string; revision: number }> {
     await this.database.transaction((sql) =>
       requireMembership(sql, actor, "git.manage"),
     );
-    const account = input.token
+    const viewer = input.token
       ? await gitClient(
           { provider, apiUrl: input.apiUrl, token: input.token },
           this.transport,
@@ -325,20 +334,35 @@ export class CloudGitConnections {
           },
         },
         async () => {
-          const current = (
-            await sql.query<
-              StoredConnection & { revision: number; token_prefix: string }
-            >(
-              `SELECT ${storedColumns},revision,token_prefix FROM cloud_git_connections WHERE organization_id=$1 AND provider=$2 FOR UPDATE`,
-              [actor.organizationId, provider],
-            )
-          ).rows[0];
+          const current = input.connectionId
+            ? (
+                await sql.query<
+                  StoredConnection & { revision: number; token_prefix: string }
+                >(
+                  `SELECT ${storedColumns},revision,token_prefix FROM cloud_git_connections WHERE organization_id=$1 AND id=$2 AND provider=$3 FOR UPDATE`,
+                  [actor.organizationId, input.connectionId, provider],
+                )
+              ).rows[0]
+            : undefined;
+          if (input.connectionId && !current) throw unconfigured();
           checkRevision(current?.revision ?? 0, input.revision);
           if (!input.token && (!current || current.api_url !== input.apiUrl))
             throw new CloudError(
               422,
               "git_token_required",
               `Enter a ${gitProviderLabels[provider]} token for this API address.`,
+            );
+          const id = current?.id ?? randomUUID();
+          const account = viewer ?? current!.account;
+          const duplicate = await sql.query(
+            "SELECT 1 FROM cloud_git_connections WHERE organization_id=$1 AND provider=$2 AND api_url=$3 AND lower(account)=lower($4) AND id<>$5",
+            [actor.organizationId, provider, input.apiUrl, account, id],
+          );
+          if (duplicate.rows.length)
+            throw new CloudError(
+              409,
+              "git_connection_exists",
+              `${account} is already connected.`,
             );
           const webhookId = current?.webhook_id ?? randomUUID();
           const webhookSecret =
@@ -375,42 +399,45 @@ export class CloudGitConnections {
               "git_oauth_secret_required",
               "Enter the OAuth app secret.",
             );
-          const updated = (
-            await sql.query<{ revision: number }>(
-              `INSERT INTO cloud_git_connections (organization_id,provider,api_url,secret,token_prefix,account,webhook_id,webhook_secret,actor_id,automate,oauth_client_id,oauth_secret,sync_requested_at)
-              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,clock_timestamp())
-              ON CONFLICT (organization_id,provider) DO UPDATE SET api_url=$3,secret=$4,token_prefix=$5,account=$6,actor_id=$9,automate=$10,oauth_client_id=$11,oauth_secret=$12,
-              revision=cloud_git_connections.revision+1,last_error=NULL,sync_requested_at=clock_timestamp()
-              RETURNING revision`,
-              [
-                actor.organizationId,
-                provider,
-                input.apiUrl,
-                secret,
-                input.token?.slice(0, 12) ?? current!.token_prefix,
-                account ?? current!.account,
-                webhookId,
-                webhookSecret,
-                actor.userId,
-                input.automate,
-                oauthClientId,
-                oauthSecret,
-              ],
-            )
-          ).rows[0]!;
-          await recordEvent(
-            sql,
-            actor,
-            "git.connected",
+          const values = [
             actor.organizationId,
-            updated.revision,
-            {
-              provider,
-              automate: input.automate,
-              tokenChanged: Boolean(input.token),
-            },
-          );
-          return updated;
+            id,
+            input.apiUrl,
+            secret,
+            input.token?.slice(0, 12) ?? current!.token_prefix,
+            account,
+            actor.userId,
+            input.automate,
+            input.codeAccess,
+            oauthClientId,
+            oauthSecret,
+          ];
+          const updated = current
+            ? (
+                await sql.query<{ revision: number }>(
+                  `UPDATE cloud_git_connections SET api_url=$3,secret=$4,token_prefix=$5,account=$6,automate=$8,code_access=$9,oauth_client_id=$10,oauth_secret=$11,
+                  actor_id=CASE WHEN $12 THEN $7 ELSE actor_id END,connected_at=CASE WHEN $12 THEN clock_timestamp() ELSE connected_at END,
+                  revision=revision+1,last_error=NULL,sync_requested_at=clock_timestamp()
+                  WHERE organization_id=$1 AND id=$2 RETURNING revision`,
+                  [...values, Boolean(input.token)],
+                )
+              ).rows[0]!
+            : (
+                await sql.query<{ revision: number }>(
+                  `INSERT INTO cloud_git_connections (organization_id,id,api_url,secret,token_prefix,account,actor_id,automate,code_access,oauth_client_id,oauth_secret,
+                  provider,webhook_id,webhook_secret,sync_requested_at)
+                  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,clock_timestamp()) RETURNING revision`,
+                  [...values, provider, webhookId, webhookSecret],
+                )
+              ).rows[0]!;
+          await recordEvent(sql, actor, "git.connected", id, updated.revision, {
+            provider,
+            account,
+            automate: input.automate,
+            codeAccess: input.codeAccess,
+            tokenChanged: Boolean(input.token),
+          });
+          return { id, revision: updated.revision };
         },
       );
     });
@@ -418,36 +445,41 @@ export class CloudGitConnections {
 
   private access(
     actor: CloudActor,
-    provider: GitProvider,
+    connectionId: string,
   ): Promise<GitConnectionRecord> {
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "git.manage");
-      return gitConnection(sql, this.cipher, actor.organizationId, provider);
+      return gitConnection(
+        sql,
+        this.cipher,
+        actor.organizationId,
+        connectionId,
+      );
     });
   }
 
   async available(
     actor: CloudActor,
-    provider: GitProvider,
+    connectionId: string,
   ): Promise<GitAvailableRepository[]> {
     return gitClient(
-      await this.access(actor, provider),
+      await this.access(actor, connectionId),
       this.transport,
     ).repositories();
   }
 
   async addRepository(
     actor: CloudActor,
-    provider: GitProvider,
+    connectionId: string,
     fullName: string,
   ): Promise<{ id: string }> {
-    const access = await this.access(actor, provider);
+    const access = await this.access(actor, connectionId);
     const client = gitClient(access, this.transport);
     const repository = await client.repository(fullName);
     const hookId = this.origin.startsWith("https://")
       ? await client
           .createWebhook(repository.fullName, {
-            url: this.webhookUrl(provider, access.webhookId),
+            url: this.webhookUrl(access.provider, access.webhookId),
             secret: access.webhookSecret,
           })
           .catch((error: unknown) => {
@@ -459,15 +491,15 @@ export class CloudGitConnections {
       await requireMembership(sql, actor, "git.manage");
       const inserted = (
         await sql.query<{ id: string }>(
-          `INSERT INTO cloud_git_repositories (organization_id,id,provider,external_id,full_name,default_branch,private,web_url,hook_id,hook_version)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (organization_id,provider,external_id)
-          DO UPDATE SET full_name=$5,default_branch=$6,private=$7,web_url=$8,hook_id=COALESCE($9,cloud_git_repositories.hook_id),
+          `INSERT INTO cloud_git_repositories (organization_id,id,provider,external_id,full_name,default_branch,private,web_url,hook_id,hook_version,connection_id)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (organization_id,provider,external_id)
+          DO UPDATE SET full_name=$5,default_branch=$6,private=$7,web_url=$8,connection_id=$11,hook_id=COALESCE($9,cloud_git_repositories.hook_id),
           hook_version=CASE WHEN $9::bigint IS NULL THEN cloud_git_repositories.hook_version ELSE $10 END
           RETURNING id`,
           [
             actor.organizationId,
             randomUUID(),
-            provider,
+            access.provider,
             repository.externalId,
             repository.fullName,
             repository.defaultBranch,
@@ -475,15 +507,16 @@ export class CloudGitConnections {
             repository.webUrl.slice(0, 500),
             hookId,
             currentHookVersion,
+            connectionId,
           ],
         )
       ).rows[0]!;
       await sql.query(
-        "UPDATE cloud_git_connections SET sync_requested_at=clock_timestamp() WHERE organization_id=$1 AND provider=$2",
-        [actor.organizationId, provider],
+        "UPDATE cloud_git_connections SET sync_requested_at=clock_timestamp() WHERE organization_id=$1 AND id=$2",
+        [actor.organizationId, connectionId],
       );
       await recordEvent(sql, actor, "git.repository_added", inserted.id, 1, {
-        provider,
+        provider: access.provider,
         fullName: repository.fullName,
       });
       return inserted;
@@ -498,8 +531,9 @@ export class CloudGitConnections {
           full_name: string;
           hook_id: string | null;
           provider: GitProvider;
+          connection_id: string;
         }>(
-          "SELECT full_name,hook_id,provider FROM cloud_git_repositories WHERE organization_id=$1 AND id=$2",
+          "SELECT full_name,hook_id,provider,connection_id FROM cloud_git_repositories WHERE organization_id=$1 AND id=$2",
           [actor.organizationId, id],
         )
       ).rows[0];
@@ -508,7 +542,7 @@ export class CloudGitConnections {
       throw new CloudError(404, "not_found", "Repository is unavailable.");
     if (repository.hook_id)
       await gitClient(
-        await this.access(actor, repository.provider),
+        await this.access(actor, repository.connection_id),
         this.transport,
       )
         .deleteWebhook(repository.full_name, Number(repository.hook_id))
@@ -531,23 +565,23 @@ export class CloudGitConnections {
 
   async disconnect(
     actor: CloudActor,
-    provider: GitProvider,
+    connectionId: string,
     revision: number,
   ): Promise<void> {
     const webhooks = await this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "git.manage");
       const current = (
         await sql.query<{ revision: number }>(
-          "SELECT revision FROM cloud_git_connections WHERE organization_id=$1 AND provider=$2",
-          [actor.organizationId, provider],
+          "SELECT revision FROM cloud_git_connections WHERE organization_id=$1 AND id=$2",
+          [actor.organizationId, connectionId],
         )
       ).rows[0];
       if (!current) return null;
       checkRevision(current.revision, revision);
       const hooks = (
         await sql.query<{ full_name: string; hook_id: string }>(
-          "SELECT full_name,hook_id FROM cloud_git_repositories WHERE organization_id=$1 AND provider=$2 AND hook_id IS NOT NULL",
-          [actor.organizationId, provider],
+          "SELECT full_name,hook_id FROM cloud_git_repositories WHERE organization_id=$1 AND connection_id=$2 AND hook_id IS NOT NULL",
+          [actor.organizationId, connectionId],
         )
       ).rows;
       return hooks.length
@@ -556,7 +590,7 @@ export class CloudGitConnections {
               sql,
               this.cipher,
               actor.organizationId,
-              provider,
+              connectionId,
             ),
             hooks,
           }
@@ -577,36 +611,36 @@ export class CloudGitConnections {
     await this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "git.manage");
       const current = (
-        await sql.query<{ revision: number }>(
-          "SELECT revision FROM cloud_git_connections WHERE organization_id=$1 AND provider=$2 FOR UPDATE",
-          [actor.organizationId, provider],
+        await sql.query<{ revision: number; provider: GitProvider }>(
+          "SELECT revision,provider FROM cloud_git_connections WHERE organization_id=$1 AND id=$2 FOR UPDATE",
+          [actor.organizationId, connectionId],
         )
       ).rows[0];
       if (!current) return;
       checkRevision(current.revision, revision);
       await sql.query(
-        "DELETE FROM cloud_git_connections WHERE organization_id=$1 AND provider=$2",
-        [actor.organizationId, provider],
+        "DELETE FROM cloud_git_connections WHERE organization_id=$1 AND id=$2",
+        [actor.organizationId, connectionId],
       );
       await recordEvent(
         sql,
         actor,
         "git.disconnected",
-        actor.organizationId,
+        connectionId,
         revision,
-        { provider },
+        { provider: current.provider },
       );
     });
   }
 
-  requestSync(actor: CloudActor, provider: GitProvider): Promise<void> {
+  requestSync(actor: CloudActor, connectionId: string): Promise<void> {
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "git.manage");
       const updated = await sql.query(
-        "UPDATE cloud_git_connections SET sync_requested_at=clock_timestamp() WHERE organization_id=$1 AND provider=$2 RETURNING organization_id",
-        [actor.organizationId, provider],
+        "UPDATE cloud_git_connections SET sync_requested_at=clock_timestamp() WHERE organization_id=$1 AND id=$2 RETURNING organization_id",
+        [actor.organizationId, connectionId],
       );
-      if (!updated.rows.length) throw unconfigured(provider);
+      if (!updated.rows.length) throw unconfigured();
     });
   }
 }

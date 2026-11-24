@@ -243,7 +243,7 @@ export class CloudPlanning {
         gitProviders: accessCan(access, "git.view")
           ? (
               await sql.query<{ provider: GitProvider }>(
-                "SELECT provider FROM cloud_git_connections WHERE organization_id=$1 ORDER BY provider",
+                "SELECT DISTINCT provider FROM cloud_git_connections WHERE organization_id=$1 ORDER BY provider",
                 [actor.organizationId],
               )
             ).rows.map((row) => row.provider)

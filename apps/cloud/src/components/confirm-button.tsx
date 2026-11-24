@@ -16,6 +16,8 @@ import { Button } from "./ui/button";
 
 export function ConfirmButton({
   trigger,
+  open: controlledOpen,
+  onOpenChange,
   title,
   description,
   actionLabel,
@@ -23,7 +25,9 @@ export function ConfirmButton({
   destructive = true,
   onCloseAutoFocus,
 }: {
-  trigger: React.ReactElement;
+  trigger?: React.ReactElement;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   title: string;
   description: string;
   actionLabel: string;
@@ -31,7 +35,9 @@ export function ConfirmButton({
   destructive?: boolean;
   onCloseAutoFocus?: (event: Event) => void;
 }): React.ReactElement {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   return (
@@ -43,7 +49,7 @@ export function ConfirmButton({
         if (!nextOpen) setError("");
       }}
     >
-      <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
+      {trigger && <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>}
       <AlertDialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <AlertDialogTitle>{title}</AlertDialogTitle>
         <AlertDialogDescription>{description}</AlertDialogDescription>

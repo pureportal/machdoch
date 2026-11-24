@@ -50,7 +50,7 @@ const listLimit = 300;
 const pullRequestColumns = `p.id,r.provider,r.full_name AS repository,p.number,p.title,p.url,p.state,p.draft,p.author,p.head_ref AS "headRef",p.head_sha AS "headSha",
   p.base_ref AS "baseRef",r.default_branch AS "defaultBranch",p.mergeable_state AS "mergeableState",p.additions,p.deletions,p.changed_files AS "changedFiles",
   p.checks,p.review,p.stage,to_char(p.merged_at AT TIME ZONE 'UTC',${timestamp}) AS "mergedAt",
-  to_char(p.updated_at AT TIME ZONE 'UTC',${timestamp}) AS "updatedAt",p.repository_id AS "repositoryId",
+  to_char(p.updated_at AT TIME ZONE 'UTC',${timestamp}) AS "updatedAt",p.repository_id AS "repositoryId",r.connection_id AS "connectionId",
   r.web_url AS "repositoryUrl",p.requested_reviewers AS "requestedReviewers",COALESCE(v.closes,false) AS closes,COALESCE(v.issues,'[]'::jsonb) AS issues`;
 const stageOrder = `CASE p.stage ${pullRequestStages.map((stage, index) => `WHEN '${stage}' THEN ${index}`).join(" ")} END`;
 const visibleCte = `WITH visible AS (
@@ -74,6 +74,7 @@ const visibleWhere = `p.organization_id=$1 AND (v.pull_request_id IS NOT NULL OR
 
 type Row = Omit<CloudPullRequest, "stack"> & {
   repositoryId: string;
+  connectionId: string;
   repositoryUrl: string | null;
   issues: CloudLinkedIssue[];
 };
@@ -110,6 +111,7 @@ async function withStacks(
   (CloudPullRequest & {
     issues: CloudLinkedIssue[];
     repositoryId: string;
+    connectionId: string;
     repositoryUrl: string | null;
   })[]
 > {
@@ -134,12 +136,14 @@ function publicPullRequest(
   row: CloudPullRequest & {
     issues?: unknown;
     repositoryId?: unknown;
+    connectionId?: unknown;
     repositoryUrl?: unknown;
   },
 ): CloudPullRequest {
   const {
     issues: _issues,
     repositoryId: _repository,
+    connectionId: _connection,
     repositoryUrl: _url,
     ...pullRequest
   } = row;
@@ -283,6 +287,7 @@ export class CloudGitPullRequests {
       issues: row.issues,
       repository: {
         id: row.repositoryId,
+        connectionId: row.connectionId,
         provider: row.provider,
         fullName: row.repository,
         defaultBranch: row.defaultBranch,
@@ -292,7 +297,7 @@ export class CloudGitPullRequests {
         sql,
         this.cipher,
         actor.organizationId,
-        row.provider,
+        row.connectionId,
       ),
       canAct: accessCan(access, "git.act"),
     };

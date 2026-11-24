@@ -2,7 +2,7 @@
 
 import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, Lock, Trash2 } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import type {
   GitAdministration,
   GitConnection,
@@ -14,7 +14,6 @@ import {
   gitTokenUrl,
   type GitProvider,
 } from "@/lib/git-providers";
-import { ConfirmButton } from "@/components/confirm-button";
 import { CopyField } from "@/components/copy-field";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
@@ -26,10 +25,9 @@ import {
   createCommandSender,
   formText,
 } from "./api-client";
-import { GitRepositoryPicker } from "./git-repository-picker";
+import { GitConnectionCard } from "./git-connection-card";
 import { CliSignInDialog, useCliLogin } from "./provider-sign-in";
 import { GitStatusRules } from "./git-status-rules";
-import { RelativeTime } from "./relative-time";
 
 const tokenHints: Record<GitProvider, string> = {
   github:
@@ -38,22 +36,15 @@ const tokenHints: Record<GitProvider, string> = {
     "The token needs the api scope; maintainer access lets Machdoch add webhooks.",
 };
 
-const webhookEvents: Record<GitProvider, string> = {
-  github:
-    "push, pull request, pull request review, review comment, issue comment, check run and check suite events",
-  gitlab:
-    "push, tag push, merge request, comment and pipeline events, and use the secret as its secret token",
-};
-
 function ProviderSection({
   provider,
-  connection,
+  connections,
   credentialStorageAvailable,
   loading,
   onChanged,
 }: {
   provider: GitProvider;
-  connection: GitConnection | undefined;
+  connections: GitConnection[];
   credentialStorageAvailable: boolean;
   loading: boolean;
   onChanged: () => Promise<void>;
@@ -68,17 +59,11 @@ function ProviderSection({
       setApiUrl(editing?.apiUrl ?? defaultGitApiUrls[provider]);
   }, [editing, provider]);
   const tokenUrl = gitTokenUrl(provider, apiUrl);
-  const [adding, setAdding] = useState(false);
+  const [addingTo, setAddingTo] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
-  const deviceSignIn = provider === "github" && !connection;
-  const signIn = useCliLogin(
-    deviceSignIn || signingIn ? "git/github/sign-in" : null,
-  );
-  const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState("");
+  const deviceSignIn = provider === "github";
+  const signIn = useCliLogin(signingIn ? "git/github/sign-in" : null);
   const sender = useRef(createCommandSender());
-  const withoutWebhook =
-    connection?.repositories.filter((repository) => !repository.webhook) ?? [];
   const heading = `${provider}-heading`;
   return (
     <section className="cloud-settings-section" aria-labelledby={heading}>
@@ -102,16 +87,14 @@ function ProviderSection({
             aria-busy={loading}
             onClick={() => {
               sender.current = createCommandSender();
-              setEditing(connection ?? null);
+              setEditing(null);
             }}
           >
             {loading
               ? "Loading…"
-              : connection
-                ? "Edit connection"
-                : deviceSignIn
-                  ? "Use a token"
-                  : `Connect ${label}`}
+              : deviceSignIn
+                ? "Use a token"
+                : `Connect ${label}`}
           </Button>
         </div>
       </header>
@@ -121,164 +104,30 @@ function ProviderSection({
           state={signIn}
           onClose={() => {
             setSigningIn(false);
-            if (signIn.login?.state !== "signed-in") return;
-            setAdding(true);
-            void onChanged();
+            if (signIn.login?.state === "signed-in") void onChanged();
           }}
         />
       )}
       {!loading && !credentialStorageAvailable && (
         <p>Configure credential storage before connecting {label}.</p>
       )}
-      {connection && (
-        <>
-          <dl className="cloud-mimorii-status">
-            <div>
-              <dt>Account</dt>
-              <dd>{connection.account}</dd>
-            </div>
-            {connection.apiUrl !== defaultGitApiUrls[provider] && (
-              <div>
-                <dt>API address</dt>
-                <dd>{connection.apiUrl}</dd>
-              </div>
-            )}
-            <div>
-              <dt>Issue status</dt>
-              <dd>
-                {connection.automate ? "Follows pull requests" : "Manual"}
-              </dd>
-            </div>
-            <div>
-              <dt>Last sync</dt>
-              <dd>
-                {connection.syncedAt ? (
-                  <RelativeTime value={connection.syncedAt} />
-                ) : (
-                  "Not yet"
-                )}
-              </dd>
-            </div>
-          </dl>
-          {connection.lastError && (
-            <p role="alert" className="cloud-error">
-              {connection.lastError}
-            </p>
-          )}
-          <section aria-labelledby={`${provider}-repositories-heading`}>
-            <header className="flex items-center justify-between gap-2">
-              <h3
-                id={`${provider}-repositories-heading`}
-                className="text-sm font-medium"
-              >
-                Repositories
-              </h3>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAdding(true)}
-              >
-                Add repository
-              </Button>
-            </header>
-            {connection.repositories.length > 0 && (
-              <ul className="cloud-github-repositories">
-                {connection.repositories.map((repository) => (
-                  <li key={repository.id}>
-                    {repository.private && (
-                      <Lock size={13} aria-label="Private" role="img" />
-                    )}
-                    <span>{repository.fullName}</span>
-                    <ConfirmButton
-                      trigger={
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`Remove ${repository.fullName}`}
-                        >
-                          <Trash2 />
-                        </Button>
-                      }
-                      title={`Remove ${repository.fullName}`}
-                      description="Its pull requests are unlinked from issues."
-                      actionLabel="Remove"
-                      onConfirm={async () => {
-                        await cloudRequest(
-                          `git/repositories/${repository.id}/remove`,
-                          { method: "POST", body: {} },
-                        );
-                        await onChanged();
-                      }}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-          {withoutWebhook.length > 0 && (
-            <details className="cloud-github-webhook">
-              <summary>Webhook</summary>
-              <p>
-                Add this webhook to{" "}
-                {withoutWebhook.map((entry) => entry.fullName).join(", ")} with{" "}
-                {webhookEvents[provider]}.
-              </p>
-              <CopyField label="Payload URL" value={connection.webhookUrl} />
-              <CopyField
-                label="Secret"
-                value={connection.webhookSecret}
-                monospace
-              />
-            </details>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              aria-disabled={syncing}
-              aria-busy={syncing}
-              onClick={() => {
-                if (syncing) return;
-                setSyncing(true);
-                setError("");
-                void cloudRequest(`git/${provider}/sync`, {
-                  method: "POST",
-                  body: {},
-                })
-                  .catch((reason: Error) => setError(reason.message))
-                  .finally(() => setSyncing(false));
-              }}
-            >
-              {syncing ? "Requesting…" : "Sync now"}
-            </Button>
-            <ConfirmButton
-              trigger={<Button variant="ghost">Disconnect</Button>}
-              title={`Disconnect ${label}`}
-              description={`Pull requests are unlinked from issues and the webhooks machdoch created are removed from ${label}.`}
-              actionLabel="Disconnect"
-              onConfirm={async () => {
-                await cloudRequest(`git/${provider}`, {
-                  method: "DELETE",
-                  body: { revision: connection.revision },
-                });
-                await onChanged();
-              }}
-            />
-          </div>
-          <GitRepositoryPicker
-            connection={connection}
-            open={adding}
-            onOpenChange={setAdding}
-            onAdded={onChanged}
-          />
-        </>
-      )}
-      {error && (
-        <p role="alert" className="cloud-error">
-          {error}
-        </p>
-      )}
+      {connections.map((connection) => (
+        <GitConnectionCard
+          key={connection.id}
+          connection={connection}
+          addingRepository={addingTo === connection.id}
+          onAddingRepositoryChange={(open) =>
+            setAddingTo(open ? connection.id : null)
+          }
+          onReconnect={() => {
+            sender.current = createCommandSender();
+            setEditing(connection);
+          }}
+          onChanged={onChanged}
+        />
+      ))}
       <FormDialog
-        title={connection ? `Edit ${label} connection` : `Connect ${label}`}
+        title={editing ? `Reconnect ${editing.account}` : `Connect ${label}`}
         submitLabel="Save connection"
         open={editing !== undefined}
         onOpenChange={(open) => {
@@ -292,18 +141,21 @@ function ProviderSection({
           const token = formText(form, "token");
           const oauthClientSecret = formText(form, "oauthClientSecret");
           try {
-            await sender.current(
+            const saved = await sender.current<{ id: string }>(
               `git/${provider}`,
               {
+                ...(editing ? { connectionId: editing.id } : {}),
                 revision: editing?.revision ?? 0,
                 apiUrl: formText(form, "apiUrl"),
                 ...(token ? { token } : {}),
                 automate: form.get("automate") === "on",
+                codeAccess: form.get("codeAccess") === "on",
                 oauthClientId: formText(form, "oauthClientId") || null,
                 ...(oauthClientSecret ? { oauthClientSecret } : {}),
               },
               "PUT",
             );
+            if (!editing) setAddingTo(saved.id);
           } catch (reason) {
             if (
               reason instanceof CloudRequestError &&
@@ -316,7 +168,6 @@ function ProviderSection({
             }
             throw reason;
           }
-          setError("");
           await onChanged();
         }}
       >
@@ -358,6 +209,14 @@ function ProviderSection({
             defaultChecked={editing?.automate ?? true}
           />
           Update issue status from pull requests
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            name="codeAccess"
+            defaultChecked={editing?.codeAccess ?? true}
+          />
+          Code access
         </label>
         <details
           className="cloud-git-oauth"
@@ -446,16 +305,18 @@ export function GitSettings() {
       stop();
     };
   }, [load]);
-  const automated = gitProviders.some(
-    (provider) => data?.connections[provider]?.automate,
-  );
+  const automated = data?.connections.some((connection) => connection.automate);
   return (
     <>
       {gitProviders.map((provider) => (
         <ProviderSection
           key={provider}
           provider={provider}
-          connection={data?.connections[provider]}
+          connections={
+            data?.connections.filter(
+              (connection) => connection.provider === provider,
+            ) ?? []
+          }
           credentialStorageAvailable={data?.credentialStorageAvailable ?? false}
           loading={!data && !error}
           onChanged={() => load()}

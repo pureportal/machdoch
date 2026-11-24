@@ -246,26 +246,27 @@ async function issueStatus(issueId: string) {
   return (await runtime.planning.getIssue(owner, issueId)).statusName;
 }
 
+let connectionId: string;
+
 async function connect() {
-  await runtime.git.connections.connect(owner, randomUUID(), "github", {
-    revision: 0,
-    apiUrl,
-    token,
-    automate: true,
-  });
-  await runtime.git.connections.addRepository(owner, "github", "acme/app");
+  ({ id: connectionId } = await runtime.git.connections.connect(
+    owner,
+    randomUUID(),
+    "github",
+    { revision: 0, apiUrl, token, automate: true, codeAccess: true },
+  ));
+  await runtime.git.connections.addRepository(owner, connectionId, "acme/app");
 }
 
 async function sync() {
-  await runtime.git.connections.requestSync(owner, "github");
+  await runtime.git.connections.requestSync(owner, connectionId);
   for (let round = 0; round < 50; round++)
     if (!(await runtime.git.sync.tick())) return;
   throw new Error("GitHub sync did not settle.");
 }
 
 async function webhook() {
-  const connection = (await runtime.git.connections.get(owner)).connections
-    .github!;
+  const connection = (await runtime.git.connections.get(owner)).connections[0]!;
   return {
     id: connection.webhookUrl.split("/").at(-1)!,
     secret: connection.webhookSecret,
@@ -352,11 +353,13 @@ it("keeps the token encrypted, lets only administrators connect and requires a t
       apiUrl,
       token,
       automate: true,
+      codeAccess: true,
     }),
   ).rejects.toMatchObject({ status: 403 });
   await connect();
   const administration = await runtime.git.connections.get(owner);
-  expect(administration.connections.github).toMatchObject({
+  const connection = administration.connections[0]!;
+  expect(connection).toMatchObject({
     apiUrl,
     account: "octocat",
     tokenPrefix: token.slice(0, 12),
@@ -375,8 +378,8 @@ it("keeps the token encrypted, lets only administrators connect and requires a t
       body: expect.objectContaining({
         events: githubWebhookEvents,
         config: expect.objectContaining({
-          url: administration.connections.github!.webhookUrl,
-          secret: administration.connections.github!.webhookSecret,
+          url: connection.webhookUrl,
+          secret: connection.webhookSecret,
         }),
       }),
     }),
@@ -386,23 +389,23 @@ it("keeps the token encrypted, lets only administrators connect and requires a t
   });
   await expect(
     runtime.git.connections.connect(owner, randomUUID(), "github", {
-      revision: administration.connections.github!.revision,
+      connectionId: connection.id,
+      revision: connection.revision,
       apiUrl: "https://github.example.test/api/v3",
       automate: true,
+      codeAccess: true,
     }),
   ).rejects.toMatchObject({ code: "git_token_required" });
   await runtime.git.connections.disconnect(
     owner,
-    "github",
-    administration.connections.github!.revision,
+    connection.id,
+    connection.revision,
   );
   expect(calls.at(-1)).toMatchObject({
     method: "DELETE",
     path: "/repos/acme/app/hooks/99",
   });
-  expect(
-    (await runtime.git.connections.get(owner)).connections.github,
-  ).toBeUndefined();
+  expect((await runtime.git.connections.get(owner)).connections).toEqual([]);
 });
 
 it("links existing pull requests without moving issues, then moves issues forward as pull requests change", async () => {
@@ -649,8 +652,15 @@ it("accepts only signed webhooks, processes each delivery once and refreshes che
     sender: { login: "ada" },
   });
   expect(
-    (await deliver(hook, "push", "delivery-push", push, signed(hook.secret, push)))
-      .status,
+    (
+      await deliver(
+        hook,
+        "push",
+        "delivery-push",
+        push,
+        signed(hook.secret, push),
+      )
+    ).status,
   ).toBe(204);
   await sync();
   expect(

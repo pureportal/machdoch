@@ -37,10 +37,12 @@ export const gitApiUrlSchema = z
 const gitToken = z.string().trim().min(20).max(400);
 
 export const gitConnectionInputSchema = z.strictObject({
+  connectionId: cloudId.optional(),
   revision: z.number().int().min(0),
   apiUrl: gitApiUrlSchema,
   token: gitToken.optional(),
   automate: z.boolean(),
+  codeAccess: z.boolean(),
   oauthClientId: z.string().trim().min(1).max(200).nullable().optional(),
   oauthClientSecret: z.string().trim().min(1).max(500).optional(),
 });
@@ -106,12 +108,15 @@ export interface GitRepository {
 }
 
 export interface GitConnection {
+  id: string;
   provider: GitProvider;
   apiUrl: string;
   account: string;
   tokenPrefix: string;
   automate: boolean;
+  codeAccess: boolean;
   revision: number;
+  enabledBy: string | null;
   connectedAt: string;
   syncedAt: string | null;
   lastError: string | null;
@@ -129,7 +134,7 @@ export interface GitTeamStatusRules {
 }
 
 export interface GitAdministration {
-  connections: Partial<Record<GitProvider, GitConnection>>;
+  connections: GitConnection[];
   automations: GitTeamStatusRules[];
   credentialStorageAvailable: boolean;
 }

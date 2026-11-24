@@ -41,6 +41,7 @@ let runtime: CloudRuntime;
 let server: FakeGitServer;
 let owner: CloudActor;
 let teamId: string;
+let connectionId: string;
 let projectId: string;
 let profileId: string;
 let pushes: CandidatePush[];
@@ -93,13 +94,19 @@ beforeEach(async () => {
       estimateScale: defaultEstimateScale,
     })
   ).id;
-  await runtime.git.connections.connect(owner, randomUUID(), "github", {
-    revision: 0,
-    apiUrl: githubApiUrl,
-    token,
-    automate: false,
-  });
-  await runtime.git.connections.addRepository(owner, "github", "acme/app");
+  ({ id: connectionId } = await runtime.git.connections.connect(
+    owner,
+    randomUUID(),
+    "github",
+    {
+      revision: 0,
+      apiUrl: githubApiUrl,
+      token,
+      automate: false,
+      codeAccess: true,
+    },
+  ));
+  await runtime.git.connections.addRepository(owner, connectionId, "acme/app");
   projectId = (
     await runtime.projects.create(owner, randomUUID(), {
       teamId,
@@ -299,7 +306,7 @@ async function sandboxAutomations() {
 }
 
 async function sync() {
-  await runtime.git.connections.requestSync(owner, "github");
+  await runtime.git.connections.requestSync(owner, connectionId);
   for (let round = 0; round < 50 && (await runtime.git.sync.tick()); round++);
 }
 

@@ -85,14 +85,23 @@ export class CloudIssueDelivery {
         ORDER BY ar.created_at LIMIT 100`,
         [actor.organizationId, actor.userId, issueId, ids],
       );
-      const opened = await sql.query<{ id: string; at: string | null }>(
-        `SELECT id,to_char(opened_at AT TIME ZONE 'UTC',${timestamp}) AS at FROM cloud_git_pull_requests WHERE organization_id=$1 AND id=ANY($2::uuid[])`,
+      const opened = await sql.query<{
+        id: string;
+        at: string | null;
+        connectionId: string;
+      }>(
+        `SELECT p.id,to_char(p.opened_at AT TIME ZONE 'UTC',${timestamp}) AS at,r.connection_id AS "connectionId"
+        FROM cloud_git_pull_requests p JOIN cloud_git_repositories r ON r.organization_id=p.organization_id AND r.id=p.repository_id
+        WHERE p.organization_id=$1 AND p.id=ANY($2::uuid[])`,
         [actor.organizationId, ids],
       );
       return {
         runs: runs.rows,
         automations: automations.rows,
         opened: new Map(opened.rows.map((row) => [row.id, row.at])),
+        connections: new Map(
+          opened.rows.map((row) => [row.id, row.connectionId]),
+        ),
       };
     });
     const entries: DeliveryEntry[] = [];
@@ -150,7 +159,7 @@ export class CloudIssueDelivery {
               sql,
               this.cipher,
               actor.organizationId,
-              pullRequest.provider,
+              stored.connections.get(pullRequest.id)!,
             ),
           );
           const conversation = await gitClient(

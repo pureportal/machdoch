@@ -19,7 +19,11 @@ import {
   type GitCommitStatusState,
   type GitPullRequestRecord,
 } from "../git/git-client";
-import { gitConnection, type GitConnectionRecord } from "../git/connections";
+import {
+  gitConnection,
+  requireCodeAccess,
+  type GitConnectionRecord,
+} from "../git/connections";
 import { gitEvent, queueGitEvents, type StoredRepository } from "../git/events";
 import { repositoryAuthorization } from "../git/repository-access";
 import type { CloudGitSync } from "../git/sync";
@@ -370,7 +374,7 @@ export class CloudDeliveries {
     return this.database.transaction(async (sql) => {
       const repository = (
         await sql.query<StoredRepository>(
-          `SELECT id,provider,full_name AS "fullName",default_branch AS "defaultBranch",web_url AS "webUrl"
+          `SELECT id,connection_id AS "connectionId",provider,full_name AS "fullName",default_branch AS "defaultBranch",web_url AS "webUrl"
           FROM cloud_git_repositories WHERE organization_id=$1 AND lower(web_url)=lower(regexp_replace($2,'\\.git$',''))`,
           [delivery.organization_id, delivery.repository],
         )
@@ -381,11 +385,13 @@ export class CloudDeliveries {
           "repository_unconnected",
           "Add this repository under Settings → Git to publish changes.",
         );
-      const connection = await gitConnection(
-        sql,
-        this.cipher,
-        delivery.organization_id,
-        repository.provider,
+      const connection = requireCodeAccess(
+        await gitConnection(
+          sql,
+          this.cipher,
+          delivery.organization_id,
+          repository.connectionId,
+        ),
       );
       const run = (
         await sql.query<RunSource>(

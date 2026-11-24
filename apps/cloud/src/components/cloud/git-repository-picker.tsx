@@ -25,14 +25,13 @@ export function GitRepositoryPicker({
     null,
   );
   const [error, setError] = useState("");
-  const provider = connection.provider;
   useEffect(() => {
     if (!open) return;
     const abort = new AbortController();
     setAvailable(null);
     setError("");
     cloudRequest<{ repositories: GitAvailableRepository[] }>(
-      `git/${provider}/repositories/available`,
+      `git/connections/${connection.id}/repositories/available`,
       { signal: abort.signal },
     )
       .then((result) => {
@@ -42,7 +41,7 @@ export function GitRepositoryPicker({
         if (!abort.signal.aborted) setError(reason.message);
       });
     return () => abort.abort();
-  }, [open, provider]);
+  }, [open, connection.id]);
   const added = new Set(
     connection.repositories.map((repository) =>
       repository.fullName.toLowerCase(),
@@ -52,7 +51,7 @@ export function GitRepositoryPicker({
     available?.filter(
       (repository) => !added.has(repository.fullName.toLowerCase()),
     ) ?? [];
-  const id = `${provider}-repository`;
+  const id = `${connection.id}-repository`;
   return (
     <FormDialog
       title="Add repository"
@@ -61,7 +60,7 @@ export function GitRepositoryPicker({
       onOpenChange={onOpenChange}
       submitDisabled={!options.length}
       onSubmit={async (form) => {
-        await cloudRequest(`git/${provider}/repositories`, {
+        await cloudRequest(`git/connections/${connection.id}/repositories`, {
           method: "POST",
           body: { fullName: formText(form, "fullName") },
         });

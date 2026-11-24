@@ -135,19 +135,24 @@ export class CloudGitWebhooks {
         : parseGitLabWebhook(headers.event, payload);
     const repository = await this.database.transaction(async (sql) => {
       const fresh = await sql.query(
-        "INSERT INTO cloud_git_deliveries (provider,delivery_id,organization_id,event) VALUES ($1,$2,$3,$4) ON CONFLICT (provider,delivery_id) DO NOTHING RETURNING delivery_id",
+        "INSERT INTO cloud_git_deliveries (provider,delivery_id,organization_id,event,connection_id) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (provider,delivery_id) DO NOTHING RETURNING delivery_id",
         [
           provider,
           headers.delivery,
           connection.organizationId,
           headers.event.slice(0, 60),
+          connection.id,
         ],
       );
       if (!fresh.rows.length || !parsed) return null;
       const stored = (
         await sql.query<StoredRepository>(
-          `SELECT ${repositoryColumns} FROM cloud_git_repositories r WHERE r.organization_id=$1 AND r.provider=$2 AND r.external_id=$3`,
-          [connection.organizationId, provider, parsed.repositoryExternalId],
+          `SELECT ${repositoryColumns} FROM cloud_git_repositories r WHERE r.organization_id=$1 AND r.connection_id=$2 AND r.external_id=$3`,
+          [
+            connection.organizationId,
+            connection.id,
+            parsed.repositoryExternalId,
+          ],
         )
       ).rows[0];
       if (!stored) return null;
