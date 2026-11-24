@@ -108,6 +108,7 @@
       "python/media_splat_render.py": "python/media_splat_render.py",
       "python/media_hunyuan3d.py": "python/media_hunyuan3d.py",
       "python/media_mesh_render.py": "python/media_mesh_render.py",
+      "python/media_mesh_grid.py": "python/media_mesh_grid.py",
       "python/media_mesh_voxelize.py": "python/media_mesh_voxelize.py",
       "python/idol": "python/idol",
       "python/LICENSE-Idol.txt": "python/LICENSE-Idol.txt",
