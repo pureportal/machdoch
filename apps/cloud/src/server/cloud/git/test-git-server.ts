@@ -34,6 +34,7 @@ export class FakeGitServer {
   readonly gitlab = new Map<number, FakeChange>();
   readonly logins = new Map<string, string>();
   readonly gitlabUsers = new Map<string, number>();
+  readonly deletedComments = new Set<string>();
   readonly branches = new Map<string, string>();
   readonly files = new Map<string, string>();
   readonly statuses = new Map<
@@ -340,6 +341,13 @@ export class FakeGitServer {
         201,
       );
     }
+    const editedComment = /^\/repos\/acme\/app\/issues\/comments\/(\d+)$/u.exec(
+      path,
+    );
+    if (editedComment && method === "PATCH")
+      return this.deletedComments.has(editedComment[1]!)
+        ? json({ message: "Not Found" }, 404)
+        : json({ id: Number(editedComment[1]) });
     if (/^\/repos\/acme\/app\/issues\/\d+$/u.test(path) && method === "PATCH")
       return json({ number: Number(path.split("/").at(-1)) });
     if (/^\/repos\/acme\/app\/issues\/\d+\/labels(?:\/.+)?$/u.test(path))
@@ -449,6 +457,14 @@ export class FakeGitServer {
       return json({ iid: Number(issue[1]) });
     if (issue?.[2] && method === "POST")
       return json({ id: 500 + this.callsTo(path, "POST").length }, 201);
+    const editedNote = new RegExp(
+      `^${project}/merge_requests/\\d+/notes/(\\d+)$`,
+      "u",
+    ).exec(path);
+    if (editedNote && method === "PUT")
+      return this.deletedComments.has(editedNote[1]!)
+        ? json({ message: "404 Not Found" }, 404)
+        : json({ id: Number(editedNote[1]) });
     const match = new RegExp(
       `^${project}/merge_requests/(\\d+)(?:/([\\w-]+))?$`,
       "u",

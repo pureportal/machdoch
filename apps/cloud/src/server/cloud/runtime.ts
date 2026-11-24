@@ -87,6 +87,7 @@ import { CloudIssueDelivery } from "./git/issue-delivery";
 import { CloudGitSync } from "./git/sync";
 import { CloudGitWebhooks } from "./git/webhooks";
 import { GitIdentities } from "./git/identity";
+import { CloudGitBacklinks } from "./git/backlinks";
 import { CloudGitIssueSync } from "./git/issue-sync";
 import { CloudGitOAuth } from "./git/oauth-flow";
 import type { GitProvider } from "../../lib/git-providers";
@@ -253,6 +254,8 @@ export interface CloudRuntime {
     syncLoop: CloudPeriodicLoop;
     issueSync: CloudGitIssueSync;
     issueSyncLoop: CloudPeriodicLoop;
+    backlinks: CloudGitBacklinks;
+    backlinkLoop: CloudPeriodicLoop;
   };
   execution: {
     profiles: CloudExecutionProfiles;
@@ -390,6 +393,12 @@ export function createCloudRuntime(
     database,
     options.credentialsCipher ?? null,
     gitIdentities,
+    gitFetch,
+  );
+  const backlinks = new CloudGitBacklinks(
+    database,
+    options.credentialsCipher ?? null,
+    origin,
     gitFetch,
   );
   const socialFetch = options.socialFetch ?? fetch;
@@ -779,6 +788,12 @@ export function createCloudRuntime(
         () => issueSync.tick(),
         1,
       ),
+      backlinks,
+      backlinkLoop: new CloudPeriodicLoop(
+        "Git back-links",
+        () => backlinks.tick(),
+        1,
+      ),
     },
     execution: {
       profiles: executionProfiles,
@@ -826,6 +841,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   await runtime.activity.exportLoop.close();
   await runtime.git.syncLoop.close();
   await runtime.git.issueSyncLoop.close();
+  await runtime.git.backlinkLoop.close();
   await runtime.git.reviewGuideLoop.close();
   await runtime.authentication.mailWorker.close();
   await runtime.inference.worker.close();
@@ -848,6 +864,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.activity.exportLoop.start();
   runtime.git.syncLoop.start();
   runtime.git.issueSyncLoop.start();
+  runtime.git.backlinkLoop.start();
   runtime.git.reviewGuideLoop.start();
   if (hostedOrigin) runtime.execution.hostedRunners.start(hostedOrigin);
 }
@@ -879,6 +896,7 @@ export async function closeCloudRuntime(): Promise<void> {
     await current.activity.exportLoop.close();
     await current.git.syncLoop.close();
     await current.git.issueSyncLoop.close();
+    await current.git.backlinkLoop.close();
     await current.git.reviewGuideLoop.close();
     await current.authentication.mailWorker.close();
     await current.inference.worker.close();

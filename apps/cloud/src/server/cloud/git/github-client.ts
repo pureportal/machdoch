@@ -784,6 +784,27 @@ export class GitHubClient implements GitClient {
     );
   }
 
+  postPullRequestComment(
+    fullName: string,
+    number: number,
+    body: string,
+  ): Promise<string> {
+    return this.commentOnIssue(fullName, number, body);
+  }
+
+  async editPullRequestComment(
+    fullName: string,
+    _number: number,
+    commentId: string,
+    body: string,
+  ): Promise<void> {
+    await this.request(
+      `/repos/${fullName}/issues/comments/${commentId}`,
+      z.unknown(),
+      { method: "PATCH", body: { body } },
+    );
+  }
+
   async review(
     fullName: string,
     number: number,

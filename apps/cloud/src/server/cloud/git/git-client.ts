@@ -162,6 +162,17 @@ export interface GitClient {
     number: number,
     body: string,
   ): Promise<string>;
+  postPullRequestComment(
+    fullName: string,
+    number: number,
+    body: string,
+  ): Promise<string>;
+  editPullRequestComment(
+    fullName: string,
+    number: number,
+    commentId: string,
+    body: string,
+  ): Promise<void>;
   review(
     fullName: string,
     number: number,

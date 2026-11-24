@@ -14,7 +14,8 @@ export async function gitReviewSettings(
   return (
     (
       await sql.query<GitReviewSettings & Record<string, unknown>>(
-        `SELECT review_guides AS "reviewGuides",merge_issues AS "mergeIssues",commit_links AS "commitLinks",revision
+        `SELECT review_guides AS "reviewGuides",merge_issues AS "mergeIssues",commit_links AS "commitLinks",backlinks_private AS "backlinksPrivate",
+        backlinks_public AS "backlinksPublic",backlink_descriptions AS "backlinkDescriptions",revision
         FROM cloud_git_settings WHERE organization_id=$1`,
         [organizationId],
       )
@@ -22,6 +23,9 @@ export async function gitReviewSettings(
       reviewGuides: false,
       mergeIssues: false,
       commitLinks: true,
+      backlinksPrivate: true,
+      backlinksPublic: false,
+      backlinkDescriptions: false,
       revision: 0,
     }
   );
@@ -43,13 +47,18 @@ export class CloudGitReviewSettings {
       const current = await gitReviewSettings(sql, actor.organizationId);
       checkRevision(current.revision, input.revision);
       await sql.query(
-        `INSERT INTO cloud_git_settings (organization_id,review_guides,merge_issues,commit_links) VALUES ($1,$2,$3,$4)
-        ON CONFLICT (organization_id) DO UPDATE SET review_guides=$2,merge_issues=$3,commit_links=$4,revision=cloud_git_settings.revision+1`,
+        `INSERT INTO cloud_git_settings (organization_id,review_guides,merge_issues,commit_links,backlinks_private,backlinks_public,backlink_descriptions)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT (organization_id) DO UPDATE SET review_guides=$2,merge_issues=$3,commit_links=$4,backlinks_private=$5,backlinks_public=$6,
+        backlink_descriptions=$7,revision=cloud_git_settings.revision+1`,
         [
           actor.organizationId,
           input.reviewGuides,
           input.mergeIssues,
           input.commitLinks,
+          input.backlinksPrivate,
+          input.backlinksPublic,
+          input.backlinkDescriptions,
         ],
       );
       return gitReviewSettings(sql, actor.organizationId);

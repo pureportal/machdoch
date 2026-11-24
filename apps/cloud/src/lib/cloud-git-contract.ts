@@ -140,6 +140,9 @@ export interface GitReviewSettings {
   reviewGuides: boolean;
   mergeIssues: boolean;
   commitLinks: boolean;
+  backlinksPrivate: boolean;
+  backlinksPublic: boolean;
+  backlinkDescriptions: boolean;
   revision: number;
 }
 
@@ -147,6 +150,9 @@ export const gitReviewSettingsInputSchema = z.strictObject({
   reviewGuides: z.boolean(),
   mergeIssues: z.boolean(),
   commitLinks: z.boolean(),
+  backlinksPrivate: z.boolean(),
+  backlinksPublic: z.boolean(),
+  backlinkDescriptions: z.boolean(),
   revision: z.number().int().min(0),
 });
 export type GitReviewSettingsInput = z.infer<

@@ -8,6 +8,7 @@ import {
   type CloudActor,
 } from "../../../lib/cloud-contract";
 import { SettingsCipher } from "../../settings-crypto";
+import type { GitReviewSettings } from "../../../lib/cloud-git-contract";
 import { cloudMigrations } from "../database";
 import { handleCloudApi } from "../api";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
@@ -105,21 +106,9 @@ async function issueState(id: string) {
   return (await runtime.planning.getIssue(owner, id)).state;
 }
 
-async function setSettings(
-  changes: Partial<{
-    reviewGuides: boolean;
-    mergeIssues: boolean;
-    commitLinks: boolean;
-  }>,
-) {
+async function setSettings(changes: Partial<GitReviewSettings>) {
   const current = (await runtime.git.connections.get(owner)).settings;
-  return runtime.git.reviewSettings.set(owner, {
-    reviewGuides: current.reviewGuides,
-    mergeIssues: current.mergeIssues,
-    commitLinks: current.commitLinks,
-    revision: current.revision,
-    ...changes,
-  });
+  return runtime.git.reviewSettings.set(owner, { ...current, ...changes });
 }
 
 beforeAll(async () => {
@@ -236,6 +225,9 @@ it("guards review settings by permission and revision", async () => {
     reviewGuides: false,
     mergeIssues: false,
     commitLinks: true,
+    backlinksPrivate: true,
+    backlinksPublic: false,
+    backlinkDescriptions: false,
     revision: 0,
   });
   await expect(
@@ -243,6 +235,9 @@ it("guards review settings by permission and revision", async () => {
       reviewGuides: true,
       mergeIssues: true,
       commitLinks: true,
+      backlinksPrivate: true,
+      backlinksPublic: false,
+      backlinkDescriptions: false,
       revision: 0,
     }),
   ).rejects.toMatchObject({ status: 403 });
@@ -250,6 +245,9 @@ it("guards review settings by permission and revision", async () => {
     reviewGuides: true,
     mergeIssues: false,
     commitLinks: true,
+    backlinksPrivate: true,
+    backlinksPublic: false,
+    backlinkDescriptions: false,
     revision: 1,
   });
   await expect(
@@ -257,6 +255,9 @@ it("guards review settings by permission and revision", async () => {
       reviewGuides: false,
       mergeIssues: false,
       commitLinks: true,
+      backlinksPrivate: true,
+      backlinksPublic: false,
+      backlinkDescriptions: false,
       revision: 0,
     }),
   ).rejects.toMatchObject({ status: 409 });

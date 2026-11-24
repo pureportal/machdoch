@@ -701,6 +701,35 @@ export class GitLabClient implements GitClient {
     );
   }
 
+  async postPullRequestComment(
+    fullName: string,
+    number: number,
+    body: string,
+  ): Promise<string> {
+    return String(
+      (
+        await this.request(
+          `${this.mergeRequestPath(fullName, number)}/notes`,
+          z.object({ id: z.number() }),
+          { method: "POST", body: { body } },
+        )
+      ).id,
+    );
+  }
+
+  async editPullRequestComment(
+    fullName: string,
+    number: number,
+    commentId: string,
+    body: string,
+  ): Promise<void> {
+    await this.request(
+      `${this.mergeRequestPath(fullName, number)}/notes/${commentId}`,
+      z.unknown(),
+      { method: "PUT", body: { body } },
+    );
+  }
+
   async review(
     fullName: string,
     number: number,

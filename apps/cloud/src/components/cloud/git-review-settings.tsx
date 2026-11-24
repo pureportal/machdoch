@@ -11,6 +11,18 @@ const toggles: {
   { key: "reviewGuides", label: "Generate review guides" },
   { key: "mergeIssues", label: "Link or create an issue on merge" },
   { key: "commitLinks", label: "Link commits with magic words" },
+  {
+    key: "backlinksPrivate",
+    label: "Back-link comments on private repositories",
+  },
+  {
+    key: "backlinksPublic",
+    label: "Back-link comments on public repositories",
+  },
+  {
+    key: "backlinkDescriptions",
+    label: "Include issue descriptions in back-links",
+  },
 ];
 
 export function GitReviewSettingsSection({
