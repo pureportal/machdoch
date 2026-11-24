@@ -5,6 +5,7 @@ import {
   chatRetrySchema,
   chatUpdateSchema,
 } from "../../../lib/cloud-chat-contract";
+import { agentHandoffInputSchema } from "../../../lib/agent-handoff";
 import { CloudError } from "../access";
 import { readBody } from "../request-body";
 import type { CloudRuntime } from "../runtime";
@@ -41,6 +42,14 @@ export async function handleChatApi(
       );
     if (path[0] === "agent-sessions" && path.length === 1)
       return Response.json(await runtime.chat.store.sessions(actor));
+    if (
+      path[0] === "chat-turns" &&
+      path.length === 3 &&
+      path[2] === "handoff-options"
+    )
+      return Response.json(
+        await runtime.chat.handoffs.options(actor, cloudId.parse(path[1])),
+      );
     if (path[0] === "inference-budgets" && path.length === 2)
       return Response.json(
         await runtime.chat.store.budget(actor, cloudId.parse(path[1])),
@@ -77,6 +86,15 @@ export async function handleChatApi(
     runtime.inference.worker.wake();
     return Response.json(result, { status: 202 });
   }
+  if (path[0] === "agent-handoffs" && path.length === 1)
+    return Response.json(
+      await runtime.chat.handoffs.start(
+        actor,
+        key.data,
+        await readBody(request, agentHandoffInputSchema),
+      ),
+      { status: 201 },
+    );
   if (
     path[0] === "chat-turns" &&
     path.length === 5 &&

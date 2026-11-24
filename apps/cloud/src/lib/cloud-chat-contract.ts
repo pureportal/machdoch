@@ -1,4 +1,5 @@
 import type { ReleaseHighlight } from "./cloud-release-contract";
+import type { AgentHandoff } from "./agent-handoff";
 import type { VisualInput } from "./cloud-release-media-contract";
 import { z } from "zod";
 import { cloudId, revision, type IssueInput } from "./cloud-contract";
@@ -334,6 +335,7 @@ export interface CloudChatTurn {
   actions: AgentAction[];
   question: AgentQuestion | null;
   attachments: ChatTurnAttachment[];
+  handoffs: AgentHandoff[];
 }
 export interface ChatDetail {
   chat: CloudChat;

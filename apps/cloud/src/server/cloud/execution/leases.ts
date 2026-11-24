@@ -55,6 +55,7 @@ export class CloudExecutionLeases {
           await sql.query(
             `SELECT r.id FROM cloud_runs r JOIN cloud_execution_profiles p ON p.organization_id=r.organization_id AND p.id=r.profile_id
         WHERE r.organization_id=$1 AND r.profile_id=$2 AND r.state='queued' AND r.deadline_at>clock_timestamp() AND p.enabled AND p.revision=$3
+        AND (r.pinned_worker_id IS NULL OR r.pinned_worker_id=$4)
         AND NOT EXISTS (SELECT 1 FROM cloud_run_attempts a WHERE a.organization_id=$1 AND a.worker_id=$4 AND a.state<>'stopped') LIMIT 1`,
             [
               worker.organizationId,
@@ -172,8 +173,14 @@ export class CloudExecutionLeases {
       const candidates = await sql.query<{ id: string }>(
         `SELECT r.id FROM cloud_runs r JOIN cloud_execution_profiles p ON p.organization_id=r.organization_id AND p.id=r.profile_id
         WHERE r.organization_id=$1 AND r.profile_id=$2 AND r.state='queued' AND r.deadline_at>clock_timestamp() AND p.enabled AND p.revision=$3
+        AND (r.pinned_worker_id IS NULL OR r.pinned_worker_id=$4)
         ORDER BY r.created_at,r.id LIMIT 20`,
-        [worker.organizationId, worker.profileId, worker.profileRevision],
+        [
+          worker.organizationId,
+          worker.profileId,
+          worker.profileRevision,
+          worker.id,
+        ],
       );
       for (const candidate of candidates.rows) {
         const run = await readRun(sql, worker.organizationId, candidate.id);

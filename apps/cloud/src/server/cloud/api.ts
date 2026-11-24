@@ -510,9 +510,13 @@ async function route(
     });
   }
   if (
-    ["chats", "chat-turns", "inference-budgets", "agent-sessions"].includes(
-      path[0] ?? "",
-    )
+    [
+      "chats",
+      "chat-turns",
+      "inference-budgets",
+      "agent-sessions",
+      "agent-handoffs",
+    ].includes(path[0] ?? "")
   )
     return handleChatApi(runtime, request, actor);
   if (path[0] === "ai-providers")

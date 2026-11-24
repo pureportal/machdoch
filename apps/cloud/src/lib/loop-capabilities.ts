@@ -6,7 +6,7 @@ import {
   type LoopPlacement,
 } from "./cloud-loop-contract";
 
-type ConcretePlacement = Exclude<LoopPlacement, "automatic">;
+export type ConcretePlacement = Exclude<LoopPlacement, "automatic">;
 
 export const placementCapabilities: Record<
   ConcretePlacement,
@@ -17,7 +17,7 @@ export const placementCapabilities: Record<
   client: ["repository", "shell", "browser", "desktop", "local_files"],
 };
 
-const automaticOrder: readonly ConcretePlacement[] = [
+export const automaticOrder: readonly ConcretePlacement[] = [
   "sandbox",
   "runner_pool",
   "client",

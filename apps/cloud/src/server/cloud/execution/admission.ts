@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import type {
+  ClientAgent,
+  ExecutionProfile,
   PullRequestRunSubject,
   RunInput,
   RunManifest,
@@ -15,6 +17,56 @@ import { taskContextLimit } from "./task-context";
 import { readInferenceProvider } from "../ai/budgets";
 import { expireRuns, lockExecution, readProfile, recordRun } from "./records";
 
+export interface RunExecutor {
+  workerId: string | null;
+  providerId: string | null;
+  agent: ClientAgent | null;
+  model: string;
+  instructions: string | null;
+}
+
+function executorProfile(
+  profile: ExecutionProfile,
+  executor: RunExecutor,
+): ExecutionProfile {
+  if (profile.target === "client") {
+    if (!executor.agent)
+      throw new CloudError(
+        422,
+        "executor_mismatch",
+        "Choose an agent for this linked client.",
+      );
+    return { ...profile, agent: executor.agent, model: executor.model };
+  }
+  if (!executor.providerId)
+    throw new CloudError(
+      422,
+      "executor_mismatch",
+      "Choose a provider for this executor.",
+    );
+  return { ...profile, providerId: executor.providerId, model: executor.model };
+}
+
+async function requirePinnedWorker(
+  sql: CloudSql,
+  organizationId: string,
+  profileId: string,
+  workerId: string,
+): Promise<void> {
+  const worker = await sql.query(
+    `SELECT w.id FROM cloud_execution_workers w JOIN cloud_execution_profiles p ON p.organization_id=w.organization_id AND p.id=w.profile_id
+    WHERE w.organization_id=$1 AND w.id=$2 AND w.profile_id=$3 AND w.enabled AND w.expires_at>clock_timestamp() AND w.profile_revision=p.revision
+    AND (p.definition->>'target'<>'client' OR w.workspace_binding IS NOT NULL)`,
+    [organizationId, workerId, profileId],
+  );
+  if (!worker.rows.length)
+    throw new CloudError(
+      409,
+      "worker_unavailable",
+      "This device can no longer run tasks. Choose another one.",
+    );
+}
+
 export async function admitRun(
   sql: CloudSql,
   actor: CloudActor,
@@ -24,6 +76,7 @@ export async function admitRun(
     grant: NonNullable<RunManifest["automation"]>;
     tokenLimit: number;
   },
+  executor?: RunExecutor,
 ): Promise<{ id: string }> {
   await lockExecution(sql, actor.organizationId);
   await expireRuns(sql, actor.organizationId);
@@ -48,7 +101,9 @@ export async function admitRun(
         maxTokens: Math.min(configuredProfile.maxTokens, automated.tokenLimit),
       }
     : configuredProfile;
-  const profile = limitedProfile;
+  const profile = executor
+    ? executorProfile(limitedProfile, executor)
+    : limitedProfile;
   const automation = automated?.grant;
   let title: string;
   let objective: string;
@@ -63,7 +118,11 @@ export async function admitRun(
         "Choose an execution profile for this issue's project.",
       );
     title = issue.title;
-    objective = `${issue.title}\n\n${issue.description}`.trim();
+    objective = [issue.title, issue.description, executor?.instructions]
+      .filter(Boolean)
+      .join("\n\n")
+      .trim()
+      .slice(0, 30_302);
     acceptanceCriteria =
       issue.acceptanceCriteria.trim() || "The issue is resolved as described.";
   } else if (input.subject.kind === "pull_request") {
@@ -122,7 +181,12 @@ export async function admitRun(
     sql,
     actor,
     key,
-    { kind: "run.create", input, ...(automated ? { automated } : {}) },
+    {
+      kind: "run.create",
+      input,
+      ...(automated ? { automated } : {}),
+      ...(executor ? { executor } : {}),
+    },
     async () => {
       let planningDigest: string | null = null;
       if (!profile.enabled)
@@ -171,6 +235,13 @@ export async function admitRun(
         ).rows[0]!;
         checkRevision(project.revision, input.subject.revision);
       }
+      if (executor?.workerId)
+        await requirePinnedWorker(
+          sql,
+          actor.organizationId,
+          profile.id,
+          executor.workerId,
+        );
       if (!acceptanceCriteria)
         throw new CloudError(
           422,
@@ -236,8 +307,8 @@ export async function admitRun(
       const serialized = JSON.stringify(manifest);
       const id = randomUUID();
       await sql.query(
-        `INSERT INTO cloud_runs (organization_id,id,team_id,project_id,profile_id,issue_id,actor_id,title,manifest,input_digest,deadline_at,planning_digest)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,clock_timestamp()+$11*interval '1 second',$12)`,
+        `INSERT INTO cloud_runs (organization_id,id,team_id,project_id,profile_id,issue_id,actor_id,title,manifest,input_digest,deadline_at,planning_digest,pinned_worker_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,clock_timestamp()+$11*interval '1 second',$12,$13)`,
         [
           actor.organizationId,
           id,
@@ -251,6 +322,7 @@ export async function admitRun(
           createHash("sha256").update(serialized).digest("hex"),
           profile.maxDurationSeconds,
           planningDigest,
+          executor?.workerId ?? null,
         ],
       );
       if (automation)

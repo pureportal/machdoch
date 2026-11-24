@@ -21,7 +21,12 @@ export const turnColumns = `id,sequence,provider_id AS "providerId",model,prompt
   ${timestamp("created_at")} AS "createdAt",${timestamp("started_at")} AS "startedAt",${timestamp("finished_at")} AS "finishedAt",steps,actions,question,
   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',a.id,'name',a.name,'mime',a.mime,'kind',a.kind,'byteLength',a.byte_length,'width',a.width,'height',a.height,
   'url','/api/v1/attachments/'||a.id) ORDER BY a.created_at,a.id) FROM cloud_attachments a
-  WHERE a.organization_id=cloud_chat_turns.organization_id AND a.turn_id=cloud_chat_turns.id AND a.state='ready'),'[]'::jsonb) AS attachments`;
+  WHERE a.organization_id=cloud_chat_turns.organization_id AND a.turn_id=cloud_chat_turns.id AND a.state='ready'),'[]'::jsonb) AS attachments,
+  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',h.id,'runId',h.run_id,'placement',h.placement,'harness',h.harness,'model',h.model,'deviceName',w.name,
+  'createdAt',${timestamp("h.created_at")}) ORDER BY h.created_at,h.id) FROM cloud_agent_handoffs h
+  JOIN cloud_runs r ON r.organization_id=h.organization_id AND r.id=h.run_id
+  LEFT JOIN cloud_execution_workers w ON w.organization_id=r.organization_id AND w.id=r.pinned_worker_id
+  WHERE h.organization_id=cloud_chat_turns.organization_id AND h.turn_id=cloud_chat_turns.id),'[]'::jsonb) AS handoffs`;
 
 export async function readChat(
   sql: CloudSql,

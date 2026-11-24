@@ -434,6 +434,56 @@ it("takes an issue assigned to AI through review, pull request and merge", async
   );
 }, 60_000);
 
+it("delivers work handed off from an agent turn on a machdoch branch", async () => {
+  const issue = await runtime.planning.createIssue(
+    owner,
+    randomUUID(),
+    issueInputSchema.parse({
+      teamId,
+      projectId,
+      title: "Use a formal German greeting",
+    }),
+  );
+  const [provider] = (await runtime.aiProviders.list(owner)).providers;
+  const submission = await runtime.chat.store.submit(owner, randomUUID(), {
+    chatId: null,
+    revision: null,
+    providerId: provider!.id,
+    model: "fixture",
+    prompt: "Switch to Guten Tag",
+    context: [{ kind: "issue", id: issue.id }],
+    attachmentIds: [],
+  });
+  const { turns } = await runtime.chat.store.get(owner, submission.chatId);
+  const { runId } = await runtime.chat.handoffs.start(owner, randomUUID(), {
+    turnId: turns[0]!.id,
+    placement: "automatic",
+    profileId: null,
+    workerId: null,
+    harness: "machdoch",
+    model: "fixture",
+    instructions: "Only change the German value.",
+  });
+  const { claim, worker } = await claimTask();
+  expect(claim.runId).toBe(runId);
+  expect(claim.manifest.objective).toContain("Only change the German value.");
+  await review(worker, claim, 1, {
+    decision: "approve",
+    summary: "Only the German value changed.",
+    findings: [],
+  });
+  await runtime.execution.leases.finish(worker, finish(claim));
+  await deliver();
+  expect(pushes).toEqual([
+    expect.objectContaining({
+      branch: expect.stringMatching(
+        /^machdoch\/plat-1-use-a-formal-german-greeting-/,
+      ),
+      candidateCommit: candidate,
+    }),
+  ]);
+}, 60_000);
+
 it("auto merges through the merge queue only after required checks and code owners approve", async () => {
   const issue = await aiIssue("Use a formal German greeting");
   await runtime.autopilot.autopilot.tick();

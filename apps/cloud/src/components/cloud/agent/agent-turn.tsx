@@ -30,6 +30,7 @@ import {
   type CloudChatTurn,
 } from "@/lib/cloud-chat-contract";
 import { Button } from "@/components/ui/button";
+import { AgentHandoffButton, AgentHandoffRun } from "./agent-handoff";
 
 export const contextIcons: Record<ChatContextKind, typeof CircleDot> = {
   issue: CircleDot,
@@ -412,24 +413,31 @@ export function AgentTurn({
   latest,
   answeredWith,
   writable,
+  canHandOff,
   pending,
   onAnswer,
   onCancel,
   onRetry,
   onAction,
+  onHandoff,
 }: {
   turn: CloudChatTurn;
   context: ChatContextEntity[];
   latest: boolean;
   answeredWith: string | null;
   writable: boolean;
+  canHandOff: boolean;
   pending: boolean;
   onAnswer: (option: string) => void;
   onCancel: () => void;
   onRetry: () => void;
   onAction: (action: AgentAction, decision: "apply" | "dismiss") => void;
+  onHandoff: () => Promise<void>;
 }) {
   const active = ["queued", "running", "cancel_requested"].includes(turn.state);
+  const retryable =
+    latest && ["failed", "canceled", "unknown"].includes(turn.state);
+  const handOff = writable && canHandOff && !active;
   const added = context.filter((entry) => entry.turnSequence === turn.sequence);
   return (
     <li className="cloud-agent-turn">
@@ -518,10 +526,13 @@ export function AgentTurn({
         {turn.state === "canceled" && !turn.errorCode && (
           <p className="cloud-agent-muted">Stopped</p>
         )}
+        {turn.handoffs.map((handoff) => (
+          <AgentHandoffRun key={handoff.id} handoff={handoff} />
+        ))}
         {writable &&
           (["queued", "running"].includes(turn.state) ||
-            (latest &&
-              ["failed", "canceled", "unknown"].includes(turn.state))) && (
+            retryable ||
+            handOff) && (
             <div className="cloud-agent-turn-actions">
               {["queued", "running"].includes(turn.state) ? (
                 <Button
@@ -533,14 +544,23 @@ export function AgentTurn({
                   Stop
                 </Button>
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
+                retryable && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pending}
+                    onClick={onRetry}
+                  >
+                    Retry
+                  </Button>
+                )
+              )}
+              {handOff && (
+                <AgentHandoffButton
+                  turn={turn}
                   disabled={pending}
-                  onClick={onRetry}
-                >
-                  Retry
-                </Button>
+                  onStarted={onHandoff}
+                />
               )}
             </div>
           )}

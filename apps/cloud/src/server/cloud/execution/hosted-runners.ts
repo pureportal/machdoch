@@ -307,7 +307,10 @@ export class CloudHostedRunners {
     running.stopping = true;
     if (running.child.exitCode === null && running.child.signalCode === null) {
       running.child.kill();
-      const forced = setTimeout(() => running.child.kill("SIGKILL"), stopGraceMs);
+      const forced = setTimeout(
+        () => running.child.kill("SIGKILL"),
+        stopGraceMs,
+      );
       await running.exited;
       clearTimeout(forced);
     }

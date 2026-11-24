@@ -60,6 +60,7 @@ export interface AgentConversation {
   ) => Promise<boolean>;
   cancel: (turn: CloudChatTurn) => Promise<void>;
   retry: (turn: CloudChatTurn) => Promise<void>;
+  reload: () => Promise<void>;
   settleAction: (
     turn: CloudChatTurn,
     action: AgentAction,
@@ -278,6 +279,9 @@ export function useAgentConversation(
           model: selection.model,
         }),
       );
+      await refresh().catch(() => undefined);
+    },
+    async reload() {
       await refresh().catch(() => undefined);
     },
     async settleAction(turn, action, decision) {

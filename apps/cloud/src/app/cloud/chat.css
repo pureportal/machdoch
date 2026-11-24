@@ -335,6 +335,51 @@
   display: flex;
   gap: 6px;
 }
+.cloud-agent-handoff {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--cloud-subtle);
+  font-size: 12px;
+}
+.cloud-agent-handoff header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cloud-agent-handoff header > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+}
+.cloud-agent-handoff header a {
+  display: inline-flex;
+  color: var(--muted-foreground);
+}
+.cloud-agent-handoff header a:hover {
+  color: var(--foreground);
+}
+.cloud-agent-handoff .cloud-task-timeline {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.cloud-agent-handoff .cloud-task-timeline > h2 {
+  display: none;
+}
+.cloud-agent-handoff .cloud-task-timeline ol {
+  max-height: 180px;
+}
+.cloud-agent-handoff code {
+  justify-self: start;
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+}
 .cloud-agent-new-reply {
   position: sticky;
   bottom: 4px;

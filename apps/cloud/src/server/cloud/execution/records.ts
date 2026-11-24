@@ -146,7 +146,7 @@ export async function hasRunAuthority(
   if (!profile) return false;
   const provider = run.manifest.provider;
   if (!provider) return profile.provider_id === null;
-  if (profile.provider_id !== provider.id) return false;
+  if (profile.provider_id === null) return false;
   const model = await sql.query(
     "SELECT id FROM cloud_ai_providers WHERE organization_id=$1 AND id=$2 AND enabled AND inference_revision=$3 AND models ? $4 FOR SHARE",
     [

@@ -18,6 +18,7 @@ import {
   type ChatDetail,
 } from "@/lib/cloud-chat-contract";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
+import { holderCan } from "@/lib/cloud-permissions";
 import { sidebarItems } from "@/lib/cloud-sidebar-contract";
 import { Button } from "@/components/ui/button";
 import { PropertyMenu } from "../property-menu";
@@ -357,10 +358,12 @@ export function AgentConversation({
                       : null
                   }
                   writable={writable}
+                  canHandOff={holderCan(workspace.actor, "ai.tasks")}
                   pending={pending}
                   onAnswer={(option) => void submit(option)}
                   onCancel={() => void conversation.cancel(turn)}
                   onRetry={() => void conversation.retry(turn)}
+                  onHandoff={conversation.reload}
                   onAction={(action, decision) =>
                     void conversation.settleAction(turn, action, decision)
                   }

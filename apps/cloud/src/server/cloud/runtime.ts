@@ -98,6 +98,7 @@ import type { SettingsCipher } from "../settings-crypto";
 import { CloudChatStore } from "./ai/chat-store";
 import { CloudAgentTools } from "./ai/agent-tools";
 import { CloudAgentActions } from "./ai/agent-actions";
+import { CloudAgentHandoffs } from "./ai/agent-handoffs";
 import { CloudProjectStatuses } from "./project-statuses";
 import {
   CloudProjectUpdates,
@@ -224,6 +225,7 @@ export interface CloudRuntime {
   chat: {
     store: CloudChatStore;
     actions: CloudAgentActions;
+    handoffs: CloudAgentHandoffs;
   };
   inference: {
     store: CloudInferenceStore;
@@ -501,6 +503,7 @@ export function createCloudRuntime(
     options.credentialsCipher ?? null,
     sandboxRuntime,
   );
+  const workers = new CloudWorkers(database, hostedRunners);
   const deliveries = new CloudDeliveries(
     database,
     options.credentialsCipher ?? null,
@@ -692,6 +695,11 @@ export function createCloudRuntime(
     chat: {
       store: chatStore,
       actions: agentActions,
+      handoffs: new CloudAgentHandoffs(database, {
+        profiles: executionProfiles,
+        workers,
+        providers: aiProviders,
+      }),
     },
     inference: {
       store: inference,
@@ -741,7 +749,7 @@ export function createCloudRuntime(
     execution: {
       profiles: executionProfiles,
       runs,
-      workers: new CloudWorkers(database, hostedRunners),
+      workers,
       sandbox: sandboxRuntime,
       hostedRunners,
       clientWorkspaces: new CloudClientWorkspaces(database),
