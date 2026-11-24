@@ -493,3 +493,62 @@ a.cloud-delivery-title:hover {
 .cloud-delivery-lane[data-lane="3"] > svg {
   color: #8b5cf6;
 }
+.cloud-review-guide {
+  display: grid;
+  gap: 12px;
+}
+.cloud-review-guide > li {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cloud-review-guide h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.cloud-review-guide strong {
+  margin-right: 4px;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.cloud-review-guide ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cloud-review-guide code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--muted);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+}
+.cloud-review-guide-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.cloud-review-guide-request > [role="alert"] {
+  flex-basis: 100%;
+}
+.cloud-review-guide-request select {
+  width: auto;
+  max-width: 320px;
+}
+.cloud-review-guide-writing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.cloud-review-guide-writing > svg {
+  animation: cloud-spin 1s linear infinite;
+}

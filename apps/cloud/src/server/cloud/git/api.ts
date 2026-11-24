@@ -10,6 +10,7 @@ import {
   gitRepositoryInputSchema,
   gitRepositoryTeamInputSchema,
   gitRetargetInputSchema,
+  gitReviewGuideInputSchema,
   gitReviewInputSchema,
   gitReviewSettingsInputSchema,
   gitRevisionSchema,
@@ -263,6 +264,17 @@ async function handlePullRequests(
     return Response.json(await pullRequests.details(actor, id));
   if (route === "GET files")
     return Response.json({ files: await pullRequests.files(actor, id) });
+  if (route === "GET guide")
+    return Response.json(await runtime.git.reviewGuides.get(actor, id));
+  if (route === "POST guide")
+    return Response.json(
+      await runtime.git.reviewGuides.start(
+        actor,
+        cloudId.parse(request.headers.get("idempotency-key")),
+        id,
+        await readBody(request, gitReviewGuideInputSchema),
+      ),
+    );
   if (route === "POST merge")
     return Response.json(
       await pullRequests.merge(

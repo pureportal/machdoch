@@ -79,6 +79,7 @@ import { CloudGitHubSignIn } from "./git/github-sign-in";
 import { CloudRoles } from "./roles";
 import { CloudGitStatusRules } from "./git/automations";
 import { CloudGitReviewSettings } from "./git/review-settings";
+import { CloudGitReviewGuides } from "./git/review-guides";
 import { CloudGitConnections } from "./git/connections";
 import { CloudGitPullRequests } from "./git/pull-requests";
 import { CloudIssueDelivery } from "./git/issue-delivery";
@@ -237,6 +238,8 @@ export interface CloudRuntime {
     webhooks: CloudGitWebhooks;
     oauth: CloudGitOAuth;
     pullRequests: CloudGitPullRequests;
+    reviewGuides: CloudGitReviewGuides;
+    reviewGuideLoop: CloudPeriodicLoop;
     delivery: CloudIssueDelivery;
     syncLoop: CloudPeriodicLoop;
   };
@@ -429,6 +432,19 @@ export function createCloudRuntime(
     5,
   );
   wakePulse = () => pulseLoop.wake();
+  let wakeReviewGuides = () => {};
+  const reviewGuides = new CloudGitReviewGuides(
+    database,
+    pullRequests,
+    chatStore,
+    () => wakeReviewGuides(),
+  );
+  const reviewGuideLoop = new CloudPeriodicLoop(
+    "Review guides",
+    () => reviewGuides.tick(),
+    5,
+  );
+  wakeReviewGuides = () => reviewGuideLoop.wake();
   const releaseDispatcher = new CloudReleaseDispatcher(
     database,
     new CloudReleasePublisher(
@@ -710,6 +726,8 @@ export function createCloudRuntime(
         gitCallbackUrl,
       ),
       pullRequests,
+      reviewGuides,
+      reviewGuideLoop,
       delivery: new CloudIssueDelivery(
         database,
         options.credentialsCipher ?? null,
@@ -762,6 +780,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   await runtime.notifications.loop.close();
   await runtime.activity.exportLoop.close();
   await runtime.git.syncLoop.close();
+  await runtime.git.reviewGuideLoop.close();
   await runtime.authentication.mailWorker.close();
   await runtime.inference.worker.close();
   Object.assign(
@@ -782,6 +801,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.notifications.loop.start();
   runtime.activity.exportLoop.start();
   runtime.git.syncLoop.start();
+  runtime.git.reviewGuideLoop.start();
   if (hostedOrigin) runtime.execution.hostedRunners.start(hostedOrigin);
 }
 
@@ -811,6 +831,7 @@ export async function closeCloudRuntime(): Promise<void> {
     await current.notifications.loop.close();
     await current.activity.exportLoop.close();
     await current.git.syncLoop.close();
+    await current.git.reviewGuideLoop.close();
     await current.authentication.mailWorker.close();
     await current.inference.worker.close();
     await current.database.close();

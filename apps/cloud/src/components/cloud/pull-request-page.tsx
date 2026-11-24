@@ -27,6 +27,7 @@ import { PersonAvatar } from "./person-avatar";
 import { PullRequestActions } from "./pull-request-actions";
 import { PullRequestComposer } from "./pull-request-composer";
 import { PullRequestFiles } from "./pull-request-files";
+import { PullRequestGuide, useReviewGuide } from "./pull-request-guide";
 import { PullRequestOverview } from "./pull-request-overview";
 import {
   PullRequestStageIcon,
@@ -38,7 +39,7 @@ import { RelativeTime } from "./relative-time";
 import { useToast } from "./toast";
 
 const pollMs = 30_000;
-const pullRequestTabs = ["conversation", "commits", "files"] as const;
+const pullRequestTabs = ["overview", "guide", "commits", "diff"] as const;
 type PullRequestTab = (typeof pullRequestTabs)[number];
 
 const reviewerLabels: Record<ReviewerState, string> = {
@@ -146,7 +147,7 @@ export function PullRequestPage({
   const [details, setDetails] = useState<CloudPullRequestDetails | null>(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<PullRequestTab>(
-    pullRequestTabs.find((entry) => entry === initialTab) ?? "conversation",
+    pullRequestTabs.find((entry) => entry === initialTab) ?? "overview",
   );
   const id = initial.id;
   const load = useCallback(
@@ -172,6 +173,11 @@ export function PullRequestPage({
     };
   }, [load]);
   const pullRequest = details?.pullRequest ?? initial;
+  const guide = useReviewGuide(id, pullRequest.headSha);
+  const showGuide = Boolean(
+    guide.error || guide.state?.enabled || guide.state?.guide,
+  );
+  const activeTab = tab === "guide" && !showGuide ? "overview" : tab;
   const reviewers = details
     ? pullRequestReviewers(pullRequest.requestedReviewers, details.reviews)
     : [];
@@ -187,25 +193,26 @@ export function PullRequestPage({
       ) : (
         <div className="cloud-pull-request-page">
           <Tabs
-            value={tab}
+            value={activeTab}
             onValueChange={(value) => setTab(value as PullRequestTab)}
             className="cloud-pull-request-main"
           >
             <TabsList aria-label="Pull request">
-              <TabsTrigger value="conversation">
-                Conversation
+              <TabsTrigger value="overview">
+                Overview
                 <span className="cloud-tab-count">
                   {details.conversation.length + details.comments.length}
                 </span>
               </TabsTrigger>
+              {showGuide && <TabsTrigger value="guide">Guide</TabsTrigger>}
               <TabsTrigger value="commits">
                 Commits
                 <span className="cloud-tab-count">
                   {details.commits.length}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="files">
-                Files changed
+              <TabsTrigger value="diff">
+                Diff
                 <span className="cloud-tab-count">
                   {pullRequest.changedFiles}
                 </span>
@@ -221,7 +228,7 @@ export function PullRequestPage({
                 )}
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="conversation">
+            <TabsContent value="overview">
               <PullRequestTimeline details={details} />
               {details.canMerge && (
                 <PullRequestComposer
@@ -231,6 +238,14 @@ export function PullRequestPage({
                 />
               )}
             </TabsContent>
+            {showGuide && (
+              <TabsContent value="guide">
+                <PullRequestGuide
+                  pullRequestId={pullRequest.id}
+                  handle={guide}
+                />
+              </TabsContent>
+            )}
             <TabsContent value="commits">
               {!details.commits.length ? (
                 <p className="cloud-pull-request-muted">No commits.</p>
@@ -259,7 +274,7 @@ export function PullRequestPage({
                 </ol>
               )}
             </TabsContent>
-            <TabsContent value="files">
+            <TabsContent value="diff">
               <PullRequestFiles
                 pullRequestId={pullRequest.id}
                 url={pullRequest.url}

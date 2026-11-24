@@ -350,7 +350,8 @@ export class CloudChatStore {
       owner:
         | { automationId: string }
         | { releaseId: string }
-        | { pulseJobId: string };
+        | { pulseJobId: string }
+        | { reviewGuideId: string };
       providerId: string;
       model: string;
       prompt: string;
@@ -369,7 +370,7 @@ export class CloudChatStore {
           await reapInference(sql, actor.organizationId);
           const id = randomUUID();
           await sql.query(
-            "INSERT INTO cloud_chats (organization_id,id,user_id,title,automation_id,release_id,pulse_job_id) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+            "INSERT INTO cloud_chats (organization_id,id,user_id,title,automation_id,release_id,pulse_job_id,review_guide_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
             [
               actor.organizationId,
               id,
@@ -378,6 +379,7 @@ export class CloudChatStore {
               "automationId" in input.owner ? input.owner.automationId : null,
               "releaseId" in input.owner ? input.owner.releaseId : null,
               "pulseJobId" in input.owner ? input.owner.pulseJobId : null,
+              "reviewGuideId" in input.owner ? input.owner.reviewGuideId : null,
             ],
           );
           return reserveMessage(
@@ -500,7 +502,7 @@ export class CloudChatStore {
       return (
         await sql.query<CloudChat & Record<string, unknown>>(
           `SELECT ${chatColumns} FROM cloud_chats ch
-        WHERE ch.organization_id=$1 AND ch.user_id=$2 AND ch.archived_at IS NULL AND ch.automation_id IS NULL AND ch.release_id IS NULL AND ch.pulse_job_id IS NULL AND ($3::uuid IS NULL OR (ch.updated_at,ch.id)<(SELECT updated_at,id FROM cloud_chats WHERE organization_id=$1 AND user_id=$2 AND id=$3))
+        WHERE ch.organization_id=$1 AND ch.user_id=$2 AND ch.archived_at IS NULL AND ch.automation_id IS NULL AND ch.release_id IS NULL AND ch.pulse_job_id IS NULL AND ch.review_guide_id IS NULL AND ($3::uuid IS NULL OR (ch.updated_at,ch.id)<(SELECT updated_at,id FROM cloud_chats WHERE organization_id=$1 AND user_id=$2 AND id=$3))
         ORDER BY ch.updated_at DESC,ch.id DESC LIMIT 50`,
           [actor.organizationId, actor.userId, beforeId ?? null],
         )

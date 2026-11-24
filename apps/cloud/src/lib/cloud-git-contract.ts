@@ -343,3 +343,30 @@ export interface CloudPullRequestDetails {
 }
 
 export const gitRevisionSchema = z.strictObject({ revision });
+
+export const gitReviewGuideInputSchema = z.strictObject({
+  providerId: cloudId,
+  model: z.string().trim().min(1).max(200),
+});
+export type GitReviewGuideInput = z.infer<typeof gitReviewGuideInputSchema>;
+
+export interface GitReviewGuideSection {
+  title: string;
+  purpose: string;
+  impact: string;
+  files: string[];
+}
+
+export interface GitReviewGuide {
+  id: string;
+  headSha: string;
+  state: "waiting" | "ready" | "failed";
+  error: string | null;
+  sections: GitReviewGuideSection[];
+  createdAt: string;
+}
+
+export interface GitReviewGuideState {
+  enabled: boolean;
+  guide: GitReviewGuide | null;
+}

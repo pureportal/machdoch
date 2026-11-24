@@ -72,6 +72,7 @@ async function runServer(
   cloud.projectUpdateReminders.start();
   cloud.activity.exportLoop.start();
   cloud.git.syncLoop.start();
+  cloud.git.reviewGuideLoop.start();
   const clientMonitor = new CloudClientMonitor(cloud.database, getRuntime());
   const clientMonitorLoop = new CloudPeriodicLoop(
     "Client monitor",
