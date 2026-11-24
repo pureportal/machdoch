@@ -10,8 +10,9 @@ import {
 } from "../../components/ui/dialog";
 import { MediaAssetPreview } from "./media-visual-preview";
 import { MediaSaveAssetButton } from "./media-save-asset-button";
-import { MediaSplatViewer } from "./media-splat-viewer";
+import { Media3dViewer } from "./media-3d-viewer";
 import { mediaSplatGaussianCount } from "../../../../core/media/splat-flow.js";
+import { mediaMeshFaceCount } from "../../../../core/media/mesh-flow.js";
 
 export const MediaAssetDetailsDialog = ({
   asset,
@@ -50,8 +51,8 @@ export const MediaAssetDetailsDialog = ({
         <DialogTitle>{mediaAssetLabel(asset)}</DialogTitle>
       </DialogHeader>
       <div className="grid min-h-0 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px]">
-        {asset.kind === "splat" ? (
-          <MediaSplatViewer
+        {asset.kind === "splat" || asset.kind === "mesh" ? (
+          <Media3dViewer
             key={asset.id}
             asset={asset}
             className="h-[min(65dvh,720px)] min-h-48 w-full rounded-none"
@@ -70,6 +71,10 @@ export const MediaAssetDetailsDialog = ({
           {asset.kind === "splat" ? (
             <p className="text-xs text-slate-400">
               {mediaSplatGaussianCount(asset).toLocaleString()} Gaussians
+            </p>
+          ) : asset.kind === "mesh" ? (
+            <p className="text-xs text-slate-400">
+              {mediaMeshFaceCount(asset).toLocaleString()} faces
             </p>
           ) : asset.kind !== "audio" ? (
             <p className="text-xs text-slate-400">

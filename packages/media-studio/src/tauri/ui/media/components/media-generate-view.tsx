@@ -86,11 +86,15 @@ import {
 import { MediaPoseWorkspace } from "./media-pose-workspace";
 import { MediaAudioGenerateView } from "./media-audio-generate-view";
 import { MediaSplatGenerateView } from "./media-splat-generate-view";
+import { MediaMeshGenerateView } from "./media-mesh-generate-view";
 import { MediaRefModControls } from "./media-refmod-controls";
 import { MediaRefModLibraryAction } from "./media-refmod-library-action";
 import type {
   MediaAudioRecipeSettings,
   MediaSplatRecipeSettings,
+  MediaMeshRecipeSettings,
+  MediaMeshView,
+  MediaModelDescriptor,
 } from "../../../../core/media/contracts.js";
 
 interface MediaGenerateViewProps {
@@ -105,9 +109,15 @@ interface MediaGenerateViewProps {
   audioGenerationBlockedReason: string | null;
   splatSettings: MediaSplatRecipeSettings;
   onSplatSettingsChange: (settings: MediaSplatRecipeSettings) => void;
-  splatGenerationSupported: boolean;
-  splatGenerationBlockedReason: string | null;
   onAddSplatImage: () => void;
+  meshSettings: MediaMeshRecipeSettings;
+  onMeshSettingsChange: (settings: MediaMeshRecipeSettings) => void;
+  onAddMeshView: (view: MediaMeshView) => void;
+  objectGenerationSupported: boolean;
+  objectGenerationBlockedReason: string | null;
+  selectedObjectModel: MediaModelDescriptor | null;
+  onSelectObjectModel: (model: MediaModelDescriptor) => void;
+  onModelInstalled: () => Promise<void>;
   assetMetadata: Record<string, MediaGenerationAssetMetadata>;
   categories: readonly MediaAssetCategory[];
   plan: MediaCompiledPlan;
@@ -174,9 +184,15 @@ export const MediaGenerateView = ({
   audioGenerationBlockedReason,
   splatSettings,
   onSplatSettingsChange,
-  splatGenerationSupported,
-  splatGenerationBlockedReason,
   onAddSplatImage,
+  meshSettings,
+  onMeshSettingsChange,
+  onAddMeshView,
+  objectGenerationSupported,
+  objectGenerationBlockedReason,
+  selectedObjectModel,
+  onSelectObjectModel,
+  onModelInstalled,
   assetMetadata,
   categories,
   plan,
@@ -558,16 +574,16 @@ export const MediaGenerateView = ({
                             ? "Run quality gates in Advanced"
                             : null);
   const otherTargetSupported =
-    target === "audio" ? audioGenerationSupported : splatGenerationSupported;
+    target === "audio" ? audioGenerationSupported : objectGenerationSupported;
   const generationReady =
-    target === "audio" || target === "splat"
+    target === "audio" || target === "splat" || target === "mesh"
       ? otherTargetSupported && !generationPending
       : canGenerate;
   const generationReadinessReason =
     target === "audio"
       ? audioGenerationBlockedReason
-      : target === "splat"
-        ? splatGenerationBlockedReason
+      : target === "splat" || target === "mesh"
+        ? objectGenerationBlockedReason
         : generationBlockedReason;
   useAppControlView("media-basic", APP_CONTROL_LEVEL.detail, {
     location: [],
@@ -579,23 +595,6 @@ export const MediaGenerateView = ({
             blockedReason: generationReadinessReason ?? "Generation is busy.",
           },
     }),
-    actions: [
-      {
-        id: "media.generate",
-        description:
-          "Start a Basic generation with the current settings, like pressing Generate.",
-        effect: "write",
-        input: { type: "object", properties: {} },
-        run: () => {
-          if (!generationReady)
-            throw new Error(
-              generationReadinessReason ?? "Generation is not ready yet.",
-            );
-          onGenerate();
-          return { started: true };
-        },
-      },
-    ],
   });
   const resultAssets =
     generationJob?.assets.filter((asset) =>
@@ -816,6 +815,8 @@ export const MediaGenerateView = ({
     </div>
   );
 
+  const targetTabActive = (id: MediaGenerationTarget): boolean =>
+    id === target || (id === "splat" && target === "mesh");
   const targetHeader = (
     <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 px-5 py-3">
       <div className="flex rounded-xl border border-slate-800 bg-slate-900/70 p-1">
@@ -823,11 +824,13 @@ export const MediaGenerateView = ({
           <button
             key={item.id}
             type="button"
-            aria-pressed={target === item.id}
-            onClick={() => onTargetChange(item.id)}
+            aria-pressed={targetTabActive(item.id)}
+            onClick={() => {
+              if (!targetTabActive(item.id)) onTargetChange(item.id);
+            }}
             className={cn(
               "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-              target === item.id
+              targetTabActive(item.id)
                 ? "bg-slate-700 text-white"
                 : "text-slate-400 hover:text-slate-100",
             )}
@@ -861,9 +864,12 @@ export const MediaGenerateView = ({
         header={targetHeader}
         settings={splatSettings}
         onSettingsChange={onSplatSettingsChange}
-        generationSupported={splatGenerationSupported}
-        generationBlockedReason={splatGenerationBlockedReason}
+        generationSupported={objectGenerationSupported}
+        generationBlockedReason={objectGenerationBlockedReason}
         models={catalog.models}
+        selectedModel={selectedObjectModel}
+        onSelectModel={onSelectObjectModel}
+        onModelInstalled={onModelInstalled}
         plan={plan}
         imageAssets={visualReferenceAssets}
         assetMetadata={assetMetadata}
@@ -877,7 +883,37 @@ export const MediaGenerateView = ({
         onSelectGenerationJob={onSelectGenerationJob}
         onCancelGeneration={onCancelGeneration}
         onOpenActivity={onOpenActivity}
-        onOpenAssets={onOpenAssets}
+        onOpenResult={onOpenResult}
+        onGenerate={onGenerate}
+      />
+    );
+  }
+
+  if (target === "mesh") {
+    return (
+      <MediaMeshGenerateView
+        header={targetHeader}
+        settings={meshSettings}
+        onSettingsChange={onMeshSettingsChange}
+        generationSupported={objectGenerationSupported}
+        generationBlockedReason={objectGenerationBlockedReason}
+        models={catalog.models}
+        selectedModel={selectedObjectModel}
+        onSelectModel={onSelectObjectModel}
+        onModelInstalled={onModelInstalled}
+        plan={plan}
+        imageAssets={visualReferenceAssets}
+        assetMetadata={assetMetadata}
+        categories={categories}
+        imageImportSupported={referenceImportSupported}
+        imageImportPending={referenceImportPending}
+        generationJob={generationJob}
+        generationJobs={generationJobs}
+        generationPending={generationPending}
+        onAddImage={onAddMeshView}
+        onSelectGenerationJob={onSelectGenerationJob}
+        onCancelGeneration={onCancelGeneration}
+        onOpenActivity={onOpenActivity}
         onOpenResult={onOpenResult}
         onGenerate={onGenerate}
       />

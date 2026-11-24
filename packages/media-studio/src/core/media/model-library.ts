@@ -11,6 +11,7 @@ export const mediaModelSupportsGenerationTarget = (
 ): boolean => {
   if (target === "audio") return model.capabilities.includes("text-to-audio");
   if (target === "splat") return model.capabilities.includes("image-to-3d");
+  if (target === "mesh") return model.capabilities.includes("multiview-to-3d");
   if (target === "video") {
     return model.capabilities.some((capability) =>
       ["text-to-video", "image-to-video", "start-end-to-video"].includes(
@@ -37,7 +38,7 @@ export const mediaModelSupportsGenerationTarget = (
 };
 
 export const isMediaGenerationModel = (model: MediaModelDescriptor): boolean =>
-  (["image", "video", "svg", "audio", "splat"] as const).some((target) =>
+  (["image", "video", "svg", "audio", "splat", "mesh"] as const).some((target) =>
     mediaModelSupportsGenerationTarget(model, target),
   );
 
@@ -49,6 +50,7 @@ export const getMediaModelPrimaryGenerationTarget = (
   if (mediaModelSupportsGenerationTarget(model, "image")) return "image";
   if (mediaModelSupportsGenerationTarget(model, "audio")) return "audio";
   if (mediaModelSupportsGenerationTarget(model, "splat")) return "splat";
+  if (mediaModelSupportsGenerationTarget(model, "mesh")) return "mesh";
   return null;
 };
 

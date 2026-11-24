@@ -31,7 +31,7 @@ def serve(worker) -> int:
                 result = worker.probe()
             elif command == "memory":
                 result = memory_snapshot(cache.torch, cache.device) if cache else {"pressure": False}
-            elif command in ("generate", "generate-video", "generate-splat"):
+            elif command in ("generate", "generate-video", "generate-splat", "generate-mesh"):
                 if cache is None:
                     torch, _ = worker._runtime()
                     device, _, _ = worker._device(torch)
@@ -40,6 +40,10 @@ def serve(worker) -> int:
                     from media_idol import generate as generate_splat
 
                     result = generate_splat(envelope["request"], worker, cache)
+                elif command == "generate-mesh":
+                    from media_hunyuan3d import generate as generate_mesh
+
+                    result = generate_mesh(envelope["request"], worker, cache)
                 else:
                     operation = worker.generate if command == "generate" else worker.generate_video
                     result = operation(envelope["request"], cache)

@@ -217,19 +217,98 @@ pub(super) fn generate_splat(
     };
     generation.validate_values()?;
     let splat = provider_local_diffusers::generate_splat(app, paths, &generation)?;
-    publish_splat(
+    publish_3d_asset(
         paths,
         request,
         node,
         iteration,
-        &splat.digest,
-        &splat.relative_path,
-        splat.byte_size,
+        SPLAT_FORMAT,
+        (&splat.digest, &splat.relative_path, splat.byte_size),
         (&splat.preview_digest, &splat.preview_relative_path, splat.preview_byte_size, splat.preview_edge),
-        &source_asset_id,
+        &[source_asset_id],
         splat.provenance,
     )
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn generate_mesh(
+    app: &AppHandle,
+    paths: &MediaRuntimePaths,
+    request: &ExecuteMediaWorkflowRequest,
+    flow: &MediaFlowDocument,
+    node: &MediaFlowNode,
+    views: std::collections::BTreeMap<String, String>,
+    seed: u64,
+    iteration: u32,
+) -> MediaResult<String> {
+    let flag = |key: &str, default: bool| node.config.get(key).and_then(Value::as_bool).unwrap_or(default);
+    let mut generation = super::super::mesh::GenerateMediaMeshRequest {
+        schema_version: 1,
+        run_id: request.run_id.clone(),
+        flow_id: request.flow_id.clone(),
+        flow_revision_id: request.flow_revision_id.clone(),
+        flow_name: flow.name.clone(),
+        plan_id: request.plan_id.clone(),
+        plan_snapshot: request.plan_snapshot.clone(),
+        model_id: request.model_bindings[&node.id].clone(),
+        model_label: node.label.clone(),
+        views,
+        remove_background: flag("removeBackground", true),
+        num_inference_steps: config_number(node, "numInferenceSteps", 30.0) as u32,
+        guidance_scale: config_number(node, "guidanceScale", 5.0),
+        octree_resolution: config_number(node, "octreeResolution", 384.0) as u32,
+        num_chunks: config_number(node, "numChunks", 20_000.0) as u32,
+        remove_floaters: flag("removeFloaters", true),
+        max_face_count: node
+            .config
+            .get("maxFaceCount")
+            .and_then(Value::as_u64)
+            .map(|count| count as u32),
+        voxelize: flag("voxelize", false),
+        voxel_resolution: config_number(node, "voxelResolution", 64.0) as u32,
+        voxel_fill: config_number(node, "voxelFill", 0.5),
+        seed,
+        diagnostic_count: 0,
+    };
+    generation.validate_values()?;
+    let mesh = provider_local_diffusers::generate_mesh(app, paths, &generation)?;
+    let sources: Vec<String> = super::super::mesh::MESH_VIEWS
+        .iter()
+        .filter_map(|view| generation.views.get(*view).cloned())
+        .collect();
+    publish_3d_asset(
+        paths,
+        request,
+        node,
+        iteration,
+        MESH_FORMAT,
+        (&mesh.digest, &mesh.relative_path, mesh.byte_size),
+        (&mesh.preview_digest, &mesh.preview_relative_path, mesh.preview_byte_size, mesh.preview_edge),
+        &sources,
+        mesh.provenance,
+    )
+}
+
+struct Rendered3dFormat {
+    mime_type: &'static str,
+    kind: &'static str,
+    preview_profile: &'static str,
+    label: &'static str,
+}
+
+const SPLAT_FORMAT: Rendered3dFormat = Rendered3dFormat {
+    mime_type: super::super::splat::SPLAT_MIME_TYPE,
+    kind: "splat",
+    preview_profile: super::super::splat::SPLAT_PREVIEW_PROFILE,
+    label: "3D object",
+};
+
+const MESH_FORMAT: Rendered3dFormat = Rendered3dFormat {
+    mime_type: super::super::mesh::MESH_MIME_TYPE,
+    kind: "mesh",
+    preview_profile: super::super::mesh::MESH_PREVIEW_PROFILE,
+    label: "3D mesh",
+};
 
 pub(super) fn save_splat(
     paths: &MediaRuntimePaths,
@@ -238,54 +317,69 @@ pub(super) fn save_splat(
     iteration: u32,
     source: &str,
 ) -> MediaResult<String> {
+    save_3d_asset(paths, request, node, iteration, source, SPLAT_FORMAT)
+}
+
+pub(super) fn save_mesh(
+    paths: &MediaRuntimePaths,
+    request: &ExecuteMediaWorkflowRequest,
+    node: &MediaFlowNode,
+    iteration: u32,
+    source: &str,
+) -> MediaResult<String> {
+    save_3d_asset(paths, request, node, iteration, source, MESH_FORMAT)
+}
+
+fn save_3d_asset(
+    paths: &MediaRuntimePaths,
+    request: &ExecuteMediaWorkflowRequest,
+    node: &MediaFlowNode,
+    iteration: u32,
+    source: &str,
+    format: Rendered3dFormat,
+) -> MediaResult<String> {
     let (blob, _) = transform::read_asset_original(paths, source)?;
-    if blob.mime_type != super::super::splat::SPLAT_MIME_TYPE {
-        return Err("Connect a 3D object".into());
+    if blob.mime_type != format.mime_type {
+        return Err(format!("Connect a {}", format.label));
     }
-    let preview = database::get_asset_rendition_blob_source(
-        paths,
-        source,
-        super::super::splat::SPLAT_PREVIEW_PROFILE,
-    )?
-    .ok_or("The 3D object has no rendered preview")?;
+    let preview = database::get_asset_rendition_blob_source(paths, source, format.preview_profile)?
+        .ok_or_else(|| format!("The {} has no rendered preview", format.label))?;
     let edge = image::ImageReader::open(transform::resolve_verified_blob_path(paths, &preview)?)
         .and_then(|reader| reader.with_guessed_format())
-        .map_err(|error| format!("The 3D preview cannot be opened: {error}"))?
+        .map_err(|error| format!("The {} preview cannot be opened: {error}", format.label))?
         .into_dimensions()
-        .map_err(|error| format!("The 3D preview cannot be read: {error}"))?
+        .map_err(|error| format!("The {} preview cannot be read: {error}", format.label))?
         .0;
-    publish_splat(
+    publish_3d_asset(
         paths,
         request,
         node,
         iteration,
-        &blob.digest,
-        &blob.relative_path,
-        blob.byte_size,
+        format,
+        (&blob.digest, &blob.relative_path, blob.byte_size),
         (&preview.digest, &preview.relative_path, preview.byte_size, edge),
-        source,
+        &[source.to_string()],
         json!({"finalOutput":true}),
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn publish_splat(
+fn publish_3d_asset(
     paths: &MediaRuntimePaths,
     request: &ExecuteMediaWorkflowRequest,
     node: &MediaFlowNode,
     iteration: u32,
-    digest: &str,
-    relative_path: &str,
-    byte_size: u64,
+    format: Rendered3dFormat,
+    (digest, relative_path, byte_size): (&str, &str, u64),
     preview: (&str, &str, u64, u32),
-    source: &str,
+    sources: &[String],
     details: Value,
 ) -> MediaResult<String> {
     let asset = GeneratedImageAsset {
         digest: digest.to_string(),
         relative_path: relative_path.to_string(),
         byte_size,
-        mime_type: super::super::splat::SPLAT_MIME_TYPE,
+        mime_type: format.mime_type,
         width: 0,
         height: 0,
         output_index: 0,
@@ -297,15 +391,15 @@ fn publish_splat(
         &node.id,
         iteration,
         &asset,
-        "splat",
-        &[source.to_string()],
+        format.kind,
+        sources,
         details,
     )?;
     let (preview_digest, preview_relative_path, preview_bytes, edge) = preview;
     database::record_asset_rendition(
         paths,
         &id,
-        super::super::splat::SPLAT_PREVIEW_PROFILE,
+        format.preview_profile,
         preview_digest,
         preview_relative_path,
         preview_bytes,

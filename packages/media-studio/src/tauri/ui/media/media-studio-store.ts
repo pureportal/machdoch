@@ -17,7 +17,9 @@ import type {
   MediaVideoRecipeSettings,
   MediaAudioRecipeSettings,
   MediaSplatRecipeSettings,
+  MediaMeshRecipeSettings,
 } from "../../../core/media/contracts.js";
+import { MEDIA_MESH_VIEWS } from "../../../core/media/contracts.js";
 import {
   DEFAULT_MEDIA_ASSET_CATEGORIES,
   normalizeMediaAssetCategories,
@@ -32,6 +34,7 @@ import { normalizeMediaImageMask } from "../../../core/media/image-mask.js";
 import { MEDIA_VIDEO_QUALITY_PRESETS } from "../../../core/media/video-quality.js";
 import { DEFAULT_AUDIO_RECIPE_SETTINGS } from "../../../core/media/audio-flow.js";
 import { DEFAULT_SPLAT_RECIPE_SETTINGS } from "../../../core/media/splat-flow.js";
+import { DEFAULT_MESH_RECIPE_SETTINGS } from "../../../core/media/mesh-flow.js";
 import { validateMediaFlowVariableDocument } from "../../../core/media/variables.js";
 import {
   loadStoredValue,
@@ -92,6 +95,7 @@ export const DEFAULT_MEDIA_STUDIO_STATE = {
   videoRecipe: DEFAULT_VIDEO_RECIPE_SETTINGS,
   audioRecipe: DEFAULT_AUDIO_RECIPE_SETTINGS,
   splatRecipe: DEFAULT_SPLAT_RECIPE_SETTINGS,
+  meshRecipe: DEFAULT_MESH_RECIPE_SETTINGS,
   categories: DEFAULT_MEDIA_ASSET_CATEGORIES.map((category) => ({
     ...category,
   })),
@@ -143,6 +147,39 @@ const normalizeSplatRecipeSettings = (
     guidanceScale: normalizeBoundedNumber(value.guidanceScale, 3, 0, 10),
     timeShift: normalizeBoundedNumber(value.timeShift, 3, 1, 6),
     minOpacity: normalizeBoundedNumber(value.minOpacity, 0, 0, 0.5),
+    seed: typeof value.seed === "number" && Number.isSafeInteger(value.seed) && value.seed >= 0 ? value.seed : null,
+  };
+};
+
+const normalizeMeshRecipeSettings = (
+  value: unknown,
+): MediaMeshRecipeSettings => {
+  if (!isRecord(value)) return structuredClone(DEFAULT_MESH_RECIPE_SETTINGS);
+  const views = isRecord(value.viewAssetIds) ? value.viewAssetIds : {};
+  const viewAssetIds: MediaMeshRecipeSettings["viewAssetIds"] = {};
+  for (const view of MEDIA_MESH_VIEWS) {
+    const assetId = views[view];
+    if (typeof assetId === "string" && assetId.trim())
+      viewAssetIds[view] = assetId.slice(0, 256);
+  }
+  const integer = (key: string, fallback: number, minimum: number, maximum: number): number =>
+    Math.round(normalizeBoundedNumber(value[key], fallback, minimum, maximum));
+  return {
+    viewAssetIds,
+    modelId: typeof value.modelId === "string" ? value.modelId.slice(0, 128) : null,
+    removeBackground: typeof value.removeBackground === "boolean" ? value.removeBackground : true,
+    numInferenceSteps: integer("numInferenceSteps", DEFAULT_MESH_RECIPE_SETTINGS.numInferenceSteps, 1, 100),
+    guidanceScale: normalizeBoundedNumber(value.guidanceScale, DEFAULT_MESH_RECIPE_SETTINGS.guidanceScale, 0, 15),
+    octreeResolution: integer("octreeResolution", DEFAULT_MESH_RECIPE_SETTINGS.octreeResolution, 64, 512),
+    numChunks: integer("numChunks", DEFAULT_MESH_RECIPE_SETTINGS.numChunks, 1_000, 500_000),
+    removeFloaters: typeof value.removeFloaters === "boolean" ? value.removeFloaters : true,
+    maxFaceCount:
+      value.maxFaceCount === null
+        ? null
+        : integer("maxFaceCount", 200_000, 1_000, 2_000_000),
+    voxelize: typeof value.voxelize === "boolean" ? value.voxelize : DEFAULT_MESH_RECIPE_SETTINGS.voxelize,
+    voxelResolution: integer("voxelResolution", DEFAULT_MESH_RECIPE_SETTINGS.voxelResolution, 8, 128),
+    voxelFill: normalizeBoundedNumber(value.voxelFill, DEFAULT_MESH_RECIPE_SETTINGS.voxelFill, 0.1, 0.9),
     seed: typeof value.seed === "number" && Number.isSafeInteger(value.seed) && value.seed >= 0 ? value.seed : null,
   };
 };
@@ -914,6 +951,7 @@ export const normalizeMediaStudioState = (value: unknown): MediaStudioState => {
       recipe: { ...DEFAULT_IMAGE_RECIPE_SETTINGS },
       videoRecipe: { ...DEFAULT_VIDEO_RECIPE_SETTINGS },
       splatRecipe: { ...DEFAULT_SPLAT_RECIPE_SETTINGS },
+      meshRecipe: structuredClone(DEFAULT_MESH_RECIPE_SETTINGS),
       categories: DEFAULT_MEDIA_ASSET_CATEGORIES.map((category) => ({
         ...category,
       })),
@@ -941,13 +979,14 @@ export const normalizeMediaStudioState = (value: unknown): MediaStudioState => {
     ),
     target: normalizeOneOf<MediaGenerationTarget>(
       value.target,
-      ["image", "video", "svg", "audio", "splat"],
+      ["image", "video", "svg", "audio", "splat", "mesh"],
       DEFAULT_MEDIA_STUDIO_STATE.target,
     ),
     recipe: normalizeImageRecipeSettings(value.recipe),
     videoRecipe: normalizeVideoRecipeSettings(value.videoRecipe),
     audioRecipe: normalizeAudioRecipeSettings(value.audioRecipe),
     splatRecipe: normalizeSplatRecipeSettings(value.splatRecipe),
+    meshRecipe: normalizeMeshRecipeSettings(value.meshRecipe),
     categories,
     assetMetadata: normalizeAssetMetadata(value.assetMetadata, categories),
     flow: normalizeStoredFlow(value.flow),

@@ -87,6 +87,8 @@ SUPPORTED_ARCHITECTURES = (
     "wan-2.2-ti2v",
     "intro-svg",
     "idol",
+    "hunyuan3d-2mv",
+    "hunyuan3d-2mv-turbo",
 ) + tuple(media_open_models.PROFILES)
 NATIVE_MASKED_EDIT_ARCHITECTURES = frozenset(
     {

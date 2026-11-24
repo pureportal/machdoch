@@ -49,6 +49,12 @@ fn snapshots() -> &'static [ManifestSnapshot] {
             serde_json::from_str::<Vec<ManifestSnapshot>>(include_str!("idol_model_manifest.json"))
                 .expect("bundled Idol installation manifest must be valid"),
         );
+        snapshots.extend(
+            serde_json::from_str::<Vec<ManifestSnapshot>>(include_str!(
+                "hunyuan3d_model_manifests.json"
+            ))
+            .expect("bundled Hunyuan3D installation manifests must be valid"),
+        );
         snapshots
     })
 }

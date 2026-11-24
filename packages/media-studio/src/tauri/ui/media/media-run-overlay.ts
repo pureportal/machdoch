@@ -366,7 +366,8 @@ export const selectMediaRunOutputAssetForNode = (
         (asset.kind === "image" ||
           asset.kind === "vector" ||
           asset.kind === "video" ||
-          asset.kind === "splat") &&
+          asset.kind === "splat" ||
+          asset.kind === "mesh") &&
         readOutputNodeId(asset) === outputNodeId,
     )
     .reduce<MediaAssetRecord | null>(

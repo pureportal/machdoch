@@ -20,6 +20,7 @@ export type MediaAssetKind =
   | "video"
   | "audio"
   | "splat"
+  | "mesh"
   | "vector"
   | "alpha-matte"
   | "report"
@@ -61,6 +62,7 @@ export type MediaCapability =
   | "text-to-audio"
   | "audio-to-audio"
   | "image-to-3d"
+  | "multiview-to-3d"
   | "background-remove"
   | "image-quality-analysis"
   | "transparent-output";
@@ -95,6 +97,7 @@ export type MediaModelPackageType =
   | "diffusers"
   | "transformers"
   | "idol"
+  | "hunyuan3d"
   | "safetensors"
   | "onnx"
   | "native-utility";
@@ -136,7 +139,7 @@ export type MediaLocalModelArchitecture =
   | MediaBuiltinLocalModelArchitecture
   | (string & Record<never, never>);
 
-export type MediaModality = "image" | "video" | "audio" | "splat";
+export type MediaModality = "image" | "video" | "audio" | "splat" | "mesh";
 
 export type MediaLocalModelArchitectureConfidence =
   | "high"
@@ -233,6 +236,7 @@ export type MediaNodeType =
   | "task.generate-video"
   | "task.generate-audio"
   | "task.generate-splat"
+  | "task.generate-mesh"
   | "operation.crop"
   | "operation.resize"
   | "operation.text-overlay"
@@ -255,7 +259,8 @@ export type MediaNodeType =
   | "output.asset"
   | "output.video"
   | "output.audio"
-  | "output.splat";
+  | "output.splat"
+  | "output.mesh";
 
 export type MediaPortDataType =
   | "image-layout"
@@ -267,6 +272,7 @@ export type MediaPortDataType =
   | "video"
   | "audio"
   | "splat"
+  | "mesh"
   | "quality-report";
 
 export interface MediaFlowNode {
@@ -1114,7 +1120,7 @@ export interface ImageRecipeSettings {
   modelAddons: MediaModelAddonSelection[];
 }
 
-export type MediaGenerationTarget = "image" | "video" | "svg" | "audio" | "splat";
+export type MediaGenerationTarget = "image" | "video" | "svg" | "audio" | "splat" | "mesh";
 
 export interface MediaAudioRecipeSettings {
   prompt: string;
@@ -1138,6 +1144,53 @@ export interface MediaSplatRecipeSettings {
   timeShift: number;
   minOpacity: number;
   seed: number | null;
+}
+
+export const MEDIA_MESH_VIEWS = ["front", "left", "back", "right"] as const;
+
+export type MediaMeshView = (typeof MEDIA_MESH_VIEWS)[number];
+
+export type MediaMeshViewAssets = Partial<Record<MediaMeshView, string>>;
+
+export interface MediaMeshRecipeSettings {
+  viewAssetIds: MediaMeshViewAssets;
+  modelId: string | null;
+  removeBackground: boolean;
+  numInferenceSteps: number;
+  guidanceScale: number;
+  octreeResolution: number;
+  numChunks: number;
+  removeFloaters: boolean;
+  maxFaceCount: number | null;
+  voxelize: boolean;
+  voxelResolution: number;
+  voxelFill: number;
+  seed: number | null;
+}
+
+export interface GenerateMediaMeshRequest {
+  schemaVersion: 1;
+  runId: string;
+  flowId: string;
+  flowRevisionId: string;
+  flowName: string;
+  planId: string;
+  modelId: string;
+  modelLabel: string;
+  views: MediaMeshViewAssets;
+  removeBackground: boolean;
+  numInferenceSteps: number;
+  guidanceScale: number;
+  octreeResolution: number;
+  numChunks: number;
+  removeFloaters: boolean;
+  maxFaceCount: number | null;
+  voxelize: boolean;
+  voxelResolution: number;
+  voxelFill: number;
+  seed: number;
+  diagnosticCount: number;
+  planSnapshot: MediaRunPlanSnapshot;
 }
 
 export interface GenerateMediaSplatRequest {
@@ -1401,6 +1454,7 @@ export interface MediaExecutionStep {
     | "generate-video"
     | "generate-audio"
     | "generate-splat"
+    | "generate-mesh"
     | "generate-svg"
     | "vectorize-svg"
     | "validate-svg"
@@ -1571,6 +1625,7 @@ export interface MediaRuntimeRunRecord extends MediaRunRecord {
     | "local-video"
     | "local-audio"
     | "local-splat"
+    | "local-mesh"
     | "local-wan-video"
     | "mock-remote-provider"
     | "svg-ai-pipeline";
@@ -1671,7 +1726,7 @@ export interface MediaAssetRecord {
   id: string;
   runId: string;
   digest: string;
-  kind: "image" | "video" | "audio" | "splat" | "vector" | "report";
+  kind: "image" | "video" | "audio" | "splat" | "mesh" | "vector" | "report";
   mimeType:
     | "image/png"
     | "image/jpeg"
@@ -1680,6 +1735,7 @@ export interface MediaAssetRecord {
     | "video/webm"
     | "audio/wav"
     | "model/x-ply"
+    | "model/gltf-binary"
     | "application/json";
   byteSize: number;
   width: number;
@@ -2207,6 +2263,7 @@ export type MediaAssetOperation =
   | MediaLocalVideoGenerationOperation
   | MediaLocalAudioGenerationOperation
   | MediaLocalSplatGenerationOperation
+  | MediaLocalMeshGenerationOperation
   | MediaLocalWanVideoGenerationOperation
   | MediaRemoteImageEditOperation
   | MediaRemoteSvgGenerationOperation;
@@ -2241,6 +2298,49 @@ export interface MediaLocalSplatGenerationOperation {
       boundsMax: [number, number, number];
     };
     camera: { yaw: number; pitch: number; radius: number; fov: number };
+    performance: {
+      loadSeconds: number;
+      generationSeconds: number;
+      totalSeconds: number;
+    };
+  };
+}
+
+export interface MediaLocalMeshGenerationOperation {
+  kind: "local-mesh-generation";
+  providerId: "local-diffusers";
+  modelId: string;
+  flowRevisionId: string;
+  viewAssetIds: MediaMeshViewAssets;
+  generation: {
+    schemaVersion: number;
+    workerVersion: string;
+    modelArchitecture: string;
+    modelRevision: string;
+    modelDigest: string;
+    device: string;
+    deviceLabel: string;
+    views: MediaMeshView[];
+    seed: number;
+    numInferenceSteps: number;
+    guidanceScale: number;
+    octreeResolution: number;
+    numChunks: number;
+    removeFloaters: boolean;
+    removeBackground: boolean;
+    maxFaceCount: number | null;
+    voxelize: boolean;
+    voxelResolution: number;
+    voxelFill: number;
+    output: {
+      fileName: string;
+      digest: string;
+      byteSize: number;
+      faceCount: number;
+      vertexCount: number;
+      boundsMin: [number, number, number];
+      boundsMax: [number, number, number];
+    };
     performance: {
       loadSeconds: number;
       generationSeconds: number;
@@ -2823,6 +2923,7 @@ export interface MediaStudioState {
   videoRecipe: MediaVideoRecipeSettings;
   audioRecipe: MediaAudioRecipeSettings;
   splatRecipe: MediaSplatRecipeSettings;
+  meshRecipe: MediaMeshRecipeSettings;
   categories: MediaAssetCategory[];
   assetMetadata: Record<string, MediaGenerationAssetMetadata>;
   flow: MediaFlow | null;

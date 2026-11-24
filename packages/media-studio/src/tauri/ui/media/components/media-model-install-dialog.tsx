@@ -13,6 +13,10 @@ import {
 import { Button } from "../../components/ui/button";
 import { MediaExternalLink } from "./media-external-link";
 import {
+  mediaDownloadMonitor,
+  mediaDownloadSourceLabel,
+} from "../media-download-monitor";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -31,10 +35,10 @@ export const MediaModelInstallDialog = ({
   onInstalled,
   onUseModel,
 }: {
-  model: MediaModelDescriptor;
+  model: Pick<MediaModelDescriptor, "id" | "displayName">;
   onClose: () => void;
   onInstalled: () => Promise<void>;
-  onUseModel: () => void;
+  onUseModel?: () => void;
 }): JSX.Element => {
   const [plan, setPlan] = useState<MediaModelInstallPlan | null>(null);
   const [job, setJob] = useState<MediaModelInstallJob | null>(null);
@@ -126,6 +130,7 @@ export const MediaModelInstallDialog = ({
         acceptLicense: accepted || !plan.license.requiresAcceptance,
       });
       setJob(result);
+      mediaDownloadMonitor.refresh();
     } catch (failure) {
       setError(String(failure));
     } finally {
@@ -162,6 +167,12 @@ export const MediaModelInstallDialog = ({
               {(plan.requiredWorkingBytes / 1e9).toFixed(1)} GB free space
               needed
             </p>
+            <MediaExternalLink
+              href={plan.sourceUrl}
+              className="block truncate text-xs text-sky-300 underline"
+            >
+              {mediaDownloadSourceLabel(plan.sourceUrl)}
+            </MediaExternalLink>
             {!active &&
             job?.status !== "installed" &&
             !plan.alreadyInstalled &&
@@ -212,9 +223,15 @@ export const MediaModelInstallDialog = ({
               Cancel download
             </Button>
           ) : job?.status === "installed" || plan?.alreadyInstalled ? (
-            <Button onClick={onUseModel} disabled={!readyToUse || pending}>
-              Use model
-            </Button>
+            onUseModel ? (
+              <Button onClick={onUseModel} disabled={!readyToUse || pending}>
+                Use model
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+            )
           ) : (
             <Button
               onClick={() => void start()}

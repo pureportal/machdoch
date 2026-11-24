@@ -1,0 +1,122 @@
+[
+  {
+    "modelId": "local:hunyuan3d-2mv",
+    "slug": "hunyuan3d-2mv",
+    "displayName": "Hunyuan3D-2mv",
+    "revision": "3a761b539b29fe4ff64714813aa9560fd66f5de0",
+    "sourceUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv",
+    "downloadRoot": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0",
+    "licenseDigest": "e5e6e2041e18326d82cd105a1b9404e36db55263dd9d42d4989f917c2501b67b",
+    "licenseName": "Tencent Hunyuan 3D 2.0 Community License",
+    "licenseSpdxId": null,
+    "licenseSourceUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0/LICENSE",
+    "licenseRequiresAcceptance": true,
+    "packageDescription": "Hunyuan3D-2mv multi-view shape transformer, shape decoder and DINOv2 image encoder with Tencent's hy3dgen runtime",
+    "files": [
+      {
+        "path": "hunyuan3d-dit-v2-mv/config.yaml",
+        "byteSize": 1608,
+        "sha256": "315fd5bf601d1d103130b9fda202f1bd28eda495e68ed1621bc823d5519c5e5b",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0/hunyuan3d-dit-v2-mv/config.yaml"
+      },
+      {
+        "path": "hunyuan3d-dit-v2-mv/model.fp16.safetensors",
+        "byteSize": 4928151562,
+        "sha256": "d36f5881bcdc56726b73e517cd444c13c60732431622da7268145355c8d38e9c",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0/hunyuan3d-dit-v2-mv/model.fp16.safetensors"
+      },
+      {
+        "path": "hy3dgen/hy3dgen-2.0.2-py3-none-any.whl",
+        "byteSize": 115478,
+        "sha256": "92931c9f99ab4679b5f0475bf37ffd0822b3c0739b0feb58b76800ca7ee6df23",
+        "downloadUrl": "https://files.pythonhosted.org/packages/ef/4a/13767f746ce563d35694bbc074d2f811aa026c326e6ccc6b7874e3b628a6/hy3dgen-2.0.2-py3-none-any.whl"
+      },
+      {
+        "path": "LICENSE",
+        "byteSize": 17828,
+        "sha256": "e5e6e2041e18326d82cd105a1b9404e36db55263dd9d42d4989f917c2501b67b",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0/LICENSE"
+      },
+      {
+        "path": "NOTICE",
+        "byteSize": 32064,
+        "sha256": "7b7ace3714c188b7a27e20edbcceaaac836540bbb63759a37039e5624c8f6bbc",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0/NOTICE"
+      }
+    ],
+    "excludedPaths": [
+      "the duplicate pickle checkpoint model.fp16.ckpt",
+      "the fast and turbo transformer variants",
+      "Hunyuan3D-Paint texture generation, which needs compiled CUDA extensions"
+    ]
+  },
+  {
+    "modelId": "local:hunyuan3d-2mv-turbo",
+    "slug": "hunyuan3d-2mv-turbo",
+    "displayName": "Hunyuan3D-2mv Turbo",
+    "revision": "3a761b539b29fe4ff64714813aa9560fd66f5de0",
+    "sourceUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv",
+    "downloadRoot": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0",
+    "licenseDigest": "e5e6e2041e18326d82cd105a1b9404e36db55263dd9d42d4989f917c2501b67b",
+    "licenseName": "Tencent Hunyuan 3D 2.0 Community License",
+    "licenseSpdxId": null,
+    "licenseSourceUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0/LICENSE",
+    "licenseRequiresAcceptance": true,
+    "packageDescription": "Hunyuan3D-2mv Turbo step-distilled shape transformer and DINOv2 image encoder, the FlashVDM turbo shape decoder from Hunyuan3D-2, and Tencent's hy3dgen runtime",
+    "files": [
+      {
+        "path": "hunyuan3d-dit-v2-mv-turbo/config.yaml",
+        "byteSize": 1667,
+        "sha256": "4d9d7b21dd0669efd0a8da6024ecce28619b45a4ca5f3ea1394a54b3d38698f5",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0/hunyuan3d-dit-v2-mv-turbo/config.yaml"
+      },
+      {
+        "path": "hunyuan3d-dit-v2-mv-turbo/model.fp16.safetensors",
+        "byteSize": 4930777530,
+        "sha256": "172d7a989b99f66af760da0080d8c6f6350c72609536cf0c55b87a4afa574e45",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0/hunyuan3d-dit-v2-mv-turbo/model.fp16.safetensors"
+      },
+      {
+        "path": "hunyuan3d-vae-v2-0-turbo/config.yaml",
+        "byteSize": 336,
+        "sha256": "91355c5acc412149996d19dbe46040d10fab888efd8bb910c76bad3a550f6ceb",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2/resolve/9cd649ba6913f7a852e3286bad86bfa9a2d83dcf/hunyuan3d-vae-v2-0-turbo/config.yaml"
+      },
+      {
+        "path": "hunyuan3d-vae-v2-0-turbo/model.fp16.safetensors",
+        "byteSize": 407410402,
+        "sha256": "66b7af697118db2de00c22f63a385c75f9049709739281971837af9e4ce31cb4",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2/resolve/9cd649ba6913f7a852e3286bad86bfa9a2d83dcf/hunyuan3d-vae-v2-0-turbo/model.fp16.safetensors"
+      },
+      {
+        "path": "hunyuan3d-vae-v2-0-turbo/LICENSE",
+        "byteSize": 17830,
+        "sha256": "eca02cc10abaf520d85c3c523aef0b88f36b935b85635f1e34370688e93da3dd",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2/resolve/9cd649ba6913f7a852e3286bad86bfa9a2d83dcf/LICENSE"
+      },
+      {
+        "path": "hy3dgen/hy3dgen-2.0.2-py3-none-any.whl",
+        "byteSize": 115478,
+        "sha256": "92931c9f99ab4679b5f0475bf37ffd0822b3c0739b0feb58b76800ca7ee6df23",
+        "downloadUrl": "https://files.pythonhosted.org/packages/ef/4a/13767f746ce563d35694bbc074d2f811aa026c326e6ccc6b7874e3b628a6/hy3dgen-2.0.2-py3-none-any.whl"
+      },
+      {
+        "path": "LICENSE",
+        "byteSize": 17828,
+        "sha256": "e5e6e2041e18326d82cd105a1b9404e36db55263dd9d42d4989f917c2501b67b",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0/LICENSE"
+      },
+      {
+        "path": "NOTICE",
+        "byteSize": 32064,
+        "sha256": "7b7ace3714c188b7a27e20edbcceaaac836540bbb63759a37039e5624c8f6bbc",
+        "downloadUrl": "https://huggingface.co/tencent/Hunyuan3D-2mv/resolve/3a761b539b29fe4ff64714813aa9560fd66f5de0/NOTICE"
+      }
+    ],
+    "excludedPaths": [
+      "the duplicate pickle checkpoints model.fp16.ckpt",
+      "the standard and fast transformer variants",
+      "Hunyuan3D-Paint texture generation, which needs compiled CUDA extensions"
+    ]
+  }
+]

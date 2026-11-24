@@ -80,7 +80,7 @@ fn prepare_export(
             if mime_type == "audio/wav" {
                 return Err("WAV export requires verified-original mode.".to_string());
             }
-            if mime_type == super::splat::SPLAT_MIME_TYPE {
+            if mime_type == super::splat::SPLAT_MIME_TYPE || mime_type == super::mesh::MESH_MIME_TYPE {
                 return Err("3D export requires verified-original mode.".to_string());
             }
             if mime_type == "application/json" {
@@ -217,6 +217,7 @@ fn validate_destination(destination_path: &str, mime_type: &str) -> MediaResult<
         "video/webm" => extension == "webm",
         "audio/wav" => extension == "wav",
         super::splat::SPLAT_MIME_TYPE => extension == "ply",
+        super::mesh::MESH_MIME_TYPE => extension == "glb",
         "application/json" => extension == "json",
         _ => false,
     };

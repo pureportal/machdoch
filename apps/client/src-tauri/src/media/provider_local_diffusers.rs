@@ -25,6 +25,9 @@ pub(crate) use audio::generate_audio;
 #[path = "provider_splat.rs"]
 mod splat;
 pub(crate) use splat::generate_splat;
+#[path = "provider_mesh.rs"]
+mod mesh;
+pub(crate) use mesh::generate_mesh;
 #[path = "provider_video_composition.rs"]
 mod video_composition;
 pub(crate) use video_composition::{compose_video, inspect_video, upscale_video};
@@ -37,6 +40,7 @@ use super::{
     provider_images::{self, GeneratedImageAsset},
     subject_cutout, transform,
     video_loop::{self, VideoLoopBoundaryInspection},
+    worker_output::worker_failure_with_diagnostics,
     GenerateMediaImagesRequest, GenerateMediaVideoRequest, MediaAnimatedBackgroundConfig,
     MediaEmbeddingVectorProfile, MediaImageMask, MediaImageReference, MediaLoraDenoisingSchedule,
     MediaLoraTensorProfile, MediaModelAddonSelection, MediaModelDescriptor, MediaResult,
@@ -990,6 +994,7 @@ pub(super) fn installed_model(
         "diffusers" => ("diffusers-directory".to_string(), package_root, None),
         "transformers" => ("transformers-directory".to_string(), package_root, None),
         "idol" => ("idol-directory".to_string(), package_root, None),
+        "hunyuan3d" => ("hunyuan3d-directory".to_string(), package_root, None),
         "safetensors" => (
             "single-file".to_string(),
             safe_managed_path(&package_root, "checkpoint.safetensors")?,
@@ -1478,6 +1483,39 @@ fn openpose_controlnet_path(
     Ok(has_weights.then_some(directory))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StagedFileEvidence {
+    file_name: String,
+    digest: String,
+    byte_size: u64,
+}
+
+fn read_staged_output(
+    directory: &Path,
+    evidence: &StagedFileEvidence,
+    limit: u64,
+) -> MediaResult<Vec<u8>> {
+    let path = directory.join(&evidence.file_name);
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| format!("Could not inspect {}: {error}", evidence.file_name))?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() != evidence.byte_size
+        || metadata.len() > limit
+    {
+        return Err(format!("{} is not a bounded regular file.", evidence.file_name));
+    }
+    let bytes = fs::read(&path)
+        .map_err(|error| format!("Could not read {}: {error}", evidence.file_name))?;
+    if bytes.len() as u64 != evidence.byte_size
+        || format!("{:x}", Sha256::digest(&bytes)) != evidence.digest
+    {
+        return Err(format!("{} failed integrity checks.", evidence.file_name));
+    }
+    Ok(bytes)
+}
+
 fn create_staging_directory(paths: &MediaRuntimePaths) -> MediaResult<StagingDirectory> {
     let root = paths
         .database
@@ -1521,22 +1559,6 @@ fn decode_generation_response(output: &Output) -> MediaResult<WorkerGenerationRe
         return Err("local Diffusers worker returned an unsupported schema".to_string());
     }
     Ok(response)
-}
-
-fn worker_failure_with_diagnostics(summary: String, stderr: &[u8]) -> String {
-    const MAX_DETAIL_CHARS: usize = 4_096;
-
-    let diagnostic = String::from_utf8_lossy(stderr).trim().to_string();
-    if diagnostic.is_empty() || summary.contains(&diagnostic) {
-        return summary;
-    }
-    let detail_reversed = diagnostic
-        .chars()
-        .rev()
-        .take(MAX_DETAIL_CHARS)
-        .collect::<String>();
-    let detail = detail_reversed.chars().rev().collect::<String>();
-    format!("{summary}\nWorker diagnostics (tail):\n{detail}")
 }
 
 fn append_prompt_token(prompt: &str, token: &str) -> String {

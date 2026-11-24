@@ -115,6 +115,7 @@ export const productAttachmentSchema = z.discriminatedUnion("source", [
       "alpha-matte",
       "report",
       "splat",
+      "mesh",
       "collection",
     ]),
     displayName: text.optional(),

@@ -1,16 +1,11 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { SparkRenderer, SplatFileType, SplatMesh } from "@sparkjsdev/spark";
+import type { MediaViewerSceneHandle } from "./media-3d-viewer";
 
 export interface MediaSplatInputCamera {
   yaw: number;
   pitch: number;
-}
-
-export interface MediaSplatSceneHandle {
-  resetView: () => void;
-  setAutoRotate: (enabled: boolean) => void;
-  dispose: () => void;
 }
 
 const FIELD_OF_VIEW = 35;
@@ -38,7 +33,7 @@ export const createMediaSplatScene = async ({
   inputCamera: MediaSplatInputCamera | null;
   autoRotate: boolean;
   onInteraction: () => void;
-}): Promise<MediaSplatSceneHandle> => {
+}): Promise<MediaViewerSceneHandle> => {
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x000000, 0);

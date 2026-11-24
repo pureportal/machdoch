@@ -288,11 +288,15 @@ pub(crate) fn read_asset_preview(
         return read_verified_blob(paths, &source);
     }
     let is_svg = source.mime_type == "image/svg+xml";
-    let is_splat = source.mime_type == super::splat::SPLAT_MIME_TYPE;
+    let rendered_preview = match source.mime_type.as_str() {
+        super::splat::SPLAT_MIME_TYPE => Some(("splat", super::splat::SPLAT_PREVIEW_PROFILE)),
+        super::mesh::MESH_MIME_TYPE => Some(("mesh", super::mesh::MESH_PREVIEW_PROFILE)),
+        _ => None,
+    };
     let profile = if is_svg {
         format!("svg-library-webp-{max_edge}-secure-static-v2")
-    } else if is_splat {
-        format!("splat-library-webp-{max_edge}-v1")
+    } else if let Some((kind, _)) = rendered_preview {
+        format!("{kind}-library-webp-{max_edge}-v1")
     } else {
         format!("library-webp-{max_edge}-v1")
     };
@@ -309,13 +313,9 @@ pub(crate) fn read_asset_preview(
         let evaluation = svg::evaluate_svg(&document, max_edge)?;
         image::load_from_memory(&evaluation.png_bytes)
             .map_err(|error| format!("failed to decode secure SVG preview: {error}"))?
-    } else if is_splat {
-        let render = database::get_asset_rendition_blob_source(
-            paths,
-            asset_id,
-            super::splat::SPLAT_PREVIEW_PROFILE,
-        )?
-        .ok_or("This 3D asset has no rendered preview")?;
+    } else if let Some((_, render_profile)) = rendered_preview {
+        let render = database::get_asset_rendition_blob_source(paths, asset_id, render_profile)?
+            .ok_or("This 3D asset has no rendered preview")?;
         image::load_from_memory_with_format(&read_verified_blob(paths, &render)?, image::ImageFormat::Png)
             .map_err(|error| format!("failed to decode the 3D preview: {error}"))?
     } else {
@@ -641,6 +641,7 @@ pub(crate) fn max_asset_blob_bytes(mime_type: &str) -> u64 {
     match mime_type {
         "video/webm" => MAX_WEBM_BYTES,
         super::splat::SPLAT_MIME_TYPE => super::splat::MAX_SPLAT_BYTES,
+        super::mesh::MESH_MIME_TYPE => super::mesh::MAX_MESH_BYTES,
         _ => MAX_ENCODED_BYTES,
     }
 }

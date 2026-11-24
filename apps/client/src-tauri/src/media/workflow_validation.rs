@@ -185,6 +185,7 @@ pub(super) fn preflight(
                 | "task.generate-video"
                 | "task.generate-audio"
                 | "task.generate-splat"
+                | "task.generate-mesh"
                 | "operation.video-sequence"
                 | "operation.video-audio"
                 | "operation.lip-sync"
@@ -210,6 +211,7 @@ pub(super) fn preflight(
                 | "output.video"
                 | "output.audio"
                 | "output.splat"
+                | "output.mesh"
         ) {
             return Err(format!("{} cannot run in a connected workflow", node.label));
         }
@@ -220,6 +222,7 @@ pub(super) fn preflight(
                 | "task.generate-video"
                 | "task.generate-audio"
                 | "task.generate-splat"
+                | "task.generate-mesh"
         ) {
             let model = request
                 .model_bindings

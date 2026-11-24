@@ -3,9 +3,34 @@ import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import type { MediaAssetRecord } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
 import { cn } from "../../lib/utils";
-import { readMediaSplat } from "../media-runtime";
+import { readMediaMesh, readMediaSplat } from "../media-runtime";
 import { MediaAssetPreview } from "./media-visual-preview";
-import type { MediaSplatInputCamera, MediaSplatSceneHandle } from "./media-splat-scene";
+import type { MediaSplatInputCamera } from "./media-splat-scene";
+
+export interface MediaViewerSceneHandle {
+  resetView: () => void;
+  setAutoRotate: (enabled: boolean) => void;
+  dispose: () => void;
+}
+
+const createScene = async ({
+  asset,
+  container,
+  inputCamera,
+  onInteraction,
+}: {
+  asset: MediaAssetRecord;
+  container: HTMLElement;
+  inputCamera: MediaSplatInputCamera | null;
+  onInteraction: () => void;
+}): Promise<MediaViewerSceneHandle> => {
+  if (asset.kind === "mesh") {
+    const [bytes, module] = await Promise.all([readMediaMesh(asset.id), import("./media-mesh-scene")]);
+    return module.createMediaMeshScene({ container, bytes, autoRotate: true, onInteraction });
+  }
+  const [bytes, module] = await Promise.all([readMediaSplat(asset.id), import("./media-splat-scene")]);
+  return module.createMediaSplatScene({ container, bytes, inputCamera, autoRotate: true, onInteraction });
+};
 
 const inputCamera = (asset: MediaAssetRecord): MediaSplatInputCamera | null => {
   const operation = asset.operation;
@@ -22,7 +47,7 @@ const inputCamera = (asset: MediaAssetRecord): MediaSplatInputCamera | null => {
   return typeof yaw === "number" && typeof pitch === "number" ? { yaw, pitch } : null;
 };
 
-export const MediaSplatViewer = ({
+export const Media3dViewer = ({
   asset,
   className,
 }: {
@@ -31,7 +56,7 @@ export const MediaSplatViewer = ({
 }): JSX.Element => {
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<MediaSplatSceneHandle | null>(null);
+  const sceneRef = useRef<MediaViewerSceneHandle | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [autoRotate, setAutoRotate] = useState(true);
   const [attempt, setAttempt] = useState(0);
@@ -45,19 +70,16 @@ export const MediaSplatViewer = ({
     let active = true;
     setState("loading");
     setAutoRotate(true);
-    void Promise.all([readMediaSplat(asset.id), import("./media-splat-scene")])
-      .then(async ([bytes, module]) => {
-        if (!active) return;
-        const handle = await module.createMediaSplatScene({
-          container,
-          bytes,
-          inputCamera: cameraRef.current,
-          autoRotate: true,
-          onInteraction: () => {
-            sceneRef.current?.setAutoRotate(false);
-            setAutoRotate(false);
-          },
-        });
+    void createScene({
+      asset,
+      container,
+      inputCamera: cameraRef.current,
+      onInteraction: () => {
+        sceneRef.current?.setAutoRotate(false);
+        setAutoRotate(false);
+      },
+    })
+      .then((handle) => {
         if (!active) {
           handle.dispose();
           return;
@@ -73,7 +95,7 @@ export const MediaSplatViewer = ({
       sceneRef.current?.dispose();
       sceneRef.current = null;
     };
-  }, [asset.id, attempt]);
+  }, [asset, attempt]);
 
   const toggleRotation = useCallback(() => {
     setAutoRotate((current) => {

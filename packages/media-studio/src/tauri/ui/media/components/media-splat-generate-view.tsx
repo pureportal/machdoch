@@ -1,5 +1,5 @@
 import { useState, type JSX, type ReactNode } from "react";
-import { Box, ChevronDown, ImagePlus, LoaderCircle, X } from "lucide-react";
+import { ImagePlus, X } from "lucide-react";
 import type {
   MediaAssetCategory,
   MediaAssetRecord,
@@ -8,21 +8,22 @@ import type {
   MediaModelDescriptor,
   MediaSplatRecipeSettings,
 } from "../../../../core/media/contracts.js";
-import { isMediaModelReady } from "../../../../core/media/model-readiness.js";
-import { isMediaSplatModel } from "../../../../core/media/splat-flow.js";
+import { getMediaNodeDefinition } from "../../../../core/media/node-registry.js";
+import { workerFailureSummary } from "../../../../core/media/worker-failure.js";
 import type { MediaGenerationQueueJob } from "../media-generation-queue";
 import {
-  SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
 } from "../../components/ui/submit-shortcut";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
 import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
+import { Media3dGenerateButton } from "./media-3d-generate-button";
+import { Media3dModelPicker } from "./media-3d-model-picker";
 import { MediaAssetBrowser } from "./media-asset-browser";
 import { MediaGenerationJobs } from "./media-generation-jobs";
+import { MediaParameterFields } from "./media-parameter-controls";
 import { MediaSaveAssetButton } from "./media-save-asset-button";
-import { MediaSplatViewer } from "./media-splat-viewer";
+import { Media3dViewer } from "./media-3d-viewer";
 import { MediaAssetPreview } from "./media-visual-preview";
 
 const DETAIL_PRESETS = [
@@ -31,6 +32,10 @@ const DETAIL_PRESETS = [
   { count: 524_288, label: "High", short: "524K" },
   { count: 1_048_576, label: "Max", short: "1M" },
 ] as const;
+
+const PARAMETER_FIELDS = (getMediaNodeDefinition("task.generate-splat")?.fields ?? [])
+  .filter((field) => field.kind === "number")
+  .map((field) => (field.id === "gaussianCount" ? { ...field, group: "Expert" as const } : field));
 
 const INPUT_KINDS = [
   { value: "synthetic", label: "Render" },
@@ -56,7 +61,7 @@ const SplatJobPreview = ({
   if (result)
     return (
       <article className="space-y-3">
-        <MediaSplatViewer asset={result} className="aspect-square max-h-[min(70dvh,720px)] w-full" />
+        <Media3dViewer asset={result} className="aspect-square max-h-[min(70dvh,720px)] w-full" />
         <div className="flex flex-wrap gap-2">
           <MediaSaveAssetButton asset={result} />
           <Button variant="outline" size="sm" onClick={() => onOpenResult(result)}>
@@ -95,7 +100,7 @@ const SplatJobPreview = ({
           </>
         ) : (
           <p role="alert" className="text-sm text-rose-300">
-            {job.error}
+            {job.error ? workerFailureSummary(job.error) : null}
           </p>
         )}
       </div>
@@ -110,6 +115,9 @@ export const MediaSplatGenerateView = ({
   generationSupported,
   generationBlockedReason,
   models,
+  selectedModel,
+  onSelectModel,
+  onModelInstalled,
   plan,
   imageAssets,
   assetMetadata,
@@ -123,7 +131,6 @@ export const MediaSplatGenerateView = ({
   onSelectGenerationJob,
   onCancelGeneration,
   onOpenActivity,
-  onOpenAssets,
   onOpenResult,
   onGenerate,
 }: {
@@ -133,6 +140,9 @@ export const MediaSplatGenerateView = ({
   generationSupported: boolean;
   generationBlockedReason: string | null;
   models: readonly MediaModelDescriptor[];
+  selectedModel: MediaModelDescriptor | null;
+  onSelectModel: (model: MediaModelDescriptor) => void;
+  onModelInstalled: () => Promise<void>;
   plan: MediaCompiledPlan;
   imageAssets: readonly MediaAssetRecord[];
   assetMetadata: Readonly<Record<string, MediaGenerationAssetMetadata>>;
@@ -146,17 +156,10 @@ export const MediaSplatGenerateView = ({
   onSelectGenerationJob: (runId: string) => void;
   onCancelGeneration: (runId: string) => void;
   onOpenActivity: (runId: string) => void;
-  onOpenAssets: (modelId?: string) => void;
   onOpenResult: (asset: MediaAssetRecord) => void;
   onGenerate: () => void;
 }): JSX.Element => {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [optionsOpen, setOptionsOpen] = useState(false);
-  const splatModels = models.filter(isMediaSplatModel);
-  const ready = splatModels.some(isMediaModelReady);
-  const installing = splatModels.some((model) =>
-    ["queued", "downloading", "verifying", "activating"].includes(model.installationStatus),
-  );
   const sourceAsset =
     imageAssets.find((asset) => asset.id === settings.sourceAssetId) ?? null;
   const jobSource =
@@ -165,46 +168,23 @@ export const MediaSplatGenerateView = ({
     ) ?? null;
   const blockingDiagnostic = plan.diagnostics.find((entry) => entry.severity === "error");
   const blocked =
-    installing && blockingDiagnostic?.code === "MODEL_NOT_READY"
+    blockingDiagnostic?.code === "MODEL_NOT_READY"
       ? null
       : (blockingDiagnostic?.message ?? generationBlockedReason);
   const update = (patch: Partial<MediaSplatRecipeSettings>): void =>
     onSettingsChange({ ...settings, ...patch });
-  const numberField = (
-    key: "numInferenceSteps" | "guidanceScale" | "timeShift" | "minOpacity" | "gaussianCount" | "seed",
-    label: string,
-    min: number,
-    max: number,
-    step: number,
-  ): JSX.Element => (
-    <label key={key} className="block space-y-1.5 text-sm text-slate-200">
-      <span>{label}</span>
-      <Input
-        aria-label={label}
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        placeholder={key === "seed" ? "Random" : undefined}
-        value={settings[key] ?? ""}
-        onChange={(event) =>
-          update({
-            [key]:
-              key === "seed" && !event.target.value
-                ? null
-                : event.target.valueAsNumber,
-          })
-        }
-      />
-    </label>
-  );
-
   return (
     <SubmitShortcut asChild>
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-slate-950">
         {header}
         <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto xl:grid-cols-[minmax(380px,0.9fr)_minmax(420px,1.1fr)]">
           <section className="space-y-6 border-slate-800 p-6 xl:border-r">
+            <Media3dModelPicker
+              models={models}
+              selectedModelId={selectedModel?.id ?? null}
+              onSelect={onSelectModel}
+              onInstalled={onModelInstalled}
+            />
             <section className="space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-sm font-medium text-slate-200">Object image</h2>
@@ -309,49 +289,25 @@ export const MediaSplatGenerateView = ({
               </div>
             </div>
 
-            {!ready ? (
-              <Button variant="outline" onClick={() => onOpenAssets(splatModels[0]?.id)}>
-                {installing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Box className="h-4 w-4" />}
-                {installing ? "Installing Idol" : "Install Idol"}
-              </Button>
-            ) : null}
-
-            <section className="rounded-xl border border-slate-800">
-              <button
-                type="button"
-                aria-expanded={optionsOpen}
-                onClick={() => setOptionsOpen((open) => !open)}
-                className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-slate-200"
-              >
-                Options
-                <ChevronDown className={cn("h-4 w-4 transition-transform", optionsOpen && "rotate-180")} />
-              </button>
-              {optionsOpen ? (
-                <div className="grid gap-4 border-t border-slate-800 p-4 sm:grid-cols-2">
-                  {numberField("gaussianCount", "Gaussians", 32_768, 1_048_576, 32_768)}
-                  {numberField("minOpacity", "Cleanup", 0, 0.5, 0.01)}
-                  {numberField("numInferenceSteps", "Steps", 4, 100, 1)}
-                  {numberField("guidanceScale", "Guidance", 0, 10, 0.1)}
-                  {numberField("timeShift", "Time shift", 1, 6, 0.1)}
-                  {numberField("seed", "Seed", 0, Number.MAX_SAFE_INTEGER, 1)}
-                </div>
-              ) : null}
-            </section>
+            <MediaParameterFields
+              idPrefix="splat"
+              fields={PARAMETER_FIELDS}
+              values={settings}
+              onChange={onSettingsChange}
+            />
 
             {blocked ? (
               <p role="status" className="text-sm text-slate-400">
                 {blocked}
               </p>
             ) : null}
-            <Button
-              {...SUBMIT_SHORTCUT_ACTION_PROPS}
-              className="w-full"
+            <Media3dGenerateButton
+              model={selectedModel}
               disabled={plan.status !== "ready" || generationPending || !generationSupported}
-              onClick={onGenerate}
-            >
-              <Box className="h-4 w-4" />
-              {generationPending ? "Preparing" : "Generate 3D"}
-            </Button>
+              pending={generationPending}
+              onGenerate={onGenerate}
+              onModelInstalled={onModelInstalled}
+            />
           </section>
           <section className="space-y-4 p-6">
             <MediaGenerationJobs

@@ -35,6 +35,8 @@ use super::{
 pub(crate) mod audio;
 #[path = "database_splat.rs"]
 pub(crate) mod splat;
+#[path = "database_mesh.rs"]
+pub(crate) mod mesh;
 
 pub(crate) const SCHEMA_VERSION: u32 = 26;
 
@@ -4699,6 +4701,7 @@ pub(crate) fn auto_tag_asset(
         "image/webp" => Some(("webp", "WebP")),
         "image/svg+xml" => Some(("svg-vector", "SVG vector")),
         super::splat::SPLAT_MIME_TYPE => Some(("gaussian-splat", "Gaussian splat")),
+        super::mesh::MESH_MIME_TYPE => Some(("glb-mesh", "GLB mesh")),
         "application/json" => Some(("json-report", "JSON report")),
         _ => None,
     };
@@ -8105,7 +8108,7 @@ mod tests {
         assert_eq!(initial.schema_version, 1);
         assert_eq!(initial.catalog_revision, catalog::CATALOG_REVISION);
         assert_eq!(initial.providers.len(), 8);
-        assert_eq!(initial.models.len(), 63);
+        assert_eq!(initial.models.len(), 69);
         for profile in super::super::open_models::profiles() {
             let model = initial
                 .models

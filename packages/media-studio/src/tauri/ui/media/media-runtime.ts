@@ -2260,6 +2260,20 @@ export const readMediaSplat = async (assetId: string): Promise<ArrayBuffer> => {
   return invoke<ArrayBuffer>("media_read_splat", { assetId });
 };
 
+export const generateMediaMesh = async (
+  request: import("../../../core/media/contracts.js").GenerateMediaMeshRequest,
+): Promise<MediaRunDetail> => {
+  if (!canInvokeNativeRuntime())
+    throw new Error("Open the desktop app to generate 3D objects.");
+  return invoke<MediaRunDetail>("media_generate_mesh", { request });
+};
+
+export const readMediaMesh = async (assetId: string): Promise<ArrayBuffer> => {
+  if (!canInvokeNativeRuntime())
+    throw new Error("Open the desktop app to view 3D objects.");
+  return invoke<ArrayBuffer>("media_read_mesh", { assetId });
+};
+
 export const enqueueMediaMockRemoteRun = async (
   request: EnqueueMockRemoteRunRequest,
 ): Promise<MediaRunDetail> => {
@@ -2860,7 +2874,8 @@ export const readMediaAssetPreview = async (
     asset.kind !== "image" &&
     asset.kind !== "vector" &&
     asset.kind !== "video" &&
-    asset.kind !== "splat"
+    asset.kind !== "splat" &&
+    asset.kind !== "mesh"
   ) {
     throw new Error(`Media asset ${asset.id} does not have a visual preview.`);
   }

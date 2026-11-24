@@ -15,7 +15,9 @@ import {
   type MediaUpscaleSettings,
 } from "../../../../core/media/upscale-settings.js";
 import { MediaWorkflowModelField } from "./media-workflow-model-field";
-import { MediaSamplingRange } from "./media-sampling-range";
+import { MediaRecommendedRange, MediaSamplingRange } from "./media-sampling-range";
+import { MediaParameterInfo } from "./media-parameter-controls";
+import { mediaMeshModelProfile } from "../../../../core/media/mesh-flow.js";
 import {
   compatibleMediaImageSamplers,
   defaultMediaImageSteps,
@@ -483,6 +485,7 @@ const PORT_TONES: Record<MediaPortDataType, FlowPortTone> = {
   video: "emerald",
   audio: "orange",
   splat: "violet",
+  mesh: "violet",
   "quality-report": "amber",
 };
 
@@ -496,6 +499,7 @@ const PORT_LABELS: Record<MediaPortDataType, string> = {
   video: "Video",
   audio: "Audio",
   splat: "3D",
+  mesh: "3D mesh",
   "quality-report": "Quality",
 };
 
@@ -1181,6 +1185,10 @@ const NodeFieldEditor = ({
   const currentAsset =
     matchingAssets.find((asset) => asset.id === currentAssetId) ?? null;
   const describedBy = issue ? `${descriptionId} ${issueId}` : descriptionId;
+  const recommendedRange =
+    node.type === "task.generate-mesh" && field.id === "numInferenceSteps"
+      ? mediaMeshModelProfile(selectedModel).stepsRecommended
+      : field.recommended;
 
   let control: JSX.Element;
   switch (field.kind) {
@@ -1743,13 +1751,20 @@ const NodeFieldEditor = ({
   return (
     <div className="py-1">
       <div className="flex items-center justify-between gap-2">
-        <label
-          id={`${controlId}-label`}
-          htmlFor={controlId}
-          className="text-[11px] font-medium text-slate-200"
-        >
-          {field.label}
-        </label>
+        <span className="flex min-w-0 items-center gap-1">
+          <label
+            id={`${controlId}-label`}
+            htmlFor={controlId}
+            className="truncate text-[11px] font-medium text-slate-200"
+          >
+            {field.label}
+          </label>
+          <MediaParameterInfo
+            label={field.label}
+            description={field.description}
+            recommended={recommendedRange}
+          />
+        </span>
         {!field.readOnly &&
         (compatibleVariables.length > 0 || variableTokenId) ? (
           <select
@@ -1802,6 +1817,20 @@ const NodeFieldEditor = ({
                   : (mediaImageSamplingProfile(selectedModel.architecture)
                       ?.defaultGuidance ?? 0)
             }
+          />
+        </div>
+      ) : recommendedRange &&
+        field.min !== undefined &&
+        field.max !== undefined &&
+        typeof value === "number" ? (
+        <div className="mt-2">
+          <MediaRecommendedRange
+            id={field.id}
+            label={field.label}
+            range={recommendedRange}
+            min={field.min}
+            max={field.max}
+            value={value}
           />
         </div>
       ) : null}
@@ -4281,6 +4310,8 @@ export const MediaFlowView = ({
               ? "Final SVG"
               : runOutputAsset.kind === "splat"
                 ? "3D object"
+                : runOutputAsset.kind === "mesh"
+                ? "3D mesh"
                 : node.type === "operation.segment"
                 ? "Mask"
                 : `${runOutputAsset.width} \u00d7 ${runOutputAsset.height}`

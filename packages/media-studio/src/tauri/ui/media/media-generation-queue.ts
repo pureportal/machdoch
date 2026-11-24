@@ -10,6 +10,7 @@ import type {
   MediaVideoRecipeSettings,
   MediaAudioRecipeSettings,
   MediaSplatRecipeSettings,
+  MediaMeshRecipeSettings,
 } from "../../../core/media/contracts.js";
 import { normalizeMediaError } from "./media-runtime.js";
 
@@ -33,6 +34,7 @@ export interface MediaGenerationRecipeSnapshot {
   videoSettings: MediaVideoRecipeSettings | null;
   audioSettings?: MediaAudioRecipeSettings;
   splatSettings?: MediaSplatRecipeSettings;
+  meshSettings?: MediaMeshRecipeSettings;
   resultDestination: "assets";
 }
 
@@ -95,7 +97,7 @@ const immutableClone = <T>(value: T): T => deepFreeze(structuredClone(value));
 const mediaTypeLabel = (target: MediaGenerationTarget): string =>
   target === "svg"
     ? "SVG"
-    : target === "splat"
+    : target === "splat" || target === "mesh"
       ? "3D"
       : `${target[0]?.toLocaleUpperCase()}${target.slice(1)}`;
 
@@ -246,7 +248,7 @@ export class MediaGenerationQueue {
     this.patchJob(next.id, {
       status: "running",
       startedAt: this.now().toISOString(),
-      currentStep: `Starting ${next.recipe.target === "splat" ? "3D" : next.recipe.target} generation`,
+      currentStep: `Starting ${mediaTypeLabel(next.recipe.target)} generation`,
     });
     this.startPolling(next.id);
     try {

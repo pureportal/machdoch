@@ -53,6 +53,14 @@ export const requiresWorkflowCompilation = (flow: MediaFlow): boolean =>
             node.type,
           ),
       ))) ||
+  (flow.nodes.some((node) => node.type === "task.generate-mesh") &&
+    (flow.nodes.filter((node) => node.type === "task.generate-mesh").length > 1 ||
+      flow.nodes.some(
+        (node) =>
+          !["source.image", "task.generate-mesh", "output.mesh"].includes(
+            node.type,
+          ),
+      ))) ||
   flow.nodes.filter((node) =>
     ["task.generate-image", "task.edit-image"].includes(node.type),
   ).length > 1 ||
@@ -87,6 +95,7 @@ export const WORKFLOW_EXECUTABLE_TYPES = new Set([
   "task.generate-video",
   "task.generate-audio",
   "task.generate-splat",
+  "task.generate-mesh",
   "operation.video-sequence",
   "operation.video-audio",
   "operation.lip-sync",
@@ -112,6 +121,7 @@ export const WORKFLOW_EXECUTABLE_TYPES = new Set([
   "output.video",
   "output.audio",
   "output.splat",
+  "output.mesh",
 ]);
 
 const workflowOutputPort = (outputType: MediaFlowNode["type"]): string =>
@@ -121,7 +131,9 @@ const workflowOutputPort = (outputType: MediaFlowNode["type"]): string =>
       ? "audio"
       : outputType === "output.splat"
         ? "splat"
-        : "image";
+        : outputType === "output.mesh"
+          ? "mesh"
+          : "image";
 
 export function workflowTaskFlow(
   flow: MediaFlow,
@@ -190,7 +202,9 @@ export function workflowTaskFlow(
         ? "output.audio"
         : task.type === "task.generate-splat"
           ? "output.splat"
-          : "output.asset";
+          : task.type === "task.generate-mesh"
+            ? "output.mesh"
+            : "output.asset";
   if (
     task.type === "task.generate-video" &&
     !edges.some((edge) => edge.toPortId === "last-frame")
@@ -329,6 +343,7 @@ export function compileConnectedMediaFlow(
         "task.generate-video",
         "task.generate-audio",
         "task.generate-splat",
+        "task.generate-mesh",
       ].includes(node.type)
     ) {
       const connectedMask = effective.edges.some(
@@ -451,6 +466,7 @@ export function compileConnectedMediaFlow(
         "output.asset": "ingest-asset",
         "output.audio": "ingest-asset",
         "output.splat": "ingest-asset",
+        "output.mesh": "ingest-asset",
         "output.video": "ingest-asset",
       };
       const kind = kinds[node.type];

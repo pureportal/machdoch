@@ -2826,6 +2826,7 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
                 | "task.generate-video"
                 | "task.generate-audio"
                 | "task.generate-splat"
+                | "task.generate-mesh"
                 | "operation.crop"
                 | "operation.resize"
                 | "operation.text-overlay"
@@ -2849,6 +2850,7 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
                 | "output.video"
                 | "output.audio"
                 | "output.splat"
+                | "output.mesh"
         )
 }
 
@@ -3678,6 +3680,7 @@ impl MediaFlowNode {
             | "task.generate-video"
             | "task.generate-audio"
             | "task.generate-splat"
+            | "task.generate-mesh"
             | "task.generate-prompt" => "task",
             "operation.visual-check"
             | "operation.canny"
@@ -3707,7 +3710,9 @@ impl MediaFlowNode {
             | "operation.lip-sync"
             | "operation.quality-analyze" => "operation",
             "control.quality-gate" | "control.human-review" | "control.repeat" => "control",
-            "output.asset" | "output.video" | "output.audio" | "output.splat" => "output",
+            "output.asset" | "output.video" | "output.audio" | "output.splat" | "output.mesh" => {
+                "output"
+            }
             _ => return Err(format!("flow node {} has an unsupported type", self.id)),
         };
         if self.layer != expected_layer {
@@ -4434,6 +4439,58 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             }
             Ok(())
         }
+        "task.generate-mesh" => {
+            validate_config_keys(
+                node,
+                &[
+                    "modelId",
+                    "removeBackground",
+                    "numInferenceSteps",
+                    "guidanceScale",
+                    "octreeResolution",
+                    "numChunks",
+                    "removeFloaters",
+                    "maxFaceCount",
+                    "voxelize",
+                    "voxelResolution",
+                    "voxelFill",
+                    "seed",
+                ],
+            )?;
+            if !node.config.get("modelId").is_none_or(Value::is_null) {
+                config_string(node, "modelId", 128, false)?;
+            }
+            config_bool(node, "removeBackground")?;
+            config_bool(node, "removeFloaters")?;
+            config_bool(node, "voxelize")?;
+            let voxel_fill = node.config.get("voxelFill").and_then(Value::as_f64);
+            let guidance = node.config.get("guidanceScale").and_then(Value::as_f64);
+            let integer = |key: &str| node.config.get(key).and_then(Value::as_u64);
+            let in_range = |key: &str, minimum: u64, maximum: u64| {
+                integer(key).is_some_and(|value| (minimum..=maximum).contains(&value))
+            };
+            let face_limit_valid = node.config.get("maxFaceCount").is_some_and(|value| {
+                value.is_null() || value.as_u64().is_some_and(|count| (1_000..=2_000_000).contains(&count))
+            });
+            let seed_invalid = node.config.get("seed").is_some_and(|value| {
+                !value.is_null()
+                    && value
+                        .as_u64()
+                        .is_none_or(|number| number > 9_007_199_254_740_991)
+            });
+            if !guidance.is_some_and(|value| value.is_finite() && (0.0..=15.0).contains(&value))
+                || !in_range("numInferenceSteps", 1, 100)
+                || !in_range("octreeResolution", 64, 512)
+                || !in_range("numChunks", 1_000, 500_000)
+                || !face_limit_valid
+                || !in_range("voxelResolution", 8, 128)
+                || !voxel_fill.is_some_and(|value| value.is_finite() && (0.1..=0.9).contains(&value))
+                || seed_invalid
+            {
+                return Err("Check the 3D mesh steps, guidance, resolution, chunk size, face limit, voxel settings, and seed".into());
+            }
+            Ok(())
+        }
         "task.generate-video" => {
             validate_config_keys(
                 node,
@@ -5062,6 +5119,10 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             validate_config_keys(node, &["format"])?;
             config_enum(node, "format", &["ply"])
         }
+        "output.mesh" => {
+            validate_config_keys(node, &["format"])?;
+            config_enum(node, "format", &["glb"])
+        }
         _ => unreachable!("node type was validated before config"),
     }
 }
@@ -5183,6 +5244,8 @@ fn port_type(node_type: &str, port_id: &str, output: bool) -> Option<&'static st
         ("task.generate-audio", true, "audio") | ("output.audio", false, "audio") => Some("audio"),
         ("task.generate-splat", false, "image") => Some("image"),
         ("task.generate-splat", true, "splat") | ("output.splat", false, "splat") => Some("splat"),
+        ("task.generate-mesh", false, "front" | "left" | "back" | "right") => Some("image"),
+        ("task.generate-mesh", true, "mesh") | ("output.mesh", false, "mesh") => Some("mesh"),
         ("operation.crop", false | true, "image") => Some("image"),
         ("operation.resize", false | true, "image") => Some("image"),
         ("operation.text-overlay", false | true, "image") => Some("image"),
@@ -5276,6 +5339,8 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         "output.audio" => &["audio"],
         "task.generate-splat" => &["image"],
         "output.splat" => &["splat"],
+        "task.generate-mesh" => &["front"],
+        "output.mesh" => &["mesh"],
         "control.quality-gate" => &["image", "report"],
         "operation.composite" => &["foreground", "background"],
         "operation.video-composite" => &["foreground-video", "background-video"],
@@ -5320,9 +5385,10 @@ fn required_output_ports(node_type: &str) -> &'static [&'static str] {
         "task.generate-video" => &["video"],
         "task.generate-audio" => &["audio"],
         "task.generate-splat" => &["splat"],
+        "task.generate-mesh" => &["mesh"],
         "operation.video-composite" => &["video"],
         "operation.visual-check" | "operation.quality-analyze" => &["report"],
-        "output.asset" | "output.video" | "output.audio" | "output.splat" => &[],
+        "output.asset" | "output.video" | "output.audio" | "output.splat" | "output.mesh" => &[],
         _ => &[],
     }
 }

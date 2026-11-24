@@ -365,6 +365,13 @@ pub(crate) async fn invoke(
             )
             .map_err(|error| json!(error.to_string()))?
         }
+        "media_list_model_install_jobs" => {
+            check_arguments(&args, &[])?;
+            serde_json::to_value(
+                super::media_list_model_install_jobs(app.clone()).map_err(error_value)?,
+            )
+            .map_err(|error| json!(error.to_string()))?
+        }
         "media_cancel_model_install" => {
             check_arguments(&args, &["jobId"])?;
             serde_json::to_value(
@@ -412,6 +419,15 @@ pub(crate) async fn invoke(
             check_arguments(&args, &["request"])?;
             serde_json::to_value(
                 super::splat::media_generate_splat(app.clone(), argument(&args, "request")?)
+                    .await
+                    .map_err(error_value)?,
+            )
+            .map_err(|error| json!(error.to_string()))?
+        }
+        "media_generate_mesh" => {
+            check_arguments(&args, &["request"])?;
+            serde_json::to_value(
+                super::mesh::media_generate_mesh(app.clone(), argument(&args, "request")?)
                     .await
                     .map_err(error_value)?,
             )
@@ -641,6 +657,14 @@ pub(crate) async fn invoke(
             check_arguments(&args, &["assetId"])?;
             binary_value(
                 super::splat::media_read_splat(app.clone(), argument(&args, "assetId")?)
+                    .await
+                    .map_err(error_value)?,
+            )?
+        }
+        "media_read_mesh" => {
+            check_arguments(&args, &["assetId"])?;
+            binary_value(
+                super::mesh::media_read_mesh(app.clone(), argument(&args, "assetId")?)
                     .await
                     .map_err(error_value)?,
             )?

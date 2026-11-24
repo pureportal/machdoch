@@ -97,6 +97,7 @@ export const readMediaGenerationTarget = (
   }
   if (flow.nodes.some((node) => node.type === "output.audio" || node.type === "task.generate-audio")) return "audio";
   if (flow.nodes.some((node) => node.type === "output.splat" || node.type === "task.generate-splat")) return "splat";
+  if (flow.nodes.some((node) => node.type === "output.mesh" || node.type === "task.generate-mesh")) return "mesh";
   const imageSettings = readImageRecipeSettings(flow);
   return imageSettings?.outputFormat === "svg" ? "svg" : "image";
 };

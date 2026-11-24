@@ -62,6 +62,7 @@ import {
 } from "../../../../core/media/model-readiness.js";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { mediaSplatGaussianCount } from "../../../../core/media/splat-flow.js";
+import { mediaMeshFaceCount } from "../../../../core/media/mesh-flow.js";
 import { isMediaOpenPoseAsset } from "../../../../core/media/pose-map.js";
 import type {
   ImportMediaLocalModelRequest,
@@ -191,6 +192,18 @@ const FILTERS: ReadonlyArray<{ id: MediaAssetTypeFilter; label: string }> = [
   { id: "splat", label: "3D" },
   { id: "svg", label: "SVGs" },
 ];
+
+const mediaAssetMatchesTypeFilter = (
+  asset: MediaAssetRecord,
+  filter: MediaAssetTypeFilter,
+): boolean =>
+  filter === "openpose"
+    ? isMediaOpenPoseAsset(asset)
+    : filter === "svg"
+      ? asset.kind === "vector"
+      : filter === "splat"
+        ? asset.kind === "splat" || asset.kind === "mesh"
+        : asset.kind === filter;
 
 const resourceMatches = (
   values: Array<string | null | undefined>,
@@ -500,11 +513,7 @@ export const MediaAssetsView = ({
       matchesMediaAssetFilters(asset, mediaFilters) &&
       (filter === "all"
         ? asset.kind !== "report"
-        : filter === "svg"
-          ? asset.kind === "vector"
-          : filter === "openpose"
-            ? isMediaOpenPoseAsset(asset)
-            : asset.kind === filter),
+        : mediaAssetMatchesTypeFilter(asset, filter)),
   );
   const mediaGroups =
     filter === "openpose"
@@ -535,11 +544,7 @@ export const MediaAssetsView = ({
           )
         : filter === "all"
           ? [...libraryModels, ...catalog.addons, ...assets]
-          : assets.filter((asset) =>
-              filter === "openpose"
-                ? isMediaOpenPoseAsset(asset)
-                : asset.kind === (filter === "svg" ? "vector" : filter),
-            );
+          : assets.filter((asset) => mediaAssetMatchesTypeFilter(asset, filter));
   const availableTags = listMediaResourceTags(filteredTypeResources, metadata);
   const architectures = [
     ...new Set([
@@ -578,10 +583,7 @@ export const MediaAssetsView = ({
         .filter(
           (asset) =>
             asset.kind !== "report" &&
-            (filter === "all" ||
-              (filter === "openpose"
-                ? isMediaOpenPoseAsset(asset)
-                : asset.kind === (filter === "svg" ? "vector" : filter))),
+            (filter === "all" || mediaAssetMatchesTypeFilter(asset, filter)),
         )
         .map((asset) => asset.mimeType),
     ),
@@ -1239,7 +1241,7 @@ export const MediaAssetsView = ({
                           <div className="flex items-center gap-2">
                             {asset.kind === "video" ? (
                               <Video className="h-4 w-4 text-emerald-300" />
-                            ) : asset.kind === "splat" ? (
+                            ) : asset.kind === "splat" || asset.kind === "mesh" ? (
                               <Box className="h-4 w-4 text-violet-300" />
                             ) : asset.kind === "vector" ? (
                               <FileType className="h-4 w-4 text-violet-300" />
@@ -1253,6 +1255,10 @@ export const MediaAssetsView = ({
                             ) : asset.kind === "splat" ? (
                               <span className="truncate text-xs text-slate-400">
                                 {mediaSplatGaussianCount(asset).toLocaleString()} Gaussians
+                              </span>
+                            ) : asset.kind === "mesh" ? (
+                              <span className="truncate text-xs text-slate-400">
+                                {mediaMeshFaceCount(asset).toLocaleString()} faces
                               </span>
                             ) : (
                               <span className="truncate text-xs text-slate-400">

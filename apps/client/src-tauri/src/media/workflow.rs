@@ -32,6 +32,7 @@ enum WorkflowValue {
     Video(String),
     Audio(String),
     Splat(String),
+    Mesh(String),
     Mask { asset_id: String, source_id: String },
     Report(MediaQualityReport),
     Seed(u64),
@@ -246,6 +247,37 @@ fn execute_started(
                         return Err("Connect a 3D object".into());
                     };
                     av::save_splat(paths, request, node, iteration, source)?;
+                    final_outputs += 1;
+                    None
+                }
+                "task.generate-mesh" => {
+                    let seed = node
+                        .config
+                        .get("seed")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(base_seed)
+                        .wrapping_add(u64::from(iteration - 1) * seed_step)
+                        & MAX_IMAGE_GENERATION_SEED;
+                    let mut views = std::collections::BTreeMap::new();
+                    for view in super::mesh::MESH_VIEWS {
+                        match optional_input(flow, &values, node, view)? {
+                            Some(WorkflowValue::Image(id)) => {
+                                views.insert(view.to_string(), id.clone());
+                            }
+                            None => {}
+                            Some(_) => return Err(format!("Connect an image to the {view} view")),
+                        }
+                    }
+                    output_port = "mesh";
+                    Some(WorkflowValue::Mesh(av::generate_mesh(
+                        app, paths, request, flow, node, views, seed, iteration,
+                    )?))
+                }
+                "output.mesh" => {
+                    let WorkflowValue::Mesh(source) = input(flow, &values, node, "mesh")? else {
+                        return Err("Connect a 3D mesh".into());
+                    };
+                    av::save_mesh(paths, request, node, iteration, source)?;
                     final_outputs += 1;
                     None
                 }

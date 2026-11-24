@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { DEFAULT_SPLAT_RECIPE_SETTINGS } from "../../../../core/media/splat-flow.js";
+import { DEFAULT_MESH_RECIPE_SETTINGS } from "../../../../core/media/mesh-flow.js";
 
 import { createElement, type ComponentProps } from "react";
 import {
@@ -148,9 +149,15 @@ const createProps = (
   audioGenerationBlockedReason: null,
   splatSettings: DEFAULT_SPLAT_RECIPE_SETTINGS,
   onSplatSettingsChange: noop,
-  splatGenerationSupported: true,
-  splatGenerationBlockedReason: null,
   onAddSplatImage: noop,
+  meshSettings: DEFAULT_MESH_RECIPE_SETTINGS,
+  onMeshSettingsChange: noop,
+  onAddMeshView: noop,
+  objectGenerationSupported: true,
+  objectGenerationBlockedReason: null,
+  selectedObjectModel: null,
+  onSelectObjectModel: noop,
+  onModelInstalled: async () => undefined,
   onAudioSettingsChange: noop,
   assetMetadata: {},
   categories: [],

@@ -28,6 +28,7 @@ export const MEDIA_TARGET_LABELS: Readonly<
   svg: "SVG",
   audio: "Audio",
   splat: "3D",
+  mesh: "3D mesh",
 };
 
 type AddonRecipeKey = "recipe" | "videoRecipe";
@@ -47,7 +48,9 @@ export const mediaTargetModelId = (state: MediaStudioState): string | null =>
       ? state.audioRecipe.modelId
       : state.target === "splat"
         ? state.splatRecipe.modelId
-        : state.recipe.modelId;
+        : state.target === "mesh"
+          ? state.meshRecipe.modelId
+          : state.recipe.modelId;
 
 export const mediaTargetPrompt = (state: MediaStudioState): string =>
   state.target === "audio" ? state.audioRecipe.prompt : state.recipe.prompt;

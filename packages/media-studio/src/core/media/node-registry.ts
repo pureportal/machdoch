@@ -8,6 +8,7 @@ import type {
 import { resolveMediaFlowVariables } from "./variables.js";
 import { AUDIO_NODE_DEFINITIONS } from "./audio-nodes.js";
 import { SPLAT_NODE_DEFINITIONS } from "./splat-nodes.js";
+import { MESH_NODE_DEFINITIONS } from "./mesh-nodes.js";
 import { VIDEO_COMPOSITION_NODE_DEFINITIONS } from "./video-composition-nodes.js";
 import { DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY } from "./subject-cutout-policy.js";
 import { isMediaImageMask } from "./image-mask.js";
@@ -288,6 +289,7 @@ const poseGuidanceFields: readonly MediaNodeFieldDefinition[] = [
 export const MEDIA_NODE_DEFINITIONS = [
   ...AUDIO_NODE_DEFINITIONS,
   ...SPLAT_NODE_DEFINITIONS,
+  ...MESH_NODE_DEFINITIONS,
   ...VIDEO_COMPOSITION_NODE_DEFINITIONS,
   ...WORKFLOW_NODE_DEFINITIONS,
   IMAGE_LAYOUT_NODE,

@@ -12,6 +12,7 @@ import {
 import { createMediaFlowFingerprint } from "./canonicalize.js";
 import { compileAudioFlow } from "./audio-flow.js";
 import { compileSplatFlow } from "./splat-flow.js";
+import { compileMeshFlow } from "./mesh-flow.js";
 import {
   compileConnectedMediaFlow,
   requiresWorkflowCompilation,
@@ -3229,6 +3230,8 @@ export const compileMediaFlow = ({
     return compileAudioFlow({ flow, models, compiledAt });
   if (flow.nodes.some((node) => node.type === "task.generate-splat"))
     return compileSplatFlow({ flow, models, compiledAt });
+  if (flow.nodes.some((node) => node.type === "task.generate-mesh"))
+    return compileMeshFlow({ flow, models, compiledAt });
   const variableResolution = resolveMediaFlowVariables(flow);
   const effectiveFlow = variableResolution.flow;
   const imageTaskNodes = effectiveFlow.nodes.filter(

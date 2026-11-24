@@ -1,6 +1,7 @@
 mod analysis;
 pub(crate) mod audio;
 pub(crate) mod splat;
+pub(crate) mod mesh;
 mod catalog;
 mod canonical_json;
 mod civitai_addon;
@@ -2811,6 +2812,7 @@ impl MediaRunPlanSnapshot {
                     | "task.generate-video"
                     | "task.generate-audio"
                     | "task.generate-splat"
+                    | "task.generate-mesh"
                     | "operation.crop"
                     | "operation.resize"
                     | "operation.text-overlay"
@@ -2834,6 +2836,7 @@ impl MediaRunPlanSnapshot {
                     | "output.video"
                     | "output.audio"
                     | "output.splat"
+                    | "output.mesh"
             ) || !matches!(
                 node.layer.as_str(),
                 "source" | "task" | "operation" | "control" | "output" | "runtime"
@@ -2881,6 +2884,7 @@ impl MediaRunPlanSnapshot {
                     | "generate-video"
                     | "generate-audio"
                     | "generate-splat"
+                    | "generate-mesh"
                     | "generate-svg"
                     | "vectorize-svg"
                     | "validate-svg"

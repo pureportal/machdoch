@@ -13,12 +13,23 @@ import {
   readAudioRecipeSettings,
 } from "../../../core/media/audio-flow.js";
 import { prepareAudioSubmission } from "./media-audio-execution.js";
-import { generateMediaAudio, generateMediaSplat } from "./media-runtime.js";
+import {
+  generateMediaAudio,
+  generateMediaMesh,
+  generateMediaSplat,
+} from "./media-runtime.js";
 import {
   createSplatRecipeFlow,
   readSplatRecipeSettings,
 } from "../../../core/media/splat-flow.js";
+import {
+  createMeshRecipeFlow,
+  isMediaMeshModel,
+  mediaMeshModelProfile,
+  readMeshRecipeSettings,
+} from "../../../core/media/mesh-flow.js";
 import { prepareSplatSubmission } from "./media-splat-execution.js";
+import { prepareMeshSubmission } from "./media-mesh-execution.js";
 import { trackView } from "@machdoch/analytics/browser";
 import { assessRemoteEditExecution } from "./media-remote-edit-assessment";
 import { useMediaGenerationTiming } from "./use-media-generation-timing";
@@ -149,6 +160,7 @@ import type {
   MediaProviderReviewAction,
   MediaGenerationAssetMetadata,
   MediaGenerationTarget,
+  MediaMeshView,
   MediaRunDetail,
   MediaRunRecord,
   MediaRunPlanSnapshot,
@@ -398,6 +410,18 @@ const recipeSnapshotFromRevision = (
           seed: splatOperation.generation.seed,
         }
       : savedSplatSettings;
+  const savedMeshSettings = readMeshRecipeSettings(revision.flow);
+  const meshOperation = run.assets.find(
+    (asset) => asset.kind === "mesh",
+  )?.operation;
+  const meshSettings =
+    savedMeshSettings && meshOperation?.kind === "local-mesh-generation"
+      ? {
+          ...savedMeshSettings,
+          modelId: meshOperation.modelId,
+          seed: meshOperation.generation.seed,
+        }
+      : savedMeshSettings;
   let outputBranches: MediaImageOutputBranch[] = [];
   if (target === "image") {
     try {
@@ -421,6 +445,8 @@ const recipeSnapshotFromRevision = (
         ? (audioSettings?.modelId ?? null)
         : target === "splat"
           ? (splatSettings?.modelId ?? null)
+        : target === "mesh"
+          ? (meshSettings?.modelId ?? null)
         : target === "video"
           ? (videoSettings?.modelId ?? null)
           : (imageSettings?.modelId ?? null),
@@ -432,11 +458,18 @@ const recipeSnapshotFromRevision = (
     videoSettings,
     ...(audioSettings ? { audioSettings } : {}),
     ...(splatSettings ? { splatSettings } : {}),
+    ...(meshSettings ? { meshSettings } : {}),
     resultDestination: "assets",
   };
 };
 
 const FLOW_EDIT_HISTORY_LIMIT = 100;
+
+const isObjectFlow = (flow: MediaFlow): boolean =>
+  flow.nodes.some(
+    (node) =>
+      node.type === "task.generate-splat" || node.type === "task.generate-mesh",
+  );
 
 interface MediaFlowEditSnapshot {
   flow: MediaFlow;
@@ -1287,6 +1320,12 @@ export const MediaStudio = ({
         createdAt: draftCreatedAt,
         settings: state.splatRecipe,
       });
+    if (state.target === "mesh")
+      return createMeshRecipeFlow({
+        id: basicImageFlowId,
+        createdAt: draftCreatedAt,
+        settings: state.meshRecipe,
+      });
     const settings = {
       ...state.recipe,
       prompt: normalizeMediaSubmissionText(state.recipe.prompt, 8_000),
@@ -1304,6 +1343,7 @@ export const MediaStudio = ({
     state.recipe,
     state.audioRecipe,
     state.splatRecipe,
+    state.meshRecipe,
     state.target,
   ]);
   const recipeLayout = useMemo(
@@ -1929,19 +1969,80 @@ export const MediaStudio = ({
     },
     [],
   );
-  const useAssetAsSplatSource = useCallback(
+  const last3dTargetRef = useRef<"splat" | "mesh">(
+    state.target === "mesh" ? "mesh" : "splat",
+  );
+  if (state.target === "splat" || state.target === "mesh")
+    last3dTargetRef.current = state.target;
+  const useAssetAsObjectSource = useCallback(
     (asset: MediaAssetRecord): void => {
       if (asset.kind !== "image") return;
       ++selectedRunDetailSequence.current;
       selectedRunIdRef.current = null;
       setSelectedRunId(null);
       setSelectedRun(null);
-      setState((current) => ({
-        ...current,
-        activeSection: "generate",
-        target: "splat",
-        splatRecipe: { ...current.splatRecipe, sourceAssetId: asset.id },
-      }));
+      setState((current) =>
+        last3dTargetRef.current === "mesh"
+          ? {
+              ...current,
+              activeSection: "generate",
+              target: "mesh",
+              meshRecipe: {
+                ...current.meshRecipe,
+                viewAssetIds: { front: asset.id },
+              },
+            }
+          : {
+              ...current,
+              activeSection: "generate",
+              target: "splat",
+              splatRecipe: { ...current.splatRecipe, sourceAssetId: asset.id },
+            },
+      );
+    },
+    [],
+  );
+  const selectObjectModel = useCallback(
+    (model: MediaModelCatalogSnapshot["models"][number]): void => {
+      setState((current) => {
+        if (isMediaMeshModel(model)) {
+          const viewAssetIds =
+            current.meshRecipe.viewAssetIds.front ||
+            !current.splatRecipe.sourceAssetId
+              ? current.meshRecipe.viewAssetIds
+              : {
+                  ...current.meshRecipe.viewAssetIds,
+                  front: current.splatRecipe.sourceAssetId,
+                };
+          return {
+            ...current,
+            activeSection: "generate",
+            target: "mesh",
+            meshRecipe: {
+              ...current.meshRecipe,
+              viewAssetIds,
+              modelId: model.id,
+              numInferenceSteps:
+                current.meshRecipe.modelId === model.id
+                  ? current.meshRecipe.numInferenceSteps
+                  : mediaMeshModelProfile(model).numInferenceSteps,
+            },
+          };
+        }
+        return {
+          ...current,
+          activeSection: "generate",
+          target: "splat",
+          splatRecipe: {
+            ...current.splatRecipe,
+            modelId: model.id,
+            sourceAssetId:
+              current.splatRecipe.sourceAssetId ??
+              current.meshRecipe.viewAssetIds.front ??
+              null,
+          },
+        };
+      });
     },
     [],
   );
@@ -1968,13 +2069,8 @@ export const MediaStudio = ({
         }));
         return;
       }
-      if (target === "splat") {
-        setState((current) => ({
-          ...current,
-          activeSection: "generate",
-          target,
-          splatRecipe: { ...current.splatRecipe, modelId: model.id },
-        }));
+      if (target === "splat" || target === "mesh") {
+        selectObjectModel(model);
         return;
       }
       setState((current) => ({
@@ -2259,6 +2355,19 @@ export const MediaStudio = ({
     },
     [],
   );
+  const runGenerationRef = useRef<() => void>(() => undefined);
+  const importAssetFromPath = useCallback(
+    async (path: string): Promise<MediaAssetRecord> => {
+      const result = await importMediaAsset(path);
+      setRuntimeAssets((current) => [
+        result.asset,
+        ...current.filter((asset) => asset.id !== result.asset.id),
+      ]);
+      await refreshRuntime();
+      return result.asset;
+    },
+    [refreshRuntime],
+  );
   useMediaAppControl({
     enabled: loaded && loadError === null,
     state,
@@ -2266,6 +2375,21 @@ export const MediaStudio = ({
     catalog: activeModelCatalog,
     runnableImageModelIds: runtimeStatus?.directGenerationModelIds ?? null,
     generationJobs,
+    assets: runtimeAssets,
+    generationBlockedReason: !runtimeStatus
+      ? "Media Studio is still loading."
+      : runtimeStatus.mode !== "native"
+        ? "Open the desktop app to generate."
+        : ["audio", "splat", "mesh"].includes(state.target) &&
+            !runtimeStatus.localDiffusers.ready
+          ? "The local media runtime is not ready. Run media.setup_runtime."
+          : (recipePlan.diagnostics.find((entry) => entry.severity === "error")
+              ?.message ?? null),
+    runtimeError: runtimeError?.message ?? null,
+    runtimeReady: runtimeStatus?.localDiffusers.ready ?? false,
+    startRuntimeSetup: runtimeSetup.start,
+    importAsset: importAssetFromPath,
+    onGenerate: () => runGenerationRef.current(),
     refreshCatalog: refreshModelCatalog,
     onSelectSection: selectSection,
     onSelectTarget: changeGenerationTarget,
@@ -4163,7 +4287,7 @@ export const MediaStudio = ({
     },
     [localFlowPending, models, persistBasicFlowRevision, persistFlowRevision],
   );
-  const runSplatFlowDocument = useCallback(
+  const runObjectFlowDocument = useCallback(
     (
       sourceFlow: MediaFlow,
       sourceLayout: MediaFlowLayout,
@@ -4183,14 +4307,31 @@ export const MediaStudio = ({
         .then((saved) => {
           if (!saved) return;
           const runId = createRunId();
-          const submission = prepareSplatSubmission({
+          const options = {
             revision: saved.revision,
             models,
             runId,
-            mode: basic ? "basic" : "advanced",
+            mode: basic ? ("basic" as const) : ("advanced" as const),
             compiledAt: new Date().toISOString(),
             randomSeed: Math.floor(Math.random() * Number.MAX_SAFE_INTEGER),
-          });
+          };
+          const submission = submittedFlow.nodes.some(
+            (node) => node.type === "task.generate-mesh",
+          )
+            ? (() => {
+                const mesh = prepareMeshSubmission(options);
+                return {
+                  recipe: mesh.recipe,
+                  execute: () => generateMediaMesh(mesh.request),
+                };
+              })()
+            : (() => {
+                const splat = prepareSplatSubmission(options);
+                return {
+                  recipe: splat.recipe,
+                  execute: () => generateMediaSplat(splat.request),
+                };
+              })();
           ++selectedRunDetailSequence.current;
           selectedRunIdRef.current = runId;
           setSelectedRunId(runId);
@@ -4199,24 +4340,31 @@ export const MediaStudio = ({
           enqueueMediaGeneration({
             runId,
             recipe: submission.recipe,
-            execute: () => generateMediaSplat(submission.request),
+            execute: submission.execute,
             cancel: () => cancelMediaRun(runId),
           });
         })
         .catch((error: unknown) =>
-          setRuntimeError(normalizeMediaError(error, "media_generate_splat")),
+          setRuntimeError(
+            normalizeMediaError(
+              error,
+              sourceFlow.nodes.some((node) => node.type === "task.generate-mesh")
+                ? "media_generate_mesh"
+                : "media_generate_splat",
+            ),
+          ),
         )
         .finally(() => setLocalFlowPending(false));
     },
     [localFlowPending, models, persistBasicFlowRevision, persistFlowRevision],
   );
-  const runGeneration = useCallback(() => {
+  const runGeneration = useCallback((): void => {
     if (state.target === "audio") {
       runAudioFlowDocument(recipeFlow, recipeLayout, true);
       return;
     }
-    if (state.target === "splat") {
-      runSplatFlowDocument(recipeFlow, recipeLayout, true);
+    if (state.target === "splat" || state.target === "mesh") {
+      runObjectFlowDocument(recipeFlow, recipeLayout, true);
       return;
     }
     if (state.target === "video") {
@@ -4228,11 +4376,12 @@ export const MediaStudio = ({
     runQuickVideo,
     runRecipeGeneration,
     runAudioFlowDocument,
-    runSplatFlowDocument,
+    runObjectFlowDocument,
     recipeFlow,
     recipeLayout,
     state.target,
   ]);
+  runGenerationRef.current = runGeneration;
   const selectRun = useCallback(
     (runId: string) => {
       const requestSequence = ++selectedRunDetailSequence.current;
@@ -4421,6 +4570,9 @@ export const MediaStudio = ({
             splatRecipe: recipe.splatSettings
               ? structuredClone(recipe.splatSettings)
               : current.splatRecipe,
+            meshRecipe: recipe.meshSettings
+              ? structuredClone(recipe.meshSettings)
+              : current.meshRecipe,
           }));
           return;
         }
@@ -4830,7 +4982,7 @@ export const MediaStudio = ({
       })
       .finally(() => setImportLoading(false));
   }, [importLoading, refreshRuntime]);
-  const importSplatImage = useCallback((): void => {
+  const importObjectImage = useCallback((view: MediaMeshView | null): void => {
     if (importLoading || !supportsNativeMediaImport()) return;
     setImportLoading(true);
     setRuntimeError(null);
@@ -4838,7 +4990,7 @@ export const MediaStudio = ({
       const selected = await openDialog({
         multiple: false,
         directory: false,
-        title: "Add object image",
+        title: view ? `Add ${view} view` : "Add object image",
         filters: [
           {
             name: "Supported images",
@@ -4856,14 +5008,30 @@ export const MediaStudio = ({
         throw new Error("Choose a PNG, JPEG, or WebP image.", {
           cause: "basic-image-input",
         });
-      setState((current) => ({
-        ...current,
-        splatRecipe: { ...current.splatRecipe, sourceAssetId: result.asset.id },
-      }));
+      setState((current) =>
+        view
+          ? {
+              ...current,
+              meshRecipe: {
+                ...current.meshRecipe,
+                viewAssetIds: {
+                  ...current.meshRecipe.viewAssetIds,
+                  [view]: result.asset.id,
+                },
+              },
+            }
+          : {
+              ...current,
+              splatRecipe: {
+                ...current.splatRecipe,
+                sourceAssetId: result.asset.id,
+              },
+            },
+      );
       await refreshRuntime();
     })()
       .catch((error: unknown) => {
-        setRuntimeError(basicImageImportFailure(error, "import_splat_image"));
+        setRuntimeError(basicImageImportFailure(error, "import_object_image"));
       })
       .finally(() => setImportLoading(false));
   }, [importLoading, refreshRuntime]);
@@ -5204,18 +5372,32 @@ export const MediaStudio = ({
               onSplatSettingsChange={(splatRecipe) =>
                 setState((current) => ({ ...current, splatRecipe }))
               }
-              splatGenerationSupported={
+              onAddSplatImage={() => importObjectImage(null)}
+              meshSettings={state.meshRecipe}
+              onMeshSettingsChange={(meshRecipe) =>
+                setState((current) => ({ ...current, meshRecipe }))
+              }
+              onAddMeshView={importObjectImage}
+              objectGenerationSupported={
                 runtimeStatus?.mode === "native" &&
                 runtimeStatus.localDiffusers.ready
               }
-              splatGenerationBlockedReason={
+              objectGenerationBlockedReason={
                 !runtimeStatus
                   ? "Loading Media Studio…"
                   : runtimeStatus.mode === "browser-preview"
                     ? "Open the desktop app to generate 3D objects."
                     : null
               }
-              onAddSplatImage={importSplatImage}
+              selectedObjectModel={
+                state.target === "splat" || state.target === "mesh"
+                  ? recipePlan.model
+                  : null
+              }
+              onSelectObjectModel={selectObjectModel}
+              onModelInstalled={async () => {
+                await refreshModelCatalog();
+              }}
               assetMetadata={state.assetMetadata}
               categories={state.categories}
               plan={recipePlan}
@@ -5245,7 +5427,11 @@ export const MediaStudio = ({
               onCancelGeneration={cancelRun}
               queueBusy={generationQueueBusy}
               persistenceError={persistenceError}
-              onTargetChange={changeGenerationTarget}
+              onTargetChange={(target) =>
+                changeGenerationTarget(
+                  target === "splat" ? last3dTargetRef.current : target,
+                )
+              }
               onChange={changeRecipe}
               onVideoSettingsChange={changeVideoRecipe}
               onOpenFlow={openRecipeAsFlow}
@@ -5266,7 +5452,7 @@ export const MediaStudio = ({
               poseInstallPending={poseInstallPending}
               onEditResult={useAssetAsBaseImage}
               onAnimateResult={useAssetAsBasicVideoReference}
-              onCreateSplatResult={useAssetAsSplatSource}
+              onCreateSplatResult={useAssetAsObjectSource}
               onUpscaleResult={useAssetForUpscale}
               onOpenResult={openAssetInLibrary}
               generationPending={generationPending || localFlowPending}
@@ -5383,9 +5569,8 @@ export const MediaStudio = ({
                 onDismissImport={dismissFlowImport}
                 onExportRevision={exportCurrentFlowRevision}
                 onRunLocalFlow={
-                  !isConnectedMediaFlow(flow) &&
-                  flow.nodes.some((node) => node.type === "task.generate-splat")
-                    ? () => runSplatFlowDocument(flow, layout, false)
+                  !isConnectedMediaFlow(flow) && isObjectFlow(flow)
+                    ? () => runObjectFlowDocument(flow, layout, false)
                     : !isConnectedMediaFlow(flow) &&
                   flow.nodes.some((node) => node.type === "task.generate-audio")
                     ? () => runAudioFlowDocument(flow, layout, false)
@@ -5399,8 +5584,7 @@ export const MediaStudio = ({
                 }
                 localRunPending={localFlowPending}
                 localRunSupported={
-                  (!isConnectedMediaFlow(flow) &&
-                  flow.nodes.some((node) => node.type === "task.generate-splat")) ||
+                  (!isConnectedMediaFlow(flow) && isObjectFlow(flow)) ||
                   (!isConnectedMediaFlow(flow) &&
                   flow.nodes.some((node) => node.type === "task.generate-audio"))
                     ? plan.status === "ready" &&
@@ -5413,8 +5597,7 @@ export const MediaStudio = ({
                         videoFlowExecution.supported
                 }
                 localRunDescription={
-                  (!isConnectedMediaFlow(flow) &&
-                  flow.nodes.some((node) => node.type === "task.generate-splat")) ||
+                  (!isConnectedMediaFlow(flow) && isObjectFlow(flow)) ||
                   (!isConnectedMediaFlow(flow) &&
                   flow.nodes.some((node) => node.type === "task.generate-audio"))
                     ? !runtimeStatus
@@ -5593,7 +5776,7 @@ export const MediaStudio = ({
               onUseAsPose={useAssetAsPose}
               onEditImage={useAssetAsBaseImage}
               onAnimateImage={useAssetAsBasicVideoReference}
-              onCreateSplat={useAssetAsSplatSource}
+              onCreateSplat={useAssetAsObjectSource}
               onUpscale={useAssetForUpscale}
               onOpenVideoAsFlow={openAssetAsVideoFlow}
               onInspectSettings={inspectRunSettings}

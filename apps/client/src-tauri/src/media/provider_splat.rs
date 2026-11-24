@@ -6,14 +6,6 @@ use crate::media::splat::{
 const PREVIEW_EDGE: u32 = 768;
 const MAX_PREVIEW_BYTES: u64 = 16 * 1024 * 1024;
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SplatFileEvidence {
-    file_name: String,
-    digest: String,
-    byte_size: u64,
-}
-
 pub(crate) fn generate_splat(
     app: &AppHandle,
     paths: &MediaRuntimePaths,
@@ -65,7 +57,7 @@ pub(crate) fn generate_splat(
     let provenance: serde_json::Value = serde_json::from_slice(&process.stdout)
         .map_err(|error| format!("3D worker returned invalid JSON: {error}"))?;
     let evidence = |key: &str| {
-        serde_json::from_value::<SplatFileEvidence>(provenance[key].clone())
+        serde_json::from_value::<StagedFileEvidence>(provenance[key].clone())
             .map_err(|error| format!("3D worker returned invalid {key} metadata: {error}"))
     };
     let output = evidence("output")?;
@@ -115,29 +107,4 @@ pub(crate) fn generate_splat(
         preview_edge: PREVIEW_EDGE,
         provenance,
     })
-}
-
-fn read_staged_output(
-    directory: &Path,
-    evidence: &SplatFileEvidence,
-    limit: u64,
-) -> MediaResult<Vec<u8>> {
-    let path = directory.join(&evidence.file_name);
-    let metadata = fs::symlink_metadata(&path)
-        .map_err(|error| format!("Could not inspect {}: {error}", evidence.file_name))?;
-    if !metadata.is_file()
-        || metadata.file_type().is_symlink()
-        || metadata.len() != evidence.byte_size
-        || metadata.len() > limit
-    {
-        return Err(format!("{} is not a bounded regular file.", evidence.file_name));
-    }
-    let bytes = fs::read(&path)
-        .map_err(|error| format!("Could not read {}: {error}", evidence.file_name))?;
-    if bytes.len() as u64 != evidence.byte_size
-        || format!("{:x}", Sha256::digest(&bytes)) != evidence.digest
-    {
-        return Err(format!("{} failed integrity checks.", evidence.file_name));
-    }
-    Ok(bytes)
 }
