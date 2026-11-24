@@ -21,12 +21,40 @@ export const reviewGroupLabels: Record<ReviewGroup, string> = {
 };
 
 export type ReviewerState = "approved" | "changes_requested" | "pending";
+export type ReviewerKind = "human" | "copilot" | "agent";
+
+export interface PullRequestReviewer {
+  login: string;
+  state: ReviewerState;
+  kind: ReviewerKind;
+}
+
+const copilotLogins = new Set([
+  "copilot",
+  "copilot-pull-request-reviewer",
+  "copilot-pull-request-reviewer[bot]",
+  "copilot-swe-agent",
+  "copilot-swe-agent[bot]",
+]);
 
 export function pullRequestReviewers(
   requested: string[],
   reviews: { author: string; state: string }[],
-): { login: string; state: ReviewerState }[] {
-  const reviewers = new Map<string, { login: string; state: ReviewerState }>();
+  agentLogin: string,
+): PullRequestReviewer[] {
+  const agent = agentLogin.toLowerCase();
+  const reviewers = new Map<string, PullRequestReviewer>();
+  const add = (login: string, state: ReviewerState) => {
+    const key = login.toLowerCase();
+    if (copilotLogins.has(key))
+      reviewers.set("copilot", { login: "Copilot", state, kind: "copilot" });
+    else
+      reviewers.set(key, {
+        login,
+        state,
+        kind: key === agent ? "agent" : "human",
+      });
+  };
   for (const review of reviews) {
     const state =
       review.state === "APPROVED"
@@ -34,14 +62,9 @@ export function pullRequestReviewers(
         : review.state === "CHANGES_REQUESTED"
           ? "changes_requested"
           : null;
-    if (state)
-      reviewers.set(review.author.toLowerCase(), {
-        login: review.author,
-        state,
-      });
+    if (state) add(review.author, state);
   }
-  for (const login of requested)
-    reviewers.set(login.toLowerCase(), { login, state: "pending" });
+  for (const login of requested) add(login, "pending");
   return [...reviewers.values()];
 }
 

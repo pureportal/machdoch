@@ -232,6 +232,7 @@ export interface CloudLinkedIssue {
   title: string;
   statusName: string;
   state: CloudIssue["state"];
+  closes: boolean;
 }
 
 export interface CloudPullRequestListing {
@@ -339,6 +340,7 @@ export interface CloudPullRequestDetails {
   issueSuggestion: boolean;
   canMerge: boolean;
   actingAs: string;
+  agentLogin: string;
   mergeMethods: GitMergeMethod[];
 }
 

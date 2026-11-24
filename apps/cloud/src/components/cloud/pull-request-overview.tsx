@@ -9,15 +9,9 @@ import {
 import type {
   CloudPullRequestDetails,
   GitCheckRun,
-  GitReview,
 } from "@/lib/cloud-git-contract";
 import { StateIcon } from "./issue-properties";
 import { PullRequestStack } from "./pull-request-stack";
-
-const reviewLabels: Record<string, string> = {
-  APPROVED: "Approved",
-  CHANGES_REQUESTED: "Changes requested",
-};
 
 const runIcons: Record<GitCheckRun["state"], LucideIcon> = {
   success: CircleCheck,
@@ -53,27 +47,6 @@ function mergeSummary(details: CloudPullRequestDetails): string {
   return "Checking";
 }
 
-function checksSummary(runs: GitCheckRun[]): string {
-  if (!runs.length) return "None";
-  const failed = runs.filter((run) => run.state === "failure").length;
-  const pending = runs.filter((run) => run.state === "pending").length;
-  if (failed) return `${failed} of ${runs.length} failed`;
-  if (pending) return `${pending} of ${runs.length} running`;
-  return `${runs.length} passed`;
-}
-
-function reviewsSummary(reviews: GitReview[]): string {
-  const groups = Object.entries(reviewLabels)
-    .map(([state, label]) => {
-      const authors = reviews
-        .filter((review) => review.state === state)
-        .map((review) => review.author);
-      return authors.length ? `${label} by ${authors.join(", ")}` : "";
-    })
-    .filter(Boolean);
-  return groups.length ? groups.join(" · ") : "Waiting";
-}
-
 export function PullRequestOverview({
   details,
 }: {
@@ -91,34 +64,6 @@ export function PullRequestOverview({
           <dt>Merge</dt>
           <dd data-tone={hasConflicts(details) ? "danger" : undefined}>
             {mergeSummary(details)}
-          </dd>
-        </div>
-        <div>
-          <dt>Checks</dt>
-          <dd
-            data-tone={
-              details.checks.conclusion === "failure"
-                ? "danger"
-                : details.checks.conclusion === "success"
-                  ? "success"
-                  : undefined
-            }
-          >
-            {checksSummary(details.checks.runs)}
-          </dd>
-        </div>
-        <div>
-          <dt>Reviews</dt>
-          <dd
-            data-tone={
-              details.pullRequest.review === "changes_requested"
-                ? "danger"
-                : details.pullRequest.review === "approved"
-                  ? "success"
-                  : undefined
-            }
-          >
-            {reviewsSummary(details.reviews)}
           </dd>
         </div>
       </dl>

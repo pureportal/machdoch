@@ -20,11 +20,12 @@ describe("pullRequestReviewers", () => {
           { author: "Sam", state: "CHANGES_REQUESTED" },
           { author: "kim", state: "COMMENTED" },
         ],
+        "acme-bot",
       ),
     ).toEqual([
-      { login: "alex", state: "approved" },
-      { login: "sam", state: "pending" },
-      { login: "Riley", state: "pending" },
+      { login: "alex", state: "approved", kind: "human" },
+      { login: "sam", state: "pending", kind: "human" },
+      { login: "Riley", state: "pending", kind: "human" },
     ]);
   });
 });

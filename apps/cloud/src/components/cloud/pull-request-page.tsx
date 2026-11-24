@@ -1,139 +1,27 @@
 "use client";
 
 import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
-import Link from "next/link";
 import { LoadingState } from "@machdoch/product-ui";
 import { useCallback, useEffect, useState } from "react";
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  CircleCheck,
-  CircleDashed,
-  CircleX,
-  Terminal,
-} from "lucide-react";
 import type {
   CloudPullRequest,
   CloudPullRequestDetails,
 } from "@/lib/cloud-git-contract";
-import { gitProviderLabels } from "@/lib/git-providers";
-import {
-  pullRequestReviewers,
-  type ReviewerState,
-} from "@/lib/pull-request-reviews";
+import { pullRequestHeader } from "@/lib/pull-request-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cloudRequest } from "./api-client";
-import { PersonAvatar } from "./person-avatar";
 import { PullRequestActions } from "./pull-request-actions";
 import { PullRequestComposer } from "./pull-request-composer";
 import { PullRequestFiles } from "./pull-request-files";
 import { PullRequestGuide, useReviewGuide } from "./pull-request-guide";
+import { PullRequestHeader } from "./pull-request-header";
 import { PullRequestOverview } from "./pull-request-overview";
-import {
-  PullRequestStageIcon,
-  pullRequestStageLabels,
-  pullRequestStateLabel,
-} from "./pull-request-state";
 import { PullRequestTimeline } from "./pull-request-timeline";
 import { RelativeTime } from "./relative-time";
-import { useToast } from "./toast";
 
 const pollMs = 30_000;
 const pullRequestTabs = ["overview", "guide", "commits", "diff"] as const;
 type PullRequestTab = (typeof pullRequestTabs)[number];
-
-const reviewerLabels: Record<ReviewerState, string> = {
-  approved: "Approved",
-  changes_requested: "Changes requested",
-  pending: "Review requested",
-};
-
-function ReviewerIcon({ state }: { state: ReviewerState }) {
-  const label = reviewerLabels[state];
-  if (state === "approved")
-    return (
-      <CircleCheck
-        size={14}
-        role="img"
-        aria-label={label}
-        data-tone="success"
-      />
-    );
-  if (state === "changes_requested")
-    return (
-      <CircleX size={14} role="img" aria-label={label} data-tone="danger" />
-    );
-  return <CircleDashed size={14} role="img" aria-label={label} />;
-}
-
-function Header({ pullRequest }: { pullRequest: CloudPullRequest }) {
-  const toast = useToast();
-  const checkout = `git fetch origin ${pullRequest.headRef} && git switch ${pullRequest.headRef}`;
-  return (
-    <header className="cloud-page-header cloud-pull-request-page-header">
-      <div>
-        <Link className="cloud-back-link" href="/cloud/pull-requests">
-          <ArrowLeft size={14} aria-hidden="true" /> Pull requests
-        </Link>
-        <h1>
-          {pullRequest.title}{" "}
-          <span className="cloud-pull-request-number">
-            #{pullRequest.number}
-          </span>
-        </h1>
-        <div className="cloud-pull-request-meta">
-          <span
-            className="cloud-pull-request-state"
-            data-state={pullRequest.draft ? "draft" : pullRequest.state}
-          >
-            <PullRequestStageIcon stage={pullRequest.stage} label="" />
-            {pullRequestStateLabel(pullRequest)}
-          </span>
-          {pullRequest.state === "open" && !pullRequest.draft && (
-            <span
-              className="cloud-pull-request-stage"
-              data-stage={pullRequest.stage}
-            >
-              {pullRequestStageLabels[pullRequest.stage]}
-            </span>
-          )}
-          {pullRequest.author && <strong>{pullRequest.author}</strong>}
-          <span className="cloud-pull-request-branch">
-            <code>{pullRequest.headRef}</code>→
-            <code>{pullRequest.baseRef}</code>
-            {pullRequest.state === "open" && (
-              <button
-                type="button"
-                className="cloud-pull-request-copy"
-                aria-label="Copy checkout command"
-                title={checkout}
-                onClick={() =>
-                  void navigator.clipboard
-                    .writeText(checkout)
-                    .then(() => toast("Checkout command copied"))
-                    .catch(() => toast("Copy failed", "error"))
-                }
-              >
-                <Terminal size={13} aria-hidden="true" />
-              </button>
-            )}
-          </span>
-          <span>{pullRequest.repository}</span>
-          <RelativeTime value={pullRequest.updatedAt} />
-        </div>
-      </div>
-      <a
-        className="cloud-pull-request-external"
-        href={pullRequest.url}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {gitProviderLabels[pullRequest.provider]}
-        <ArrowUpRight size={13} aria-hidden="true" />
-      </a>
-    </header>
-  );
-}
 
 export function PullRequestPage({
   initial,
@@ -178,12 +66,12 @@ export function PullRequestPage({
     guide.error || guide.state?.enabled || guide.state?.guide,
   );
   const activeTab = tab === "guide" && !showGuide ? "overview" : tab;
-  const reviewers = details
-    ? pullRequestReviewers(pullRequest.requestedReviewers, details.reviews)
-    : [];
   return (
     <>
-      <Header pullRequest={pullRequest} />
+      <PullRequestHeader
+        pullRequest={pullRequest}
+        summary={details && pullRequestHeader(details)}
+      />
       {error && !details ? (
         <p role="alert" className="cloud-error">
           {error}
@@ -283,30 +171,6 @@ export function PullRequestPage({
             </TabsContent>
           </Tabs>
           <aside className="cloud-pull-request-aside" aria-label="Details">
-            <section aria-labelledby="pull-request-reviewers">
-              <h3
-                id="pull-request-reviewers"
-                className="cloud-pull-request-heading"
-              >
-                Reviewers
-              </h3>
-              {!reviewers.length ? (
-                <p className="cloud-pull-request-muted">None</p>
-              ) : (
-                <ul className="cloud-pull-request-reviewers">
-                  {reviewers.map((reviewer) => (
-                    <li key={reviewer.login} data-state={reviewer.state}>
-                      <PersonAvatar
-                        name={reviewer.login}
-                        className="cloud-avatar-tiny"
-                      />
-                      <span>{reviewer.login}</span>
-                      <ReviewerIcon state={reviewer.state} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
             <PullRequestOverview details={details} />
             <PullRequestActions
               details={details}

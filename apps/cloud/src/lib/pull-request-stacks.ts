@@ -24,6 +24,7 @@ export interface PullRequestStack {
   parent: StackLink | null;
   children: StackLink[];
   depth: number;
+  size: number;
   retargetTo: string | null;
 }
 
@@ -52,6 +53,22 @@ function parentOf(
   );
 }
 
+function height(
+  id: string,
+  childrenOf: Map<string, StackCandidate[]>,
+  seen: ReadonlySet<string>,
+): number {
+  let tallest = 0;
+  for (const child of childrenOf.get(id) ?? []) {
+    if (seen.has(child.id)) continue;
+    tallest = Math.max(
+      tallest,
+      1 + height(child.id, childrenOf, new Set([...seen, child.id])),
+    );
+  }
+  return tallest;
+}
+
 export function pullRequestStacks(
   candidates: readonly StackCandidate[],
 ): Map<string, PullRequestStack> {
@@ -61,12 +78,16 @@ export function pullRequestStacks(
       candidate.state === "open" ? parentOf(candidate, candidates) : null,
     ]),
   );
+  const childrenOf = new Map(
+    candidates.map((candidate) => [
+      candidate.id,
+      candidates.filter((other) => parents.get(other.id)?.id === candidate.id),
+    ]),
+  );
   const stacks = new Map<string, PullRequestStack>();
   for (const candidate of candidates) {
     const parent = parents.get(candidate.id) ?? null;
-    const children = candidates.filter(
-      (other) => parents.get(other.id)?.id === candidate.id,
-    );
+    const children = childrenOf.get(candidate.id) ?? [];
     if (!parent && !children.length) continue;
     const seen = new Set([candidate.id]);
     let depth = 0;
@@ -80,6 +101,7 @@ export function pullRequestStacks(
       parent: parent && link(parent),
       children: children.map(link),
       depth,
+      size: depth + 1 + height(candidate.id, childrenOf, seen),
       retargetTo: parent?.state === "merged" ? parent.baseRef : null,
     });
   }

@@ -163,8 +163,7 @@
   gap: 10px;
 }
 .cloud-pull-request-aside .cloud-pull-request-checks li,
-.cloud-pull-request-aside .cloud-pull-request-issues li,
-.cloud-pull-request-reviewers li {
+.cloud-pull-request-aside .cloud-pull-request-issues li {
   padding: 0 6px;
 }
 .cloud-pull-request-aside .cloud-pull-request-actions {
@@ -181,27 +180,54 @@
 .cloud-pull-request-aside .cloud-pull-request-merge .cloud-select {
   width: 100%;
 }
+.cloud-pull-request-page-header > div {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.cloud-pull-request-header-signals {
+  margin-top: 8px;
+}
 .cloud-pull-request-reviewers {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.cloud-pull-request-reviewers li,
+.cloud-pull-request-checks-summary,
+.cloud-pull-request-resolves,
+.cloud-pull-request-stack-position {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .cloud-pull-request-reviewers li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  font-size: 13px;
-}
-.cloud-pull-request-reviewers li > span:not(.cloud-avatar) {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--foreground);
 }
 .cloud-pull-request-reviewers li > svg {
   flex-shrink: 0;
   color: var(--muted-foreground);
+}
+.cloud-reviewer-bot {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--secondary);
+}
+.cloud-reviewer-bot[data-kind="agent"] {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  color: var(--primary);
+}
+.cloud-pull-request-checks-summary[data-state="success"] {
+  color: var(--cloud-success);
+}
+.cloud-pull-request-checks-summary[data-state="failure"] {
+  color: var(--cloud-danger);
+}
+.cloud-pull-request-resolves a {
+  gap: 4px;
 }
 .cloud-pull-request-reviewers [data-tone="success"],
 .cloud-timeline-event [data-tone="success"] {

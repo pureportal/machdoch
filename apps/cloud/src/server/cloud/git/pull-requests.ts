@@ -57,7 +57,7 @@ const pullRequestColumns = `p.id,r.provider,r.full_name AS repository,p.number,p
 const stageOrder = `CASE p.stage ${pullRequestStages.map((stage, index) => `WHEN '${stage}' THEN ${index}`).join(" ")} END`;
 const visibleCte = `WITH visible AS (
     SELECT l.pull_request_id,bool_or(l.closes) AS closes,
-    jsonb_agg(jsonb_build_object('id',i.id,'identifier',i.identifier,'title',i.title,'statusName',s.name,'state',i.state) ORDER BY i.identifier) AS issues
+    jsonb_agg(jsonb_build_object('id',i.id,'identifier',i.identifier,'title',i.title,'statusName',s.name,'state',i.state,'closes',l.closes) ORDER BY i.identifier) AS issues
     FROM cloud_git_pull_request_issues l
     JOIN cloud_issues i ON i.organization_id=l.organization_id AND i.id=l.issue_id
     JOIN cloud_workflow_statuses s ON s.organization_id=i.organization_id AND s.id=i.status_id
@@ -470,6 +470,7 @@ export class CloudGitPullRequests {
       issueSuggestion,
       canMerge: updated.canAct && updated.pullRequest.state === "open",
       actingAs,
+      agentLogin: updated.connection.account,
       mergeMethods: [...client.mergeMethods],
     };
   }
