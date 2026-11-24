@@ -49,7 +49,9 @@ const signedOut: CloudCliLogin = {
 
 interface SignInSession {
   child: ChildProcessWithoutNullStreams;
+  closed: Promise<void>;
   configDirectory: string;
+  cleanup: Promise<void> | null;
   output: string;
   login: CloudCliLogin;
   timer: NodeJS.Timeout;
@@ -156,7 +158,9 @@ export class CloudGitHubSignIn {
     );
     const session: SignInSession = {
       child,
+      closed: new Promise((resolve) => child.once("close", () => resolve())),
       configDirectory,
+      cleanup: null,
       output: "",
       login: { ...signedOut, state: "waiting" },
       timer: setTimeout(() => {
@@ -238,8 +242,18 @@ export class CloudGitHubSignIn {
     if (!session) return;
     this.sessions.delete(key);
     clearTimeout(session.timer);
+    this.fail(session, "Sign-in canceled.");
     session.child.kill();
-    await rm(session.configDirectory, { recursive: true, force: true });
+    await session.closed;
+    await this.cleanup(session);
+  }
+
+  private cleanup(session: SignInSession): Promise<void> {
+    return (session.cleanup ??= rm(session.configDirectory, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+    }));
   }
 
   private fail(session: SignInSession, message: string): void {
@@ -262,6 +276,7 @@ export class CloudGitHubSignIn {
         return;
       }
       const token = await readToken(this.command, session.configDirectory);
+      if (session.login.state !== "waiting") return;
       const account =
         target === "connection"
           ? await this.connect(actor, token)
@@ -273,7 +288,7 @@ export class CloudGitHubSignIn {
         error instanceof Error ? error.message : "Sign-in did not complete.",
       );
     } finally {
-      await rm(session.configDirectory, { recursive: true, force: true });
+      await this.cleanup(session);
     }
   }
 

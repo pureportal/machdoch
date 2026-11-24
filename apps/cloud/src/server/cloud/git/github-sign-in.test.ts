@@ -107,5 +107,22 @@ it("connects GitHub with a device code instead of a pasted token", async () => {
   expect(login).toEqual(
     expect.arrayContaining(["--web", "--scopes", "admin:repo_hook,workflow"]),
   );
+  await Promise.all([signIn.close(), signIn.close()]);
+});
+
+it("cancels sign-in before storing a GitHub connection", async () => {
+  const signIn = new CloudGitHubSignIn(
+    database,
+    runtime.git.connections,
+    runtime.git.accounts,
+    { file: process.execPath, prefixArgs: [join(directory, "gh.mjs")] },
+  );
+  expect(await signIn.start(owner, "connection")).toMatchObject({
+    state: "waiting",
+  });
+  expect(await signIn.cancel(owner, "connection")).toMatchObject({
+    state: "signed-out",
+  });
+  expect((await runtime.git.connections.get(owner)).connections).toEqual([]);
   await signIn.close();
 });
