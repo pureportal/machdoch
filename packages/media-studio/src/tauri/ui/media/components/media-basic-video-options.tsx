@@ -1,4 +1,6 @@
 import type { JSX } from "react";
+import { MediaParameterLabel } from "./media-parameter-controls";
+import { MEDIA_PARAMETER_DESCRIPTIONS } from "../../../../core/media/parameter-descriptions.js";
 import type {
   MediaModelDescriptor,
   MediaVideoRecipeSettings,
@@ -45,9 +47,13 @@ export const MediaBasicVideoOptions = ({
     architecture === "minimax-h3-ref2va" || Boolean(profile?.distillation);
   return (
     <>
-      <label className={field}>
-        <span>Resolution</span>
+      <div className={field}>
+        <MediaParameterLabel
+          label="Resolution"
+          description={MEDIA_PARAMETER_DESCRIPTIONS.resolution}
+        />
         <select
+          aria-label="Resolution"
           className={control}
           value={customVideo ? "custom" : videoSettings.resolution}
           onChange={(event) =>
@@ -94,13 +100,17 @@ export const MediaBasicVideoOptions = ({
           ) : null}
           <option value="custom">Custom</option>
         </select>
-      </label>
+      </div>
       {customVideo ? (
         <div className="grid grid-cols-2 gap-2 sm:col-span-2">
           {(["width", "height"] as const).map((key) => (
-            <label key={key} className={field}>
-              <span>{key === "width" ? "Width" : "Height"}</span>
+            <div key={key} className={field}>
+              <MediaParameterLabel
+                label={key === "width" ? "Width" : "Height"}
+                description={MEDIA_PARAMETER_DESCRIPTIONS[key]}
+              />
               <input
+                aria-label={key === "width" ? "Width" : "Height"}
                 className={control}
                 type="number"
                 min={128}
@@ -117,14 +127,18 @@ export const MediaBasicVideoOptions = ({
                   })
                 }
               />
-            </label>
+            </div>
           ))}
         </div>
       ) : null}
       {!fixedFrameRate || videoSettings.fps !== 24 ? (
-        <label className={field}>
-          <span>Frame rate</span>
+        <div className={field}>
+          <MediaParameterLabel
+            label="Frame rate"
+            description={MEDIA_PARAMETER_DESCRIPTIONS.fps}
+          />
           <input
+            aria-label="Frame rate"
             className={control}
             type="number"
             min={fixedFrameRate ? 24 : 1}
@@ -138,11 +152,15 @@ export const MediaBasicVideoOptions = ({
               })
             }
           />
-        </label>
+        </div>
       ) : null}
-      <label className={field}>
-        <span>Frames</span>
+      <div className={field}>
+        <MediaParameterLabel
+          label="Frames"
+          description={MEDIA_PARAMETER_DESCRIPTIONS.numFrames}
+        />
         <select
+          aria-label="Frames"
           className={control}
           value={videoSettings.numFrames}
           onChange={(event) =>
@@ -167,11 +185,15 @@ export const MediaBasicVideoOptions = ({
             </option>
           ))}
         </select>
-      </label>
-      <label className={field}>
-        <span>Sampling steps</span>
+      </div>
+      <div className={field}>
+        <MediaParameterLabel
+          label="Sampling steps"
+          description={MEDIA_PARAMETER_DESCRIPTIONS.numInferenceSteps}
+        />
         {fixedVideo ? (
           <select
+            aria-label="Sampling steps"
             className={control}
             value={videoSettings.numInferenceSteps <= 8 ? 8 : 12}
             disabled={architecture === "ltx-video"}
@@ -204,11 +226,15 @@ export const MediaBasicVideoOptions = ({
             }
           />
         )}
-      </label>
+      </div>
       {!fixedGuidance ? (
-        <label className={field}>
-          <span>Guidance</span>
+        <div className={field}>
+          <MediaParameterLabel
+            label="Guidance"
+            description={MEDIA_PARAMETER_DESCRIPTIONS.motionGuidance}
+          />
           <input
+            aria-label="Guidance"
             className={control}
             type="number"
             min={profile ? 0 : 1}
@@ -222,11 +248,15 @@ export const MediaBasicVideoOptions = ({
               })
             }
           />
-        </label>
+        </div>
       ) : null}
-      <label className={field}>
-        <span>Encoding</span>
+      <div className={field}>
+        <MediaParameterLabel
+          label="Encoding"
+          description={MEDIA_PARAMETER_DESCRIPTIONS.encoding}
+        />
         <select
+          aria-label="Encoding"
           className={control}
           value={videoSettings.encodingQuality}
           onChange={(event) =>
@@ -242,7 +272,7 @@ export const MediaBasicVideoOptions = ({
           <option value="production">High</option>
           <option value="lossless">Lossless</option>
         </select>
-      </label>
+      </div>
       {videoSettings.fps > 0 ? (
         <p className="self-end pb-2 text-xs text-slate-400">
           {(

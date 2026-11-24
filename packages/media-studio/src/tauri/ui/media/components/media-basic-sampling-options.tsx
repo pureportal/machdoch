@@ -1,4 +1,6 @@
 import { RotateCcw } from "lucide-react";
+import { MediaParameterLabel } from "./media-parameter-controls";
+import { MEDIA_PARAMETER_DESCRIPTIONS } from "../../../../core/media/parameter-descriptions.js";
 import { MediaBasicVideoOptions } from "./media-basic-video-options";
 import type { JSX } from "react";
 import type {
@@ -91,9 +93,13 @@ export const MediaBasicSamplingOptions = ({
         }
       >
         {target === "svg" ? (
-          <label className={field}>
-            <span>Quality</span>
+          <div className={field}>
+            <MediaParameterLabel
+              label="Quality"
+              description={MEDIA_PARAMETER_DESCRIPTIONS.quality}
+            />
             <select
+              aria-label="Quality"
               className={control}
               value={settings.modelPolicy}
               onChange={(event) =>
@@ -108,12 +114,15 @@ export const MediaBasicSamplingOptions = ({
               <option value="balanced">Balanced</option>
               <option value="quality">High</option>
             </select>
-          </label>
+          </div>
         ) : null}
         {target === "image" && local ? (
           <>
-            <label className={`${field} col-span-full`}>
-              <span>Sampler</span>
+            <div className={`${field} col-span-full`}>
+              <MediaParameterLabel
+                label="Sampler"
+                description={MEDIA_PARAMETER_DESCRIPTIONS.sampler}
+              />
               <select
                 aria-label="Sampler"
                 className={control}
@@ -135,12 +144,16 @@ export const MediaBasicSamplingOptions = ({
                   </option>
                 ))}
               </select>
-            </label>
-            <label className={`${field} col-span-full`}>
-              <span>
-                {settings.editMask ? "Edit resolution" : "Resolution"}
-              </span>
+            </div>
+            <div className={`${field} col-span-full`}>
+              <MediaParameterLabel
+                label={settings.editMask ? "Edit resolution" : "Resolution"}
+                description={MEDIA_PARAMETER_DESCRIPTIONS.resolution}
+              />
               <select
+                aria-label={
+                  settings.editMask ? "Edit resolution" : "Resolution"
+                }
                 className={control}
                 value={
                   sampling.width != null || sampling.height != null
@@ -168,13 +181,17 @@ export const MediaBasicSamplingOptions = ({
                 <option value="auto">Automatic</option>
                 <option value="custom">Custom</option>
               </select>
-            </label>
+            </div>
             {sampling.width != null || sampling.height != null ? (
               <div className="grid grid-cols-2 gap-2 col-span-full">
                 {(["width", "height"] as const).map((key) => (
-                  <label key={key} className={field}>
-                    <span>{key === "width" ? "Width" : "Height"}</span>
+                  <div key={key} className={field}>
+                    <MediaParameterLabel
+                      label={key === "width" ? "Width" : "Height"}
+                      description={MEDIA_PARAMETER_DESCRIPTIONS[key]}
+                    />
                     <input
+                      aria-label={key === "width" ? "Width" : "Height"}
                       className={control}
                       type="number"
                       min={256}
@@ -190,12 +207,15 @@ export const MediaBasicSamplingOptions = ({
                         })
                       }
                     />
-                  </label>
+                  </div>
                 ))}
               </div>
             ) : null}
-            <label className={field}>
-              <span>Sampling steps</span>
+            <div className={field}>
+              <MediaParameterLabel
+                label="Sampling steps"
+                description={MEDIA_PARAMETER_DESCRIPTIONS.numInferenceSteps}
+              />
               <input
                 aria-label="Sampling steps"
                 className={control}
@@ -225,10 +245,13 @@ export const MediaBasicSamplingOptions = ({
                   defaultMediaImageSteps(architecture, settings.modelPolicy)
                 }
               />
-            </label>
+            </div>
             {architecture !== "flux-2" && !profile?.fixedGuidance ? (
-              <label className={field}>
-                <span>Guidance</span>
+              <div className={field}>
+                <MediaParameterLabel
+                  label="Guidance"
+                  description={MEDIA_PARAMETER_DESCRIPTIONS.guidanceScale}
+                />
                 <input
                   aria-label="Guidance"
                   className={control}
@@ -256,7 +279,7 @@ export const MediaBasicSamplingOptions = ({
                     0
                   }
                 />
-              </label>
+              </div>
             ) : null}
           </>
         ) : null}
@@ -276,9 +299,13 @@ export const MediaBasicSamplingOptions = ({
           <>
             {target === "image" ? (
               <>
-                <label className={field}>
-                  <span>Seed</span>
+                <div className={field}>
+                  <MediaParameterLabel
+                    label="Seed"
+                    description={MEDIA_PARAMETER_DESCRIPTIONS.seed}
+                  />
                   <select
+                    aria-label="Seed"
                     className={control}
                     value={settings.seed == null ? "random" : "fixed"}
                     onChange={(event) =>
@@ -291,7 +318,7 @@ export const MediaBasicSamplingOptions = ({
                     <option value="random">Random</option>
                     <option value="fixed">Fixed</option>
                   </select>
-                </label>
+                </div>
                 {settings.seed != null ? (
                   <label className={field}>
                     <span>Value</span>
@@ -313,9 +340,13 @@ export const MediaBasicSamplingOptions = ({
                 ) : null}
               </>
             ) : (
-              <label className={field}>
-                <span>Seed</span>
+              <div className={field}>
+                <MediaParameterLabel
+                  label="Seed"
+                  description={MEDIA_PARAMETER_DESCRIPTIONS.seed}
+                />
                 <input
+                  aria-label="Seed"
                   className={control}
                   type="number"
                   min={0}
@@ -333,14 +364,18 @@ export const MediaBasicSamplingOptions = ({
                     })
                   }
                 />
-              </label>
+              </div>
             )}
             {target === "video" ||
             architecture === "krea-2" ||
             (settings.memoryProfile ?? "auto") !== "auto" ? (
-              <label className={`${field} col-span-full`}>
-                <span>Memory</span>
+              <div className={`${field} col-span-full`}>
+                <MediaParameterLabel
+                  label="Memory"
+                  description={MEDIA_PARAMETER_DESCRIPTIONS.memoryProfile}
+                />
                 <select
+                  aria-label="Memory"
                   className={control}
                   value={
                     (target === "video"
@@ -360,15 +395,19 @@ export const MediaBasicSamplingOptions = ({
                   <option value="balanced">Balanced</option>
                   <option value="maximum-speed">Maximum speed</option>
                 </select>
-              </label>
+              </div>
             ) : null}
           </>
         ) : null}
         {target === "svg" ? (
           <>
-            <label className={field}>
-              <span>Canvas size</span>
+            <div className={field}>
+              <MediaParameterLabel
+                label="Canvas size"
+                description={MEDIA_PARAMETER_DESCRIPTIONS.canvasSize}
+              />
               <input
+                aria-label="Canvas size"
                 className={control}
                 type="number"
                 min={128}
@@ -382,12 +421,16 @@ export const MediaBasicSamplingOptions = ({
                   })
                 }
               />
-            </label>
+            </div>
             {settings.svgMode !== "vectorize" ? (
               <>
-                <label className={field}>
-                  <span>Candidates</span>
+                <div className={field}>
+                  <MediaParameterLabel
+                    label="Candidates"
+                    description={MEDIA_PARAMETER_DESCRIPTIONS.candidates}
+                  />
                   <input
+                    aria-label="Candidates"
                     className={control}
                     type="number"
                     min={settings.outputCount}
@@ -401,10 +444,14 @@ export const MediaBasicSamplingOptions = ({
                       })
                     }
                   />
-                </label>
-                <label className={field}>
-                  <span>Outputs</span>
+                </div>
+                <div className={field}>
+                  <MediaParameterLabel
+                    label="Outputs"
+                    description={MEDIA_PARAMETER_DESCRIPTIONS.outputCount}
+                  />
                   <input
+                    aria-label="Outputs"
                     className={control}
                     type="number"
                     min={1}
@@ -422,12 +469,16 @@ export const MediaBasicSamplingOptions = ({
                       })
                     }
                   />
-                </label>
+                </div>
               </>
             ) : null}
-            <label className={field}>
-              <span>Text</span>
+            <div className={field}>
+              <MediaParameterLabel
+                label="Text"
+                description={MEDIA_PARAMETER_DESCRIPTIONS.svgTextPolicy}
+              />
               <select
+                aria-label="Text"
                 className={control}
                 value={settings.svgTextPolicy ?? "avoid"}
                 onChange={(event) =>
@@ -442,7 +493,7 @@ export const MediaBasicSamplingOptions = ({
                 <option value="editable">Editable</option>
                 <option value="outlines">Outlines</option>
               </select>
-            </label>
+            </div>
             {settings.svgMode === "vectorize" ? (
               <label className="flex items-center gap-2 text-xs text-slate-300">
                 <input

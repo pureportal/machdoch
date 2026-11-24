@@ -1,25 +1,33 @@
 import { TriangleAlert } from "lucide-react";
 import type { JSX } from "react";
 import { mediaImageSamplingProfile } from "../../../../core/media/image-sampling.js";
+import type { MediaNumberRange } from "../../../../core/media/node-registry.js";
 
-export const MediaSamplingRange = ({
-  architecture,
-  parameter,
+export const MediaRecommendedRange = ({
+  id,
+  label,
+  range,
+  min,
+  max,
   value,
 }: {
-  architecture: string | null | undefined;
-  parameter: "steps" | "guidance";
+  id: string;
+  label: string;
+  range: MediaNumberRange;
+  min: number;
+  max: number;
   value: number;
 }): JSX.Element | null => {
-  const range = mediaImageSamplingProfile(architecture)?.[parameter];
-  if (!range || !Number.isFinite(value)) return null;
-  const [minimum, maximum] = range;
-  const limit = parameter === "steps" ? 100 : 20;
-  const outside = value < minimum || value > maximum;
-  const label = parameter === "steps" ? "Sampling steps" : "Guidance";
-  const text = minimum === maximum ? String(minimum) : `${minimum}–${maximum}`;
+  if (!Number.isFinite(value) || max <= min) return null;
+  const position = (entry: number): number =>
+    Math.max(0, Math.min(100, ((entry - min) / (max - min)) * 100));
+  const outside = value < range.min || value > range.max;
+  const text =
+    range.min === range.max
+      ? String(range.min)
+      : `${range.min.toLocaleString()}–${range.max.toLocaleString()}`;
   return (
-    <div className="flex items-center gap-2" data-sampling-range={parameter}>
+    <div className="flex items-center gap-2" data-sampling-range={id}>
       <div
         className="relative h-1 flex-1 rounded-full bg-slate-800"
         aria-hidden="true"
@@ -27,15 +35,13 @@ export const MediaSamplingRange = ({
         <div
           className="absolute h-1 min-w-1 rounded-full bg-gradient-to-r from-teal-400 to-emerald-300 shadow-[0_0_8px_rgba(52,211,153,0.25)]"
           style={{
-            left: `${(minimum / limit) * 100}%`,
-            width: `${((maximum - minimum) / limit) * 100}%`,
+            left: `${position(range.min)}%`,
+            width: `${position(range.max) - position(range.min)}%`,
           }}
         />
         <span
           className={`absolute -top-0.5 h-2 w-0.5 rounded-full ${outside ? "bg-amber-300" : "bg-slate-100"}`}
-          style={{
-            left: `${Math.max(0, Math.min(100, (value / limit) * 100))}%`,
-          }}
+          style={{ left: `${position(value)}%` }}
         />
       </div>
       <span
@@ -57,5 +63,28 @@ export const MediaSamplingRange = ({
         </span>
       ) : null}
     </div>
+  );
+};
+
+export const MediaSamplingRange = ({
+  architecture,
+  parameter,
+  value,
+}: {
+  architecture: string | null | undefined;
+  parameter: "steps" | "guidance";
+  value: number;
+}): JSX.Element | null => {
+  const range = mediaImageSamplingProfile(architecture)?.[parameter];
+  if (!range) return null;
+  return (
+    <MediaRecommendedRange
+      id={parameter}
+      label={parameter === "steps" ? "Sampling steps" : "Guidance"}
+      range={{ min: range[0], max: range[1] }}
+      min={0}
+      max={parameter === "steps" ? 100 : 20}
+      value={value}
+    />
   );
 };

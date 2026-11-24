@@ -1,4 +1,6 @@
 import type { JSX } from "react";
+import { MediaParameterLabel } from "./media-parameter-controls";
+import { MEDIA_PARAMETER_DESCRIPTIONS } from "../../../../core/media/parameter-descriptions.js";
 import type {
   ImageRecipeSettings,
   MediaAssetRecord,
@@ -22,9 +24,17 @@ export const MediaBasicImageOutputOptions = ({
       Output
     </h3>
     <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-      <label className={field}>
-        <span>{settings.editMask ? "Output size" : "Aspect ratio"}</span>
+      <div className={field}>
+        <MediaParameterLabel
+          label={settings.editMask ? "Output size" : "Aspect ratio"}
+          description={
+            settings.editMask
+              ? MEDIA_PARAMETER_DESCRIPTIONS.outputSize
+              : MEDIA_PARAMETER_DESCRIPTIONS.aspectRatio
+          }
+        />
         <select
+          aria-label={settings.editMask ? "Output size" : "Aspect ratio"}
           value={settings.editMask ? "original" : settings.aspectRatio}
           disabled={
             Boolean(settings.editMask) ||
@@ -49,10 +59,14 @@ export const MediaBasicImageOutputOptions = ({
             <option key={value}>{value}</option>
           ))}
         </select>
-      </label>
-      <label className={field}>
-        <span>Outputs</span>
+      </div>
+      <div className={field}>
+        <MediaParameterLabel
+          label="Outputs"
+          description={MEDIA_PARAMETER_DESCRIPTIONS.outputCount}
+        />
         <input
+          aria-label="Outputs"
           type="number"
           min={1}
           max={8}
@@ -69,10 +83,14 @@ export const MediaBasicImageOutputOptions = ({
           }
           className={control}
         />
-      </label>
-      <label className={field}>
-        <span>Quality</span>
+      </div>
+      <div className={field}>
+        <MediaParameterLabel
+          label="Quality"
+          description={MEDIA_PARAMETER_DESCRIPTIONS.quality}
+        />
         <select
+          aria-label="Quality"
           className={control}
           value={settings.modelPolicy}
           onChange={(event) =>
@@ -92,10 +110,14 @@ export const MediaBasicImageOutputOptions = ({
           <option value="balanced">Balanced</option>
           <option value="quality">High</option>
         </select>
-      </label>
-      <label className={field}>
-        <span>Format</span>
+      </div>
+      <div className={field}>
+        <MediaParameterLabel
+          label="Format"
+          description={MEDIA_PARAMETER_DESCRIPTIONS.format}
+        />
         <select
+          aria-label="Format"
           className={control}
           value={settings.outputFormat}
           onChange={(event) =>
@@ -119,7 +141,7 @@ export const MediaBasicImageOutputOptions = ({
             JPEG
           </option>
         </select>
-      </label>
+      </div>
       <label className="col-span-full flex min-h-10 cursor-pointer items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-300 has-[:disabled]:cursor-default has-[:disabled]:opacity-50">
         <input
           type="checkbox"

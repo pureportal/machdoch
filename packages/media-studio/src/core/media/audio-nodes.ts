@@ -51,7 +51,9 @@ export const AUDIO_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         max: 30,
         step: 0.1,
         required: true,
-        description: "",
+        recommended: { min: 2, max: 10 },
+        description:
+          "Length of the generated sound in seconds.",
         examples: [],
       },
       {
@@ -63,7 +65,8 @@ export const AUDIO_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         required: true,
         allowEmpty: true,
         maxLength: 8000,
-        description: "",
+        description:
+          "Sounds to steer away from, such as noise, hum, or speech.",
         examples: [],
       },
       {
@@ -76,7 +79,9 @@ export const AUDIO_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         max: 200,
         integer: true,
         required: true,
-        description: "",
+        recommended: { min: 100, max: 200 },
+        description:
+          "Denoising passes. More steps give cleaner audio but take longer.",
         examples: [],
       },
       {
@@ -89,7 +94,9 @@ export const AUDIO_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         max: 20,
         step: 0.1,
         required: true,
-        description: "",
+        recommended: { min: 2.5, max: 5 },
+        description:
+          "How strictly the sound follows the prompt. Higher values follow it more literally but can distort.",
         examples: [],
       },
       {
@@ -102,7 +109,8 @@ export const AUDIO_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         max: Number.MAX_SAFE_INTEGER,
         integer: true,
         required: false,
-        description: "",
+        description:
+          "Fixes the random start so the same prompt and settings reproduce the same sound. Leave empty for a new result each time.",
         examples: [],
       },
     ],

@@ -70,9 +70,15 @@ export interface MediaNodeFieldDefinition {
   max?: number;
   step?: number;
   integer?: boolean;
+  recommended?: MediaNumberRange;
   maxLength?: number;
   options?: readonly MediaNodeFieldOption[];
   visibleWhen?: MediaNodeFieldVisibility;
+}
+
+export interface MediaNumberRange {
+  min: number;
+  max: number;
 }
 
 export interface MediaNodePortDefinition {
@@ -2642,7 +2648,7 @@ export const getMediaNodeDefinition = (
   type: MediaNodeType,
 ): MediaNodeDefinition | null => definitionsByType.get(type) ?? null;
 
-const isFieldVisible = (
+export const isMediaNodeFieldVisible = (
   field: MediaNodeFieldDefinition,
   config: Record<string, unknown>,
 ): boolean =>
@@ -2657,7 +2663,7 @@ export const listVisibleMediaNodeFields = (
   group: MediaNodeInspectorGroup,
 ): readonly MediaNodeFieldDefinition[] =>
   definition.fields.filter(
-    (field) => field.group === group && isFieldVisible(field, config),
+    (field) => field.group === group && isMediaNodeFieldVisible(field, config),
   );
 
 const isModelAddonSelectionList = (value: unknown): boolean =>

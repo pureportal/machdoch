@@ -27,6 +27,7 @@ const EXECUTOR_LABELS: Record<MediaRunDetail["executor"], string> = {
   "local-video": "Local video generation",
   "local-audio": "Local audio generation",
   "local-splat": "Local 3D generation",
+  "local-mesh": "Local 3D mesh generation",
   "local-wan-video": "Local WAN video generation",
   "mock-remote-provider": "Remote adapter",
   "svg-ai-pipeline": "SVG generation",

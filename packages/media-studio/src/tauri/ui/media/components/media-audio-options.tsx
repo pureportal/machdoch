@@ -3,9 +3,20 @@ import type {
   MediaModelDescriptor,
 } from "../../../../core/media/contracts.js";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { isMediaModelReady } from "../../../../core/media/model-readiness.js";
+import { getMediaNodeDefinition } from "../../../../core/media/node-registry.js";
+import {
+  MediaParameterFields,
+  MediaParameterLabel,
+} from "./media-parameter-controls";
+
+const AUDIO_FIELDS =
+  getMediaNodeDefinition("task.generate-audio")?.fields ?? [];
+const NUMERIC_FIELDS = AUDIO_FIELDS.filter((field) => field.kind === "number");
+const NEGATIVE_PROMPT_DESCRIPTION =
+  AUDIO_FIELDS.find((field) => field.id === "negativePrompt")?.description ??
+  "";
 
 export const MediaAudioOptions = ({
   settings,
@@ -64,30 +75,17 @@ export const MediaAudioOptions = ({
           Install audio model
         </Button>
       ) : null}
-      <label className="block space-y-2 text-sm text-slate-200">
-        <span>Duration (s)</span>
-        <Input
-          aria-label="Audio duration"
-          type="number"
-          min={1}
-          max={30}
-          step={0.1}
-          value={settings.durationSeconds}
-          onChange={(event) =>
-            onChange({
-              ...settings,
-              durationSeconds: event.target.valueAsNumber,
-            })
-          }
-        />
-      </label>
-      <details>
-        <summary className="cursor-pointer text-sm text-slate-300">
-          Options
-        </summary>
-        <div className="mt-4 space-y-4">
-          <label className="block space-y-2 text-sm text-slate-200">
-            <span>Negative prompt</span>
+      <MediaParameterFields
+        idPrefix="audio"
+        fields={NUMERIC_FIELDS}
+        values={settings}
+        onChange={onChange}
+        moreOptions={
+          <div className="block space-y-2 text-sm text-slate-200">
+            <MediaParameterLabel
+              label="Negative prompt"
+              description={NEGATIVE_PROMPT_DESCRIPTION}
+            />
             <Textarea
               aria-label="Audio negative prompt"
               value={settings.negativePrompt}
@@ -97,37 +95,9 @@ export const MediaAudioOptions = ({
                 onChange({ ...settings, negativePrompt: event.target.value })
               }
             />
-          </label>
-          {(
-            [
-              ["numInferenceSteps", "Steps", 1, 200, 1],
-              ["guidanceScale", "Guidance", 0, 20, 0.1],
-              ["seed", "Seed", 0, Number.MAX_SAFE_INTEGER, 1],
-            ] as const
-          ).map(([key, label, min, max, step]) => (
-            <label key={key} className="block space-y-2 text-sm text-slate-200">
-              <span>{label}</span>
-              <Input
-                aria-label={`Audio ${label.toLowerCase()}`}
-                type="number"
-                min={min}
-                max={max}
-                step={step}
-                value={settings[key] ?? ""}
-                onChange={(event) =>
-                  onChange({
-                    ...settings,
-                    [key]:
-                      key === "seed" && !event.target.value
-                        ? null
-                        : event.target.valueAsNumber,
-                  })
-                }
-              />
-            </label>
-          ))}
-        </div>
-      </details>
+          </div>
+        }
+      />
     </div>
   );
 };

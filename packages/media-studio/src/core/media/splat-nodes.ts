@@ -68,7 +68,9 @@ export const SPLAT_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         step: 32_768,
         integer: true,
         required: true,
-        description: "",
+        recommended: { min: 131_072, max: 524_288 },
+        description:
+          "Number of soft 3D points that make up the object. More points hold finer detail but make larger files and slower previews.",
         examples: [],
       },
       {
@@ -81,7 +83,9 @@ export const SPLAT_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         max: 0.5,
         step: 0.01,
         required: true,
-        description: "",
+        recommended: { min: 0, max: 0.05 },
+        description:
+          "Drops nearly transparent points to clean up haze around the object. Raise it slightly if the result looks foggy.",
         examples: [],
       },
       {
@@ -94,7 +98,9 @@ export const SPLAT_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         max: 100,
         integer: true,
         required: true,
-        description: "",
+        recommended: { min: 30, max: 60 },
+        description:
+          "Denoising passes that shape the object. More steps refine detail but take longer.",
         examples: [],
       },
       {
@@ -107,7 +113,9 @@ export const SPLAT_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         max: 10,
         step: 0.1,
         required: true,
-        description: "",
+        recommended: { min: 2, max: 4.5 },
+        description:
+          "How strictly the object follows the image. Higher values follow it more literally but can add artifacts.",
         examples: [],
       },
       {
@@ -120,7 +128,9 @@ export const SPLAT_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         max: 6,
         step: 0.1,
         required: true,
-        description: "",
+        recommended: { min: 2, max: 4 },
+        description:
+          "Shifts sampling effort toward the overall shape (higher) or fine detail (lower).",
         examples: [],
       },
       {
@@ -133,7 +143,8 @@ export const SPLAT_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
         max: Number.MAX_SAFE_INTEGER,
         integer: true,
         required: false,
-        description: "",
+        description:
+          "Fixes the random start so the same image and settings reproduce the same object. Leave empty for a new result each time.",
         examples: [],
       },
     ],
