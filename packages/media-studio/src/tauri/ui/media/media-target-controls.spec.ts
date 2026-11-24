@@ -16,9 +16,10 @@ describe("media target controls", () => {
       ["removeBackground", "basic"],
       ["numInferenceSteps", "basic"],
       ["octreeResolution", "basic"],
+      ["style", "basic"],
       ["maxFaceCount", "basic"],
-      ["voxelize", "basic"],
       ["voxelResolution", "basic"],
+      ["polygonCount", "basic"],
       ["guidanceScale", "more-options"],
       ["removeFloaters", "more-options"],
       ["voxelFill", "more-options"],
@@ -29,6 +30,10 @@ describe("media target controls", () => {
       min: 64,
       max: 512,
       recommended: { min: 256, max: 384 },
+    });
+    expect(mediaTargetOptionSchema(mesh).style).toMatchObject({
+      type: "string",
+      enum: ["smooth", "voxel", "low-poly"],
     });
     expect(mediaTargetOptionSchema(mesh).maxFaceCount).toMatchObject({
       type: "integer",
@@ -41,15 +46,15 @@ describe("media target controls", () => {
       numInferenceSteps: 5,
       maxFaceCount: -1,
       removeFloaters: false,
-      voxelize: true,
-      voxelResolution: 48,
+      style: "low-poly",
+      polygonCount: 900,
     });
     expect(next.meshRecipe).toMatchObject({
       numInferenceSteps: 5,
       maxFaceCount: null,
       removeFloaters: false,
-      voxelize: true,
-      voxelResolution: 48,
+      style: "low-poly",
+      polygonCount: 900,
     });
     expect(() =>
       applyMediaTargetOptions(mesh, DEFAULT_MEDIA_STUDIO_STATE, { octreeResolution: 9_000 }),

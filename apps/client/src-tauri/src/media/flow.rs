@@ -4451,9 +4451,10 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                     "numChunks",
                     "removeFloaters",
                     "maxFaceCount",
-                    "voxelize",
+                    "style",
                     "voxelResolution",
                     "voxelFill",
+                    "polygonCount",
                     "seed",
                 ],
             )?;
@@ -4462,7 +4463,12 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             }
             config_bool(node, "removeBackground")?;
             config_bool(node, "removeFloaters")?;
-            config_bool(node, "voxelize")?;
+            let style_valid = node
+                .config
+                .get("style")
+                .and_then(Value::as_str)
+                .and_then(super::mesh::MediaMeshStyle::parse)
+                .is_some();
             let voxel_fill = node.config.get("voxelFill").and_then(Value::as_f64);
             let guidance = node.config.get("guidanceScale").and_then(Value::as_f64);
             let integer = |key: &str| node.config.get(key).and_then(Value::as_u64);
@@ -4483,11 +4489,13 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 || !in_range("octreeResolution", 64, 512)
                 || !in_range("numChunks", 1_000, 500_000)
                 || !face_limit_valid
+                || !style_valid
                 || !in_range("voxelResolution", 8, 128)
+                || !in_range("polygonCount", 100, 20_000)
                 || !voxel_fill.is_some_and(|value| value.is_finite() && (0.1..=0.9).contains(&value))
                 || seed_invalid
             {
-                return Err("Check the 3D mesh steps, guidance, resolution, chunk size, face limit, voxel settings, and seed".into());
+                return Err("Check the 3D mesh steps, guidance, resolution, chunk size, face limit, style settings, and seed".into());
             }
             Ok(())
         }

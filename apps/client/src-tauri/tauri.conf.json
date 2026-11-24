@@ -110,6 +110,7 @@
       "python/media_mesh_render.py": "python/media_mesh_render.py",
       "python/media_mesh_grid.py": "python/media_mesh_grid.py",
       "python/media_mesh_voxelize.py": "python/media_mesh_voxelize.py",
+      "python/media_mesh_low_poly.py": "python/media_mesh_low_poly.py",
       "python/idol": "python/idol",
       "python/LICENSE-Idol.txt": "python/LICENSE-Idol.txt",
       "python/NOTICE-Idol.txt": "python/NOTICE-Idol.txt",

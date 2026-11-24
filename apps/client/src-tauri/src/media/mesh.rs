@@ -16,6 +16,30 @@ const GLB_MAGIC: u32 = 0x4654_6C67;
 const GLB_JSON_CHUNK: u32 = 0x4E4F_534A;
 const GLB_BINARY_CHUNK: u32 = 0x004E_4942;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum MediaMeshStyle {
+    Smooth,
+    Voxel,
+    LowPoly,
+}
+
+impl MediaMeshStyle {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Smooth => "smooth",
+            Self::Voxel => "voxel",
+            Self::LowPoly => "low-poly",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        [Self::Smooth, Self::Voxel, Self::LowPoly]
+            .into_iter()
+            .find(|style| style.as_str() == value)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct GenerateMediaMeshRequest {
@@ -35,9 +59,10 @@ pub(crate) struct GenerateMediaMeshRequest {
     pub(crate) num_chunks: u32,
     pub(crate) remove_floaters: bool,
     pub(crate) max_face_count: Option<u32>,
-    pub(crate) voxelize: bool,
+    pub(crate) style: MediaMeshStyle,
     pub(crate) voxel_resolution: u32,
     pub(crate) voxel_fill: f64,
+    pub(crate) polygon_count: u32,
     pub(crate) seed: u64,
     pub(crate) diagnostic_count: u32,
     pub(crate) plan_snapshot: MediaRunPlanSnapshot,
@@ -81,10 +106,11 @@ impl GenerateMediaMeshRequest {
             || !(8..=128).contains(&self.voxel_resolution)
             || !self.voxel_fill.is_finite()
             || !(0.1..=0.9).contains(&self.voxel_fill)
+            || !(100..=20_000).contains(&self.polygon_count)
             || self.seed > super::MAX_IMAGE_GENERATION_SEED
         {
             return Err(
-                "Check the steps, guidance, resolution, chunk size, face limit, voxel settings, and seed.".into(),
+                "Check the steps, guidance, resolution, chunk size, face limit, voxel and low-poly settings, and seed.".into(),
             );
         }
         Ok(())

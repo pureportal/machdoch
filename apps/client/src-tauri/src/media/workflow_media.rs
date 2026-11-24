@@ -264,9 +264,15 @@ pub(super) fn generate_mesh(
             .get("maxFaceCount")
             .and_then(Value::as_u64)
             .map(|count| count as u32),
-        voxelize: flag("voxelize", false),
+        style: node
+            .config
+            .get("style")
+            .and_then(Value::as_str)
+            .and_then(super::super::mesh::MediaMeshStyle::parse)
+            .ok_or("Choose a 3D style: smooth, voxel, or low poly.")?,
         voxel_resolution: config_number(node, "voxelResolution", 64.0) as u32,
         voxel_fill: config_number(node, "voxelFill", 0.5),
+        polygon_count: config_number(node, "polygonCount", 1_500.0) as u32,
         seed,
         diagnostic_count: 0,
     };

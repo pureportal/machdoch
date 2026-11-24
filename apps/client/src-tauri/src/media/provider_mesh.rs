@@ -68,8 +68,9 @@ pub(crate) fn generate_mesh(
         "views": views, "seed": request.seed, "numInferenceSteps": request.num_inference_steps,
         "guidanceScale": request.guidance_scale, "octreeResolution": request.octree_resolution,
         "numChunks": request.num_chunks, "removeFloaters": request.remove_floaters,
-        "maxFaceCount": request.max_face_count, "voxelize": request.voxelize,
+        "maxFaceCount": request.max_face_count, "style": request.style.as_str(),
         "voxelResolution": request.voxel_resolution, "voxelFill": request.voxel_fill,
+        "polygonCount": request.polygon_count,
         "outputDirectory": staging.0,
     });
     let process = run_worker(
@@ -106,9 +107,10 @@ pub(crate) fn generate_mesh(
         || provenance["numChunks"] != request.num_chunks
         || provenance["removeFloaters"] != request.remove_floaters
         || provenance["maxFaceCount"] != serde_json::json!(request.max_face_count)
-        || provenance["voxelize"] != request.voxelize
+        || provenance["style"] != request.style.as_str()
         || provenance["voxelResolution"] != request.voxel_resolution
         || provenance["voxelFill"] != request.voxel_fill
+        || provenance["polygonCount"] != request.polygon_count
         || provenance["views"].as_array().map(Vec::len) != Some(expected_views.len())
         || output.file_name != "object.glb"
         || preview.file_name != "preview.png"

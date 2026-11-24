@@ -10,6 +10,7 @@ import {
 } from "./node-registry.js";
 import { resolveMediaFlowVariables } from "./variables.js";
 import {
+  MEDIA_MESH_STYLES,
   MEDIA_MESH_VIEWS,
   type MediaAssetRecord,
   type MediaCompiledPlan,
@@ -17,6 +18,7 @@ import {
   type MediaFlow,
   type MediaFlowNode,
   type MediaMeshRecipeSettings,
+  type MediaMeshStyle,
   type MediaMeshView,
   type MediaMeshViewAssets,
   type MediaModelDescriptor,
@@ -59,9 +61,10 @@ export const DEFAULT_MESH_RECIPE_SETTINGS: MediaMeshRecipeSettings = {
   numChunks: 20_000,
   removeFloaters: true,
   maxFaceCount: 200_000,
-  voxelize: false,
+  style: "smooth",
   voxelResolution: 64,
   voxelFill: 0.5,
+  polygonCount: 1_500,
   seed: null,
 };
 
@@ -69,6 +72,9 @@ export const isMediaMeshModel = (model: MediaModelDescriptor): boolean =>
   model.target === "local" &&
   model.packageType === "hunyuan3d" &&
   model.capabilities.includes("multiview-to-3d");
+
+const isMediaMeshStyle = (value: unknown): value is MediaMeshStyle =>
+  MEDIA_MESH_STYLES.some((style) => style === value);
 
 const viewNodeId = (view: MediaMeshView): string => `view-${view}`;
 
@@ -103,6 +109,8 @@ export const mediaMeshSettingsError = (
     settings.voxelFill > 0.9
   )
     return "Choose a voxel fill from 0.1 to 0.9.";
+  if (!integerInRange(settings.polygonCount, 100, 20_000))
+    return "Choose a polygon count from 100 to 20,000.";
   if (
     settings.seed !== null &&
     (!Number.isSafeInteger(settings.seed) || settings.seed < 0)
@@ -167,9 +175,10 @@ export const createMeshRecipeFlow = ({
           numChunks: settings.numChunks,
           removeFloaters: settings.removeFloaters,
           maxFaceCount: settings.maxFaceCount,
-          voxelize: settings.voxelize,
+          style: settings.style,
           voxelResolution: settings.voxelResolution,
           voxelFill: settings.voxelFill,
+          polygonCount: settings.polygonCount,
           seed: settings.seed,
         },
       },
@@ -225,9 +234,10 @@ export const readMeshRecipeSettings = (
     numChunks,
     removeFloaters,
     maxFaceCount,
-    voxelize,
+    style,
     voxelResolution,
     voxelFill,
+    polygonCount,
     seed,
   } = task.config;
   if (
@@ -239,9 +249,10 @@ export const readMeshRecipeSettings = (
     typeof numChunks !== "number" ||
     typeof removeFloaters !== "boolean" ||
     !(maxFaceCount === null || typeof maxFaceCount === "number") ||
-    typeof voxelize !== "boolean" ||
+    !isMediaMeshStyle(style) ||
     typeof voxelResolution !== "number" ||
     typeof voxelFill !== "number" ||
+    typeof polygonCount !== "number" ||
     !(seed === null || typeof seed === "number")
   )
     return null;
@@ -255,9 +266,10 @@ export const readMeshRecipeSettings = (
     numChunks,
     removeFloaters,
     maxFaceCount,
-    voxelize,
+    style,
     voxelResolution,
     voxelFill,
+    polygonCount,
     seed,
   };
 };

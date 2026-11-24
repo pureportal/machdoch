@@ -62,9 +62,10 @@ export const prepareMeshSubmission = ({
     numChunks: settings.numChunks,
     removeFloaters: settings.removeFloaters,
     maxFaceCount: settings.maxFaceCount,
-    voxelize: settings.voxelize,
+    style: settings.style,
     voxelResolution: settings.voxelResolution,
     voxelFill: settings.voxelFill,
+    polygonCount: settings.polygonCount,
     seed,
     diagnosticCount: plan.diagnostics.length,
     planSnapshot: {

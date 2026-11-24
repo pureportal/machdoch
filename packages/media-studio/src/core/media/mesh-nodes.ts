@@ -63,6 +63,22 @@ export const MESH_GENERATION_FIELDS: readonly MediaNodeFieldDefinition[] = [
     examples: [],
   },
   {
+    id: "style",
+    label: "Style",
+    kind: "select",
+    group: "Basic",
+    defaultValue: "smooth",
+    required: true,
+    description:
+      "Smooth keeps the generated surface. Voxel rebuilds it from solid blocks. Low poly reduces it to a few hundred or thousand flat, sharp-edged polygons.",
+    examples: [],
+    options: [
+      { value: "smooth", label: "Smooth", description: "" },
+      { value: "voxel", label: "Voxel", description: "" },
+      { value: "low-poly", label: "Low poly", description: "" },
+    ],
+  },
+  {
     id: "maxFaceCount",
     label: "Face limit",
     kind: "number",
@@ -75,20 +91,9 @@ export const MESH_GENERATION_FIELDS: readonly MediaNodeFieldDefinition[] = [
     recommended: { min: 20_000, max: 200_000 },
     required: false,
     description:
-      "Simplifies the mesh to at most this many triangles. Lower values suit games and real-time use; leave empty to keep every face. Not used when voxelizing.",
+      "Simplifies the mesh to at most this many triangles. Lower values suit games and real-time use; leave empty to keep every face.",
     examples: [],
-    visibleWhen: { fieldId: "voxelize", equals: false },
-  },
-  {
-    id: "voxelize",
-    label: "Voxelize",
-    kind: "boolean",
-    group: "Basic",
-    defaultValue: false,
-    required: true,
-    description:
-      "Rebuilds the object from solid blocks with flat, sharp faces and far fewer vertices.",
-    examples: [],
+    visibleWhen: { fieldId: "style", equals: "smooth" },
   },
   {
     id: "voxelResolution",
@@ -104,7 +109,24 @@ export const MESH_GENERATION_FIELDS: readonly MediaNodeFieldDefinition[] = [
     description:
       "Blocks along the object's longest side. Fewer blocks give a chunkier look and fewer faces.",
     examples: [],
-    visibleWhen: { fieldId: "voxelize", equals: true },
+    visibleWhen: { fieldId: "style", equals: "voxel" },
+  },
+  {
+    id: "polygonCount",
+    label: "Polygon count",
+    kind: "number",
+    group: "Basic",
+    defaultValue: 1_500,
+    min: 100,
+    max: 20_000,
+    step: 100,
+    integer: true,
+    recommended: { min: 800, max: 4_000 },
+    required: true,
+    description:
+      "Maximum number of triangles. Fewer gives bigger, sharper facets; more keeps finer shapes such as fingers and hair strands.",
+    examples: [],
+    visibleWhen: { fieldId: "style", equals: "low-poly" },
   },
   {
     id: "guidanceScale",
@@ -145,7 +167,7 @@ export const MESH_GENERATION_FIELDS: readonly MediaNodeFieldDefinition[] = [
     description:
       "How much of a block must lie inside the object to keep it. Lower keeps thin parts such as hair strands; higher gives a slimmer silhouette.",
     examples: [],
-    visibleWhen: { fieldId: "voxelize", equals: true },
+    visibleWhen: { fieldId: "style", equals: "voxel" },
   },
   {
     id: "numChunks",

@@ -22,6 +22,7 @@ TRANSFORMER_DIRECTORIES = {
 TURBO_DECODER_DIRECTORY = "hunyuan3d-vae-v2-0-turbo"
 RUNTIME_WHEEL = "hy3dgen/hy3dgen-2.0.2-py3-none-any.whl"
 VIEWS = ("front", "left", "back", "right")
+STYLES = ("smooth", "voxel", "low-poly")
 MAX_SOURCE_PIXELS = 64_000_000
 PREVIEW_SIZE = 768
 PREVIEW_YAW = math.radians(32)
@@ -61,9 +62,9 @@ def validate_request(request: dict[str, Any], schema_version: int) -> dict[str, 
     max_faces = request.get("maxFaceCount")
     if max_faces is not None:
         max_faces = _integer(request, "maxFaceCount", 1_000, 2_000_000)
-    voxelize = request.get("voxelize")
-    if not isinstance(voxelize, bool):
-        raise ValueError("voxelize must be true or false")
+    style = request.get("style")
+    if style not in STYLES:
+        raise ValueError(f"style must be one of {', '.join(STYLES)}")
     return {
         "views": sorted(views, key=VIEWS.index),
         "seed": _integer(request, "seed", 0, 9_007_199_254_740_991),
@@ -73,9 +74,10 @@ def validate_request(request: dict[str, Any], schema_version: int) -> dict[str, 
         "numChunks": _integer(request, "numChunks", 1_000, 500_000),
         "removeFloaters": remove_floaters,
         "maxFaceCount": max_faces,
-        "voxelize": voxelize,
+        "style": style,
         "voxelResolution": _integer(request, "voxelResolution", 8, 128),
         "voxelFill": _number(request, "voxelFill", 0.1, 0.9),
+        "polygonCount": _integer(request, "polygonCount", 100, 20_000),
     }
 
 
@@ -144,7 +146,7 @@ def _clean(mesh: Any, settings: dict[str, Any]) -> Any:
             mesh = trimesh.util.concatenate(
                 [component for component in components if len(component.faces) >= total * MIN_COMPONENT_SHARE]
             )
-    if not settings["voxelize"] and settings["maxFaceCount"] is not None             and len(mesh.faces) > settings["maxFaceCount"]:
+    if settings["style"] == "smooth" and settings["maxFaceCount"] is not None             and len(mesh.faces) > settings["maxFaceCount"]:
         mesh = mesh.simplify_quadric_decimation(face_count=settings["maxFaceCount"])
     if len(mesh.faces) == 0:
         raise ValueError("Hunyuan3D returned an empty mesh. Use clearer views and generate again.")
@@ -187,11 +189,16 @@ def generate(request: dict[str, Any], worker: Any, cache: Any) -> dict[str, Any]
     )
     worker._progress("Cleaning the mesh", 0.86)
     mesh = _clean(meshes[0], settings)
-    if settings["voxelize"]:
+    if settings["style"] == "voxel":
         worker._progress("Voxelizing", 0.89)
         from media_mesh_voxelize import voxelize
 
         mesh = voxelize(mesh, settings["voxelResolution"], settings["voxelFill"], settings["removeFloaters"])
+    elif settings["style"] == "low-poly":
+        worker._progress("Reducing to low poly", 0.89)
+        from media_mesh_low_poly import low_poly
+
+        mesh = low_poly(mesh, settings["polygonCount"], settings["removeFloaters"])
     worker._progress("Rendering preview", 0.92)
     from media_mesh_render import framing, orbit_camera, render
 

@@ -240,6 +240,54 @@ export const MediaParameterSwitch = ({
   </div>
 );
 
+export const MediaParameterChoice = ({
+  id,
+  label,
+  description,
+  options,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  options: readonly { value: string; label: string }[];
+  value: string;
+  onChange: (value: string) => void;
+}): JSX.Element => (
+  <div className="space-y-2" data-parameter={id}>
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span id={`${id}-label`} className="truncate text-sm text-slate-200">
+        {label}
+      </span>
+      <MediaParameterInfo label={label} description={description} />
+    </span>
+    <div
+      role="radiogroup"
+      aria-labelledby={`${id}-label`}
+      className="grid auto-cols-fr grid-flow-col gap-1 rounded-lg bg-slate-900 p-1"
+    >
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={option.value === value}
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "rounded-md px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/40",
+            option.value === value
+              ? "bg-slate-700 text-white shadow"
+              : "text-slate-400 hover:text-slate-200",
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
 export const MediaMoreOptions = ({
   children,
   defaultOpen = false,
@@ -286,6 +334,18 @@ const renderField = <T extends object>(
         label={field.label}
         description={field.description}
         value={value === true}
+        onChange={update}
+      />
+    );
+  if (field.kind === "select" && field.options?.length)
+    return (
+      <MediaParameterChoice
+        key={field.id}
+        id={`${idPrefix}-${field.id}`}
+        label={field.label}
+        description={field.description}
+        options={field.options}
+        value={typeof value === "string" ? value : String(field.defaultValue)}
         onChange={update}
       />
     );

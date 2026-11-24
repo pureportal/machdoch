@@ -19,7 +19,7 @@ import type {
   MediaSplatRecipeSettings,
   MediaMeshRecipeSettings,
 } from "../../../core/media/contracts.js";
-import { MEDIA_MESH_VIEWS } from "../../../core/media/contracts.js";
+import { MEDIA_MESH_STYLES, MEDIA_MESH_VIEWS } from "../../../core/media/contracts.js";
 import {
   DEFAULT_MEDIA_ASSET_CATEGORIES,
   normalizeMediaAssetCategories,
@@ -177,9 +177,10 @@ const normalizeMeshRecipeSettings = (
       value.maxFaceCount === null
         ? null
         : integer("maxFaceCount", 200_000, 1_000, 2_000_000),
-    voxelize: typeof value.voxelize === "boolean" ? value.voxelize : DEFAULT_MESH_RECIPE_SETTINGS.voxelize,
+    style: normalizeOneOf(value.style, MEDIA_MESH_STYLES, DEFAULT_MESH_RECIPE_SETTINGS.style),
     voxelResolution: integer("voxelResolution", DEFAULT_MESH_RECIPE_SETTINGS.voxelResolution, 8, 128),
     voxelFill: normalizeBoundedNumber(value.voxelFill, DEFAULT_MESH_RECIPE_SETTINGS.voxelFill, 0.1, 0.9),
+    polygonCount: integer("polygonCount", DEFAULT_MESH_RECIPE_SETTINGS.polygonCount, 100, 20_000),
     seed: typeof value.seed === "number" && Number.isSafeInteger(value.seed) && value.seed >= 0 ? value.seed : null,
   };
 };

@@ -1150,6 +1150,10 @@ export const MEDIA_MESH_VIEWS = ["front", "left", "back", "right"] as const;
 
 export type MediaMeshView = (typeof MEDIA_MESH_VIEWS)[number];
 
+export const MEDIA_MESH_STYLES = ["smooth", "voxel", "low-poly"] as const;
+
+export type MediaMeshStyle = (typeof MEDIA_MESH_STYLES)[number];
+
 export type MediaMeshViewAssets = Partial<Record<MediaMeshView, string>>;
 
 export interface MediaMeshRecipeSettings {
@@ -1162,9 +1166,10 @@ export interface MediaMeshRecipeSettings {
   numChunks: number;
   removeFloaters: boolean;
   maxFaceCount: number | null;
-  voxelize: boolean;
+  style: MediaMeshStyle;
   voxelResolution: number;
   voxelFill: number;
+  polygonCount: number;
   seed: number | null;
 }
 
@@ -1185,9 +1190,10 @@ export interface GenerateMediaMeshRequest {
   numChunks: number;
   removeFloaters: boolean;
   maxFaceCount: number | null;
-  voxelize: boolean;
+  style: MediaMeshStyle;
   voxelResolution: number;
   voxelFill: number;
+  polygonCount: number;
   seed: number;
   diagnosticCount: number;
   planSnapshot: MediaRunPlanSnapshot;
@@ -2329,9 +2335,10 @@ export interface MediaLocalMeshGenerationOperation {
     removeFloaters: boolean;
     removeBackground: boolean;
     maxFaceCount: number | null;
-    voxelize: boolean;
+    style: MediaMeshStyle;
     voxelResolution: number;
     voxelFill: number;
+    polygonCount: number;
     output: {
       fileName: string;
       digest: string;
