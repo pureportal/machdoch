@@ -1,6 +1,35 @@
 [
   {
     "ecosystem": "npm",
+    "name": "@xterm/addon-serialize",
+    "version": "0.14.0",
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/npm/%40xterm%2Faddon-serialize@0.14.0/LICENSE",
+        "source": "https://raw.githubusercontent.com/xtermjs/xterm.js/f447274f430fd22513f6adbf9862d19524471c04/LICENSE",
+        "sha256": "b569f629d00f2626a8100df2a1798210535621e42164dfd426a6fe5aac7b0ccd"
+      }
+    ]
+  },
+  {
+    "ecosystem": "cargo",
+    "name": "defmt",
+    "version": "0.3.101",
+    "files": [
+      {
+        "file": "legal/third-party/supplemental/cargo/defmt@0.3.101/LICENSE-MIT",
+        "source": "https://raw.githubusercontent.com/knurling-rs/defmt/719491ca3529abd07205165b9b10e4d988552bc2/LICENSE-MIT",
+        "sha256": "2710a622a896bba67356913d4d0492cab5465f61b2ecce6d880aeb483834fb50"
+      },
+      {
+        "file": "legal/third-party/supplemental/cargo/defmt@0.3.101/LICENSE-APACHE",
+        "source": "https://raw.githubusercontent.com/knurling-rs/defmt/719491ca3529abd07205165b9b10e4d988552bc2/LICENSE-APACHE",
+        "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+      }
+    ]
+  },
+  {
+    "ecosystem": "npm",
     "name": "@uiw/react-codemirror",
     "version": "4.25.12",
     "files": [
