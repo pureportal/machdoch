@@ -1,5 +1,6 @@
 import type { CloudActor } from "../../../lib/cloud-contract";
 import type {
+  GitRepositorySettingsInput,
   GitReviewSettings,
   GitReviewSettingsInput,
 } from "../../../lib/cloud-git-contract";
@@ -55,24 +56,30 @@ export class CloudGitReviewSettings {
     });
   }
 
-  setRepositoryTeam(
+  setRepositorySettings(
     actor: CloudActor,
     repositoryId: string,
-    teamId: string | null,
+    input: GitRepositorySettingsInput,
   ): Promise<void> {
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "git.manage");
-      if (teamId) {
+      if (input.issueSync && !input.teamId)
+        throw new CloudError(
+          422,
+          "team_required",
+          "Choose a team before syncing issues.",
+        );
+      if (input.teamId) {
         const team = await sql.query(
           "SELECT 1 FROM cloud_teams WHERE organization_id=$1 AND id=$2",
-          [actor.organizationId, teamId],
+          [actor.organizationId, input.teamId],
         );
         if (!team.rows.length)
           throw new CloudError(404, "not_found", "Team is unavailable.");
       }
       const updated = await sql.query(
-        "UPDATE cloud_git_repositories SET team_id=$3 WHERE organization_id=$1 AND id=$2 RETURNING id",
-        [actor.organizationId, repositoryId, teamId],
+        "UPDATE cloud_git_repositories SET team_id=$3,issue_sync=$4 WHERE organization_id=$1 AND id=$2 RETURNING id",
+        [actor.organizationId, repositoryId, input.teamId, input.issueSync],
       );
       if (!updated.rows.length)
         throw new CloudError(404, "not_found", "Repository is unavailable.");

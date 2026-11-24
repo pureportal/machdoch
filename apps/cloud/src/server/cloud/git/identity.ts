@@ -36,6 +36,18 @@ function expiredSignIn(provider: GitProvider): CloudError {
   );
 }
 
+export function organizationAccess(
+  connection: GitConnectionRecord,
+): ActingAccess {
+  return {
+    provider: connection.provider,
+    apiUrl: connection.apiUrl,
+    token: connection.token,
+    login: connection.account,
+    personal: false,
+  };
+}
+
 export class GitIdentities {
   constructor(
     private readonly database: CloudDatabase,
@@ -202,13 +214,7 @@ export class GitIdentities {
     userId: string,
     mode: ActingMode,
   ): Promise<ActingAccess> {
-    const organization: ActingAccess = {
-      provider: connection.provider,
-      apiUrl: connection.apiUrl,
-      token: connection.token,
-      login: connection.account,
-      personal: false,
-    };
+    const organization = organizationAccess(connection);
     if (mode === "organization") return organization;
     const personal = await this.personal(sql, connection, userId);
     if (personal) return personal;

@@ -8,7 +8,7 @@ import {
   gitMergeInputSchema,
   gitProviderSchema,
   gitRepositoryInputSchema,
-  gitRepositoryTeamInputSchema,
+  gitRepositorySettingsInputSchema,
   gitRetargetInputSchema,
   gitReviewGuideInputSchema,
   gitReviewInputSchema,
@@ -172,13 +172,13 @@ async function handleGitSettings(
   if (
     path.length === 4 &&
     path[1] === "repositories" &&
-    path[3] === "team" &&
+    path[3] === "settings" &&
     method === "PUT"
   ) {
-    await runtime.git.reviewSettings.setRepositoryTeam(
+    await runtime.git.reviewSettings.setRepositorySettings(
       actor,
       cloudId.parse(path[2]),
-      (await readBody(request, gitRepositoryTeamInputSchema)).teamId,
+      await readBody(request, gitRepositorySettingsInputSchema),
     );
     return Response.json({ ok: true });
   }

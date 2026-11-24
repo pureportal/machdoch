@@ -28,7 +28,7 @@ import { gitClient, type GitAccess } from "./git-client";
 import type { OAuthApp } from "./oauth";
 import { gitReviewSettings } from "./review-settings";
 
-export const currentHookVersion = 3;
+export const currentHookVersion = 4;
 
 const timestamp = `'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'`;
 
@@ -253,7 +253,7 @@ export class CloudGitConnections {
         const repositories = (
           await sql.query<GitRepository & Record<string, unknown>>(
             `SELECT id,full_name AS "fullName",private,default_branch AS "defaultBranch",hook_id IS NOT NULL AS webhook,
-            to_char(synced_at AT TIME ZONE 'UTC',${timestamp}) AS "syncedAt",team_id AS "teamId"
+            to_char(synced_at AT TIME ZONE 'UTC',${timestamp}) AS "syncedAt",team_id AS "teamId",issue_sync AS "issueSync"
             FROM cloud_git_repositories WHERE organization_id=$1 AND connection_id=$2 ORDER BY lower(full_name)`,
             [actor.organizationId, row.id],
           )

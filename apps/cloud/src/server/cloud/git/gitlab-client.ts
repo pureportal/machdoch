@@ -20,6 +20,7 @@ import {
   type GitClient,
   type GitCommitStatus,
   type GitComparison,
+  type GitIssueUpdate,
   type GitPullRequestDraft,
   type GitPullRequestRecord,
   type GitRepositoryRecord,
@@ -193,6 +194,7 @@ export const gitlabHookEvents = {
   push_events: true,
   tag_push_events: true,
   merge_requests_events: true,
+  issues_events: true,
   note_events: true,
   pipeline_events: true,
   deployment_events: true,
@@ -631,6 +633,72 @@ export class GitLabClient implements GitClient {
       ),
     ]);
     return `${request.web_url}#note_${note.id}`;
+  }
+
+  private async userId(login: string): Promise<number> {
+    const user = (
+      await this.request(
+        `/users?username=${encodeURIComponent(login)}`,
+        z.array(z.object({ id: z.number() })),
+      )
+    )[0];
+    if (!user)
+      throw new CloudError(
+        422,
+        "git_user_unavailable",
+        `GitLab has no user ${login}.`,
+      );
+    return user.id;
+  }
+
+  async updateIssue(
+    fullName: string,
+    number: number,
+    update: GitIssueUpdate,
+  ): Promise<void> {
+    await this.request(
+      `${this.project(fullName)}/issues/${number}`,
+      z.unknown(),
+      {
+        method: "PUT",
+        body: {
+          ...(update.title === undefined ? {} : { title: update.title }),
+          ...(update.body === undefined ? {} : { description: update.body }),
+          ...(update.state === undefined
+            ? {}
+            : { state_event: update.state === "open" ? "reopen" : "close" }),
+          ...(update.addLabels.length
+            ? { add_labels: update.addLabels.join(",") }
+            : {}),
+          ...(update.removeLabels.length
+            ? { remove_labels: update.removeLabels.join(",") }
+            : {}),
+          ...(update.assignee === undefined
+            ? {}
+            : {
+                assignee_ids: update.assignee
+                  ? [await this.userId(update.assignee)]
+                  : [],
+              }),
+        },
+      },
+    );
+  }
+
+  async commentOnIssue(
+    fullName: string,
+    number: number,
+    body: string,
+  ): Promise<string> {
+    return String(
+      (
+        await this.request(
+          `${this.project(fullName)}/issues/${number}/notes`,
+          z.object({ id: z.number() }),
+          { method: "POST", body: { body } },
+        )
+      ).id,
+    );
   }
 
   async review(

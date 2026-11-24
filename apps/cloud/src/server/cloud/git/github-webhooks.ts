@@ -1,6 +1,9 @@
 import { z } from "zod";
+import type { GitIssueFields, GitIssueUpdate } from "./git-client";
 import { githubPullRequest, githubPullRequestSchema } from "./github-client";
 import {
+  issueFields,
+  issueLabelNames,
   parsedWebhook,
   pushActivities,
   tagDeployment,
@@ -60,6 +63,29 @@ const reviewCommentSchema = pullRequestSchema.extend({
   }),
 });
 
+const githubIssueSchema = z.object({
+  number: z.number(),
+  title: z.string(),
+  body: z.string().nullable().optional(),
+  state: z.string(),
+  state_reason: z.string().nullable().optional(),
+  labels: z.array(z.object({ name: z.string() })).default([]),
+  assignee: user,
+  html_url: z.string(),
+  pull_request: z.object({}).nullable().optional(),
+});
+
+const issuesSchema = z.object({
+  action: z.string(),
+  issue: githubIssueSchema,
+  label: z.object({ name: z.string() }).optional(),
+  changes: z
+    .object({ title: z.unknown().optional(), body: z.unknown().optional() })
+    .optional(),
+  repository,
+  sender: user,
+});
+
 const issueCommentSchema = z.object({
   action: z.string(),
   issue: z.object({
@@ -69,6 +95,11 @@ const issueCommentSchema = z.object({
   comment: z.object({ body: z.string(), user, html_url: z.string() }),
   repository,
   sender: user,
+});
+
+const plainIssueCommentSchema = issueCommentSchema.extend({
+  issue: githubIssueSchema,
+  comment: z.object({ id: z.number(), body: z.string(), user }),
 });
 
 const checkSchema = z.object({
@@ -112,6 +143,45 @@ const reviewKinds: Record<string, WebhookActivity["kind"]> = {
   changes_requested: "review_changes_requested",
   commented: "review_commented",
 };
+
+function currentIssue(issue: z.infer<typeof githubIssueSchema>) {
+  return issueFields({
+    title: issue.title,
+    body: issue.body,
+    state:
+      issue.state === "open"
+        ? "open"
+        : issue.state_reason === "not_planned"
+          ? "not_planned"
+          : "completed",
+    labels: issue.labels.map((label) => label.name),
+    assignee: issue.assignee?.login,
+    url: issue.html_url,
+  });
+}
+
+function issueChanges(
+  data: z.infer<typeof issuesSchema>,
+  current: GitIssueFields,
+): GitIssueUpdate {
+  const label = data.label ? issueLabelNames([data.label.name]) : [];
+  return {
+    ...(data.action === "edited" && data.changes?.title
+      ? { title: current.title }
+      : {}),
+    ...(data.action === "edited" && data.changes?.body
+      ? { body: current.body }
+      : {}),
+    ...(data.action === "closed" || data.action === "reopened"
+      ? { state: current.state }
+      : {}),
+    ...(data.action === "assigned" || data.action === "unassigned"
+      ? { assignee: current.assignee }
+      : {}),
+    addLabels: data.action === "labeled" ? label : [],
+    removeLabels: data.action === "unlabeled" ? label : [],
+  };
+}
 
 export function parseGitHubWebhook(
   event: string,
@@ -199,7 +269,49 @@ export function parseGitHubWebhook(
       ],
     });
   }
+  if (event === "issues") {
+    const parsed = issuesSchema.safeParse(payload);
+    if (!parsed.success || parsed.data.issue.pull_request) return null;
+    const current = currentIssue(parsed.data.issue);
+    if (!current) return null;
+    return parsedWebhook(parsed.data.repository.id, {
+      sender: parsed.data.sender?.login ?? null,
+      issue: {
+        number: parsed.data.issue.number,
+        current,
+        changes: issueChanges(parsed.data, current),
+        comment: null,
+        removed:
+          parsed.data.action === "deleted" ||
+          parsed.data.action === "transferred",
+      },
+    });
+  }
   if (event === "issue_comment") {
+    const plain = plainIssueCommentSchema.safeParse(payload);
+    if (
+      plain.success &&
+      plain.data.action === "created" &&
+      !plain.data.issue.pull_request
+    ) {
+      const { comment, issue } = plain.data;
+      const current = currentIssue(issue);
+      if (!current) return null;
+      return parsedWebhook(plain.data.repository.id, {
+        sender: plain.data.sender?.login ?? null,
+        issue: {
+          number: issue.number,
+          current,
+          changes: { addLabels: [], removeLabels: [] },
+          comment: {
+            externalId: String(comment.id),
+            body: comment.body.slice(0, 20_000),
+            author: comment.user?.login ?? "",
+          },
+          removed: false,
+        },
+      });
+    }
     const parsed = issueCommentSchema.safeParse(payload);
     if (
       !parsed.success ||

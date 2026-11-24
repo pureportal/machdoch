@@ -22,6 +22,7 @@ import {
   type GitClient,
   type GitCommitStatus,
   type GitComparison,
+  type GitIssueUpdate,
   type GitPullRequestDraft,
   type GitPullRequestRecord,
   type GitRepositoryRecord,
@@ -44,6 +45,7 @@ export const githubWebhookEvents = [
   "pull_request",
   "pull_request_review",
   "pull_request_review_comment",
+  "issues",
   "issue_comment",
   "check_run",
   "check_suite",
@@ -731,6 +733,55 @@ export class GitHubClient implements GitClient {
         { method: "POST", body: { body } },
       )
     ).html_url;
+  }
+
+  async updateIssue(
+    fullName: string,
+    number: number,
+    update: GitIssueUpdate,
+  ): Promise<void> {
+    const path = `/repos/${fullName}/issues/${number}`;
+    const fields = {
+      ...(update.title === undefined ? {} : { title: update.title }),
+      ...(update.body === undefined ? {} : { body: update.body }),
+      ...(update.state === undefined
+        ? {}
+        : update.state === "open"
+          ? { state: "open" }
+          : { state: "closed", state_reason: update.state }),
+      ...(update.assignee === undefined
+        ? {}
+        : { assignees: update.assignee ? [update.assignee] : [] }),
+    };
+    if (Object.keys(fields).length)
+      await this.request(path, z.unknown(), { method: "PATCH", body: fields });
+    if (update.addLabels.length)
+      await this.request(`${path}/labels`, z.unknown(), {
+        method: "POST",
+        body: { labels: update.addLabels },
+      });
+    for (const label of update.removeLabels)
+      await this.request(
+        `${path}/labels/${encodeURIComponent(label)}`,
+        z.unknown(),
+        { method: "DELETE" },
+      ).catch(absentAsNull);
+  }
+
+  async commentOnIssue(
+    fullName: string,
+    number: number,
+    body: string,
+  ): Promise<string> {
+    return String(
+      (
+        await this.request(
+          `/repos/${fullName}/issues/${number}/comments`,
+          z.object({ id: z.number() }),
+          { method: "POST", body: { body } },
+        )
+      ).id,
+    );
   }
 
   async review(

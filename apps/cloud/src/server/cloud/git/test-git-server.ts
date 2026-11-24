@@ -33,6 +33,7 @@ export class FakeGitServer {
   readonly github = new Map<number, FakeChange>();
   readonly gitlab = new Map<number, FakeChange>();
   readonly logins = new Map<string, string>();
+  readonly gitlabUsers = new Map<string, number>();
   readonly branches = new Map<string, string>();
   readonly files = new Map<string, string>();
   readonly statuses = new Map<
@@ -329,14 +330,20 @@ export class FakeGitServer {
     }
     const comment = /^\/repos\/acme\/app\/issues\/(\d+)\/comments$/u.exec(path);
     if (comment && method === "GET") return json([]);
-    if (comment && method === "POST")
+    if (comment && method === "POST") {
+      const id = this.callsTo(path, "POST").length;
       return json(
         {
-          id: 1,
-          html_url: `https://github.test/acme/app/pull/${comment[1]}#issuecomment-1`,
+          id,
+          html_url: `https://github.test/acme/app/pull/${comment[1]}#issuecomment-${id}`,
         },
         201,
       );
+    }
+    if (/^\/repos\/acme\/app\/issues\/\d+$/u.test(path) && method === "PATCH")
+      return json({ number: Number(path.split("/").at(-1)) });
+    if (/^\/repos\/acme\/app\/issues\/\d+\/labels(?:\/.+)?$/u.test(path))
+      return json([]);
     const match = /^\/repos\/acme\/app\/pulls\/(\d+)(?:\/([\w-]+))?$/u.exec(
       path,
     );
@@ -429,6 +436,19 @@ export class FakeGitServer {
       ]);
     if (path.startsWith(`${project}/statuses/`) && method === "POST")
       return json({ id: 9 }, 201);
+    if (path === "/api/v4/users")
+      return json(
+        this.gitlabUsers.has(query.get("username") ?? "")
+          ? [{ id: this.gitlabUsers.get(query.get("username")!) }]
+          : [],
+      );
+    const issue = new RegExp(`^${project}/issues/(\\d+)(/notes)?$`, "u").exec(
+      path,
+    );
+    if (issue && !issue[2] && method === "PUT")
+      return json({ iid: Number(issue[1]) });
+    if (issue?.[2] && method === "POST")
+      return json({ id: 500 + this.callsTo(path, "POST").length }, 201);
     const match = new RegExp(
       `^${project}/merge_requests/(\\d+)(?:/([\\w-]+))?$`,
       "u",

@@ -265,15 +265,27 @@ it("guards review settings by permission and revision", async () => {
 it("assigns repositories to teams", async () => {
   await connect();
   const id = await repositoryId();
-  await runtime.git.reviewSettings.setRepositoryTeam(owner, id, teamId);
+  await runtime.git.reviewSettings.setRepositorySettings(owner, id, {
+    teamId,
+    issueSync: false,
+  });
   expect((await connection()).repositories[0]!.teamId).toBe(teamId);
   await expect(
-    runtime.git.reviewSettings.setRepositoryTeam(owner, id, randomUUID()),
+    runtime.git.reviewSettings.setRepositorySettings(owner, id, {
+      teamId: randomUUID(),
+      issueSync: false,
+    }),
   ).rejects.toMatchObject({ status: 404 });
   await expect(
-    runtime.git.reviewSettings.setRepositoryTeam(member, id, null),
+    runtime.git.reviewSettings.setRepositorySettings(member, id, {
+      teamId: null,
+      issueSync: false,
+    }),
   ).rejects.toMatchObject({ status: 403 });
-  await runtime.git.reviewSettings.setRepositoryTeam(owner, id, null);
+  await runtime.git.reviewSettings.setRepositorySettings(owner, id, {
+    teamId: null,
+    issueSync: false,
+  });
   expect((await connection()).repositories[0]!.teamId).toBeNull();
 });
 
@@ -283,10 +295,13 @@ it("suggests an issue for merged work without one and creates it on request", as
     title: "Fix typo in footer",
   });
   await connect();
-  await runtime.git.reviewSettings.setRepositoryTeam(
+  await runtime.git.reviewSettings.setRepositorySettings(
     owner,
     await repositoryId(),
-    teamId,
+    {
+      teamId,
+      issueSync: false,
+    },
   );
   const pullRequestId = (await runtime.git.pullRequests.list(owner, undefined))
     .pullRequests[0]!.pullRequest.id;
@@ -343,10 +358,13 @@ it("records merged work as an issue automatically, reusing an open issue with th
     title: "Backport",
   });
   await connect();
-  await runtime.git.reviewSettings.setRepositoryTeam(
+  await runtime.git.reviewSettings.setRepositorySettings(
     owner,
     await repositoryId(),
-    teamId,
+    {
+      teamId,
+      issueSync: false,
+    },
   );
   await setSettings({ mergeIssues: true });
   for (const change of [fresh, matching, elsewhere])

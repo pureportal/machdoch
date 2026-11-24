@@ -1,5 +1,9 @@
 import type { GitEvent, GitEventKind } from "../../../lib/git-events";
-import type { GitPullRequestRecord } from "./git-client";
+import type {
+  GitIssueFields,
+  GitIssueUpdate,
+  GitPullRequestRecord,
+} from "./git-client";
 
 export interface WebhookActivity extends Partial<
   Pick<GitEvent, "branch" | "push" | "review" | "comment" | "tag">
@@ -17,6 +21,14 @@ export interface DeploymentEvent {
   url: string | null;
 }
 
+export interface IssueWebhook {
+  number: number;
+  current: (GitIssueFields & { url: string }) | null;
+  changes: GitIssueUpdate;
+  comment: { externalId: string; body: string; author: string } | null;
+  removed: boolean;
+}
+
 export interface ParsedWebhook {
   repositoryExternalId: number;
   sender: string | null;
@@ -26,6 +38,7 @@ export interface ParsedWebhook {
   staleNumber: number | null;
   activities: WebhookActivity[];
   deployment: DeploymentEvent | null;
+  issue: IssueWebhook | null;
 }
 
 export const zeroSha = "0".repeat(40);
@@ -43,7 +56,38 @@ export function parsedWebhook(
     staleNumber: null,
     activities: [],
     deployment: null,
+    issue: null,
     ...fields,
+  };
+}
+
+export function issueLabelNames(names: string[]): string[] {
+  const labels = new Map<string, string>();
+  for (const label of names) {
+    const name = label.trim();
+    if (name && name.length <= 80 && !labels.has(name.toLowerCase()))
+      labels.set(name.toLowerCase(), name);
+  }
+  return [...labels.values()];
+}
+
+export function issueFields(input: {
+  title: string;
+  body: string | null | undefined;
+  state: GitIssueFields["state"];
+  labels: string[];
+  assignee: string | null | undefined;
+  url: string;
+}): (GitIssueFields & { url: string }) | null {
+  const title = input.title.trim().slice(0, 300);
+  if (!title) return null;
+  return {
+    title,
+    body: (input.body ?? "").slice(0, 30_000),
+    state: input.state,
+    labels: issueLabelNames(input.labels),
+    assignee: input.assignee?.slice(0, 100) || null,
+    url: input.url.slice(0, 500),
   };
 }
 

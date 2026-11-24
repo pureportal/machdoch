@@ -15,6 +15,7 @@ import { gitEvent, queueGitEvents, type StoredRepository } from "./events";
 import { gitClient } from "./git-client";
 import { parseGitHubWebhook } from "./github-webhooks";
 import { parseGitLabWebhook } from "./gitlab-webhooks";
+import { receiveIssueWebhook } from "./issue-sync-inbound";
 import { eventPullRequest, repositoryColumns, type CloudGitSync } from "./sync";
 import type { ParsedWebhook, WebhookActivity } from "./webhook-payloads";
 
@@ -159,6 +160,8 @@ export class CloudGitWebhooks {
         )
       ).rows[0];
       if (!stored) return null;
+      if (parsed.issue)
+        await receiveIssueWebhook(sql, connection, stored, parsed.issue);
       if (parsed.staleSha)
         await sql.query(
           "UPDATE cloud_git_pull_requests SET signals_synced_at=NULL WHERE organization_id=$1 AND repository_id=$2 AND head_sha=$3 AND state='open'",

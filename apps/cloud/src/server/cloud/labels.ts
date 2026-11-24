@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CloudActor } from "../../lib/cloud-contract";
+import type { CloudActor, CloudIssue } from "../../lib/cloud-contract";
 import type {
   CloudLabel,
   CloudIssueLabels,
@@ -204,71 +204,89 @@ export class CloudLabels {
               "issue_archived",
               "Restore the issue before changing its labels.",
             );
-          await sql.query(
-            "INSERT INTO cloud_issue_label_sets (organization_id,issue_id) VALUES ($1,$2) ON CONFLICT DO NOTHING",
-            [actor.organizationId, issueId],
-          );
-          const set = (
-            await sql.query<{ revision: number }>(
-              "SELECT revision FROM cloud_issue_label_sets WHERE organization_id=$1 AND issue_id=$2 FOR UPDATE",
-              [actor.organizationId, issueId],
-            )
-          ).rows[0]!;
-          checkRevision(set.revision, input.revision);
-          const previous = (
-            await sql.query<{ label_id: string }>(
-              "SELECT label_id FROM cloud_issue_labels WHERE organization_id=$1 AND issue_id=$2",
-              [actor.organizationId, issueId],
-            )
-          ).rows.map((row) => row.label_id);
-          const valid = await sql.query(
-            "SELECT id FROM cloud_labels WHERE organization_id=$1 AND team_id=$2 AND id=ANY($3::uuid[]) AND (NOT archived OR id=ANY($4::uuid[]))",
-            [actor.organizationId, issue.teamId, input.labelIds, previous],
-          );
-          if (valid.rows.length !== input.labelIds.length)
-            throw new CloudError(
-              422,
-              "label_unavailable",
-              "A selected label is unavailable. Reopen Labels to refresh the choices.",
-            );
-          if (
-            previous.length === input.labelIds.length &&
-            previous.every((id) => input.labelIds.includes(id))
-          )
-            return { id: issueId };
-          await sql.query(
-            "DELETE FROM cloud_issue_labels WHERE organization_id=$1 AND issue_id=$2 AND NOT (label_id=ANY($3::uuid[]))",
-            [actor.organizationId, issueId, input.labelIds],
-          );
-          await sql.query(
-            "INSERT INTO cloud_issue_labels (organization_id,issue_id,team_id,label_id) SELECT $1,$2,$3,id FROM unnest($4::uuid[]) AS id ON CONFLICT DO NOTHING",
-            [actor.organizationId, issueId, issue.teamId, input.labelIds],
-          );
-          await sql.query(
-            "UPDATE cloud_issue_label_sets SET revision=revision+1 WHERE organization_id=$1 AND issue_id=$2",
-            [actor.organizationId, issueId],
-          );
-          await recordEvent(
-            sql,
-            actor,
-            "issue.labels_changed",
-            issueId,
-            set.revision + 1,
-            { labelIds: input.labelIds },
-          );
-          const added = input.labelIds.filter((id) => !previous.includes(id));
-          await queueAutomationEvents(sql, {
-            organizationId: actor.organizationId,
-            teamId: issue.teamId,
-            issueId,
-            actorId: actor.userId,
-            events: added.length
-              ? [{ kind: "label_added", labelIds: added }]
-              : [],
-          });
+          const current = await lockIssueLabels(sql, actor, issueId);
+          checkRevision(current.revision, input.revision);
+          await writeIssueLabels(sql, actor, issue, current, input.labelIds);
           return { id: issueId };
         },
       );
     });
   }
+}
+
+export async function lockIssueLabels(
+  sql: CloudSql,
+  actor: CloudActor,
+  issueId: string,
+): Promise<{ revision: number; labelIds: string[] }> {
+  await sql.query(
+    "INSERT INTO cloud_issue_label_sets (organization_id,issue_id) VALUES ($1,$2) ON CONFLICT DO NOTHING",
+    [actor.organizationId, issueId],
+  );
+  const set = (
+    await sql.query<{ revision: number }>(
+      "SELECT revision FROM cloud_issue_label_sets WHERE organization_id=$1 AND issue_id=$2 FOR UPDATE",
+      [actor.organizationId, issueId],
+    )
+  ).rows[0]!;
+  const labelIds = (
+    await sql.query<{ label_id: string }>(
+      "SELECT label_id FROM cloud_issue_labels WHERE organization_id=$1 AND issue_id=$2",
+      [actor.organizationId, issueId],
+    )
+  ).rows.map((row) => row.label_id);
+  return { revision: set.revision, labelIds };
+}
+
+export async function writeIssueLabels(
+  sql: CloudSql,
+  actor: CloudActor,
+  issue: CloudIssue,
+  current: { revision: number; labelIds: string[] },
+  labelIds: string[],
+): Promise<void> {
+  const previous = current.labelIds;
+  const valid = await sql.query(
+    "SELECT id FROM cloud_labels WHERE organization_id=$1 AND team_id=$2 AND id=ANY($3::uuid[]) AND (NOT archived OR id=ANY($4::uuid[]))",
+    [actor.organizationId, issue.teamId, labelIds, previous],
+  );
+  if (valid.rows.length !== labelIds.length)
+    throw new CloudError(
+      422,
+      "label_unavailable",
+      "A selected label is unavailable. Reopen Labels to refresh the choices.",
+    );
+  if (
+    previous.length === labelIds.length &&
+    previous.every((id) => labelIds.includes(id))
+  )
+    return;
+  await sql.query(
+    "DELETE FROM cloud_issue_labels WHERE organization_id=$1 AND issue_id=$2 AND NOT (label_id=ANY($3::uuid[]))",
+    [actor.organizationId, issue.id, labelIds],
+  );
+  await sql.query(
+    "INSERT INTO cloud_issue_labels (organization_id,issue_id,team_id,label_id) SELECT $1,$2,$3,id FROM unnest($4::uuid[]) AS id ON CONFLICT DO NOTHING",
+    [actor.organizationId, issue.id, issue.teamId, labelIds],
+  );
+  await sql.query(
+    "UPDATE cloud_issue_label_sets SET revision=revision+1 WHERE organization_id=$1 AND issue_id=$2",
+    [actor.organizationId, issue.id],
+  );
+  await recordEvent(
+    sql,
+    actor,
+    "issue.labels_changed",
+    issue.id,
+    current.revision + 1,
+    { labelIds },
+  );
+  const added = labelIds.filter((id) => !previous.includes(id));
+  await queueAutomationEvents(sql, {
+    organizationId: actor.organizationId,
+    teamId: issue.teamId,
+    issueId: issue.id,
+    actorId: actor.userId,
+    events: added.length ? [{ kind: "label_added", labelIds: added }] : [],
+  });
 }

@@ -3,7 +3,10 @@
 import { DropdownMenu } from "radix-ui";
 import { useRef, useState } from "react";
 import { ChevronDown, Lock, Trash2 } from "lucide-react";
-import type { GitConnection } from "@/lib/cloud-git-contract";
+import type {
+  GitConnection,
+  GitRepositorySettingsInput,
+} from "@/lib/cloud-git-contract";
 import {
   defaultGitApiUrls,
   gitProviderLabels,
@@ -19,10 +22,20 @@ import { RelativeTime } from "./relative-time";
 
 const webhookEvents: Record<GitProvider, string> = {
   github:
-    "push, pull request, pull request review, review comment, issue comment, check run and check suite events",
+    "push, pull request, pull request review, review comment, issue, issue comment, check run and check suite events",
   gitlab:
-    "push, tag push, merge request, comment and pipeline events, and use the secret as its secret token",
+    "push, tag push, merge request, issue, comment and pipeline events, and use the secret as its secret token",
 };
+
+function updateRepository(
+  repositoryId: string,
+  settings: GitRepositorySettingsInput,
+) {
+  return cloudRequest(`git/repositories/${repositoryId}/settings`, {
+    method: "PUT",
+    body: settings,
+  });
+}
 
 export function GitConnectionCard({
   connection,
@@ -201,14 +214,15 @@ export function GitConnectionCard({
                   aria-label={`Team for ${repository.fullName}`}
                   value={repository.teamId ?? ""}
                   disabled={pending}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const teamId = event.target.value || null;
                     perform(() =>
-                      cloudRequest(`git/repositories/${repository.id}/team`, {
-                        method: "PUT",
-                        body: { teamId: event.target.value || null },
+                      updateRepository(repository.id, {
+                        teamId,
+                        issueSync: teamId ? repository.issueSync : false,
                       }),
-                    )
-                  }
+                    );
+                  }}
                 >
                   <option value="">No team</option>
                   {teams.map((team) => (
@@ -217,6 +231,25 @@ export function GitConnectionCard({
                     </option>
                   ))}
                 </Select>
+                <label className="cloud-git-code-access">
+                  Issues
+                  <button
+                    type="button"
+                    role="switch"
+                    className="cloud-automation-switch"
+                    aria-checked={repository.issueSync}
+                    aria-label={`Sync issues for ${repository.fullName}`}
+                    disabled={pending || !repository.teamId}
+                    onClick={() =>
+                      perform(() =>
+                        updateRepository(repository.id, {
+                          teamId: repository.teamId,
+                          issueSync: !repository.issueSync,
+                        }),
+                      )
+                    }
+                  />
+                </label>
                 <ConfirmButton
                   trigger={
                     <Button

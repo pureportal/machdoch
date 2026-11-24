@@ -86,6 +86,7 @@ export const cloudMigrations = [
   "083-agent-handoffs.sql",
   "084-agent-relays.sql",
   "085-agent-personalization.sql",
+  "086-git-issue-sync.sql",
 ];
 
 export interface CloudSql {

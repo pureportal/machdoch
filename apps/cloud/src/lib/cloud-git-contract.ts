@@ -106,6 +106,7 @@ export interface GitRepository {
   webhook: boolean;
   syncedAt: string | null;
   teamId: string | null;
+  issueSync: boolean;
 }
 
 export interface GitConnection {
@@ -152,9 +153,13 @@ export type GitReviewSettingsInput = z.infer<
   typeof gitReviewSettingsInputSchema
 >;
 
-export const gitRepositoryTeamInputSchema = z.strictObject({
+export const gitRepositorySettingsInputSchema = z.strictObject({
   teamId: cloudId.nullable(),
+  issueSync: z.boolean(),
 });
+export type GitRepositorySettingsInput = z.infer<
+  typeof gitRepositorySettingsInputSchema
+>;
 
 export interface GitAdministration {
   connections: GitConnection[];

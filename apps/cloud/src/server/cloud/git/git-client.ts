@@ -92,6 +92,24 @@ export interface GitComparison {
   files: string[];
 }
 
+export const gitIssueStates = ["open", "completed", "not_planned"] as const;
+export type GitIssueState = (typeof gitIssueStates)[number];
+
+export interface GitIssueFields {
+  title: string;
+  body: string;
+  state: GitIssueState;
+  labels: string[];
+  assignee: string | null;
+}
+
+export interface GitIssueUpdate extends Partial<
+  Pick<GitIssueFields, "title" | "body" | "state" | "assignee">
+> {
+  addLabels: string[];
+  removeLabels: string[];
+}
+
 export interface GitClient {
   readonly mergeMethods: readonly GitMergeMethod[];
   viewer(): Promise<string>;
@@ -134,6 +152,16 @@ export interface GitClient {
     headSha: string,
   ): Promise<void>;
   comment(fullName: string, number: number, body: string): Promise<string>;
+  updateIssue(
+    fullName: string,
+    number: number,
+    update: GitIssueUpdate,
+  ): Promise<void>;
+  commentOnIssue(
+    fullName: string,
+    number: number,
+    body: string,
+  ): Promise<string>;
   review(
     fullName: string,
     number: number,

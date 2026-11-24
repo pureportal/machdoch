@@ -87,6 +87,7 @@ import { CloudIssueDelivery } from "./git/issue-delivery";
 import { CloudGitSync } from "./git/sync";
 import { CloudGitWebhooks } from "./git/webhooks";
 import { GitIdentities } from "./git/identity";
+import { CloudGitIssueSync } from "./git/issue-sync";
 import { CloudGitOAuth } from "./git/oauth-flow";
 import type { GitProvider } from "../../lib/git-providers";
 import { CloudArtifactUploads } from "./execution/artifact-uploads";
@@ -250,6 +251,8 @@ export interface CloudRuntime {
     reviewGuideLoop: CloudPeriodicLoop;
     delivery: CloudIssueDelivery;
     syncLoop: CloudPeriodicLoop;
+    issueSync: CloudGitIssueSync;
+    issueSyncLoop: CloudPeriodicLoop;
   };
   execution: {
     profiles: CloudExecutionProfiles;
@@ -370,16 +373,23 @@ export function createCloudRuntime(
   );
   const gitCallbackUrl = (provider: GitProvider) =>
     gitConnections.oauthCallbackUrl(provider);
+  const gitIdentities = new GitIdentities(
+    database,
+    options.credentialsCipher ?? null,
+    gitFetch,
+    gitCallbackUrl,
+  );
   const pullRequests = new CloudGitPullRequests(
     database,
     options.credentialsCipher ?? null,
-    new GitIdentities(
-      database,
-      options.credentialsCipher ?? null,
-      gitFetch,
-      gitCallbackUrl,
-    ),
+    gitIdentities,
     gitSync,
+    gitFetch,
+  );
+  const issueSync = new CloudGitIssueSync(
+    database,
+    options.credentialsCipher ?? null,
+    gitIdentities,
     gitFetch,
   );
   const socialFetch = options.socialFetch ?? fetch;
@@ -763,6 +773,12 @@ export function createCloudRuntime(
         gitFetch,
       ),
       syncLoop: new CloudPeriodicLoop("Git sync", () => gitSync.tick(), 1),
+      issueSync,
+      issueSyncLoop: new CloudPeriodicLoop(
+        "Git issue sync",
+        () => issueSync.tick(),
+        1,
+      ),
     },
     execution: {
       profiles: executionProfiles,
@@ -809,6 +825,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   await runtime.notifications.loop.close();
   await runtime.activity.exportLoop.close();
   await runtime.git.syncLoop.close();
+  await runtime.git.issueSyncLoop.close();
   await runtime.git.reviewGuideLoop.close();
   await runtime.authentication.mailWorker.close();
   await runtime.inference.worker.close();
@@ -830,6 +847,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.notifications.loop.start();
   runtime.activity.exportLoop.start();
   runtime.git.syncLoop.start();
+  runtime.git.issueSyncLoop.start();
   runtime.git.reviewGuideLoop.start();
   if (hostedOrigin) runtime.execution.hostedRunners.start(hostedOrigin);
 }
@@ -860,6 +878,7 @@ export async function closeCloudRuntime(): Promise<void> {
     await current.notifications.loop.close();
     await current.activity.exportLoop.close();
     await current.git.syncLoop.close();
+    await current.git.issueSyncLoop.close();
     await current.git.reviewGuideLoop.close();
     await current.authentication.mailWorker.close();
     await current.inference.worker.close();
