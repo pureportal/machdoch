@@ -1826,6 +1826,8 @@ export const startMediaModelInstall = async (
   const job: MediaModelInstallJob = {
     id: `browser-model-install-${nextBrowserModelInstallId++}`,
     modelId: plan.modelId,
+    displayName: plan.displayName,
+    sourceUrl: plan.sourceUrl,
     revision: plan.revision,
     status: "queued",
     manifestDigest: plan.manifestDigest,
@@ -1843,6 +1845,16 @@ export const startMediaModelInstall = async (
   };
   browserModelInstallJobs.set(job.id, job);
   return clone(job);
+};
+
+export const listMediaModelInstallJobs = async (): Promise<
+  MediaModelInstallJob[]
+> => {
+  if (canInvokeNativeRuntime())
+    return invoke<MediaModelInstallJob[]>("media_list_model_install_jobs");
+  return [...browserModelInstallJobs.values()]
+    .map((job) => clone(advanceBrowserModelInstall(job)))
+    .reverse();
 };
 
 export const getMediaModelInstallJob = async (

@@ -679,6 +679,8 @@ pub(crate) struct StartMediaModelInstallRequest {
 pub(crate) struct MediaModelInstallJob {
     id: String,
     model_id: String,
+    display_name: String,
+    source_url: String,
     revision: String,
     status: String,
     manifest_digest: String,
@@ -4230,6 +4232,20 @@ pub(crate) fn media_get_model_install_job(
             let paths = MediaRuntimePaths::resolve(&app)?;
             database::ensure_initialized(&paths)?;
             model_install::get_job(&paths, &job_id)
+        })(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn media_list_model_install_jobs(
+    app: AppHandle,
+) -> MediaCommandResult<Vec<MediaModelInstallJob>> {
+    command_result(
+        "media_list_model_install_jobs",
+        (|| {
+            let paths = MediaRuntimePaths::resolve(&app)?;
+            database::ensure_initialized(&paths)?;
+            model_install::list_recent_jobs(&paths)
         })(),
     )
 }

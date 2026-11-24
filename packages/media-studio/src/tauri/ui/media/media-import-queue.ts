@@ -1,3 +1,6 @@
+const RATE_SAMPLE_MS = 500;
+const RATE_SMOOTHING = 0.3;
+
 export interface MediaImportJob {
   id: string;
   label: string;
@@ -11,8 +14,10 @@ export interface MediaImportJob {
   resourceId: string | null;
   error: string | null;
   downloadKey?: string;
+  sourceUrl?: string;
   received?: number;
   total?: number;
+  bytesPerSecond?: number;
   warning?: string | null;
   cancelling?: boolean;
 }
@@ -35,6 +40,7 @@ export class MediaImportQueue {
     (context: MediaImportTaskContext) => Promise<string>
   >();
   private readonly controllers = new Map<string, AbortController>();
+  private readonly rateSamples = new Map<string, { bytes: number; time: number }>();
   private running = false;
 
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -54,6 +60,7 @@ export class MediaImportQueue {
     label: string,
     execute: (context: MediaImportTaskContext) => Promise<string>,
     downloadKey?: string,
+    sourceUrl?: string,
   ): string {
     const existing = downloadKey
       ? this.jobs.find(
@@ -74,6 +81,7 @@ export class MediaImportQueue {
         resourceId: null,
         error: null,
         downloadKey,
+        sourceUrl,
       },
     ];
     this.emit();
@@ -138,11 +146,13 @@ export class MediaImportQueue {
         ))
     )
       return;
+    this.rateSamples.delete(id);
     this.update(id, {
       status: "queued",
       error: null,
       cancelling: false,
       received: 0,
+      bytesPerSecond: undefined,
       warning: null,
     });
     void this.pump();
@@ -218,9 +228,30 @@ export class MediaImportQueue {
 
   private update(id: string, patch: Partial<MediaImportJob>): void {
     this.jobs = this.jobs.map((job) =>
-      job.id === id ? { ...job, ...patch } : job,
+      job.id === id ? { ...job, ...patch, ...this.measureRate(job, patch) } : job,
     );
     this.emit();
+  }
+
+  private measureRate(
+    job: MediaImportJob,
+    patch: Partial<MediaImportJob>,
+  ): Pick<MediaImportJob, "bytesPerSecond"> {
+    if (patch.received === undefined) return {};
+    const now = Date.now();
+    const previous = this.rateSamples.get(job.id);
+    if (!previous || now - previous.time < RATE_SAMPLE_MS) {
+      if (!previous) this.rateSamples.set(job.id, { bytes: patch.received, time: now });
+      return {};
+    }
+    this.rateSamples.set(job.id, { bytes: patch.received, time: now });
+    const current = Math.max(0, ((patch.received - previous.bytes) * 1000) / (now - previous.time));
+    return {
+      bytesPerSecond:
+        job.bytesPerSecond === undefined
+          ? current
+          : job.bytesPerSecond + RATE_SMOOTHING * (current - job.bytesPerSecond),
+    };
   }
 
   private emit(): void {

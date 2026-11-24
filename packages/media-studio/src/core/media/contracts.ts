@@ -965,6 +965,8 @@ export type MediaModelInstallJobStatus =
 export interface MediaModelInstallJob {
   id: string;
   modelId: string;
+  displayName: string;
+  sourceUrl: string;
   revision: string;
   status: MediaModelInstallJobStatus;
   manifestDigest: string;

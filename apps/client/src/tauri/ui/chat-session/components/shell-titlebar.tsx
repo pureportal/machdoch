@@ -16,6 +16,7 @@ import type { RuntimeProviderAvailability } from "../../runtime";
 export interface ShellTitlebarProps {
   updateStatus?: ReactNode;
   quickChat?: ReactNode;
+  downloads?: ReactNode;
   shutdownWhenIdle: {
     enabled: boolean;
     available: boolean;
@@ -32,6 +33,7 @@ export interface ShellTitlebarProps {
 export const ShellTitlebar = ({
   updateStatus,
   quickChat,
+  downloads,
   shutdownWhenIdle,
   providerStatuses,
   onMinimizeWindow,
@@ -72,6 +74,7 @@ export const ShellTitlebar = ({
       {updateStatus}
       <div className="min-w-0 flex-1" data-tauri-drag-region />
       <div className="relative z-10 flex items-center gap-1" data-tauri-no-drag>
+        {downloads}
         {quickChat ? (
           <>
             {quickChat}

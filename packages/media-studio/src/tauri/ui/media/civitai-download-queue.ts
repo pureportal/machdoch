@@ -106,5 +106,6 @@ export function enqueueCivitaiDownload(input: {
       return resourceId;
     },
     file.sha256.toLowerCase(),
+    source,
   );
 }

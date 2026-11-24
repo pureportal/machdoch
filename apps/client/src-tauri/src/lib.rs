@@ -391,6 +391,7 @@ pub fn run() {
             media::media_plan_model_install,
             media::media_start_model_install,
             media::media_get_model_install_job,
+            media::media_list_model_install_jobs,
             media::media_cancel_model_install,
             media::media_plan_model_removal,
             media::media_remove_model,

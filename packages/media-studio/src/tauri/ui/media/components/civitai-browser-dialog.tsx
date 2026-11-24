@@ -27,7 +27,6 @@ import {
   loadCivitaiPreferences,
   saveCivitaiPreferences,
 } from "../civitai-preferences";
-import { MediaImportJobs } from "./media-import-jobs";
 import { CivitaiSettingsPanel } from "./civitai-settings-panel";
 import {
   CivitaiSearchFilters,
@@ -307,7 +306,6 @@ export function CivitaiBrowserDialog({
           <div className="flex items-center justify-between gap-3">
             <DialogTitle>Civitai</DialogTitle>
             <div className="flex items-center gap-2">
-              <MediaImportJobs downloadsOnly />
               <Button
                 type="button"
                 variant="ghost"

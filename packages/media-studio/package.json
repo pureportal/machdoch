@@ -115,6 +115,7 @@
     "./tauri/ui/media/components/media-basic-video-options.js": "./src/tauri/ui/media/components/media-basic-video-options.tsx",
     "./tauri/ui/media/components/media-category-manager-dialog.js": "./src/tauri/ui/media/components/media-category-manager-dialog.tsx",
     "./tauri/ui/media/components/media-category-picker.js": "./src/tauri/ui/media/components/media-category-picker.tsx",
+    "./tauri/ui/media/components/media-download-center.js": "./src/tauri/ui/media/components/media-download-center.tsx",
     "./tauri/ui/media/components/media-error-notice.js": "./src/tauri/ui/media/components/media-error-notice.tsx",
     "./tauri/ui/media/components/media-flow-templates-panel.js": "./src/tauri/ui/media/components/media-flow-templates-panel.tsx",
     "./tauri/ui/media/components/media-flow-variables-panel.js": "./src/tauri/ui/media/components/media-flow-variables-panel.tsx",

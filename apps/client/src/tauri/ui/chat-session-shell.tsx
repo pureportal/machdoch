@@ -42,6 +42,7 @@ import { SessionComposer } from "./chat-session/components/session-composer";
 import { SessionHeader } from "./chat-session/components/session-header";
 import { SessionsSidebar } from "./chat-session/components/sessions-sidebar";
 import { ShellTitlebar } from "./chat-session/components/shell-titlebar";
+import { MediaDownloadCenter } from "@machdoch/media-studio/tauri/ui/media/components/media-download-center.js";
 import { Dialog } from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { ScrollArea } from "./components/ui/scroll-area";
@@ -1144,6 +1145,7 @@ export const ChatSession = (): JSX.Element => {
             <ShellTitlebar
               {...controller.titlebar}
               updateStatus={<UpdateStatus updater={updater} />}
+              downloads={<MediaDownloadCenter />}
               quickChat={
                 controller.isDesktop && !controller.hasAnyProvider ? null : (
                   <QuickChatButton

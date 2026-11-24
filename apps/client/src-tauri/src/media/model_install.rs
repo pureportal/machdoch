@@ -707,6 +707,8 @@ pub(crate) fn start(
 }
 
 fn decode_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<MediaModelInstallJob> {
+    let model_id: String = row.get(1)?;
+    let manifest = builtin_manifest(&model_id).ok();
     let bytes_total = row.get::<_, i64>(7)?.max(0) as u64;
     let bytes_downloaded = row.get::<_, i64>(8)?.max(0) as u64;
     let error = row.get::<_, Option<String>>(10)?;
@@ -715,7 +717,13 @@ fn decode_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<MediaModelInstallJob>
         .map(|diagnostic| MediaError::from_internal("model_install", diagnostic));
     Ok(MediaModelInstallJob {
         id: row.get(0)?,
-        model_id: row.get(1)?,
+        display_name: manifest
+            .map(|manifest| manifest.display_name.to_string())
+            .unwrap_or_else(|| model_id.clone()),
+        source_url: manifest
+            .map(|manifest| manifest.source_url.to_string())
+            .unwrap_or_default(),
+        model_id,
         revision: row.get(2)?,
         status: row.get(3)?,
         manifest_digest: row.get(4)?,
@@ -750,6 +758,23 @@ pub(crate) fn get_job(
         .optional()
         .map_err(|error| format!("failed to read model installation: {error}"))?
         .ok_or_else(|| "model installation was not found".to_string())
+}
+
+pub(crate) fn list_recent_jobs(paths: &MediaRuntimePaths) -> MediaResult<Vec<MediaModelInstallJob>> {
+    let connection = database::open(paths)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT id, model_id, revision, status, manifest_digest, files_total, files_completed, bytes_total, bytes_downloaded, current_file, error, created_at, updated_at, completed_at FROM media_model_install_jobs WHERE status IN ('queued','downloading','verifying','activating','canceling') OR updated_at >= ?1 ORDER BY created_at DESC LIMIT 30",
+        )
+        .map_err(|error| format!("failed to prepare model installations: {error}"))?;
+    let since = (chrono::Utc::now() - chrono::Duration::hours(24))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let jobs = statement
+        .query_map(params![since], decode_job)
+        .map_err(|error| format!("failed to read model installations: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to decode model installations: {error}"))?;
+    Ok(jobs)
 }
 
 pub(crate) fn request_cancellation(
