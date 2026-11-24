@@ -5,7 +5,7 @@ export interface SourceEventContent {
   body: string;
 }
 
-type Path = readonly (string | number)[];
+export type Path = readonly (string | number)[];
 
 function textAt(payload: unknown, path: Path): string | null {
   let value: unknown = payload;
@@ -16,7 +16,7 @@ function textAt(payload: unknown, path: Path): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function firstText(payload: unknown, paths: readonly Path[]): string {
+export function firstText(payload: unknown, paths: readonly Path[]): string {
   for (const path of paths) {
     const text = textAt(payload, path);
     if (text) return text;

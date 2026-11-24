@@ -1,6 +1,6 @@
 "use client";
 
-import { AlarmClock } from "lucide-react";
+import { AlarmClock, MessageSquareQuote } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent, MouseEvent } from "react";
@@ -263,6 +263,19 @@ function IssueRow({
           >
             <AlarmClock aria-hidden size={12} />
             {slaTimeLeft(issue.slaDueAt, new Date())}
+          </span>
+        )}
+        {issue.requestCount > 0 && (
+          <span
+            className="cloud-issue-requests"
+            title={
+              issue.requestCount === 1
+                ? "1 customer request"
+                : `${issue.requestCount} customer requests`
+            }
+          >
+            <MessageSquareQuote aria-hidden size={12} />
+            {issue.requestCount}
           </span>
         )}
       </span>

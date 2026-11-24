@@ -13,6 +13,7 @@ import {
   teamVisibility,
 } from "./access";
 import { insertComment } from "./comments";
+import { moveCustomerRequests } from "./customer-requests";
 import type { CloudDatabase, CloudSql } from "./database";
 import { lockExecution } from "./execution/records";
 import { applyIssueChangeSet } from "./issue-changes";
@@ -158,7 +159,7 @@ export class CloudTriage {
             input.decision === "accept"
               ? await acceptedStatus(sql, actor, issue, input)
               : await canceledStatus(sql, actor, issue);
-          if (original)
+          if (original) {
             await insertIssueRelation(
               sql,
               actor,
@@ -166,6 +167,13 @@ export class CloudTriage {
               issue.id,
               original.id,
             );
+            await moveCustomerRequests(
+              sql,
+              actor.organizationId,
+              issue.id,
+              original.id,
+            );
+          }
           const revision = await applyIssueChangeSet(sql, actor, issue, {
             status: { id: status.id, revision: status.revision },
           });

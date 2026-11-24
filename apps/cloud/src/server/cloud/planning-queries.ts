@@ -27,6 +27,7 @@ export const issueSummaryColumns = `i.id, i.team_id AS "teamId", i.identifier, i
   to_char(i.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt",
   to_char(i.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
   to_char(cloud_issue_sla_due(i.organization_id,i.id) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "slaDueAt",
+  (SELECT count(*)::int FROM cloud_customer_requests cr WHERE cr.organization_id=i.organization_id AND cr.issue_id=i.id) AS "requestCount",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',l.id,'name',l.name,'color',l.color) ORDER BY lower(l.name),l.id)
     FROM cloud_issue_labels a JOIN cloud_labels l ON l.organization_id=a.organization_id AND l.id=a.label_id
     WHERE a.organization_id=i.organization_id AND a.issue_id=i.id),'[]'::jsonb) AS labels,

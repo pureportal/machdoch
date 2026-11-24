@@ -273,6 +273,7 @@ export interface CloudIssueSummary extends Omit<
   } | null;
   createdAt: string;
   slaDueAt: string | null;
+  requestCount: number;
 }
 export const issueSorts = [
   "priority",

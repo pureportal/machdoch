@@ -17,6 +17,7 @@ import {
 import type { CloudMilestone } from "@/lib/cloud-milestone-contract";
 import { IssueDeliveryTimeline } from "./issue-delivery";
 import { IssuePullRequests } from "./issue-pull-requests";
+import { IssueCustomerRequests } from "./issue-customer-requests";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
 import type {
   IssueChangeSet,
@@ -608,6 +609,7 @@ export function IssueEditor({
             state={relations}
           />
           <IssuePullRequests issueId={issue.id} />
+          <IssueCustomerRequests issueId={issue.id} writable={writable} />
           <IssueDeliveryTimeline issueId={issue.id} />
         </aside>
       </div>

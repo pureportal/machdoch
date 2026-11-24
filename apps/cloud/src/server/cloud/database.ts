@@ -77,6 +77,7 @@ export const cloudMigrations = [
   "074-loop-trigger-variables.sql",
   "075-issue-slas.sql",
   "076-project-statuses-updates.sql",
+  "077-customer-requests.sql",
 ];
 
 export interface CloudSql {

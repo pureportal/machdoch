@@ -466,6 +466,27 @@
   font-size: 12px;
   font-weight: 500;
 }
+.cloud-aside-requests > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 7px;
+  font-size: 13px;
+}
+.cloud-aside-requests > li > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.cloud-aside-requests > li > span {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
 .cloud-aside-add {
   display: grid;
   place-items: center;

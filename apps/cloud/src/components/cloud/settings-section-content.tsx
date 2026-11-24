@@ -13,6 +13,7 @@ import { AccountCredentials } from "./account-credentials";
 import { AccountSessions } from "./account-sessions";
 import { AccountTwoFactor } from "./account-two-factor";
 import { CloudConnections } from "./connections";
+import { CustomerRequestSettings } from "./customer-request-settings";
 import { ExecutionSettings } from "./execution-settings";
 import { GitAccountSettings } from "./git-accounts";
 import { GitSettings } from "./git-settings";
@@ -288,6 +289,20 @@ export async function SettingsSectionContent({
           )}
         </TeamRows>
       );
+    case "customer-requests": {
+      const [settings, customers] = await Promise.all([
+        writable ? runtime.customerRequests.settings(actor) : null,
+        runtime.customerRequests.customers(actor),
+      ]);
+      return (
+        <CustomerRequestSettings
+          workspace={workspace}
+          settings={settings}
+          customers={customers}
+          writable={writable}
+        />
+      );
+    }
     case "pulse":
       return (
         <div className="cloud-settings">

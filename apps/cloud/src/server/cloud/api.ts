@@ -37,6 +37,11 @@ import { recurrencePreviewSchema } from "../../lib/cloud-recurrence-contract";
 import { handleScheduleApi } from "./automation/api";
 import { handlePulseApi } from "./pulse/api";
 import { handleProjectStatusApi } from "./project-status-api";
+import {
+  handleCustomerRequestApi,
+  handleCustomerRequestIntake,
+  isCustomerRequestIntakeRoute,
+} from "./customer-request-api";
 import { handleSlaApi } from "./sla-api";
 import { teamResourceInputSchema } from "../../lib/cloud-team-contract";
 import {
@@ -362,6 +367,8 @@ async function route(
     return handleAutomationWebhook(runtime, request, path[2] ?? "");
   if (path[0] === "loops" && path[1] === "sources" && path.length === 5)
     return handleLoopSourceEvent(runtime, request, path);
+  if (isCustomerRequestIntakeRoute(path))
+    return handleCustomerRequestIntake(runtime, request, path);
   if (isPublicReleaseRoute(path))
     return handlePublicReleaseApi(runtime, request, path);
   if (isPublicAttachmentRoute(path))
@@ -411,6 +418,8 @@ async function route(
   if (path[0] === "loops") return handleLoopApi(runtime, request, actor);
   if (path[0] === "pulse") return handlePulseApi(runtime, request, actor);
   if (path[0] === "slas") return handleSlaApi(runtime, request, actor);
+  if (path[0] === "customers" || path[0] === "customer-requests")
+    return handleCustomerRequestApi(runtime, request, actor, path);
   if (path[0] === "project-statuses")
     return handleProjectStatusApi(runtime, request, actor);
   if (releaseRoutePrefixes.has(path[0] ?? ""))

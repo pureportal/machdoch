@@ -106,6 +106,7 @@ import { CloudTeamHomes } from "./team-homes";
 import { CloudFavorites, CloudIssueSubscriptions } from "./favorites";
 import { CloudInitiatives } from "./initiatives";
 import { CloudTriage } from "./triage";
+import { CloudCustomerRequests } from "./customer-requests";
 import { CloudSidebar } from "./sidebar";
 import { CloudSettingsStore } from "./settings-store";
 import { CloudCliLogins } from "./ai/cli-login";
@@ -192,6 +193,7 @@ export interface CloudRuntime {
   teamHomes: CloudTeamHomes;
   initiatives: CloudInitiatives;
   triage: CloudTriage;
+  customerRequests: CloudCustomerRequests;
   sidebar: CloudSidebar;
   settings: CloudSettingsStore;
   favorites: CloudFavorites;
@@ -625,6 +627,7 @@ export function createCloudRuntime(
     teamHomes: new CloudTeamHomes(database),
     initiatives,
     triage,
+    customerRequests: new CloudCustomerRequests(database, origin),
     sidebar: new CloudSidebar(database),
     settings: new CloudSettingsStore(database),
     favorites: new CloudFavorites(database),
