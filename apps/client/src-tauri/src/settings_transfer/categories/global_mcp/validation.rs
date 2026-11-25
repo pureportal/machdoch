@@ -370,6 +370,7 @@ fn validate_mcp_server(server: &Value, ids: &mut HashSet<String>) -> Result<(), 
             "description",
             "enabled",
             "preset",
+            "clientName",
             "transport",
             "auth",
             "exposure",
@@ -397,7 +398,7 @@ fn validate_mcp_server(server: &Value, ids: &mut HashSet<String>) -> Result<(), 
     {
         return Err("MCP server ids must be canonical and unique.".to_string());
     }
-    if ["title", "description", "preset", "notes"]
+    if ["title", "description", "preset", "clientName", "notes"]
         .into_iter()
         .any(|key| server.get(key).is_some_and(|value| !value.is_string()))
         || server

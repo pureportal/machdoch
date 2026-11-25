@@ -1,4 +1,5 @@
 import { mcpAppsEnabled } from "./app-settings.js";
+import { resolveMcpClientName } from "./client-identity.js";
 import { oauthCallbackExpectation, parseOAuthCallback } from "./oauth-callback.js";
 import { createCoordinatedOAuthFetch } from "./oauth-refresh.js";
 import { mcpAppMimeType, mcpAppToolUiSchema } from "@machdoch/fleet-protocol/mcp-apps";
@@ -162,11 +163,6 @@ export interface McpInteractiveOAuthOptions extends McpOperationOptions {
   callbackTimeoutMs?: number;
   openAuthorizationUrl?: (authorizationUrl: string) => Promise<void> | void;
 }
-
-const MCP_CLIENT_INFO = {
-  name: "machdoch",
-  version: "0.1.0",
-};
 
 const SUPPORTED_SAMPLING_IMAGE_MEDIA_TYPES = new Set<
   AgentModelImageInput["mediaType"]
@@ -521,7 +517,7 @@ class ConfiguredMcpOAuthProvider implements OAuthClientProvider {
     >,
     private readonly server: Pick<
       McpEffectiveServerConfig,
-      "id" | "transport" | "title" | "description" | "preset"
+      "id" | "transport" | "title" | "description" | "preset" | "clientName"
     >,
   ) {
     this.fetch = createCoordinatedOAuthFetch({
@@ -559,7 +555,7 @@ class ConfiguredMcpOAuthProvider implements OAuthClientProvider {
 
     return {
       redirect_uris: redirectUrl ? [String(redirectUrl)] : [],
-      client_name: "machdoch",
+      client_name: resolveMcpClientName(this.server),
       grant_types: redirectUrl
         ? ["authorization_code", "refresh_token"]
         : ["client_credentials"],
@@ -583,12 +579,20 @@ class ConfiguredMcpOAuthProvider implements OAuthClientProvider {
       : undefined;
 
     if (!clientId) {
-      return (
+      const registeredClient =
         this.savedClientInformation ??
         (isRecord(this.auth.clientInformation)
           ? (this.auth.clientInformation as OAuthClientInformationMixed)
-          : undefined)
-      );
+          : undefined);
+      const registeredName =
+        registeredClient && "client_name" in registeredClient
+          ? registeredClient.client_name
+          : undefined;
+
+      return registeredName === undefined ||
+        registeredName === resolveMcpClientName(this.server)
+        ? registeredClient
+        : undefined;
     }
 
     const clientSecret = this.resolveClientSecret();
@@ -1064,12 +1068,15 @@ const createClientCapabilities = (
 };
 
 const createClient = (context: McpConnectionContext): Client => {
-  return new Client(MCP_CLIENT_INFO, {
-    capabilities: createClientCapabilities(context.server),
-    enforceStrictCapabilities: false,
-    defaultTaskPollInterval: 2_500,
-    maxTaskQueueSize: 1_000,
-  });
+  return new Client(
+    { name: resolveMcpClientName(context.server), version: "0.1.0" },
+    {
+      capabilities: createClientCapabilities(context.server),
+      enforceStrictCapabilities: false,
+      defaultTaskPollInterval: 2_500,
+      maxTaskQueueSize: 1_000,
+    },
+  );
 };
 
 const createRootName = (uri: string, fallback: string): string => {
@@ -1231,6 +1238,7 @@ const createConnectionKey = (
   return createMcpMetadataHash({
     workspaceRoot: normalizeMcpWorkspaceKey(workspaceRoot),
     serverId: server.id,
+    clientName: server.clientName,
     transport: server.transport,
     auth: server.auth ?? null,
     roots: server.roots,

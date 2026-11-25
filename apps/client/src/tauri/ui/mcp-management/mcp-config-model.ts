@@ -1,3 +1,4 @@
+import { MCP_CLIENT_NAME_PRESETS } from "../../../core/mcp/client-identity.js";
 import type { McpPresetSummary } from "../runtime";
 
 export type ServerRecord = Record<string, unknown>;
@@ -101,6 +102,15 @@ export const normalizeServerId = (value: string): string => {
     .replace(/[^a-z0-9_-]+/gu, "-")
     .replace(/^-+|-+$/gu, "")
     .slice(0, 80);
+};
+
+export const CUSTOM_CLIENT_NAME_OPTION = "custom";
+
+export const getClientNameOption = (clientName: string): string => {
+  return clientName === "" ||
+    MCP_CLIENT_NAME_PRESETS.some((preset) => preset.clientName === clientName)
+    ? clientName
+    : CUSTOM_CLIENT_NAME_OPTION;
 };
 
 export const getString = (

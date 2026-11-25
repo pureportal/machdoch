@@ -128,6 +128,7 @@ export interface McpServerConfig {
   description?: string;
   enabled?: boolean;
   preset?: string;
+  clientName?: string;
   transport: McpTransportConfig;
   auth?: McpAuthConfig;
   exposure?: McpServerExposureConfig;

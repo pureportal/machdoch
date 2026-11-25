@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  CUSTOM_CLIENT_NAME_OPTION,
   createTransport,
   describeServerConnection,
+  getClientNameOption,
   getFirstMcpServerId,
   getServerKey,
   getServerStatus,
@@ -120,5 +122,14 @@ describe("MCP config model", () => {
       ["Code & CI", ["github-remote"]],
       ["More", ["unknown"]],
     ]);
+  });
+
+  it("maps a client name to its preset or the custom option", () => {
+    expect(getClientNameOption("")).toBe("");
+    expect(getClientNameOption("Claude Code")).toBe("Claude Code");
+    expect(getClientNameOption("Gemini CLI MCP Client")).toBe(
+      "Gemini CLI MCP Client",
+    );
+    expect(getClientNameOption("My Agent")).toBe(CUSTOM_CLIENT_NAME_OPTION);
   });
 });

@@ -1065,6 +1065,14 @@ const coerceServerOverride = (
     server.preset = value.preset;
   }
 
+  const clientName =
+    typeof value.clientName === "string"
+      ? normalizeOptionalString(value.clientName)
+      : undefined;
+  if (clientName) {
+    server.clientName = clientName;
+  }
+
   if (transport) {
     server.transport = transport;
   }
@@ -1367,7 +1375,9 @@ export const saveWorkspaceMcpConfig = async (
 
 export const saveUserMcpOAuthState = async (
   server: Pick<McpServerConfig, "id" | "transport"> &
-    Partial<Pick<McpServerConfig, "title" | "description" | "preset">>,
+    Partial<
+      Pick<McpServerConfig, "title" | "description" | "preset" | "clientName">
+    >,
   patch: McpOAuthStatePatch,
 ): Promise<string> => {
   const path = getUserMcpConfigPath();
@@ -1403,6 +1413,7 @@ export const saveUserMcpOAuthState = async (
         ...(server.title ? { title: server.title } : {}),
         ...(server.description ? { description: server.description } : {}),
         ...(server.preset ? { preset: server.preset } : {}),
+        ...(server.clientName ? { clientName: server.clientName } : {}),
       }),
       id: normalizedId,
       ...(!current?.transport ? { transport: server.transport } : {}),

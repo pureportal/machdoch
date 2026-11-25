@@ -1,5 +1,5 @@
 import { ExternalLink, KeyRound } from "lucide-react";
-import { useId, type JSX } from "react";
+import { useId, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
@@ -7,13 +7,19 @@ import {
   SubmitShortcut,
 } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import {
+  DEFAULT_MCP_CLIENT_NAME,
+  MCP_CLIENT_NAME_PRESETS,
+} from "../../../core/mcp/client-identity.js";
 import { ParsedField } from "../chat-session/components/settings-dialog-panels/parsed-field";
 import {
   createAuth,
   createTransport,
+  CUSTOM_CLIENT_NAME_OPTION,
   formatStringList,
   formatStringRecord,
   getAuthType,
+  getClientNameOption,
   getRecord,
   getString,
   getTransportType,
@@ -110,6 +116,56 @@ const RecordListField = ({
   </Field>
 );
 
+const ClientNameFields = ({ editor, server }: SectionProps): JSX.Element => {
+  const clientName = getString(server, "clientName");
+  const [isCustom, setIsCustom] = useState(
+    () => getClientNameOption(clientName) === CUSTOM_CLIENT_NAME_OPTION,
+  );
+  const option = isCustom
+    ? CUSTOM_CLIENT_NAME_OPTION
+    : getClientNameOption(clientName);
+
+  return (
+    <>
+      <Field label="Client">
+        <select
+          value={option}
+          disabled={editor.disabled}
+          onChange={(event) => {
+            const value = event.target.value;
+            const custom = value === CUSTOM_CLIENT_NAME_OPTION;
+            setIsCustom(custom);
+            if (!custom) {
+              editor.updateSelectedField("clientName", value);
+            }
+          }}
+          className={MCP_SELECT_CLASS}
+        >
+          <option value="">{DEFAULT_MCP_CLIENT_NAME}</option>
+          {MCP_CLIENT_NAME_PRESETS.map((preset) => (
+            <option key={preset.clientName} value={preset.clientName}>
+              {preset.label}
+            </option>
+          ))}
+          <option value={CUSTOM_CLIENT_NAME_OPTION}>Custom</option>
+        </select>
+      </Field>
+      {option === CUSTOM_CLIENT_NAME_OPTION ? (
+        <Field label="Client name">
+          <Input
+            value={clientName}
+            disabled={editor.disabled}
+            onChange={(event) =>
+              editor.updateSelectedField("clientName", event.target.value)
+            }
+            className={MCP_TEXT_INPUT_CLASS}
+          />
+        </Field>
+      ) : null}
+    </>
+  );
+};
+
 export const McpSetupSection = ({
   editor,
   server,
@@ -154,6 +210,11 @@ export const McpSetupSection = ({
               className={MCP_PROSE_TEXTAREA_CLASS}
             />
           </Field>
+          <ClientNameFields
+            key={editor.selectedServerKey}
+            editor={editor}
+            server={server}
+          />
         </div>
       </McpSection>
 

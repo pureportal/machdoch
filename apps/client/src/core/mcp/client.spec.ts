@@ -950,6 +950,78 @@ describe("McpClientManager lifecycle", () => {
     expect(persistedServer?.auth).not.toHaveProperty("authorizationUrl");
   });
 
+  it("registers OAuth clients under the configured client name", async () => {
+    const workspaceRoot = await createWorkspace();
+    const getAuthProvider = async (
+      server: McpEffectiveServerConfig,
+    ): Promise<OAuthClientProvider> => {
+      let capturedTransport: Transport | undefined;
+      const manager = new McpClientManager({
+        createClient: () =>
+          createClient({
+            connect: vi.fn(async (transport: Transport) => {
+              capturedTransport = transport;
+            }),
+          } as Partial<Client>),
+        loadRuntimeEnvironment: async () => ({}),
+      });
+
+      await manager.getConnection(workspaceRoot, server);
+
+      const authProvider = (
+        capturedTransport as { _authProvider?: OAuthClientProvider } | undefined
+      )?._authProvider;
+
+      if (!authProvider) {
+        throw new Error(
+          "Expected the MCP transport to receive an OAuth provider.",
+        );
+      }
+
+      return authProvider;
+    };
+    const registeredClient = {
+      client_id: "registered-client",
+      client_name: "machdoch",
+      redirect_uris: ["http://127.0.0.1:43110/oauth/callback"],
+    };
+    const server = createServer({
+      transport: {
+        type: "streamable-http",
+        url: "https://example.com/mcp",
+      },
+      auth: {
+        type: "oauth",
+        redirectUrl: "http://127.0.0.1:43110/oauth/callback",
+        clientInformation: registeredClient,
+      },
+    });
+
+    const defaultProvider = await getAuthProvider(server);
+    expect(defaultProvider.clientMetadata.client_name).toBe("machdoch");
+    expect(defaultProvider.clientInformation()).toEqual(registeredClient);
+
+    const renamedProvider = await getAuthProvider({
+      ...server,
+      clientName: "Claude Code",
+    });
+    expect(renamedProvider.clientMetadata.client_name).toBe("Claude Code");
+    expect(renamedProvider.clientInformation()).toBeUndefined();
+
+    const unnamedProvider = await getAuthProvider({
+      ...server,
+      clientName: "Claude Code",
+      auth: {
+        type: "oauth",
+        redirectUrl: "http://127.0.0.1:43110/oauth/callback",
+        clientInformation: { client_id: "registered-client" },
+      },
+    });
+    expect(unnamedProvider.clientInformation()).toEqual({
+      client_id: "registered-client",
+    });
+  });
+
   it("receives loopback callbacks during interactive OAuth authorization", async () => {
     const workspaceRoot = await createWorkspace();
     const port = await getAvailableLoopbackPort();

@@ -467,4 +467,32 @@ describe("loadMcpConfig", () => {
       ],
     });
   });
+
+  it("parses a trimmed client name and drops blank ones", () => {
+    expect(
+      coerceMcpConfigOverride({
+        servers: {
+          figma: { clientName: "  Claude Code  " },
+          linear: { clientName: "   " },
+        },
+      })?.servers,
+    ).toEqual([
+      { id: "figma", clientName: "Claude Code" },
+      { id: "linear" },
+    ]);
+  });
+
+  it("keeps the client name when OAuth state creates a user override", async () => {
+    const workspaceRoot = await createWorkspace();
+    const server = createMcpConfigFromPreset("figma-remote", {
+      clientName: "Claude Code",
+    });
+
+    await saveUserMcpOAuthState(server, { codeVerifier: "verifier-1" });
+
+    const config = await loadMcpConfig(workspaceRoot);
+    expect(
+      config.servers.find((entry) => entry.id === server.id)?.clientName,
+    ).toBe("Claude Code");
+  });
 });
