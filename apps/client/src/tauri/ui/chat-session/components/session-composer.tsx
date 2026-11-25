@@ -102,8 +102,6 @@ import { listRalphFlows, showRalphFlow } from "../../runtime";
 const loadContextPackUsage = (workspaceRoot: string) =>
   loadRalphContextPackUsage(workspaceRoot, listRalphFlows, showRalphFlow);
 import { WorkspacePicker } from "./workspace-picker";
-import { openWorkspaceFeature } from "./open-workspace-feature";
-import { WorkspaceStatusStrip } from "../../workspace-management/workspace-status-strip";
 import { useProviderModelCatalog } from "../../use-provider-model-catalog";
 
 export interface SessionComposerProps {
@@ -475,31 +473,20 @@ export const SessionComposer = ({
         : speechInput.enabled
           ? "Speak to text"
           : "Configure speak to text";
-  const statusWorkspaceRoot = activeSession.workspace?.trim() || null;
   const workspacePicker = (
-    <div className="flex min-w-0 items-center gap-1">
-      <WorkspacePicker
-        currentWorkspace={activeSession.workspace}
-        workspaceLabel={composerWorkspaceLabel}
-        recentWorkspaces={recentWorkspaces}
-        hasActiveWorkspace={hasActiveWorkspace}
-        highlightSelection={false}
-        workspaceLocked={workspaceLocked}
-        workspaceSwitchBlocked={workspaceSwitchBlocked}
-        buttonClassName="app-composer-toolbar-pill app-composer-toolbar-control h-8 rounded-full px-3 text-xs font-medium shadow-none"
-        onSelectWorkspace={onWorkspaceSelection}
-        onRemoveWorkspace={onWorkspaceRemoval}
-        onChooseNewWorkspace={onSelectFolder}
-      />
-      {statusWorkspaceRoot ? (
-        <WorkspaceStatusStrip
-          workspaceRoot={statusWorkspaceRoot}
-          onOpen={(feature) =>
-            openWorkspaceFeature(statusWorkspaceRoot, feature)
-          }
-        />
-      ) : null}
-    </div>
+    <WorkspacePicker
+      currentWorkspace={activeSession.workspace}
+      workspaceLabel={composerWorkspaceLabel}
+      recentWorkspaces={recentWorkspaces}
+      hasActiveWorkspace={hasActiveWorkspace}
+      highlightSelection={false}
+      workspaceLocked={workspaceLocked}
+      workspaceSwitchBlocked={workspaceSwitchBlocked}
+      buttonClassName="app-composer-toolbar-pill app-composer-toolbar-control h-8 rounded-full px-3 text-xs font-medium shadow-none"
+      onSelectWorkspace={onWorkspaceSelection}
+      onRemoveWorkspace={onWorkspaceRemoval}
+      onChooseNewWorkspace={onSelectFolder}
+    />
   );
   const toolbarControls = (
     <>
