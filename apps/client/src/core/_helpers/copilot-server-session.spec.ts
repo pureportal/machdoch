@@ -106,14 +106,14 @@ describe("CopilotServerSession", () => {
     });
   });
 
-  it("finishes at assistant.idle, keeps the answer and shuts the server down", () => {
+  it("finishes at session.idle, keeps the answer and shuts the server down", () => {
     const harness = createHarness();
     disposeAll.push(() => harness.session.dispose());
     harness.open();
     harness.event("session.usage_info", { tokenLimit: 100_000, currentTokens: 25_000 }, { ephemeral: true });
     harness.event("assistant.usage", { inputTokens: 900, outputTokens: 40, cacheReadTokens: 300 }, { ephemeral: true });
     harness.event("assistant.message", { messageId: "m1", content: "All done.", toolRequests: [] });
-    const update = harness.event("assistant.idle", {}, { ephemeral: true });
+    const update = harness.event("session.idle", {}, { ephemeral: true });
 
     expect(update.resultExitCode).toBe(0);
     expect(harness.session.getFinalOutput()).toBe("All done.");
@@ -130,6 +130,24 @@ describe("CopilotServerSession", () => {
       capabilities: [],
       usage: { contextUsedTokens: 25_000, contextWindowTokens: 100_000, inputTokens: 900 },
     });
+  });
+
+  it("keeps the turn open at assistant.idle while background work is pending", () => {
+    const harness = createHarness();
+    disposeAll.push(() => harness.session.dispose());
+    harness.open();
+    harness.event("assistant.message", { messageId: "m1", content: "Researching in the background.", toolRequests: [] });
+    const update = harness.event("assistant.idle", {}, { ephemeral: true });
+
+    expect(update.resultExitCode).toBeUndefined();
+    expect(harness.last("session.destroy")).toBeUndefined();
+    expect(() => harness.session.controls.steer?.("Also check docs.")).not.toThrow();
+
+    harness.event("system.notification", { content: "Background shell completed." });
+    harness.event("assistant.message", { messageId: "m2", content: "Research complete.", toolRequests: [] });
+    expect(harness.event("session.idle", {}, { ephemeral: true }).resultExitCode).toBe(0);
+    expect(harness.session.getFinalOutput()).toBe("Research complete.");
+    expect(harness.last("session.destroy")?.params).toEqual({ sessionId: SESSION_ID });
   });
 
   it("shows ask_user as a question card and answers with the chosen option", () => {
@@ -212,7 +230,7 @@ describe("CopilotServerSession", () => {
     expect(harness.session.live.snapshot().steering?.at(-1)).toMatchObject({ text: "Keep it short.", status: "delivered" });
 
     harness.session.controls.steer?.("One more thing.");
-    harness.event("assistant.idle", {}, { ephemeral: true });
+    harness.event("session.idle", {}, { ephemeral: true });
     expect(harness.session.live.snapshot().steering?.at(-1)).toMatchObject({ text: "One more thing.", status: "failed" });
   });
 
@@ -294,7 +312,7 @@ describe("CopilotServerSession", () => {
     expect(harness.session.live.getTask("0")).toMatchObject({ status: "stopped", canStop: false });
     expect(() => harness.session.controls.stopTask?.("0")).toThrow("not running");
 
-    harness.event("assistant.idle", {}, { ephemeral: true });
+    harness.event("session.idle", { aborted: true }, { ephemeral: true });
     expect(harness.session.live.getTask("1")?.status).toBe("stopped");
     expect(harness.session.live.snapshot().notices?.at(-1)?.text).toBe("Stopped 1 background task when the turn ended.");
   });
@@ -328,7 +346,7 @@ describe("CopilotServerSession", () => {
     const harness = createHarness();
     disposeAll.push(() => harness.session.dispose());
     harness.open();
-    harness.receive({ method: "session.event", params: { sessionId: "other", event: { type: "assistant.idle", data: {} } } });
+    harness.receive({ method: "session.event", params: { sessionId: "other", event: { type: "session.idle", data: {} } } });
     expect(harness.session.hasTerminalResult()).toBe(false);
     expect(harness.last("session.destroy")).toBeUndefined();
   });

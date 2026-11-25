@@ -464,7 +464,6 @@ export class CopilotServerSession implements InteractiveAgentSession {
     this.trackEvent(type, data, agentId);
     if (this.terminal) return empty;
     if (!agentId) {
-      if (type === "assistant.idle") return this.finishTurn(this.complete());
       if (type === "session.idle") {
         return this.finishTurn(
           data.aborted === true ? this.fail("The turn was interrupted.") : this.complete(),
