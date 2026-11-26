@@ -6,12 +6,11 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { inboxKinds } from "@/lib/cloud-inbox-contract";
 import {
   notificationChannelLabels,
   notificationChannels,
+  notificationEventGroups,
   notificationEventLabels,
   type NotificationDevice,
   type NotificationSchedule,
@@ -115,44 +114,51 @@ function PreferenceMatrix({ settings }: { settings: NotificationSettings }) {
             ))}
           </tr>
         </thead>
-        <tbody>
-          {inboxKinds.map((kind) => (
-            <tr key={kind}>
-              <th scope="row">{notificationEventLabels[kind]}</th>
-              {notificationChannels.map((channel) => {
-                const key = `${kind}:${channel}`;
-                const unavailable =
-                  channel === "email" && !settings.emailAvailable;
-                return (
-                  <td key={channel}>
-                    <input
-                      type="checkbox"
-                      aria-label={`${notificationEventLabels[kind]} by ${notificationChannelLabels[channel]}`}
-                      title={
-                        unavailable
-                          ? "Email is not set up for this workspace"
-                          : undefined
-                      }
-                      checked={
-                        !unavailable && settings.preferences[kind][channel]
-                      }
-                      disabled={unavailable || pending === key}
-                      onChange={(event) => {
-                        const enabled = event.target.checked;
-                        void run(key, () =>
-                          cloudRequest("notification-settings/preferences", {
-                            method: "PUT",
-                            body: { kind, channel, enabled },
-                          }),
-                        );
-                      }}
-                    />
-                  </td>
-                );
-              })}
+        {notificationEventGroups.map((group) => (
+          <tbody key={group.label}>
+            <tr className="cloud-notification-group">
+              <th scope="colgroup" colSpan={notificationChannels.length + 1}>
+                {group.label}
+              </th>
             </tr>
-          ))}
-        </tbody>
+            {group.kinds.map((kind) => (
+              <tr key={kind}>
+                <th scope="row">{notificationEventLabels[kind]}</th>
+                {notificationChannels.map((channel) => {
+                  const key = `${kind}:${channel}`;
+                  const unavailable =
+                    channel === "email" && !settings.emailAvailable;
+                  return (
+                    <td key={channel}>
+                      <input
+                        type="checkbox"
+                        aria-label={`${notificationEventLabels[kind]} by ${notificationChannelLabels[channel]}`}
+                        title={
+                          unavailable
+                            ? "Email is not set up for this workspace"
+                            : undefined
+                        }
+                        checked={
+                          !unavailable && settings.preferences[kind][channel]
+                        }
+                        disabled={unavailable || pending === key}
+                        onChange={(event) => {
+                          const enabled = event.target.checked;
+                          void run(key, () =>
+                            cloudRequest("notification-settings/preferences", {
+                              method: "PUT",
+                              body: { kind, channel, enabled },
+                            }),
+                          );
+                        }}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        ))}
       </table>
     </section>
   );
@@ -189,53 +195,58 @@ function ScheduleSettings({
       <header>
         <h2 id="notification-schedule">Schedule</h2>
       </header>
-      <Field label="Snooze" htmlFor="notification-snooze">
-        <Select
-          id="notification-snooze"
-          value={snoozed ? "current" : ""}
+      <div className="cloud-notification-snooze">
+        <Field label="Snooze" htmlFor="notification-snooze">
+          <Select
+            id="notification-snooze"
+            value={snoozed ? "current" : ""}
+            disabled={pending === "schedule"}
+            onChange={(event) => {
+              const minutes = Number(event.target.value);
+              save({
+                ...schedule,
+                snoozedUntil: minutes
+                  ? new Date(Date.now() + minutes * 60_000).toISOString()
+                  : null,
+              });
+            }}
+          >
+            <option value="">Off</option>
+            {snoozed && (
+              <option value="current" disabled>
+                {`Until ${new Date(schedule.snoozedUntil!).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`}
+              </option>
+            )}
+            {snoozeOptions.map((option) => (
+              <option key={option.minutes} value={option.minutes}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+      <div className="cloud-loop-switch-row">
+        <span id="notification-quiet-hours">Quiet hours</span>
+        <button
+          type="button"
+          role="switch"
+          className="cloud-automation-switch"
+          aria-checked={quietHours !== null}
+          aria-labelledby="notification-quiet-hours"
           disabled={pending === "schedule"}
-          onChange={(event) => {
-            const minutes = Number(event.target.value);
+          onClick={() =>
             save({
               ...schedule,
-              snoozedUntil: minutes
-                ? new Date(Date.now() + minutes * 60_000).toISOString()
-                : null,
-            });
-          }}
-        >
-          <option value="">Off</option>
-          {snoozed && (
-            <option value="current" disabled>
-              {`Until ${new Date(schedule.snoozedUntil!).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`}
-            </option>
-          )}
-          {snoozeOptions.map((option) => (
-            <option key={option.minutes} value={option.minutes}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <Label className="cloud-automation-check">
-        <input
-          type="checkbox"
-          checked={quietHours !== null}
-          disabled={pending === "schedule"}
-          onChange={(event) =>
-            save({
-              ...schedule,
-              quietHours: event.target.checked
-                ? { start: 22 * 60, end: 7 * 60 }
-                : null,
-              timeZone: event.target.checked
-                ? Intl.DateTimeFormat().resolvedOptions().timeZone
-                : schedule.timeZone,
+              quietHours:
+                quietHours === null ? { start: 22 * 60, end: 7 * 60 } : null,
+              timeZone:
+                quietHours === null
+                  ? Intl.DateTimeFormat().resolvedOptions().timeZone
+                  : schedule.timeZone,
             })
           }
         />
-        Quiet hours
-      </Label>
+      </div>
       {quietHours && (
         <div className="cloud-notification-quiet-hours">
           <Field label="From" htmlFor="notification-quiet-start">
@@ -415,7 +426,9 @@ function Devices({ devices }: { devices: NotificationDevice[] }) {
           </Button>
         )}
       </header>
-      {devices.length > 0 && (
+      {devices.length === 0 ? (
+        <p className="cloud-settings-empty">No devices</p>
+      ) : (
         <ul className="cloud-member-list">
           {devices.map((device) => (
             <li key={device.id}>

@@ -22,6 +22,11 @@ export function relayedPrompt(body: string): string | null {
   return prompt || null;
 }
 
+const relaySourceLabels: Record<AgentRelaySource, string> = {
+  issue_comment: "issue comment",
+  pull_request_comment: "pull request comment",
+};
+
 export function relayLabel(relay: AgentRelay): string {
-  return `${relay.author} relayed by machdoch`;
+  return `${relay.author} · from ${relaySourceLabels[relay.source]}`;
 }

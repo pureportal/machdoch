@@ -251,6 +251,23 @@
   height: 16px;
   accent-color: var(--primary);
 }
+.cloud-notification-matrix .cloud-notification-group > th {
+  padding-top: 16px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+.cloud-notification-matrix tbody tr:not(.cloud-notification-group) > th {
+  padding-left: 12px;
+}
+.cloud-notification-snooze,
+.cloud-setting-narrow {
+  max-width: 280px;
+}
+.cloud-settings-empty {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
 @media (max-width: 1100px) {
   .cloud-project-directory > li {
     grid-template-columns: auto minmax(0, 1fr) minmax(110px, 150px) 28px auto;

@@ -28,5 +28,5 @@ it("ignores comments without a standalone @agent mention", () => {
 it("labels relayed turns with their author", () => {
   expect(
     relayLabel({ source: "pull_request_comment", author: "ada", url: null }),
-  ).toBe("ada relayed by machdoch");
+  ).toBe("ada · from pull request comment");
 });

@@ -25,13 +25,38 @@ export const notificationEventLabels: Record<InboxKind, string> = {
   status_changed: "Status changes",
   pull_request: "Pull requests",
   task_finished: "AI tasks",
-  loop_input: "Loop input",
-  loop_approval: "Loop approvals",
-  loop_message: "Loop messages",
+  loop_input: "Automation input",
+  loop_approval: "Automation approvals",
+  loop_message: "Automation messages",
   sla_breached: "SLA breaches",
   project_update_due: "Project updates due",
   project_update_drafted: "Project update drafts",
 };
+
+export const notificationEventGroups: readonly {
+  label: string;
+  kinds: readonly InboxKind[];
+}[] = [
+  {
+    label: "Issues",
+    kinds: [
+      "assigned",
+      "mentioned",
+      "commented",
+      "status_changed",
+      "sla_breached",
+    ],
+  },
+  { label: "Code & agents", kinds: ["pull_request", "task_finished"] },
+  {
+    label: "Automations",
+    kinds: ["loop_input", "loop_approval", "loop_message"],
+  },
+  {
+    label: "Projects",
+    kinds: ["project_update_due", "project_update_drafted"],
+  },
+];
 
 const urgentKinds = new Set<InboxKind>([
   "assigned",

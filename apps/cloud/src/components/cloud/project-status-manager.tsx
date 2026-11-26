@@ -59,78 +59,83 @@ export function ProjectStatusManager({
           {error}
         </p>
       )}
-      {projectStatuses.map((category) => {
-        const group = statuses.filter((status) => status.category === category);
-        return (
-          <section
-            key={category}
-            className="cloud-settings-section"
-            aria-label={projectStatusLabels[category]}
-          >
-            <header>
-              <h2>{projectStatusLabels[category]}</h2>
-              {writable && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => edit({ kind: "create", category })}
-                >
-                  <Plus />
-                  New status
-                </Button>
-              )}
-            </header>
-            <ul className="cloud-setting-list">
-              {group.map((status, index) => (
-                <li key={status.id}>
-                  {writable ? (
-                    <button
-                      type="button"
-                      aria-label={`Rename ${status.name}`}
-                      onClick={() => edit({ kind: "rename", status })}
-                    >
+      <section className="cloud-settings-section" aria-label="Statuses">
+        {projectStatuses.map((category) => {
+          const group = statuses.filter(
+            (status) => status.category === category,
+          );
+          const movable = writable && group.length > 1;
+          return (
+            <div
+              key={category}
+              className="cloud-status-group"
+              role="group"
+              aria-label={projectStatusLabels[category]}
+            >
+              <header>
+                <h3>{projectStatusLabels[category]}</h3>
+                {writable && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`New ${projectStatusLabels[category]} status`}
+                    onClick={() => edit({ kind: "create", category })}
+                  >
+                    <Plus />
+                  </Button>
+                )}
+              </header>
+              <ul className="cloud-setting-list">
+                {group.map((status, index) => (
+                  <li key={status.id}>
+                    {writable ? (
+                      <button
+                        type="button"
+                        aria-label={`Rename ${status.name}`}
+                        onClick={() => edit({ kind: "rename", status })}
+                      >
+                        <span>{status.name}</span>
+                      </button>
+                    ) : (
                       <span>{status.name}</span>
-                    </button>
-                  ) : (
-                    <span>{status.name}</span>
-                  )}
-                  {writable && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Move ${status.name} up`}
-                        disabled={index === 0}
-                        onClick={() => void swap(status, group[index - 1]!)}
-                      >
-                        <ArrowUp />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Move ${status.name} down`}
-                        disabled={index === group.length - 1}
-                        onClick={() => void swap(status, group[index + 1]!)}
-                      >
-                        <ArrowDown />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Delete ${status.name}`}
-                        disabled={group.length === 1}
-                        onClick={() => edit({ kind: "delete", status })}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        );
-      })}
+                    )}
+                    {movable && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Move ${status.name} up`}
+                          disabled={index === 0}
+                          onClick={() => void swap(status, group[index - 1]!)}
+                        >
+                          <ArrowUp />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Move ${status.name} down`}
+                          disabled={index === group.length - 1}
+                          onClick={() => void swap(status, group[index + 1]!)}
+                        >
+                          <ArrowDown />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Delete ${status.name}`}
+                          onClick={() => edit({ kind: "delete", status })}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </section>
       <FormDialog
         open={editing !== null}
         onOpenChange={(open) => {

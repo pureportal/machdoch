@@ -1,14 +1,22 @@
 import { describe, expect, it } from "vitest";
+import { inboxKinds } from "./cloud-inbox-contract";
 import {
   chatWebhookAllowed,
   deliveryHold,
   localMinutes,
+  notificationEventGroups,
   notificationPreferenceMatrix,
   notificationScheduleSchema,
   pushEndpointAllowed,
 } from "./notification-preferences";
 
 describe("notification preferences", () => {
+  it("groups every notification event exactly once", () => {
+    const grouped = notificationEventGroups.flatMap((group) => group.kinds);
+    expect(new Set(grouped).size).toBe(grouped.length);
+    expect([...grouped].sort()).toEqual([...inboxKinds].sort());
+  });
+
   it("applies overrides on top of per-event channel defaults", () => {
     const matrix = notificationPreferenceMatrix([
       { kind: "commented", channel: "email", enabled: true },

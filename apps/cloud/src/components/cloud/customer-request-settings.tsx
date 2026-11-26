@@ -7,7 +7,6 @@ import { CopyField } from "@/components/copy-field";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import {
@@ -75,31 +74,33 @@ function IntakeSettings({
       <header>
         <h2 id="customer-request-intake">Intake</h2>
       </header>
-      <Field label="Triage team" htmlFor="customer-request-team">
-        <Select
-          id="customer-request-team"
-          value={settings.teamId ?? ""}
-          disabled={pending === "team"}
-          onChange={(event) => {
-            const teamId = event.target.value;
-            void run("team", () =>
-              cloudRequest("customer-requests/settings", {
-                method: "PUT",
-                body: { teamId },
-              }),
-            );
-          }}
-        >
-          <option value="" disabled>
-            Choose team
-          </option>
-          {workspace.teams.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
+      <div className="cloud-setting-narrow">
+        <Field label="Triage team" htmlFor="customer-request-team">
+          <Select
+            id="customer-request-team"
+            value={settings.teamId ?? ""}
+            disabled={pending === "team"}
+            onChange={(event) => {
+              const teamId = event.target.value;
+              void run("team", () =>
+                cloudRequest("customer-requests/settings", {
+                  method: "PUT",
+                  body: { teamId },
+                }),
+              );
+            }}
+          >
+            <option value="" disabled>
+              Choose team
             </option>
-          ))}
-        </Select>
-      </Field>
+            {workspace.teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
       <ul className="cloud-member-list">
         {settings.channels.map((state) => (
           <li key={state.channel}>
@@ -124,26 +125,23 @@ function IntakeSettings({
               <RefreshCw />
               {state.configured ? "Rotate secret" : "Create secret"}
             </Button>
-            <Label className="cloud-automation-check">
-              <input
-                type="checkbox"
-                checked={state.enabled}
-                disabled={pending === state.channel}
-                onChange={(event) => {
-                  const enabled = event.target.checked;
-                  void run(state.channel, () =>
-                    cloudRequest(
-                      `customer-requests/channels/${state.channel}`,
-                      {
-                        method: "PATCH",
-                        body: { enabled },
-                      },
-                    ),
-                  );
-                }}
-              />
-              On
-            </Label>
+            <button
+              type="button"
+              role="switch"
+              className="cloud-automation-switch"
+              aria-checked={state.enabled}
+              aria-label={requestChannelLabels[state.channel]}
+              disabled={pending === state.channel}
+              onClick={() => {
+                const enabled = !state.enabled;
+                void run(state.channel, () =>
+                  cloudRequest(`customer-requests/channels/${state.channel}`, {
+                    method: "PATCH",
+                    body: { enabled },
+                  }),
+                );
+              }}
+            />
           </li>
         ))}
       </ul>
