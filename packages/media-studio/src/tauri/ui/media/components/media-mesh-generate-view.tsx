@@ -30,7 +30,7 @@ import { Media3dModelPicker } from "./media-3d-model-picker";
 import { Media3dViewer } from "./media-3d-viewer";
 import { MediaAssetBrowser } from "./media-asset-browser";
 import { MediaGenerationJobs } from "./media-generation-jobs";
-import { MediaModelInstallButton } from "./media-model-install-button";
+import { MediaModelDownload } from "./media-model-download";
 import { MediaParameterFields } from "./media-parameter-controls";
 import { MediaSaveAssetButton } from "./media-save-asset-button";
 import { MediaAssetPreview } from "./media-visual-preview";
@@ -274,7 +274,6 @@ export const MediaMeshGenerateView = ({
               models={models}
               selectedModelId={selectedModel?.id ?? null}
               onSelect={onSelectModel}
-              onInstalled={onModelInstalled}
             />
             <section className="space-y-2">
               <h2 className="text-sm font-medium text-slate-200">Views</h2>
@@ -318,14 +317,14 @@ export const MediaMeshGenerateView = ({
             {cutoutModel && cutoutMissing ? (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2.5 text-sm text-slate-300">
                 <span>Views with busy backgrounds need {cutoutModel.displayName} for a clean cutout.</span>
-                <MediaModelInstallButton
+                <MediaModelDownload
                   model={cutoutModel}
                   onInstalled={onModelInstalled}
                   variant="outline"
                   size="sm"
                 >
                   Install
-                </MediaModelInstallButton>
+                </MediaModelDownload>
               </div>
             ) : null}
 

@@ -5397,6 +5397,11 @@ export const MediaStudio = ({
               onSelectObjectModel={selectObjectModel}
               onModelInstalled={async () => {
                 await refreshModelCatalog();
+                if (
+                  runtimeStatus?.mode === "native" &&
+                  !runtimeStatus.localDiffusers.ready
+                )
+                  void runtimeSetup.start();
               }}
               assetMetadata={state.assetMetadata}
               categories={state.categories}

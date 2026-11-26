@@ -42,6 +42,7 @@ class MediaDownloadMonitor {
   private readonly samples = new Map<string, { bytes: number; time: number }>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private polling = false;
+  private pollRequested = false;
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -62,8 +63,12 @@ class MediaDownloadMonitor {
   }
 
   private async poll(): Promise<void> {
-    if (this.polling) return;
+    if (this.polling) {
+      this.pollRequested = true;
+      return;
+    }
     this.polling = true;
+    this.pollRequested = false;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     try {
@@ -87,6 +92,10 @@ class MediaDownloadMonitor {
     }
     for (const listener of this.listeners) listener();
     if (this.listeners.size === 0) return;
+    if (this.pollRequested) {
+      void this.poll();
+      return;
+    }
     const active =
       this.snapshot.installJobs.some(isMediaModelInstallJobActive) ||
       isMediaRuntimeSetupActive(this.snapshot.runtimeSetup);

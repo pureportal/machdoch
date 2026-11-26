@@ -183,7 +183,6 @@ export const MediaSplatGenerateView = ({
               models={models}
               selectedModelId={selectedModel?.id ?? null}
               onSelect={onSelectModel}
-              onInstalled={onModelInstalled}
             />
             <section className="space-y-2">
               <div className="flex items-center justify-between gap-3">
