@@ -172,7 +172,7 @@ it("stops killed loops and pauses after repeated failures", async () => {
   await settle();
   expect(await loops().runDetail(owner, waiting)).toMatchObject({
     state: "skipped",
-    error: "The loop was stopped.",
+    error: "The automation was stopped.",
   });
   expect(await comments(issue.id)).toEqual([]);
 }, 60_000);

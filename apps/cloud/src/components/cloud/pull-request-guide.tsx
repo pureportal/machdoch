@@ -79,7 +79,7 @@ function GuideRequest({
   if (models.loaded && !models.choices.length)
     return (
       <p className="cloud-pull-request-muted">
-        {models.error || "Add an AI provider to generate a guide."}
+        {models.error || "Add an AI provider to generate a walkthrough."}
       </p>
     );
   return (
@@ -126,7 +126,7 @@ function GuideRequest({
       </Select>
       <Button type="submit" size="sm" disabled={!models.loaded || pending}>
         <Sparkles aria-hidden="true" />
-        Generate guide
+        Generate walkthrough
       </Button>
     </form>
   );
@@ -146,13 +146,13 @@ export function PullRequestGuide({
         {error}
       </p>
     );
-  if (!state) return <LoadingState label="Loading guide…" />;
+  if (!state) return <LoadingState label="Loading walkthrough…" />;
   const guide = state.guide;
   if (guide?.state === "waiting")
     return (
       <p className="cloud-review-guide-writing" role="status">
         <LoaderCircle size={14} aria-hidden="true" />
-        Writing guide…
+        Writing walkthrough…
       </p>
     );
   if (guide?.state === "ready")

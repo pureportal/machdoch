@@ -246,7 +246,7 @@ export const automationTemplates: AutomationTemplate[] = [
         context,
         "Merge approved pull requests",
         gitTrigger(["review_approved"]),
-        [{ kind: "git_merge", method: "squash", identity: "organization" }],
+        [{ kind: "git_merge", method: "squash" }],
       ),
   },
   {
@@ -260,7 +260,7 @@ export const automationTemplates: AutomationTemplate[] = [
         context,
         "Retarget stacked pull requests",
         gitTrigger(["stack_base_merged"]),
-        [{ kind: "git_retarget", identity: "organization" }],
+        [{ kind: "git_retarget" }],
       ),
   },
   {

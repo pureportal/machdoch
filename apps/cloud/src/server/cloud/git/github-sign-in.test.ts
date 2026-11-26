@@ -74,55 +74,45 @@ async function until(check: () => Promise<boolean>) {
   }
 }
 
-it("connects GitHub with a device code instead of a pasted token", async () => {
-  const signIn = new CloudGitHubSignIn(
-    database,
-    runtime.git.connections,
-    runtime.git.accounts,
-    { file: process.execPath, prefixArgs: [join(directory, "gh.mjs")] },
-  );
-  expect(await signIn.start(owner, "connection")).toMatchObject({
+it("links a personal GitHub account with a device code", async () => {
+  const signIn = new CloudGitHubSignIn(database, runtime.git.accounts, {
+    file: process.execPath,
+    prefixArgs: [join(directory, "gh.mjs")],
+  });
+  expect(await signIn.start(owner)).toMatchObject({
     state: "waiting",
     url: "https://github.com/login/device",
     code: "AB12-CD34",
   });
-  await until(
-    async () => (await signIn.get(owner, "connection")).state !== "waiting",
-  );
-  expect(await signIn.get(owner, "connection")).toMatchObject({
+  await until(async () => (await signIn.get(owner)).state !== "waiting");
+  expect(await signIn.get(owner)).toMatchObject({
     state: "signed-in",
     account: "octocat",
   });
-  const [connection] = (await runtime.git.connections.get(owner)).connections;
-  expect(connection).toMatchObject({
-    account: "octocat",
-    apiUrl: "https://api.github.com",
-    automate: true,
-  });
+  expect((await runtime.git.accounts.get(owner)).accounts.github).toMatchObject(
+    { login: "octocat", apiUrl: "https://api.github.com" },
+  );
+  expect((await runtime.git.connections.get(owner)).connections).toEqual([]);
   expect(authorizations).toContain(`Bearer ${token}`);
   const [login] = (await readFile(join(directory, "calls"), "utf8"))
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line) as string[]);
   expect(login).toEqual(
-    expect.arrayContaining(["--web", "--scopes", "admin:repo_hook,workflow"]),
+    expect.arrayContaining(["--web", "--scopes", "repo,workflow,read:org"]),
   );
   await Promise.all([signIn.close(), signIn.close()]);
 });
 
-it("cancels sign-in before storing a GitHub connection", async () => {
-  const signIn = new CloudGitHubSignIn(
-    database,
-    runtime.git.connections,
-    runtime.git.accounts,
-    { file: process.execPath, prefixArgs: [join(directory, "gh.mjs")] },
-  );
-  expect(await signIn.start(owner, "connection")).toMatchObject({
-    state: "waiting",
+it("cancels sign-in before storing a GitHub account", async () => {
+  const signIn = new CloudGitHubSignIn(database, runtime.git.accounts, {
+    file: process.execPath,
+    prefixArgs: [join(directory, "gh.mjs")],
   });
-  expect(await signIn.cancel(owner, "connection")).toMatchObject({
-    state: "signed-out",
-  });
-  expect((await runtime.git.connections.get(owner)).connections).toEqual([]);
+  expect(await signIn.start(owner)).toMatchObject({ state: "waiting" });
+  expect(await signIn.cancel(owner)).toMatchObject({ state: "signed-out" });
+  expect(
+    (await runtime.git.accounts.get(owner)).accounts.github,
+  ).toBeUndefined();
   await signIn.close();
 });

@@ -87,6 +87,7 @@ const pulls = [
 function pullJson(pull) {
   return {
     number: pull.number,
+    node_id: `PR_${pull.number}`,
     title: pull.title,
     body: pull.body,
     html_url: `https://github.com/${repository}/pull/${pull.number}`,
@@ -103,6 +104,7 @@ function pullJson(pull) {
     changed_files: pull.files,
     updated_at: ago(pull.updated),
     requested_reviewers: pull.reviewers.map((login) => ({ login })),
+    auto_merge: pull.autoMerge ? { merge_method: "squash" } : null,
   };
 }
 
@@ -222,21 +224,25 @@ function conversation(number) {
 
 function checks(pull) {
   const state = pull?.checks ?? "success";
+  const base = (pull?.number ?? 0) * 10;
   return {
     check_runs: [
       {
+        id: base + 1,
         name: "Unit tests",
         status: "completed",
         conclusion: state === "failure" ? "failure" : "success",
         html_url: null,
       },
       {
+        id: base + 2,
         name: "Lint",
         status: "completed",
         conclusion: "success",
         html_url: null,
       },
       {
+        id: base + 3,
         name: "Build",
         status: state === "pending" ? "in_progress" : "completed",
         conclusion: state === "pending" ? null : "success",
@@ -261,6 +267,20 @@ export async function startGitFixture() {
     );
     if (path === "/user")
       return json({ login: token.includes("owner") ? owner : "northstar-bot" });
+    if (path === "/graphql" && request.method === "POST") {
+      let body = "";
+      request.on("data", (chunk) => (body += chunk));
+      request.on("end", () => {
+        const { query, variables } = JSON.parse(body);
+        const pull = pulls.find(
+          (entry) => `PR_${entry.number}` === variables.id,
+        );
+        if (!pull) return json({ errors: [{ message: "Not Found" }] });
+        pull.autoMerge = query.includes("enablePullRequestAutoMerge");
+        json({ data: {} });
+      });
+      return;
+    }
     if (path === "/user/repos")
       return json([
         {
@@ -331,6 +351,10 @@ export async function startGitFixture() {
     const pull =
       match && pulls.find((entry) => entry.number === Number(match[1]));
     if (!pull) return json({ message: "Not Found" }, 404);
+    if (!match[2] && request.method === "PATCH") {
+      pull.state = "closed";
+      return json(pullJson(pull));
+    }
     if (!match[2]) return json(pullJson(pull));
     if (request.method === "POST" && match[2] === "reviews")
       return json({ id: 5 });

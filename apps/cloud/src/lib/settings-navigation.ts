@@ -5,10 +5,10 @@ import {
 } from "./cloud-permissions";
 
 export const settingsGroups = [
-  { id: "personal", label: "Personal" },
-  { id: "issues", label: "Issues" },
-  { id: "projects", label: "Projects" },
-  { id: "features", label: "Features" },
+  { id: "account", label: "Account" },
+  { id: "planning", label: "Planning" },
+  { id: "automation", label: "Agents & automation" },
+  { id: "workspace", label: "Workspace" },
   { id: "administration", label: "Administration" },
 ] as const;
 export type SettingsGroupId = (typeof settingsGroups)[number]["id"];
@@ -22,22 +22,29 @@ interface SettingsSectionDefinition {
 }
 
 export const settingsSections = {
+  setup: {
+    group: "account",
+    label: "Get started",
+    keywords: ["onboarding", "first steps", "connect", "checklist"],
+    view: null,
+    manage: null,
+  },
   preferences: {
-    group: "personal",
+    group: "account",
     label: "Preferences",
     keywords: ["appearance", "theme", "dark mode", "privacy", "analytics"],
     view: null,
     manage: null,
   },
   profile: {
-    group: "personal",
+    group: "account",
     label: "Profile",
     keywords: ["name", "email", "avatar"],
     view: null,
     manage: null,
   },
   notifications: {
-    group: "personal",
+    group: "account",
     label: "Notifications",
     keywords: [
       "inbox",
@@ -52,15 +59,15 @@ export const settingsSections = {
     manage: null,
   },
   "code-reviews": {
-    group: "personal",
-    label: "Code & reviews",
-    keywords: ["pull request", "review", "diff", "commits"],
+    group: "account",
+    label: "Git & code review",
+    keywords: ["pull request", "review", "walkthrough", "files", "commits"],
     view: null,
     manage: null,
   },
   security: {
-    group: "personal",
-    label: "Security & access",
+    group: "account",
+    label: "Security",
     keywords: [
       "2fa",
       "two-factor",
@@ -76,77 +83,84 @@ export const settingsSections = {
     manage: null,
   },
   "connected-accounts": {
-    group: "personal",
-    label: "Connected accounts",
+    group: "account",
+    label: "Linked accounts",
     keywords: ["github", "gitlab", "mcp connectors"],
     view: null,
     manage: null,
   },
   "agent-personalization": {
-    group: "personal",
-    label: "Agent personalization",
+    group: "account",
+    label: "My agent",
     keywords: ["instructions", "harness", "model", "placement", "repositories"],
     view: null,
     manage: null,
   },
   "issue-labels": {
-    group: "issues",
-    label: "Labels",
-    keywords: ["issue labels", "tags"],
+    group: "planning",
+    label: "Issue labels",
+    keywords: ["tags"],
     view: null,
     manage: "planning.edit",
   },
   "workflow-states": {
-    group: "issues",
-    label: "Workflow states",
+    group: "planning",
+    label: "Issue statuses",
     keywords: ["status", "statuses", "workflow"],
     view: null,
     manage: "teams.manage",
   },
   slas: {
-    group: "issues",
+    group: "planning",
     label: "SLAs",
     keywords: ["service level", "breach", "deadline", "priority"],
     view: null,
     manage: "settings.manage",
   },
   "issue-templates": {
-    group: "issues",
-    label: "Templates",
-    keywords: ["issue templates"],
+    group: "planning",
+    label: "Issue templates",
+    keywords: ["forms"],
     view: null,
     manage: "planning.edit",
   },
   "project-labels": {
-    group: "projects",
-    label: "Labels",
-    keywords: ["project labels"],
+    group: "planning",
+    label: "Project labels",
+    keywords: ["tags"],
     view: null,
     manage: "planning.edit",
   },
   "project-statuses": {
-    group: "projects",
-    label: "Statuses",
-    keywords: ["project statuses"],
+    group: "planning",
+    label: "Project statuses",
+    keywords: ["health"],
     view: null,
     manage: "settings.manage",
   },
   "project-updates": {
-    group: "projects",
-    label: "Updates",
-    keywords: ["project updates", "cadence", "reminders"],
+    group: "planning",
+    label: "Project updates",
+    keywords: ["cadence", "reminders"],
     view: null,
     manage: "settings.manage",
   },
+  initiatives: {
+    group: "planning",
+    label: "Initiatives",
+    keywords: ["roadmap"],
+    view: null,
+    manage: "planning.edit",
+  },
   ai: {
-    group: "features",
-    label: "AI & agents",
+    group: "automation",
+    label: "Agents & models",
     keywords: ["providers", "models", "api keys", "agent", "instructions"],
     view: ["ai.manage"],
     manage: "ai.manage",
   },
   execution: {
-    group: "features",
+    group: "automation",
     label: "Execution",
     keywords: [
       "sandbox",
@@ -159,11 +173,11 @@ export const settingsSections = {
     view: ["ai.manage"],
     manage: "ai.manage",
   },
-  loops: {
-    group: "features",
-    label: "Loops",
+  automations: {
+    group: "automation",
+    label: "Automations",
     keywords: [
-      "automations",
+      "loops",
       "schedules",
       "trusted sources",
       "triggers",
@@ -173,36 +187,29 @@ export const settingsSections = {
     view: null,
     manage: "settings.manage",
   },
-  initiatives: {
-    group: "features",
-    label: "Initiatives",
-    keywords: ["roadmap"],
-    view: null,
-    manage: "planning.edit",
-  },
   "customer-requests": {
-    group: "features",
-    label: "Customer requests",
-    keywords: ["asks", "intake", "customers", "feedback"],
+    group: "workspace",
+    label: "Customer feedback",
+    keywords: ["requests", "intake", "customers"],
     view: null,
     manage: "settings.manage",
   },
   releases: {
-    group: "features",
+    group: "workspace",
     label: "Releases",
     keywords: ["pipelines", "deployments", "products", "channels"],
     view: ["releases.view"],
     manage: "releases.manage",
   },
   pulse: {
-    group: "features",
+    group: "workspace",
     label: "Pulse",
     keywords: ["updates feed", "digest"],
     view: null,
     manage: "settings.manage",
   },
   integrations: {
-    group: "features",
+    group: "workspace",
     label: "Integrations",
     keywords: ["github", "gitlab", "webhooks", "repositories", "git"],
     view: ["git.view", "git.manage"],
@@ -319,6 +326,17 @@ export function teamSettingsHref(teamId: string, tab: TeamSettingsTab): string {
 
 function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+export function settingsPageLabel(
+  pathname: string,
+  teams: readonly SettingsTeam[],
+): string | null {
+  const [, cloud, settings, section, teamId] = pathname.split("/");
+  if (cloud !== "cloud" || settings !== "settings" || !section) return null;
+  if (section === "teams")
+    return teams.find((team) => team.id === teamId)?.name ?? null;
+  return isSettingsSection(section) ? settingsSections[section].label : null;
 }
 
 export function settingsSectionMatches(

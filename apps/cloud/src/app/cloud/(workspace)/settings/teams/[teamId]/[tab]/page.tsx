@@ -25,7 +25,7 @@ export default async function TeamSettingsPage({
   if (!active || !team) notFound();
   const writable = teamSettingsAccess(workspace.actor) === "edit";
   return (
-    <>
+    <div className="cloud-settings-page">
       <header className="cloud-page-header">
         <h1>{team.name}</h1>
       </header>
@@ -46,7 +46,7 @@ export default async function TeamSettingsPage({
         workspace={workspace}
         writable={writable}
       />
-    </>
+    </div>
   );
 }
 

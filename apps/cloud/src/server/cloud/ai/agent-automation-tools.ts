@@ -6,7 +6,6 @@ import {
   type AutomationAction,
   type AutomationInput,
   type AutomationTrigger,
-  type GitIdentity,
   type CloudAutomation,
 } from "../../../lib/cloud-automation-contract";
 import { automationVariableNames } from "../../../lib/automation-text";
@@ -19,7 +18,7 @@ import { field, pendingOutput, reference } from "./agent-proposal-helpers";
 import type { CloudAgentSession } from "./agent-tools";
 
 const automationReference = reference.describe("Automation name or ID.");
-const automationLink = (id: string) => `/cloud/loops/${id}`;
+const automationLink = (id: string) => `/cloud/automations/${id}`;
 
 interface AutomationNames {
   statuses: Map<string, string>;
@@ -60,12 +59,6 @@ async function automationNames(
 
 function names(map: Map<string, string>, ids: string[]): string {
   return ids.map((id) => map.get(id) ?? "unavailable").join(" or ");
-}
-
-function gitActor(identity: GitIdentity): string {
-  return identity === "owner"
-    ? "as the owner"
-    : "with the organization connection";
 }
 
 function describeTrigger(
@@ -191,15 +184,15 @@ function describeAction(
     case "start_client_session":
       return `Start "${action.title}" on a client${action.goal ? " in goal mode" : ""}`;
     case "git_comment":
-      return `Comment on the pull request ${gitActor(action.identity)}`;
+      return `Comment on the pull request as the owner`;
     case "git_review":
-      return `${action.decision === "approve" ? "Approve" : action.decision === "request_changes" ? "Request changes on" : "Review"} the pull request ${gitActor(action.identity)}`;
+      return `${action.decision === "approve" ? "Approve" : action.decision === "request_changes" ? "Request changes on" : "Review"} the pull request as the owner`;
     case "git_merge":
-      return `${action.method[0]!.toUpperCase()}${action.method.slice(1)} merge the pull request ${gitActor(action.identity)}`;
+      return `${action.method[0]!.toUpperCase()}${action.method.slice(1)} merge the pull request as the owner`;
     case "git_update_branch":
-      return `Update the pull request branch ${gitActor(action.identity)}`;
+      return `Update the pull request branch as the owner`;
     case "git_retarget":
-      return `Retarget the stacked pull request onto its merged base ${gitActor(action.identity)}`;
+      return `Retarget the stacked pull request onto its merged base as the owner`;
     case "request_input":
       return `Ask for input and store it as ${action.key}`;
     case "goal":

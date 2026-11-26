@@ -805,6 +805,14 @@ it("lists, details and changes pull requests only for people who can see a linke
   ])
     await expect(call()).rejects.toMatchObject({ status: 403 });
   await expect(
+    runtime.git.pullRequests.updateBranch(member, open!.id, sha(1)),
+  ).rejects.toMatchObject({ code: "git_account_required" });
+  await runtime.git.accounts.connect(member, "github", {
+    revision: 0,
+    apiUrl,
+    token: `github_pat_${"m".repeat(60)}`,
+  });
+  await expect(
     runtime.git.pullRequests.updateBranch(member, open!.id, sha(9)),
   ).rejects.toMatchObject({ status: 422 });
   await runtime.git.pullRequests.updateBranch(member, open!.id, sha(1));

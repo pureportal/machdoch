@@ -180,53 +180,58 @@ export function AgentDefaultsSetting({
       className="cloud-settings-section cloud-setting-form"
       onSubmit={submit}
     >
-      <Field label="Model" htmlFor="setting-agent-model">
-        <Select
-          id="setting-agent-model"
-          name="model"
-          defaultValue={
-            model ? agentModelValue(model.providerId, model.model) : ""
-          }
-        >
-          <option value="">{placementLabels.automatic}</option>
-          {providers.flatMap((provider) =>
-            provider.models.map((entry) => (
-              <option
-                key={agentModelValue(provider.id, entry)}
-                value={agentModelValue(provider.id, entry)}
-              >
-                {`${provider.name} · ${entry}`}
+      <header>
+        <h2>Defaults</h2>
+      </header>
+      <div className="cloud-setting-form-row">
+        <Field label="Model" htmlFor="setting-agent-model">
+          <Select
+            id="setting-agent-model"
+            name="model"
+            defaultValue={
+              model ? agentModelValue(model.providerId, model.model) : ""
+            }
+          >
+            <option value="">{placementLabels.automatic}</option>
+            {providers.flatMap((provider) =>
+              provider.models.map((entry) => (
+                <option
+                  key={agentModelValue(provider.id, entry)}
+                  value={agentModelValue(provider.id, entry)}
+                >
+                  {`${provider.name} · ${entry}`}
+                </option>
+              )),
+            )}
+          </Select>
+        </Field>
+        <Field label="Harness" htmlFor="setting-agent-harness">
+          <Select
+            id="setting-agent-harness"
+            name="harness"
+            defaultValue={harness}
+          >
+            {loopHarnesses.map((entry) => (
+              <option key={entry} value={entry}>
+                {harnessLabels[entry]}
               </option>
-            )),
-          )}
-        </Select>
-      </Field>
-      <Field label="Harness" htmlFor="setting-agent-harness">
-        <Select
-          id="setting-agent-harness"
-          name="harness"
-          defaultValue={harness}
-        >
-          {loopHarnesses.map((entry) => (
-            <option key={entry} value={entry}>
-              {harnessLabels[entry]}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <Field label="Placement" htmlFor="setting-agent-placement">
-        <Select
-          id="setting-agent-placement"
-          name="placement"
-          defaultValue={placement}
-        >
-          {loopPlacements.map((entry) => (
-            <option key={entry} value={entry}>
-              {placementLabels[entry]}
-            </option>
-          ))}
-        </Select>
-      </Field>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Placement" htmlFor="setting-agent-placement">
+          <Select
+            id="setting-agent-placement"
+            name="placement"
+            defaultValue={placement}
+          >
+            {loopPlacements.map((entry) => (
+              <option key={entry} value={entry}>
+                {placementLabels[entry]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
       <Button type="submit" disabled={pending}>
         Save
       </Button>

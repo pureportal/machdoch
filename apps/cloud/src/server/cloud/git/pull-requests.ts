@@ -6,6 +6,7 @@ import type {
   CloudPullRequestList,
   CloudReviewInbox,
   GitIssueCommit,
+  GitAutoMergeInput,
   GitMergeInput,
   GitPullRequestFile,
   GitReviewInput,
@@ -36,10 +37,8 @@ import { gitClient, type GitCommitStatus } from "./git-client";
 import { gitConnection, type GitConnectionRecord } from "./connections";
 import { gitEvent, queueGitEvents, type StoredRepository } from "./events";
 import {
-  attributed,
   organizationAccess,
   type ActingAccess,
-  type ActingMode,
   type GitIdentities,
 } from "./identity";
 import { recordMergedWork, unlinkedMergedPullRequest } from "./merge-issues";
@@ -95,7 +94,7 @@ type Row = Omit<CloudPullRequest, "stack"> & {
 
 type WritablePullRequest = VisiblePullRequest & {
   acting: ActingAccess;
-  author: string | null;
+  userId: string;
 };
 
 interface VisiblePullRequest {
@@ -408,28 +407,19 @@ export class CloudGitPullRequests {
   private async writable(
     actor: CloudActor,
     id: string,
-    mode: ActingMode,
   ): Promise<WritablePullRequest> {
-    if (mode !== "organization")
-      await this.identities.refreshExpiring(actor.organizationId, actor.userId);
+    await this.identities.refreshExpiring(actor.organizationId, actor.userId);
     const visible = await this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "git.act");
       const current = await this.visible(sql, actor, id);
-      const author = (
-        await sql.query<{ name: string }>(
-          "SELECT name FROM cloud_users WHERE id=$1",
-          [actor.userId],
-        )
-      ).rows[0]!.name;
       return {
         ...current,
         acting: await this.identities.acting(
           sql,
           current.connection,
           actor.userId,
-          mode,
         ),
-        author: mode === "organization" ? null : author,
+        userId: actor.userId,
       };
     });
     if (visible.pullRequest.state !== "open")
@@ -498,8 +488,9 @@ export class CloudGitPullRequests {
       issueSuggestion,
       canMerge: updated.canAct && updated.pullRequest.state === "open",
       fixable,
+      autoMerge: fresh.autoMerge,
       actingAs,
-      agentLogin: updated.connection.account,
+      agentLogin: organizationAccess(updated.connection).login,
       mergeMethods: [...client.mergeMethods],
     };
   }
@@ -595,25 +586,9 @@ export class CloudGitPullRequests {
     try {
       return { ...visible.acting, result: await operation(visible.acting) };
     } catch (error) {
-      if (
-        !visible.acting.personal ||
-        !isCloudError(error) ||
-        error.code !== "git_token"
-      )
-        throw error;
-      const acting = organizationAccess(visible.connection);
-      return { ...acting, result: await operation(acting) };
+      if (!isCloudError(error) || error.code !== "git_token") throw error;
+      throw await this.identities.rejected(visible.connection, visible.userId);
     }
-  }
-
-  private signed(
-    visible: WritablePullRequest,
-    acting: ActingAccess,
-    body: string,
-  ): string {
-    return visible.author
-      ? attributed(body, acting, visible.author).trim()
-      : body;
   }
 
   private async restore(
@@ -635,9 +610,8 @@ export class CloudGitPullRequests {
     actor: CloudActor,
     id: string,
     input: GitMergeInput,
-    mode: ActingMode = "personal_first",
   ): Promise<CloudPullRequest> {
-    const visible = await this.writable(actor, id, mode);
+    const visible = await this.writable(actor, id);
     const { repository, number } = visible.pullRequest;
     const acting = await this.act(visible, (access) =>
       gitClient(access, this.transport).merge(repository, number, input),
@@ -646,13 +620,39 @@ export class CloudGitPullRequests {
     return this.get(actor, id);
   }
 
+  async close(actor: CloudActor, id: string): Promise<CloudPullRequest> {
+    const visible = await this.writable(actor, id);
+    const { repository, number } = visible.pullRequest;
+    const acting = await this.act(visible, (access) =>
+      gitClient(access, this.transport).closePullRequest(repository, number),
+    );
+    await this.restore(visible, acting);
+    return this.get(actor, id);
+  }
+
+  async setAutoMerge(
+    actor: CloudActor,
+    id: string,
+    input: GitAutoMergeInput,
+  ): Promise<void> {
+    const visible = await this.writable(actor, id);
+    const { repository, number } = visible.pullRequest;
+    await this.act(visible, (access) =>
+      gitClient(access, this.transport).setAutoMerge(
+        repository,
+        number,
+        input.enabled,
+        input.method,
+      ),
+    );
+  }
+
   async updateBranch(
     actor: CloudActor,
     id: string,
     headSha: string,
-    mode: ActingMode = "personal_first",
   ): Promise<void> {
-    const visible = await this.writable(actor, id, mode);
+    const visible = await this.writable(actor, id);
     await this.act(visible, (access) =>
       gitClient(access, this.transport).updateBranch(
         visible.pullRequest.repository,
@@ -672,9 +672,8 @@ export class CloudGitPullRequests {
     actor: CloudActor,
     id: string,
     baseRef: string,
-    mode: ActingMode = "personal_first",
   ): Promise<CloudPullRequest> {
-    const visible = await this.writable(actor, id, mode);
+    const visible = await this.writable(actor, id);
     if (visible.pullRequest.baseRef === baseRef) return visible.pullRequest;
     const acting = await this.act(visible, (access) =>
       gitClient(access, this.transport).retarget(
@@ -691,14 +690,13 @@ export class CloudGitPullRequests {
     actor: CloudActor,
     id: string,
     body: string,
-    mode: ActingMode = "personal_first",
   ): Promise<{ url: string; actingAs: string }> {
-    const visible = await this.writable(actor, id, mode);
+    const visible = await this.writable(actor, id);
     const acting = await this.act(visible, (access) =>
       gitClient(access, this.transport).comment(
         visible.pullRequest.repository,
         visible.pullRequest.number,
-        this.signed(visible, access, body),
+        body,
       ),
     );
     return { url: acting.result, actingAs: acting.login };
@@ -708,12 +706,11 @@ export class CloudGitPullRequests {
     actor: CloudActor,
     id: string,
     input: { decision: GitReviewInput; body: string },
-    mode: ActingMode = "personal_first",
   ): Promise<{ actingAs: string }> {
-    const visible = await this.writable(actor, id, mode);
+    const visible = await this.writable(actor, id);
     const { pullRequest } = visible;
     const acting = await this.act(visible, (access) => {
-      const body = this.signed(visible, access, input.body);
+      const body = input.body;
       return gitClient(access, this.transport).review(
         pullRequest.repository,
         pullRequest.number,

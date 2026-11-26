@@ -96,7 +96,10 @@ export function FormDialog({
               });
           }}
         >
-          <fieldset disabled={pending} className="grid min-w-0 gap-5">
+          <fieldset
+            disabled={pending}
+            className="grid min-w-0 gap-5 text-[13px]"
+          >
             {children}
             {error ? (
               <p role="alert" className="break-words text-sm text-destructive">

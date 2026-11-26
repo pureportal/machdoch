@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import type {
   GitAvailableRepository,
   GitConnection,
@@ -72,7 +73,11 @@ export function GitRepositoryPicker({
           {error}
         </p>
       ) : available && !options.length ? (
-        <p>No other repository is available to this token.</p>
+        <p>
+          {connection.app
+            ? "Every installed repository is added."
+            : "No other repository is available to this token."}
+        </p>
       ) : (
         <Field label="Repository" htmlFor={id}>
           <Select id={id} name="fullName" required disabled={!available}>
@@ -87,6 +92,17 @@ export function GitRepositoryPicker({
             )}
           </Select>
         </Field>
+      )}
+      {connection.app && (
+        <a
+          className="cloud-git-token-link"
+          href={connection.app.configureUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Choose repositories on GitHub
+          <ExternalLink size={12} aria-hidden="true" />
+        </a>
       )}
     </FormDialog>
   );

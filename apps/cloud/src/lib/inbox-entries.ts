@@ -28,7 +28,7 @@ export function describeInboxEntry(entry: InboxEntry): string {
 export function inboxEntryPath(entry: InboxEntry): string {
   if (entry.projectId) return `/cloud/projects/${entry.projectId}`;
   if (loopInboxKinds.includes(entry.kind) && entry.loopId)
-    return `/cloud/loops/${entry.loopId}?run=${entry.automationRunId}`;
+    return `/cloud/automations/${entry.loopId}?run=${entry.automationRunId}`;
   return entry.kind === "task_finished" && entry.runId
     ? `/cloud/tasks/${entry.runId}`
     : `/cloud/issues/${entry.issueId}`;

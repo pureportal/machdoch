@@ -1,6 +1,7 @@
 "use client";
 
-import { Plus, Repeat, Search, Sparkles } from "lucide-react";
+import { ChevronDown, Plus, Repeat, Search, Sparkles, Zap } from "lucide-react";
+import { DropdownMenu } from "radix-ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -46,7 +47,7 @@ function LoopRow({ loop }: { loop: CloudLoopSummary }) {
   return (
     <tr>
       <th scope="row">
-        <Link href={`/cloud/loops/${loop.id}`}>{loop.name}</Link>
+        <Link href={`/cloud/automations/${loop.id}`}>{loop.name}</Link>
         {loop.description && <span>{loop.description}</span>}
       </th>
       <td>
@@ -139,25 +140,46 @@ export function LoopList({
   return (
     <>
       <header className="cloud-page-header">
-        <h1>Loops</h1>
+        <h1>Automations</h1>
         {canWrite && (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setTemplateTeam(firstTeam)}
-            >
-              <Sparkles />
-              From template
-            </Button>
-            <Button variant="outline" onClick={() => setScheduling(true)}>
-              <Repeat />
-              New schedule
-            </Button>
-            <Button onClick={() => setGalleryTeam(firstTeam)}>
-              <Plus />
-              New automation
-            </Button>
-          </div>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <Button>
+                <Plus />
+                New
+                <ChevronDown />
+              </Button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                className="cloud-menu cloud-menu-list"
+                align="end"
+                sideOffset={4}
+              >
+                <DropdownMenu.Item
+                  className="cloud-menu-item"
+                  onSelect={() => setGalleryTeam(firstTeam)}
+                >
+                  <Zap size={14} aria-hidden="true" />
+                  Automation
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="cloud-menu-item"
+                  onSelect={() => setScheduling(true)}
+                >
+                  <Repeat size={14} aria-hidden="true" />
+                  Schedule
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className="cloud-menu-item"
+                  onSelect={() => setTemplateTeam(firstTeam)}
+                >
+                  <Sparkles size={14} aria-hidden="true" />
+                  From template
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         )}
       </header>
       {options.error && <p role="alert">{options.error}</p>}
@@ -185,73 +207,69 @@ export function LoopList({
           filterButton
         )}
         <span className="cloud-automation-spacer" />
-        <button
-          type="button"
-          className="cloud-automation-chip"
-          aria-pressed={scope === "mine"}
-          onClick={() => setScope("mine")}
-        >
-          My loops
-        </button>
-        <button
-          type="button"
-          className="cloud-automation-chip"
-          aria-pressed={scope === "all"}
-          onClick={() => setScope("all")}
-        >
-          All loops
-        </button>
+        <div className="cloud-segmented" role="group" aria-label="Owner">
+          {(["mine", "all"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={scope === value}
+              onClick={() => setScope(value)}
+            >
+              {value === "mine" ? "Mine" : "All"}
+            </button>
+          ))}
+        </div>
       </div>
       {!groups.length ? (
         <div className="cloud-empty">
           <Repeat aria-hidden="true" />
-          <p>{filtered ? "No matching loops." : "No loops yet."}</p>
+          <p>{filtered ? "No matching automations." : "No automations yet."}</p>
         </div>
       ) : (
-        groups.map((group) => (
-          <section
-            key={group.team.id}
-            className="cloud-loop-group"
-            aria-label={group.path}
-          >
-            <header>
-              <h2>{group.path}</h2>
-              {canWrite && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  aria-label={`New automation in ${group.team.name}`}
-                  onClick={() => setGalleryTeam(group.team.id)}
-                >
-                  <Plus />
-                </Button>
-              )}
-            </header>
-            <table className="cloud-pipeline-table">
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">
-                    <span className="sr-only">State</span>
+        <div className="cloud-table-scroll">
+          <table className="cloud-pipeline-table cloud-loop-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">
+                  <span className="sr-only">State</span>
+                </th>
+                <th scope="col">Trigger</th>
+                <th scope="col">Runs on</th>
+                <th scope="col">Owner</th>
+                <th scope="col">Runs</th>
+                <th scope="col">Success</th>
+                <th scope="col">Cost</th>
+                <th scope="col">Last run</th>
+                <th scope="col">Next run</th>
+              </tr>
+            </thead>
+            {groups.map((group) => (
+              <tbody key={group.team.id} aria-label={group.path}>
+                <tr className="cloud-loop-team-row">
+                  <th scope="colgroup" colSpan={10}>
+                    <div>
+                      <span>{group.path}</span>
+                      {canWrite && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`New automation in ${group.team.name}`}
+                          onClick={() => setGalleryTeam(group.team.id)}
+                        >
+                          <Plus />
+                        </Button>
+                      )}
+                    </div>
                   </th>
-                  <th scope="col">Trigger</th>
-                  <th scope="col">Runs on</th>
-                  <th scope="col">Owner</th>
-                  <th scope="col">Runs</th>
-                  <th scope="col">Success</th>
-                  <th scope="col">Cost</th>
-                  <th scope="col">Last run</th>
-                  <th scope="col">Next run</th>
                 </tr>
-              </thead>
-              <tbody>
                 {group.loops.map((loop) => (
                   <LoopRow key={loop.id} loop={loop} />
                 ))}
               </tbody>
-            </table>
-          </section>
-        ))
+            ))}
+          </table>
+        </div>
       )}
       <Dialog
         open={galleryTeam !== null}
@@ -282,7 +300,7 @@ export function LoopList({
           onSaved={async (secret) => {
             if (secret.webhookUrl)
               setCreated({ id: secret.id, url: secret.webhookUrl });
-            else router.push(`/cloud/loops/${secret.id}`);
+            else router.push(`/cloud/automations/${secret.id}`);
           }}
         />
       )}
@@ -291,7 +309,7 @@ export function LoopList({
           url={created.url}
           onClose={() => {
             setCreated(null);
-            router.push(`/cloud/loops/${created.id}`);
+            router.push(`/cloud/automations/${created.id}`);
           }}
         />
       )}
@@ -308,7 +326,7 @@ export function LoopList({
           options={options}
           initialTeamId={templateTeam}
           onClose={() => setTemplateTeam(null)}
-          onInstalled={(loop) => router.push(`/cloud/loops/${loop.id}`)}
+          onInstalled={(loop) => router.push(`/cloud/automations/${loop.id}`)}
         />
       )}
     </>

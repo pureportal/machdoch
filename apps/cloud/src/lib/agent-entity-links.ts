@@ -12,7 +12,7 @@ const entityRoutes: Record<AgentEntityKind, string> = {
   team: "teams",
   pull_request: "pull-requests",
   release: "releases",
-  loop: "loops",
+  loop: "automations",
 };
 
 export function agentEntityHref(entity: Pick<AgentEntity, "kind" | "id">) {

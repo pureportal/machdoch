@@ -171,7 +171,7 @@ export function LoopAutomationControls({
                 await cloudRequest(`automations/${automation.id}`, {
                   method: "DELETE",
                 });
-                router.push("/cloud/loops");
+                router.push("/cloud/automations");
               } catch (reason) {
                 toast(
                   reason instanceof Error ? reason.message : "Try again.",

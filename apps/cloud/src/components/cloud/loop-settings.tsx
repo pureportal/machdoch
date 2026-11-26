@@ -125,30 +125,37 @@ function LoopSettingsForm({
   return (
     <form
       className="cloud-settings-section cloud-loop-config"
-      aria-label="Loops"
+      aria-label="Automations"
       onSubmit={(event) => {
         event.preventDefault();
         void save();
       }}
     >
       <fieldset disabled={pending} className="grid gap-5">
-        <Label className="cloud-automation-check">
-          <input
-            type="checkbox"
-            checked={draft.enabled}
-            onChange={(event) =>
-              setDraft({ ...draft, enabled: event.target.checked })
-            }
+        <div className="cloud-loop-switch-row">
+          <span id="loop-settings-enabled">Run automations</span>
+          <button
+            type="button"
+            role="switch"
+            className="cloud-automation-switch"
+            aria-checked={draft.enabled}
+            aria-labelledby="loop-settings-enabled"
+            onClick={() => setDraft({ ...draft, enabled: !draft.enabled })}
           />
-          Loops enabled
-        </Label>
-        <dl className="cloud-automation-facts" aria-label="Usage this month">
-          <dt>Runs</dt>
-          <dd>{settings.usage.runs}</dd>
-          <dt>Tokens</dt>
-          <dd>{settings.usage.tokens.toLocaleString()}</dd>
-          <dt>Cost</dt>
-          <dd>{formatLoopCost(settings.usage.costCents)}</dd>
+        </div>
+        <dl className="cloud-loop-usage" aria-label="Usage this month">
+          <div>
+            <dt>Runs</dt>
+            <dd>{settings.usage.runs}</dd>
+          </div>
+          <div>
+            <dt>Tokens</dt>
+            <dd>{settings.usage.tokens.toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt>Cost</dt>
+            <dd>{formatLoopCost(settings.usage.costCents)}</dd>
+          </div>
         </dl>
         <div className="cloud-loop-fields">
           <Field label="Code access" htmlFor="loop-settings-code">
@@ -340,8 +347,8 @@ function LoopSourceList({ sources }: { sources: LoopSourceState[] }) {
               <strong>{loopSourceLabels[state.source]}</strong>
               <span>
                 {state.trustedBy === 1
-                  ? "Trusted by 1 loop"
-                  : `Trusted by ${state.trustedBy} loops`}
+                  ? "Trusted by 1 automation"
+                  : `Trusted by ${state.trustedBy} automations`}
               </span>
               {state.lastRejection && (
                 <span>
@@ -368,23 +375,23 @@ function LoopSourceList({ sources }: { sources: LoopSourceState[] }) {
               <RefreshCw />
               {state.configured ? "Rotate secret" : "Create secret"}
             </Button>
-            <Label className="cloud-automation-check">
-              <input
-                type="checkbox"
-                checked={state.enabled}
-                disabled={pending === state.source}
-                onChange={(event) => {
-                  const enabled = event.target.checked;
-                  void run(state.source, () =>
-                    cloudRequest(`loops/sources/${state.source}`, {
-                      method: "PATCH",
-                      body: { enabled },
-                    }).then(() => undefined),
-                  );
-                }}
-              />
-              On
-            </Label>
+            <button
+              type="button"
+              role="switch"
+              className="cloud-automation-switch"
+              aria-checked={state.enabled}
+              aria-label={loopSourceLabels[state.source]}
+              disabled={pending === state.source}
+              onClick={() => {
+                const enabled = !state.enabled;
+                void run(state.source, () =>
+                  cloudRequest(`loops/sources/${state.source}`, {
+                    method: "PATCH",
+                    body: { enabled },
+                  }).then(() => undefined),
+                );
+              }}
+            />
           </li>
         ))}
       </ul>

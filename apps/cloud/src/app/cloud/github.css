@@ -557,15 +557,24 @@
   font-size: 12px;
 }
 .cloud-github-webhook,
+.cloud-git-oauth {
+  font-size: 13px;
+}
+.cloud-github-webhook,
 .cloud-git-oauth[open] {
   display: grid;
   gap: 12px;
-  font-size: 13px;
 }
 .cloud-github-webhook summary,
 .cloud-git-oauth summary {
+  width: fit-content;
+  color: var(--muted-foreground);
   cursor: pointer;
   font-weight: 500;
+}
+.cloud-github-webhook summary:hover,
+.cloud-git-oauth summary:hover {
+  color: var(--foreground);
 }
 .cloud-git-token-link {
   display: inline-flex;
@@ -640,9 +649,13 @@
 .cloud-git-connection {
   display: grid;
   gap: 12px;
+  min-width: 0;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
+}
+.cloud-git-connection > * {
+  min-width: 0;
 }
 .cloud-git-connection > header {
   display: flex;
@@ -651,6 +664,7 @@
 }
 .cloud-git-connection > header > div {
   flex: 1;
+  min-width: 0;
 }
 .cloud-git-connection h3 {
   overflow: hidden;
@@ -681,6 +695,7 @@
 .cloud-menu-item {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-height: 30px;
   padding: 4px 8px;
   border-radius: 6px;

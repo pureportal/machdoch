@@ -14,6 +14,7 @@ export function CloudSetupForm() {
     <AuthFrame>
       <h1>Create organization</h1>
       <form
+        method="post"
         onSubmit={(event) => {
           event.preventDefault();
           if (pending) return;
@@ -29,7 +30,7 @@ export function CloudSetupForm() {
               password: formText(form, "password"),
             },
           })
-            .then(() => location.assign("/cloud/issues"))
+            .then(() => location.assign("/cloud/settings/setup"))
             .catch((reason: Error) => {
               setError(reason.message);
               setPending(false);

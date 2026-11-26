@@ -1,6 +1,7 @@
 "use client";
 
 import { pollWhileVisible } from "@machdoch/product-ui/view-visibility";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import type {
@@ -27,15 +28,96 @@ import {
 } from "./api-client";
 import { GitConnectionCard } from "./git-connection-card";
 import { GitReviewSettingsSection } from "./git-review-settings";
-import { CliSignInDialog, useCliLogin } from "./provider-sign-in";
 import { GitStatusRules } from "./git-status-rules";
 
 const tokenHints: Record<GitProvider, string> = {
   github:
-    "A classic token needs the repo and admin:repo_hook scopes; a fine-grained token needs Contents, Commit statuses and Webhooks write and Pull requests, Issues and Checks read.",
+    "A classic token needs the repo, admin:repo_hook and read:org scopes. A fine-grained token needs read and write access to Contents, Issues, Pull requests, Commit statuses and Webhooks, read access to Actions, Administration and Checks, and organization Members read.",
   gitlab:
     "The token needs the api scope; maintainer access lets Machdoch add webhooks.",
 };
+
+const setupErrors: Record<string, string> = {
+  app_denied: "GitHub setup was canceled.",
+  app_expired: "The GitHub setup expired. Start again.",
+  app_exists: "That GitHub account is already connected.",
+  app_failed: "GitHub setup failed. Start again.",
+};
+
+function GitHubAppDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [owner, setOwner] = useState<"organization" | "personal">(
+    "organization",
+  );
+  return (
+    <FormDialog
+      title="Connect GitHub"
+      submitLabel="Continue on GitHub"
+      pendingLabel="Opening GitHub…"
+      open={open}
+      onOpenChange={onOpenChange}
+      onSubmit={async (form) => {
+        const { url } = await cloudRequest<{ url: string }>("git/github/app", {
+          method: "POST",
+          body: {
+            apiUrl: formText(form, "apiUrl"),
+            owner: owner === "organization" ? formText(form, "owner") : null,
+          },
+        });
+        location.assign(url);
+      }}
+    >
+      <div
+        className="cloud-segmented self-start"
+        role="group"
+        aria-label="Owner"
+      >
+        {(["organization", "personal"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={owner === value}
+            onClick={() => setOwner(value)}
+          >
+            {value === "organization" ? "Organization" : "Personal account"}
+          </button>
+        ))}
+      </div>
+      {owner === "organization" && (
+        <Field label="GitHub organization" htmlFor="github-app-owner">
+          <Input
+            id="github-app-owner"
+            name="owner"
+            required
+            maxLength={39}
+            pattern="[A-Za-z0-9][A-Za-z0-9\-]*"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="acme"
+          />
+        </Field>
+      )}
+      <details className="cloud-git-oauth">
+        <summary>Self-hosted GitHub</summary>
+        <Field label="API address" htmlFor="github-app-api-url">
+          <Input
+            id="github-app-api-url"
+            name="apiUrl"
+            type="url"
+            required
+            maxLength={300}
+            defaultValue={defaultGitApiUrls.github}
+          />
+        </Field>
+      </details>
+    </FormDialog>
+  );
+}
 
 function ProviderSection({
   provider,
@@ -43,6 +125,9 @@ function ProviderSection({
   credentialStorageAvailable,
   teams,
   loading,
+  addingTo,
+  connectRequested,
+  onAddingToChange,
   onChanged,
 }: {
   provider: GitProvider;
@@ -50,66 +135,51 @@ function ProviderSection({
   credentialStorageAvailable: boolean;
   teams: { id: string; name: string }[];
   loading: boolean;
+  addingTo: string | null;
+  connectRequested: boolean;
+  onAddingToChange: (connectionId: string | null) => void;
   onChanged: () => Promise<void>;
 }) {
   const label = gitProviderLabels[provider];
   const [editing, setEditing] = useState<GitConnection | null | undefined>(
     undefined,
   );
+  const [creatingApp, setCreatingApp] = useState(connectRequested);
   const [apiUrl, setApiUrl] = useState(defaultGitApiUrls[provider]);
   useEffect(() => {
     if (editing !== undefined)
       setApiUrl(editing?.apiUrl ?? defaultGitApiUrls[provider]);
   }, [editing, provider]);
-  const tokenUrl = gitTokenUrl(provider, apiUrl);
-  const [addingTo, setAddingTo] = useState<string | null>(null);
-  const [signingIn, setSigningIn] = useState(false);
-  const deviceSignIn = provider === "github";
-  const signIn = useCliLogin(signingIn ? "git/github/sign-in" : null);
+  const tokenUrl = gitTokenUrl(provider, apiUrl, "connection");
+  const app = provider === "github";
   const sender = useRef(createCommandSender());
   const heading = `${provider}-heading`;
+  const unavailable = loading || !credentialStorageAvailable;
   return (
     <section className="cloud-settings-section" aria-labelledby={heading}>
       <header>
         <h2 id={heading}>{label}</h2>
         <div className="flex flex-wrap gap-2">
-          {deviceSignIn && (
-            <Button
-              disabled={loading || !credentialStorageAvailable}
-              onClick={() => {
-                setSigningIn(true);
-                if (signIn.login?.state !== "waiting") void signIn.start();
-              }}
-            >
-              Sign in with {label}
+          {app && (
+            <Button disabled={unavailable} onClick={() => setCreatingApp(true)}>
+              Connect {label}
             </Button>
           )}
           <Button
-            variant={deviceSignIn ? "ghost" : "outline"}
-            disabled={loading || !credentialStorageAvailable}
+            variant={app ? "ghost" : "outline"}
+            disabled={unavailable}
             aria-busy={loading}
             onClick={() => {
               sender.current = createCommandSender();
               setEditing(null);
             }}
           >
-            {loading
-              ? "Loading…"
-              : deviceSignIn
-                ? "Use a token"
-                : `Connect ${label}`}
+            {loading ? "Loading…" : app ? "Use a token" : `Connect ${label}`}
           </Button>
         </div>
       </header>
-      {signingIn && (
-        <CliSignInDialog
-          providerName={label}
-          state={signIn}
-          onClose={() => {
-            setSigningIn(false);
-            if (signIn.login?.state === "signed-in") void onChanged();
-          }}
-        />
+      {app && (
+        <GitHubAppDialog open={creatingApp} onOpenChange={setCreatingApp} />
       )}
       {!loading && !credentialStorageAvailable && (
         <p>Configure credential storage before connecting {label}.</p>
@@ -121,7 +191,7 @@ function ProviderSection({
           teams={teams}
           addingRepository={addingTo === connection.id}
           onAddingRepositoryChange={(open) =>
-            setAddingTo(open ? connection.id : null)
+            onAddingToChange(open ? connection.id : null)
           }
           onReconnect={() => {
             sender.current = createCommandSender();
@@ -159,7 +229,7 @@ function ProviderSection({
               },
               "PUT",
             );
-            if (!editing) setAddingTo(saved.id);
+            if (!editing) onAddingToChange(saved.id);
           } catch (reason) {
             if (
               reason instanceof CloudRequestError &&
@@ -291,8 +361,21 @@ function ProviderSection({
 }
 
 export function GitSettings() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
   const [data, setData] = useState<GitAdministration | null>(null);
   const [error, setError] = useState("");
+  const [addingTo, setAddingTo] = useState<string | null>(null);
+  const [setupError] = useState(
+    () => setupErrors[params.get("gitError") ?? ""] ?? "",
+  );
+  const [connected] = useState(() => params.get("gitConnected"));
+  const [connectRequested] = useState(() => params.get("connect"));
+  useEffect(() => {
+    if (["gitError", "gitConnected", "connect"].some((key) => params.has(key)))
+      router.replace(pathname);
+  }, [params, pathname, router]);
   const load = useCallback(async (signal?: AbortSignal) => {
     const value = await cloudRequest<GitAdministration>("git", { signal });
     if (!signal?.aborted) setData(value);
@@ -309,9 +392,24 @@ export function GitSettings() {
       stop();
     };
   }, [load]);
+  const opened = useRef(false);
+  const fresh = data?.connections.some(
+    (connection) =>
+      connection.id === connected && connection.repositories.length === 0,
+  );
+  useEffect(() => {
+    if (!fresh || !connected || opened.current) return;
+    opened.current = true;
+    setAddingTo(connected);
+  }, [fresh, connected]);
   const automated = data?.connections.some((connection) => connection.automate);
   return (
-    <>
+    <div className="cloud-settings">
+      {setupError && (
+        <p role="alert" className="cloud-error">
+          {setupError}
+        </p>
+      )}
       {gitProviders.map((provider) => (
         <ProviderSection
           key={provider}
@@ -324,6 +422,9 @@ export function GitSettings() {
           credentialStorageAvailable={data?.credentialStorageAvailable ?? false}
           teams={data?.automations.map((entry) => entry.team) ?? []}
           loading={!data && !error}
+          addingTo={addingTo}
+          connectRequested={connectRequested === provider}
+          onAddingToChange={setAddingTo}
           onChanged={() => load()}
         />
       ))}
@@ -344,6 +445,6 @@ export function GitSettings() {
           {error}
         </p>
       )}
-    </>
+    </div>
   );
 }

@@ -80,7 +80,7 @@ const fieldNames: Record<IssueFilterField, string> = {
   hasParent: "Has parent",
   hasSubIssues: "Has sub-issues",
   duplicate: "Duplicate",
-  automated: "Created by agent or loop",
+  automated: "Created by agent or automation",
   releasedIn: "Released in",
   sla: "SLA",
 };

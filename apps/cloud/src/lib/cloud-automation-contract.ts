@@ -162,10 +162,6 @@ export const issueEventTriggerKinds = [
 ] as const satisfies readonly AutomationTriggerKind[];
 export type IssueEventTriggerKind = (typeof issueEventTriggerKinds)[number];
 
-export const gitIdentities = ["owner", "organization"] as const;
-export type GitIdentity = (typeof gitIdentities)[number];
-const gitIdentity = z.enum(gitIdentities).default("owner");
-
 export const changeMeasures = ["issues", "points"] as const;
 export type ChangeMeasure = (typeof changeMeasures)[number];
 
@@ -248,24 +244,18 @@ export const automationActionSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("git_comment"),
     body: template(20_000).trim().min(1),
-    identity: gitIdentity,
   }),
   z.strictObject({
     kind: z.literal("git_review"),
     decision: z.enum(gitReviewDecisionInputs),
     body: template(20_000).default(""),
-    identity: gitIdentity,
   }),
   z.strictObject({
     kind: z.literal("git_merge"),
     method: z.enum(gitMergeMethods).default("squash"),
-    identity: gitIdentity,
   }),
-  z.strictObject({
-    kind: z.literal("git_update_branch"),
-    identity: gitIdentity,
-  }),
-  z.strictObject({ kind: z.literal("git_retarget"), identity: gitIdentity }),
+  z.strictObject({ kind: z.literal("git_update_branch") }),
+  z.strictObject({ kind: z.literal("git_retarget") }),
   z.strictObject({
     kind: z.literal("write_project_updates"),
     projectIds: z.array(cloudId).max(maximumPulseProjects).default([]),

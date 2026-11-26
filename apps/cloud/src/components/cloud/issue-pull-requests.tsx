@@ -36,7 +36,7 @@ function ChangedFiles({ pullRequest }: { pullRequest: CloudPullRequest }) {
   }, [pullRequest.id, pullRequest.headSha]);
   if (error) return <p className="cloud-aside-changes-note">{error}</p>;
   if (!files) return <p className="cloud-aside-changes-note">Loading…</p>;
-  const href = `/cloud/pull-requests/${pullRequest.id}?tab=diff`;
+  const href = `/cloud/pull-requests/${pullRequest.id}?tab=files`;
   return (
     <ul className="cloud-aside-changes">
       {files.slice(0, shownFiles).map((file) => (

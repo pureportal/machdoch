@@ -1,14 +1,15 @@
-import type { GitProvider } from "../../../lib/git-providers";
+import {
+  gitProviderLabels,
+  type GitProvider,
+} from "../../../lib/git-providers";
 import type { SettingsCipher } from "../../settings-crypto";
-import { isCloudError } from "../access";
+import { CloudError, isCloudError } from "../access";
 import { requireCredentialStorage } from "../credential-storage";
 import type { CloudDatabase, CloudSql } from "../database";
 import { decryptAccountSecret, encryptAccountSecret } from "./accounts";
 import type { GitAccess } from "./git-client";
 import { gitConnection, type GitConnectionRecord } from "./connections";
 import { refreshOAuthToken, type OAuthTokens } from "./oauth";
-
-export type ActingMode = "personal_first" | "organization";
 
 export interface ActingAccess extends GitAccess {
   login: string;
@@ -25,14 +26,6 @@ interface PendingRefresh {
   expiresAt: Date;
 }
 
-export function attributed(
-  body: string,
-  acting: ActingAccess,
-  author: string,
-): string {
-  return acting.personal ? body : `*${author}* via machdoch\n\n${body}`;
-}
-
 export function organizationAccess(
   connection: GitConnectionRecord,
 ): ActingAccess {
@@ -40,9 +33,18 @@ export function organizationAccess(
     provider: connection.provider,
     apiUrl: connection.apiUrl,
     token: connection.token,
-    login: connection.account,
+    login: connection.app ? `${connection.app.slug}[bot]` : connection.account,
     personal: false,
   };
+}
+
+export function accountRequired(provider: GitProvider): CloudError {
+  const label = gitProviderLabels[provider];
+  return new CloudError(
+    409,
+    "git_account_required",
+    `Link your ${label} account under Settings → Linked accounts so this runs as you on ${label}.`,
+  );
 }
 
 export class GitIdentities {
@@ -189,7 +191,7 @@ export class GitIdentities {
     sql: CloudSql,
     connection: GitConnectionRecord,
     userId: string,
-  ): Promise<string> {
+  ): Promise<string | null> {
     return (
       (
         await sql.query<{ login: string }>(
@@ -201,7 +203,7 @@ export class GitIdentities {
             connection.apiUrl,
           ],
         )
-      ).rows[0]?.login ?? connection.account
+      ).rows[0]?.login ?? null
     );
   }
 
@@ -209,12 +211,24 @@ export class GitIdentities {
     sql: CloudSql,
     connection: GitConnectionRecord,
     userId: string,
-    mode: ActingMode,
   ): Promise<ActingAccess> {
-    if (mode === "organization") return organizationAccess(connection);
-    return (
-      (await this.personal(sql, connection, userId)) ??
-      organizationAccess(connection)
+    const personal = await this.personal(sql, connection, userId);
+    if (!personal) throw accountRequired(connection.provider);
+    return personal;
+  }
+
+  async rejected(
+    connection: GitConnectionRecord,
+    userId: string,
+  ): Promise<CloudError> {
+    const label = gitProviderLabels[connection.provider];
+    const message = `${label} rejected your sign-in. Sign in again under Settings → Linked accounts.`;
+    await this.database.transaction((sql) =>
+      sql.query(
+        "UPDATE cloud_git_accounts SET last_error=$4 WHERE organization_id=$1 AND user_id=$2 AND provider=$3",
+        [connection.organizationId, userId, connection.provider, message],
+      ),
     );
+    return new CloudError(409, "git_account_required", message);
   }
 }

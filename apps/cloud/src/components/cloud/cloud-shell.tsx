@@ -18,7 +18,7 @@ import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { SavedView } from "@/lib/cloud-view-contract";
 import type { CloudFavorite } from "@/lib/cloud-favorite-contract";
 import type { SidebarPreferences } from "@/lib/cloud-sidebar-contract";
-import { settingsHref } from "@/lib/settings-navigation";
+import { settingsHref, settingsPageLabel } from "@/lib/settings-navigation";
 import { pageHelp } from "@/lib/cloud-page-help";
 import { Button } from "@/components/ui/button";
 import {
@@ -161,6 +161,7 @@ export function CloudShell({
         !item.href.includes("?") &&
         (pathname === item.href || pathname.startsWith(`${item.href}/`)),
     );
+  const settingsLabel = settingsPageLabel(pathname, workspace.teams);
   useEffect(() => {
     const media = matchMedia("(min-width: 801px)");
     const close = () => {
@@ -324,11 +325,20 @@ export function CloudShell({
                 </Sheet>
                 <div className="cloud-breadcrumb" aria-label="Current location">
                   <span>{workspace.organization.name}</span>
-                  {current && (
+                  {settingsLabel ? (
                     <>
                       <ChevronRight size={13} />
-                      <span>{current.label}</span>
+                      <span>Settings</span>
+                      <ChevronRight size={13} />
+                      <span>{settingsLabel}</span>
                     </>
+                  ) : (
+                    current && (
+                      <>
+                        <ChevronRight size={13} />
+                        <span>{current.label}</span>
+                      </>
+                    )
                   )}
                 </div>
                 {section && help && (

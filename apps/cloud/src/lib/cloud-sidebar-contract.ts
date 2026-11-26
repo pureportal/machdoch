@@ -191,8 +191,8 @@ export const sidebarItems = [
   },
   {
     id: "automations",
-    label: "Loops",
-    href: "/cloud/loops",
+    label: "Automations",
+    href: "/cloud/automations",
     group: "workspace",
     placement: "show",
     description:
@@ -275,7 +275,7 @@ export const sidebarItems = [
   {
     id: "settings",
     label: "Settings",
-    href: "/cloud/settings/preferences",
+    href: "/cloud/settings",
     group: "workspace",
     placement: "more",
     description: "Personal, workspace and team settings.",

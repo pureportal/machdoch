@@ -1,5 +1,4 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +10,6 @@ import { requireMembership } from "../access";
 import type { CliCommand } from "../ai/cli-process";
 import type { CloudDatabase } from "../database";
 import type { CloudGitAccounts } from "./accounts";
-import type { CloudGitConnections } from "./connections";
 
 const signInTimeoutMs = 15 * 60_000;
 const promptWaitMs = 15_000;
@@ -31,12 +29,7 @@ const passedEnvironment = [
   "TMP",
 ];
 
-export type GitHubSignInTarget = "connection" | "account";
-
-const targetScopes: Record<GitHubSignInTarget, string[]> = {
-  connection: ["admin:repo_hook", "workflow"],
-  account: [],
-};
+const accountScopes = ["repo", "workflow", "read:org"];
 
 const signedOut: CloudCliLogin = {
   state: "signed-out",
@@ -114,28 +107,20 @@ export class CloudGitHubSignIn {
 
   constructor(
     private readonly database: CloudDatabase,
-    private readonly connections: CloudGitConnections,
     private readonly accounts: CloudGitAccounts,
     private readonly command: CliCommand = { file: "gh", prefixArgs: [] },
   ) {}
 
-  async get(
-    actor: CloudActor,
-    target: GitHubSignInTarget,
-  ): Promise<CloudCliLogin> {
-    await this.authorize(actor, target);
-    return this.sessions.get(this.key(actor, target))?.login ?? signedOut;
+  async get(actor: CloudActor): Promise<CloudCliLogin> {
+    await this.authorize(actor);
+    return this.sessions.get(this.key(actor))?.login ?? signedOut;
   }
 
-  async start(
-    actor: CloudActor,
-    target: GitHubSignInTarget,
-  ): Promise<CloudCliLogin> {
-    await this.authorize(actor, target);
-    const key = this.key(actor, target);
+  async start(actor: CloudActor): Promise<CloudCliLogin> {
+    await this.authorize(actor);
+    const key = this.key(actor);
     await this.stop(key);
     const configDirectory = await mkdtemp(join(tmpdir(), "machdoch-github-"));
-    const scopes = targetScopes[target];
     const child = spawn(
       this.command.file,
       [
@@ -148,7 +133,8 @@ export class CloudGitHubSignIn {
         "https",
         "--web",
         "--insecure-storage",
-        ...(scopes.length ? ["--scopes", scopes.join(",")] : []),
+        "--scopes",
+        accountScopes.join(","),
       ],
       {
         env: githubEnvironment(configDirectory),
@@ -195,7 +181,7 @@ export class CloudGitHubSignIn {
     );
     child.once(
       "close",
-      (exitCode) => void this.settle(actor, target, session, exitCode),
+      (exitCode) => void this.settle(actor, session, exitCode),
     );
     const deadline = Date.now() + promptWaitMs;
     while (
@@ -207,12 +193,9 @@ export class CloudGitHubSignIn {
     return session.login;
   }
 
-  async cancel(
-    actor: CloudActor,
-    target: GitHubSignInTarget,
-  ): Promise<CloudCliLogin> {
-    await this.authorize(actor, target);
-    await this.stop(this.key(actor, target));
+  async cancel(actor: CloudActor): Promise<CloudCliLogin> {
+    await this.authorize(actor);
+    await this.stop(this.key(actor));
     return signedOut;
   }
 
@@ -220,21 +203,14 @@ export class CloudGitHubSignIn {
     await Promise.all([...this.sessions.keys()].map((key) => this.stop(key)));
   }
 
-  private authorize(
-    actor: CloudActor,
-    target: GitHubSignInTarget,
-  ): Promise<void> {
+  private authorize(actor: CloudActor): Promise<void> {
     return this.database.transaction(async (sql) => {
-      if (target === "connection")
-        await requireMembership(sql, actor, "git.manage");
-      else await requireMembership(sql, actor);
+      await requireMembership(sql, actor);
     });
   }
 
-  private key(actor: CloudActor, target: GitHubSignInTarget): string {
-    return target === "connection"
-      ? `connection/${actor.organizationId}`
-      : `account/${actor.organizationId}/${actor.userId}`;
+  private key(actor: CloudActor): string {
+    return `${actor.organizationId}/${actor.userId}`;
   }
 
   private async stop(key: string): Promise<void> {
@@ -264,7 +240,6 @@ export class CloudGitHubSignIn {
 
   private async settle(
     actor: CloudActor,
-    target: GitHubSignInTarget,
     session: SignInSession,
     exitCode: number | null,
   ): Promise<void> {
@@ -277,10 +252,7 @@ export class CloudGitHubSignIn {
       }
       const token = await readToken(this.command, session.configDirectory);
       if (session.login.state !== "waiting") return;
-      const account =
-        target === "connection"
-          ? await this.connect(actor, token)
-          : await this.link(actor, token);
+      const account = await this.link(actor, token);
       session.login = { ...signedOut, state: "signed-in", account };
     } catch (error) {
       this.fail(
@@ -290,24 +262,6 @@ export class CloudGitHubSignIn {
     } finally {
       await this.cleanup(session);
     }
-  }
-
-  private async connect(actor: CloudActor, token: string): Promise<string> {
-    const { id } = await this.connections.connect(
-      actor,
-      randomUUID(),
-      "github",
-      {
-        revision: 0,
-        apiUrl: defaultGitApiUrls.github,
-        token,
-        automate: true,
-        codeAccess: true,
-      },
-    );
-    return (await this.connections.get(actor)).connections.find(
-      (connection) => connection.id === id,
-    )!.account;
   }
 
   private async link(actor: CloudActor, token: string): Promise<string> {

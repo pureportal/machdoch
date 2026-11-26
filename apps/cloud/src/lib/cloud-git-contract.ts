@@ -48,6 +48,16 @@ export const gitConnectionInputSchema = z.strictObject({
 });
 export type GitConnectionInput = z.infer<typeof gitConnectionInputSchema>;
 
+export const gitHubAppSetupInputSchema = z.strictObject({
+  apiUrl: gitApiUrlSchema,
+  owner: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/u, "Enter a GitHub login.")
+    .nullable(),
+});
+export type GitHubAppSetupInput = z.infer<typeof gitHubAppSetupInputSchema>;
+
 export const gitAccountInputSchema = z.strictObject({
   revision: z.number().int().min(0),
   apiUrl: gitApiUrlSchema,
@@ -77,6 +87,12 @@ export const gitMergeInputSchema = z.strictObject({
   headSha: z.string().regex(/^[0-9a-f]{40}$/u),
 });
 export type GitMergeInput = z.infer<typeof gitMergeInputSchema>;
+
+export const gitAutoMergeInputSchema = z.strictObject({
+  enabled: z.boolean(),
+  method: z.enum(gitMergeMethods),
+});
+export type GitAutoMergeInput = z.infer<typeof gitAutoMergeInputSchema>;
 
 export const gitReviewDecisionInputs = [
   "approve",
@@ -127,6 +143,7 @@ export interface GitConnection {
   webhookSecret: string;
   oauthClientId: string | null;
   oauthCallbackUrl: string;
+  app: { slug: string; configureUrl: string } | null;
   repositories: GitRepository[];
 }
 
@@ -352,7 +369,8 @@ export interface CloudPullRequestDetails {
   issueSuggestion: boolean;
   canMerge: boolean;
   fixable: boolean;
-  actingAs: string;
+  autoMerge: boolean;
+  actingAs: string | null;
   agentLogin: string;
   mergeMethods: GitMergeMethod[];
 }

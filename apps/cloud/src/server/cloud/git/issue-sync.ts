@@ -1,6 +1,7 @@
 import { automationMarker } from "../../../lib/git-events";
+import { gitProviderLabels } from "../../../lib/git-providers";
 import type { SettingsCipher } from "../../settings-crypto";
-import { isCloudError } from "../access";
+import { CloudError, isCloudError } from "../access";
 import type { CloudDatabase, CloudSql } from "../database";
 import { gitConnection, type GitConnectionRecord } from "./connections";
 import {
@@ -8,12 +9,7 @@ import {
   type GitIssueState,
   type GitIssueUpdate,
 } from "./git-client";
-import {
-  attributed,
-  organizationAccess,
-  type ActingAccess,
-  type GitIdentities,
-} from "./identity";
+import type { ActingAccess, GitIdentities } from "./identity";
 import { syncedIssueColumns, type SyncedIssue } from "./issue-sync-inbound";
 
 const retryDelay = "5 minutes";
@@ -40,7 +36,8 @@ interface OutgoingComment {
   id: string;
   body: string;
   author: string;
-  acting: ActingAccess;
+  authorId: string;
+  acting: ActingAccess | null;
 }
 
 interface IssuePush {
@@ -116,10 +113,29 @@ export class CloudGitIssueSync {
         );
       pushed = true;
       for (const comment of push.comments)
-        posted.push({
-          id: comment.id,
-          externalId: await this.postComment(push, claimed, comment),
-        });
+        if (comment.acting)
+          posted.push({
+            id: comment.id,
+            externalId: await this.postComment(
+              push,
+              claimed,
+              comment,
+              comment.acting,
+            ),
+          });
+      const waiting = [
+        ...new Set(
+          push.comments
+            .filter((comment) => !comment.acting)
+            .map((comment) => comment.author),
+        ),
+      ];
+      if (waiting.length)
+        failure = new CloudError(
+          409,
+          "git_account_required",
+          `Waiting for ${waiting.join(", ")} to link a ${gitProviderLabels[push.connection.provider]} account.`,
+        );
     } catch (error) {
       failure = error;
     }
@@ -134,27 +150,18 @@ export class CloudGitIssueSync {
     push: IssuePush,
     claimed: ClaimedIssue,
     comment: OutgoingComment,
+    acting: ActingAccess,
   ): Promise<string> {
-    const send = (outgoing: OutgoingComment) =>
-      gitClient(outgoing.acting, this.transport).commentOnIssue(
+    try {
+      return await gitClient(acting, this.transport).commentOnIssue(
         claimed.fullName,
         claimed.number,
-        attributed(
-          `${outgoing.body}\n\n${automationMarker}`,
-          outgoing.acting,
-          outgoing.author,
-        ),
+        `${comment.body}\n\n${automationMarker}`,
       );
-    try {
-      return await send(comment);
     } catch (error) {
-      if (
-        !comment.acting.personal ||
-        !isCloudError(error) ||
-        error.code !== "git_token"
-      )
-        throw error;
-      return send({ ...comment, acting: organizationAccess(push.connection) });
+      if (isCloudError(error) && error.code === "git_token")
+        throw await this.identities.rejected(push.connection, comment.authorId);
+      throw error;
     }
   }
 
@@ -233,11 +240,11 @@ export class CloudGitIssueSync {
         id: comment.id,
         body: comment.body,
         author: comment.author,
-        acting: await this.identities.acting(
+        authorId: comment.authorId,
+        acting: await this.identities.personal(
           sql,
           connection,
           comment.authorId,
-          "personal_first",
         ),
       });
     return {

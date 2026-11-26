@@ -5,6 +5,7 @@ import type {
   GitCommit,
   GitConversationEntry,
   GitMergeInput,
+  GitMergeMethod,
   GitPullRequestFile,
   GitReview,
   GitReviewComment,
@@ -59,6 +60,7 @@ export const gitlabMergeRequestSchema = z.object({
   sha: z.string(),
   detailed_merge_status: z.string().nullable().optional(),
   has_conflicts: z.boolean().optional(),
+  merge_when_pipeline_succeeds: z.boolean().optional(),
   changes_count: z.string().nullable().optional(),
   updated_at: z.string(),
   created_at: z.string().optional(),
@@ -111,6 +113,7 @@ export function gitlabMergeRequest(
     mergeableState: request.has_conflicts
       ? "dirty"
       : (mergeStates[status] ?? null),
+    autoMerge: request.merge_when_pipeline_succeeds === true,
     additions: null,
     deletions: null,
     changedFiles: Number.isFinite(changed) ? changed : null,
@@ -554,6 +557,33 @@ export class GitLabClient implements GitClient {
         body: { sha: input.headSha, squash: input.method === "squash" },
       },
     );
+  }
+
+  async setAutoMerge(
+    fullName: string,
+    number: number,
+    enabled: boolean,
+    method: GitMergeMethod,
+  ): Promise<void> {
+    const path = this.mergeRequestPath(fullName, number);
+    if (!enabled) {
+      await this.request(
+        `${path}/cancel_merge_when_pipeline_succeeds`,
+        z.unknown(),
+        { method: "POST" },
+      );
+      return;
+    }
+    if (method === "rebase")
+      throw new CloudError(
+        422,
+        "git_merge_method",
+        "GitLab merges with the project's merge method. Choose merge or squash.",
+      );
+    await this.request(`${path}/merge`, z.object({ iid: z.number() }), {
+      method: "PUT",
+      body: { merge_when_pipeline_succeeds: true, squash: method === "squash" },
+    });
   }
 
   async mergePolicy(fullName: string, branch: string): Promise<GitMergePolicy> {

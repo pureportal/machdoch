@@ -28,6 +28,11 @@ export default async function TwoFactorPage({
   return challenge.enrolled ? (
     <TwoFactorChallenge destination={destination} signIn={signIn} />
   ) : (
-    <TwoFactorEnrollment destination={destination} signIn={signIn} />
+    <TwoFactorEnrollment
+      destination={
+        authorization.success ? destination : "/cloud/settings/setup"
+      }
+      signIn={signIn}
+    />
   );
 }

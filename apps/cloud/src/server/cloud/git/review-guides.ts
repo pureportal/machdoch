@@ -170,7 +170,7 @@ export class CloudGitReviewGuides {
           throw new CloudError(
             409,
             "review_guides_off",
-            "Review guides are off.",
+            "Review walkthroughs are off.",
           );
         const existing = await readGuide(
           sql,

@@ -152,7 +152,7 @@ it("skips fanning out to itself", async () => {
   await settle();
   expect((await loops().runDetail(owner, runId)).steps[0]).toMatchObject({
     state: "skipped",
-    detail: "A loop cannot fan out to itself.",
+    detail: "An automation cannot fan out to itself.",
   });
 }, 60_000);
 
@@ -244,7 +244,7 @@ it("resolves view, filter, project, document and repository context", async () =
     settings: { ...input, codeAccess: "selected", repositoryIds: [] },
   });
   expect(await failure(context())).toMatchObject({
-    message: "Loops may not access this repository.",
+    message: "Automations may not access this repository.",
   });
   await database.engine.query(
     "DELETE FROM cloud_git_repositories WHERE id=$1",

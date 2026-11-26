@@ -199,11 +199,11 @@ export class CloudAutomationExecutor {
       )
     ).rows[0];
     if (!guard) {
-      await this.finish(run, "skipped", "The loop is unavailable.");
+      await this.finish(run, "skipped", "The automation is unavailable.");
       return;
     }
     if (guard.killed) {
-      await this.finish(run, "skipped", "The loop was stopped.");
+      await this.finish(run, "skipped", "The automation was stopped.");
       return;
     }
     if (guard.overdue) {

@@ -135,12 +135,24 @@ export function GitConnectionCard({
               align="end"
               sideOffset={4}
             >
-              <DropdownMenu.Item
-                className="cloud-menu-item"
-                onSelect={onReconnect}
-              >
-                Reconnect
-              </DropdownMenu.Item>
+              {connection.app ? (
+                <DropdownMenu.Item className="cloud-menu-item" asChild>
+                  <a
+                    href={connection.app.configureUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Choose repositories on GitHub
+                  </a>
+                </DropdownMenu.Item>
+              ) : (
+                <DropdownMenu.Item
+                  className="cloud-menu-item"
+                  onSelect={onReconnect}
+                >
+                  Reconnect
+                </DropdownMenu.Item>
+              )}
               <DropdownMenu.Item
                 className="cloud-menu-item"
                 disabled={pending}
@@ -175,7 +187,11 @@ export function GitConnectionCard({
         open={disconnecting}
         onOpenChange={setDisconnecting}
         title={`Disconnect ${connection.account}`}
-        description={`Its pull requests are unlinked from issues and the webhooks machdoch created are removed from ${label}.`}
+        description={
+          connection.app
+            ? `Its pull requests are unlinked from issues and the GitHub App is uninstalled from ${connection.account}.`
+            : `Its pull requests are unlinked from issues and the webhooks machdoch created are removed from ${label}.`
+        }
         actionLabel="Disconnect"
         onConfirm={async () => {
           await cloudRequest(`git/connections/${connection.id}`, {

@@ -29,6 +29,7 @@ const ownerToken = `github_pat_${"w".repeat(40)}`;
 const memberToken = `github_pat_${"m".repeat(40)}`;
 const duplicateToken = `github_pat_${"d".repeat(40)}`;
 const gitlabToken = `glpat-${"g".repeat(30)}`;
+const gitlabOwnerToken = `glpat-${"w".repeat(30)}`;
 
 let database: Awaited<ReturnType<typeof createTestCloudDatabase>>;
 let runtime: CloudRuntime;
@@ -166,6 +167,7 @@ beforeEach(async () => {
   server.logins.set(memberToken, "member-gh");
   server.logins.set(duplicateToken, "member-gh");
   server.logins.set(gitlabToken, "acme-gitlab-bot");
+  server.logins.set(gitlabOwnerToken, "owner-gitlab");
   const organizationId = randomUUID();
   owner = { userId: randomUUID(), organizationId };
   member = { userId: randomUUID(), organizationId };
@@ -238,9 +240,15 @@ it("lets every member connect an own account and act as themselves", async () =>
   expect((await runtime.git.pullRequests.details(member, id)).actingAs).toBe(
     "member-gh",
   );
-  expect((await runtime.git.pullRequests.details(owner, id)).actingAs).toBe(
-    "acme-bot",
-  );
+  expect(
+    (await runtime.git.pullRequests.details(owner, id)).actingAs,
+  ).toBeNull();
+  await expect(
+    runtime.git.pullRequests.merge(owner, id, {
+      method: "squash",
+      headSha: sha(1),
+    }),
+  ).rejects.toMatchObject({ code: "git_account_required" });
   await runtime.git.pullRequests.merge(member, id, {
     method: "squash",
     headSha: sha(1),
@@ -254,7 +262,7 @@ it("lets every member connect an own account and act as themselves", async () =>
   ).toBeUndefined();
 });
 
-it("attributes pull request writes to the person and falls back to the workspace connection", async () => {
+it("writes to pull requests only as the requesting person, never as the workspace connection", async () => {
   await createIssue("Attribution");
   server.add(server.github, 1, { headRef: "plat-1-attribution" });
   await connect("github");
@@ -269,16 +277,15 @@ it("attributes pull request writes to the person and falls back to the workspace
         call.authorization,
         (call.body as { body: string }).body,
       ]);
-  const viaWorkspace = (body: string) => [
-    `Bearer ${organizationToken}`,
-    `*member* via machdoch\n\n${body}`,
-  ];
+  const unlinked = { code: "git_account_required" };
 
-  expect(await comment("Looks good")).toBe("acme-bot");
-  await runtime.git.pullRequests.review(member, id, {
-    decision: "approve",
-    body: "",
-  });
+  await expect(comment("Looks good")).rejects.toMatchObject(unlinked);
+  await expect(
+    runtime.git.pullRequests.review(member, id, {
+      decision: "approve",
+      body: "",
+    }),
+  ).rejects.toMatchObject(unlinked);
   await runtime.git.accounts.connect(member, "github", {
     revision: 0,
     apiUrl: githubApiUrl,
@@ -290,26 +297,30 @@ it("attributes pull request writes to the person and falls back to the workspace
     body: "Personal review",
   });
   server.revoked.add(memberToken);
-  expect(await comment("Revoked")).toBe("acme-bot");
+  await expect(comment("Revoked")).rejects.toMatchObject(unlinked);
+  expect(
+    (await runtime.git.accounts.get(member)).accounts.github?.lastError,
+  ).toContain("Sign in again");
   server.revoked.delete(memberToken);
   await database.engine.query(
     "UPDATE cloud_git_accounts SET expires_at=clock_timestamp() - interval '1 minute' WHERE user_id=$1",
     [member.userId],
   );
-  expect(await comment("Expired")).toBe("acme-bot");
-  await runtime.git.accounts.disconnect(member, "github", 1);
-  expect(await comment("Disconnected")).toBe("acme-bot");
+  await expect(comment("Expired")).rejects.toMatchObject(unlinked);
+  await database.engine.query(
+    "UPDATE cloud_git_accounts SET expires_at=NULL WHERE user_id=$1",
+    [member.userId],
+  );
+  const revision = (await runtime.git.accounts.get(member)).accounts.github!
+    .revision;
+  await runtime.git.accounts.disconnect(member, "github", revision);
+  await expect(comment("Disconnected")).rejects.toMatchObject(unlinked);
 
   expect(posted("/repos/acme/app/issues/1/comments")).toEqual([
-    viaWorkspace("Looks good"),
     [`Bearer ${memberToken}`, "Mine"],
     [`Bearer ${memberToken}`, "Revoked"],
-    viaWorkspace("Revoked"),
-    viaWorkspace("Expired"),
-    viaWorkspace("Disconnected"),
   ]);
   expect(posted("/repos/acme/app/pulls/1/reviews")).toEqual([
-    viaWorkspace(automationMarker),
     [`Bearer ${memberToken}`, `Personal review\n\n${automationMarker}`],
   ]);
 });
@@ -367,7 +378,6 @@ it("runs automations for pushes on chosen branches and pull request comments", a
       {
         kind: "git_comment",
         body: "On it, {{comment.author}}. {{pullRequest.headRef}}",
-        identity: "owner",
       },
     ],
   });
@@ -385,7 +395,10 @@ it("runs automations for pushes on chosen branches and pull request comments", a
     });
   await comment("@bot please look");
   await dispatch();
-  expect((await runs(replies.id))[0]).toMatchObject({ state: "succeeded" });
+  expect((await runs(replies.id))[0]).toMatchObject({
+    state: "failed",
+    error: expect.stringContaining("Link your GitHub account"),
+  });
   await runtime.git.accounts.connect(owner, "github", {
     revision: 0,
     apiUrl: githubApiUrl,
@@ -396,12 +409,6 @@ it("runs automations for pushes on chosen branches and pull request comments", a
   expect((await runs(replies.id))[0]).toMatchObject({ state: "succeeded" });
   const posted = server.callsTo("/repos/acme/app/issues/4/comments", "POST");
   expect(posted).toEqual([
-    expect.objectContaining({
-      authorization: `Bearer ${organizationToken}`,
-      body: {
-        body: `*owner* via machdoch\n\nOn it, ada. feature/search\n\n${automationMarker}`,
-      },
-    }),
     expect.objectContaining({
       authorization: `Bearer ${ownerToken}`,
       body: {
@@ -448,7 +455,7 @@ it("tracks stacked pull requests, completes issues only on the default branch an
   ).toEqual([2, 3]);
   await automate({
     trigger: { kind: "git_event", events: ["stack_base_merged"] },
-    actions: [{ kind: "git_retarget", identity: "organization" }],
+    actions: [{ kind: "git_retarget" }],
   });
 
   server.update(sideChange, { state: "merged" });
@@ -457,6 +464,11 @@ it("tracks stacked pull requests, completes issues only on the default branch an
     "complete",
   );
 
+  await runtime.git.accounts.connect(owner, "github", {
+    revision: 0,
+    apiUrl: githubApiUrl,
+    token: ownerToken,
+  });
   await runtime.git.pullRequests.merge(owner, listed.get(1)!.id, {
     method: "squash",
     headSha: sha(1),
@@ -476,7 +488,7 @@ it("tracks stacked pull requests, completes issues only on the default branch an
   await dispatch();
   expect(server.callsTo("/repos/acme/app/pulls/2", "PATCH")).toEqual([
     expect.objectContaining({
-      authorization: `Bearer ${organizationToken}`,
+      authorization: `Bearer ${ownerToken}`,
       body: { base: "main" },
     }),
   ]);
@@ -578,6 +590,11 @@ it("connects GitLab, syncs merge requests and accepts only verified webhooks", a
     `Main moved https://gitlab.test/${gitlabProject}/-/compare/${sha(20)}...${sha(21)}`,
   );
 
+  await runtime.git.accounts.connect(owner, "gitlab", {
+    revision: 0,
+    apiUrl: gitlabApiUrl,
+    token: gitlabOwnerToken,
+  });
   await expect(
     runtime.git.pullRequests.merge(owner, linked!.id, {
       method: "rebase",

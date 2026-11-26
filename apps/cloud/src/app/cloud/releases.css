@@ -981,6 +981,11 @@
   height: 30px;
   width: 220px;
 }
+.cloud-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 12px;
+}
 .cloud-pipeline-table {
   width: 100%;
   border: 1px solid var(--border);
@@ -1014,6 +1019,9 @@
   font-weight: 600;
 }
 .cloud-pipeline-table tbody th span {
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 400;

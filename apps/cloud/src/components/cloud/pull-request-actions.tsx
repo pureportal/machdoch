@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import {
   CirclePlus,
+  GitPullRequestClosed,
   GitMerge,
   GitPullRequestArrow,
   MessageSquareCode,
@@ -41,7 +43,7 @@ function mergeConsequence(
   details: CloudPullRequestDetails,
 ): string {
   const { headRef, baseRef, provider } = details.pullRequest;
-  const where = `on ${gitProviderLabels[provider]} as ${details.actingAs}`;
+  const where = `on ${gitProviderLabels[provider]} as ${details.actingAs ?? ""}`;
   if (method === "rebase") return `Rebase ${headRef} onto ${baseRef} ${where}.`;
   return `${method === "squash" ? "Squash" : "Merge"} ${headRef} into ${baseRef} ${where}.`;
 }
@@ -49,13 +51,13 @@ function mergeConsequence(
 export function PullRequestActions({
   details,
   launch,
-  onMerged,
+  onFinished,
   onUpdated,
   onRetargeted,
 }: {
   details: CloudPullRequestDetails;
   launch: boolean;
-  onMerged: (pullRequest: CloudPullRequest) => void;
+  onFinished: (pullRequest: CloudPullRequest) => void;
   onUpdated: () => void;
   onRetargeted: (pullRequest: CloudPullRequest) => void;
 }) {
@@ -72,7 +74,12 @@ export function PullRequestActions({
   const [retargeting, setRetargeting] = useState(false);
   const [creatingIssue, setCreatingIssue] = useState(false);
   const [updateRequested, setUpdateRequested] = useState(false);
+  const [autoMerge, setAutoMerge] = useState(details.autoMerge);
+  const [changingAutoMerge, setChangingAutoMerge] = useState(false);
   const { pullRequest } = details;
+  const label = gitProviderLabels[pullRequest.provider];
+  const actingAs = details.actingAs;
+  const acts = details.canMerge && actingAs !== null;
   const open = pullRequest.state === "open";
   const conflicts = hasConflicts(details);
   const failed = details.checks.runs.filter((run) => run.state === "failure");
@@ -109,11 +116,11 @@ export function PullRequestActions({
       });
   };
   const updatable =
-    details.canMerge &&
+    acts &&
     pullRequest.mergeableState === "behind" &&
     !conflicts &&
     !updateRequested;
-  const retargetTo = details.canMerge ? pullRequest.stack?.retargetTo : null;
+  const retargetTo = acts ? pullRequest.stack?.retargetTo : null;
   if (
     !conflictTask &&
     !fixTasks.length &&
@@ -222,7 +229,14 @@ export function PullRequestActions({
           Retarget to {retargetTo}
         </Button>
       )}
-      {details.canMerge && (
+      {details.canMerge && !actingAs && (
+        <Button asChild variant="outline" size="sm">
+          <Link href="/cloud/settings/connected-accounts">
+            Link {label} account
+          </Link>
+        </Button>
+      )}
+      {acts && (
         <div className="cloud-pull-request-merge">
           <Select
             aria-label="Merge method"
@@ -249,13 +263,57 @@ export function PullRequestActions({
             actionLabel="Merge"
             destructive={false}
             onConfirm={async () => {
-              onMerged(
+              onFinished(
                 await cloudRequest<CloudPullRequest>(
                   `pull-requests/${pullRequest.id}/merge`,
                   {
                     method: "POST",
                     body: { method, headSha: pullRequest.headSha },
                   },
+                ),
+              );
+            }}
+          />
+          <label className="cloud-git-code-access">
+            Auto-merge
+            <button
+              type="button"
+              role="switch"
+              className="cloud-automation-switch"
+              aria-checked={autoMerge}
+              aria-label="Auto-merge"
+              disabled={changingAutoMerge || pullRequest.draft}
+              onClick={() => {
+                const enabled = !autoMerge;
+                setChangingAutoMerge(true);
+                void cloudRequest(
+                  `pull-requests/${pullRequest.id}/auto-merge`,
+                  {
+                    method: "PUT",
+                    body: { enabled, method },
+                  },
+                )
+                  .then(() => setAutoMerge(enabled))
+                  .catch((reason: Error) => toast(reason.message, "error"))
+                  .finally(() => setChangingAutoMerge(false));
+              }}
+            />
+          </label>
+          <ConfirmButton
+            trigger={
+              <Button variant="ghost" size="sm">
+                <GitPullRequestClosed />
+                Close
+              </Button>
+            }
+            title="Close pull request"
+            description={`Close #${pullRequest.number} on ${label} as ${actingAs}.`}
+            actionLabel="Close"
+            onConfirm={async () => {
+              onFinished(
+                await cloudRequest<CloudPullRequest>(
+                  `pull-requests/${pullRequest.id}/close`,
+                  { method: "POST", body: {} },
                 ),
               );
             }}

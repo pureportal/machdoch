@@ -44,6 +44,15 @@ export const keyLabels: Record<CloudProviderKind, string> = {
   langdock: "API key",
 };
 
+export const keyUrls: Partial<Record<CloudProviderKind, string>> = {
+  "claude-code-cli": "https://console.anthropic.com/settings/keys",
+  "codex-cli": "https://platform.openai.com/api-keys",
+  "copilot-cli": "https://github.com/settings/personal-access-tokens/new",
+  anthropic: "https://console.anthropic.com/settings/keys",
+  openai: "https://platform.openai.com/api-keys",
+  google: "https://aistudio.google.com/apikey",
+};
+
 export const defaultProviderLimits = {
   maxOutputTokens: 8192,
   dailyTokenBudget: 1_000_000,

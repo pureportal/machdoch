@@ -15,9 +15,20 @@ export function isGitProvider(value: string): value is GitProvider {
   return (gitProviders as readonly string[]).includes(value);
 }
 
+export type GitTokenPurpose = "connection" | "account";
+
+const tokenScopes: Record<GitProvider, Record<GitTokenPurpose, string>> = {
+  github: {
+    connection: "repo,admin:repo_hook,read:org",
+    account: "repo,workflow,read:org",
+  },
+  gitlab: { connection: "api", account: "api" },
+};
+
 export function gitTokenUrl(
   provider: GitProvider,
   apiUrl: string,
+  purpose: GitTokenPurpose,
 ): string | null {
   let origin: string;
   try {
@@ -27,7 +38,8 @@ export function gitTokenUrl(
   } catch {
     return null;
   }
+  const scopes = tokenScopes[provider][purpose];
   return provider === "github"
-    ? `${origin}/settings/tokens/new?description=Machdoch&scopes=repo,admin:repo_hook`
-    : `${origin}/-/user_settings/personal_access_tokens?name=Machdoch&scopes=api`;
+    ? `${origin}/settings/tokens/new?description=Machdoch&scopes=${scopes}`
+    : `${origin}/-/user_settings/personal_access_tokens?name=Machdoch&scopes=${scopes}`;
 }

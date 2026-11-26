@@ -102,7 +102,7 @@ async function requireCodeAccess(
     throw new CloudError(
       422,
       "loop_code_access",
-      "Loops may only read the repositories allowed in loop settings.",
+      "Automations may only read the repositories allowed in automation settings.",
     );
 }
 
@@ -111,7 +111,7 @@ function requireAutomationLoop(loop: LoopIdentity): void {
     throw new CloudError(
       422,
       "loop_schedule",
-      "Scheduled issue loops cannot be replayed.",
+      "Scheduled issue automations cannot be replayed.",
     );
 }
 
@@ -430,7 +430,7 @@ export class CloudLoops {
         throw new CloudError(
           422,
           "loop_run",
-          "Choose a recorded run of this loop.",
+          "Choose a recorded run of this automation.",
         );
       return command(sql, actor, key, { kind: "loop.dry_run", id, runId }, () =>
         this.rerun(sql, actor, loop, recorded, `dry:${key}`, true),
@@ -522,7 +522,7 @@ export class CloudLoops {
       throw new CloudError(
         403,
         "loop_owner_required",
-        "Install loops in the browser.",
+        "Install automations in the browser.",
       );
     return this.database.transaction(async (sql) => {
       const template = loopTemplates.find(

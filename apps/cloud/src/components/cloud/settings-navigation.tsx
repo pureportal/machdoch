@@ -1,17 +1,84 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Search } from "lucide-react";
+import {
+  Bell,
+  Bot,
+  Clock,
+  FileText,
+  Flag,
+  GitPullRequest,
+  KeyRound,
+  Link2,
+  ListChecks,
+  LockKeyhole,
+  Mail,
+  MessageSquareText,
+  Palette,
+  Plug,
+  Rocket,
+  Search,
+  Server,
+  Shield,
+  SlidersHorizontal,
+  Sparkles,
+  Tag,
+  Target,
+  Tags,
+  UserRound,
+  UserPlus,
+  Users,
+  Activity,
+  Brain,
+  CircleDot,
+  X,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import { useState } from "react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import {
   settingsNavigation,
   settingsTeamTree,
   teamSettingsHref,
+  type SettingsSectionId,
   type SettingsTeamNode,
 } from "@/lib/settings-navigation";
 import { Input } from "@/components/ui/input";
 import { Section, SidebarLink, useCollapsed } from "./sidebar-parts";
+
+const sectionIcons: Record<SettingsSectionId, LucideIcon> = {
+  setup: ListChecks,
+  preferences: SlidersHorizontal,
+  profile: UserRound,
+  notifications: Bell,
+  "code-reviews": GitPullRequest,
+  security: LockKeyhole,
+  "connected-accounts": Link2,
+  "agent-personalization": Sparkles,
+  "issue-labels": Tag,
+  "workflow-states": CircleDot,
+  slas: Clock,
+  "issue-templates": FileText,
+  "project-labels": Tags,
+  "project-statuses": Flag,
+  "project-updates": MessageSquareText,
+  initiatives: Target,
+  ai: Bot,
+  execution: Server,
+  automations: Zap,
+  "customer-requests": Users,
+  releases: Rocket,
+  pulse: Activity,
+  integrations: Plug,
+  members: Users,
+  roles: Shield,
+  invitations: UserPlus,
+  sso: KeyRound,
+  email: Mail,
+  branding: Palette,
+  mimorii: Brain,
+};
 
 function TeamLinks({
   nodes,
@@ -52,10 +119,15 @@ export function SettingsNavigation({
   const teams = settingsTeamTree(workspace.teams);
   return (
     <>
-      <div className="cloud-sidebar-header">
-        <Link href="/cloud/issues" className="cloud-navigation-more" onClick={onNavigate}>
-          <ArrowLeft size={15} strokeWidth={1.7} />
-          <span>Back to app</span>
+      <div className="cloud-sidebar-header cloud-settings-sidebar-header">
+        <strong>Settings</strong>
+        <Link
+          href="/cloud/issues"
+          className="cloud-settings-close"
+          aria-label="Close settings"
+          onClick={onNavigate}
+        >
+          <X size={15} strokeWidth={1.7} />
         </Link>
       </div>
       <label className="cloud-settings-search">
@@ -79,7 +151,11 @@ export function SettingsNavigation({
             {group.entries.map((entry) => (
               <SidebarLink
                 key={entry.id}
-                item={{ href: entry.href, label: entry.label }}
+                item={{
+                  href: entry.href,
+                  label: entry.label,
+                  icon: sectionIcons[entry.id],
+                }}
                 onNavigate={onNavigate}
               />
             ))}
@@ -87,7 +163,7 @@ export function SettingsNavigation({
         ))}
         {!query && teams.length > 0 && (
           <Section
-            label="Your teams"
+            label="Teams"
             open={sections.isOpen("settings-teams")}
             onToggle={() => sections.toggle("settings-teams")}
           >

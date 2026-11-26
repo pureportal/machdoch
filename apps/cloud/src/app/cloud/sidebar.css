@@ -126,6 +126,27 @@ button.cloud-brand > svg {
 .cloud-sidebar-mobile .cloud-sidebar-header {
   padding-right: 44px;
 }
+.cloud-settings-sidebar-header {
+  justify-content: space-between;
+  padding: 2px 2px 10px 8px;
+}
+.cloud-settings-sidebar-header strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.cloud-settings-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+.cloud-settings-close:hover,
+.cloud-settings-close:focus-visible {
+  background: var(--cloud-hover);
+  color: var(--foreground);
+}
 .cloud-settings-search {
   display: flex;
   align-items: center;
@@ -147,4 +168,8 @@ button.cloud-brand > svg {
   padding: 4px 8px;
   font-size: 13px;
   color: var(--muted-foreground);
+}
+.cloud-settings-page {
+  width: 100%;
+  max-width: 960px;
 }

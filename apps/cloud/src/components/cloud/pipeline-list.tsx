@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, Plus, Search, Workflow } from "lucide-react";
+import { Plus, Search, Workflow } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,23 +82,22 @@ export function PipelineList({
           />
         </label>
         <span className="cloud-automation-spacer" />
-        <button
-          type="button"
-          className="cloud-automation-chip"
-          aria-pressed={!archived}
-          onClick={() => setArchived(false)}
-        >
-          Active
-        </button>
-        <button
-          type="button"
-          className="cloud-automation-chip"
-          aria-pressed={archived}
-          onClick={() => setArchived(true)}
-        >
-          <Archive size={13} aria-hidden="true" />
-          Archived
-        </button>
+        <div className="cloud-segmented" role="group" aria-label="State">
+          <button
+            type="button"
+            aria-pressed={!archived}
+            onClick={() => setArchived(false)}
+          >
+            Active
+          </button>
+          <button
+            type="button"
+            aria-pressed={archived}
+            onClick={() => setArchived(true)}
+          >
+            Archived
+          </button>
+        </div>
       </div>
       {!pipelines.length ? (
         <div className="cloud-empty">
@@ -108,52 +107,56 @@ export function PipelineList({
           </p>
         </div>
       ) : (
-        <table className="cloud-pipeline-table">
-          <thead>
-            <tr>
-              <th scope="col">Name</th>
-              <th scope="col">Teams</th>
-              <th scope="col">Type</th>
-              <th scope="col">Source</th>
-              <th scope="col">Environments</th>
-              <th scope="col">Releases</th>
-              <th scope="col">Latest release</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pipelines.map((pipeline) => (
-              <tr key={pipeline.id}>
-                <th scope="row">
-                  <Link href={`/cloud/releases/pipelines/${pipeline.id}`}>
-                    {pipeline.name}
-                  </Link>
-                  {pipeline.repository && <span>{pipeline.repository}</span>}
-                </th>
-                <td>{pipeline.teams.map((team) => team.key).join(", ")}</td>
-                <td>
-                  {pipeline.type === "continuous" ? "Continuous" : "Scheduled"}
-                </td>
-                <td>{pipelineSourceLabels[pipeline.source]}</td>
-                <td>{pipeline.environments.join(" → ")}</td>
-                <td>{pipeline.releaseCount}</td>
-                <td>
-                  {pipeline.latestRelease ? (
-                    <Link
-                      href={`/cloud/releases/pipelines/${pipeline.id}/${pipeline.latestRelease.id}`}
-                    >
-                      {pipeline.latestRelease.version} ·{" "}
-                      {pipeline.latestRelease.environment} ·{" "}
-                      <RelativeTime
-                        value={pipeline.latestRelease.deployedAt}
-                        compact
-                      />
-                    </Link>
-                  ) : null}
-                </td>
+        <div className="cloud-table-scroll">
+          <table className="cloud-pipeline-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Teams</th>
+                <th scope="col">Type</th>
+                <th scope="col">Source</th>
+                <th scope="col">Environments</th>
+                <th scope="col">Releases</th>
+                <th scope="col">Latest release</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {pipelines.map((pipeline) => (
+                <tr key={pipeline.id}>
+                  <th scope="row">
+                    <Link href={`/cloud/releases/pipelines/${pipeline.id}`}>
+                      {pipeline.name}
+                    </Link>
+                    {pipeline.repository && <span>{pipeline.repository}</span>}
+                  </th>
+                  <td>{pipeline.teams.map((team) => team.key).join(", ")}</td>
+                  <td>
+                    {pipeline.type === "continuous"
+                      ? "Continuous"
+                      : "Scheduled"}
+                  </td>
+                  <td>{pipelineSourceLabels[pipeline.source]}</td>
+                  <td>{pipeline.environments.join(" → ")}</td>
+                  <td>{pipeline.releaseCount}</td>
+                  <td>
+                    {pipeline.latestRelease ? (
+                      <Link
+                        href={`/cloud/releases/pipelines/${pipeline.id}/${pipeline.latestRelease.id}`}
+                      >
+                        {pipeline.latestRelease.version} ·{" "}
+                        {pipeline.latestRelease.environment} ·{" "}
+                        <RelativeTime
+                          value={pipeline.latestRelease.deployedAt}
+                          compact
+                        />
+                      </Link>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {creating && (
         <PipelineFormDialog

@@ -293,7 +293,7 @@ async function fanOut(
   action: Extract<LoopAction, { kind: "fan_out" }>,
 ): Promise<StepOutcome> {
   if (action.automationId === automation.id)
-    return skipped("A loop cannot fan out to itself.");
+    return skipped("An automation cannot fan out to itself.");
   if (run.depth + 1 >= maximumAutomationDepth)
     return skipped("The chain of automations is too long.");
   const outcome = await services.database.transaction(async (sql) => {
@@ -352,7 +352,7 @@ async function fanOut(
     return {
       state: failed && failed === children.length ? "failed" : "succeeded",
       detail: `Ran ${target.name} on ${state.issueIds.length} ${state.issueIds.length === 1 ? "issue" : "issues"}${failed ? ` · ${failed} failed` : ""}`,
-      link: `/cloud/loops/${target.id}`,
+      link: `/cloud/automations/${target.id}`,
     } satisfies StepOutcome;
   });
   return outcome === "waiting" ? wait() : outcome;
@@ -377,7 +377,7 @@ async function appendDocumentSection(
       throw new CloudError(
         422,
         "document_unavailable",
-        "The document is unavailable. Edit the loop.",
+        "The document is unavailable. Edit the automation.",
       );
     await sql.query(
       `INSERT INTO cloud_document_sections (organization_id,id,document_id,position,heading,body,automation_run_id)

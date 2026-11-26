@@ -77,6 +77,8 @@ import { CloudTaskInference } from "./execution/inference";
 import { CloudRepositories } from "./execution/repositories";
 import { CloudGitAccounts } from "./git/accounts";
 import { CloudGitHubSignIn } from "./git/github-sign-in";
+import { CloudGitHubApps } from "./git/github-app-setup";
+import { CloudSetupStatus } from "./setup-status";
 import { CloudRoles } from "./roles";
 import { CloudGitStatusRules } from "./git/automations";
 import { CloudGitReviewSettings } from "./git/review-settings";
@@ -215,6 +217,7 @@ export interface CloudRuntime {
   };
   sidebar: CloudSidebar;
   settings: CloudSettingsStore;
+  setup: CloudSetupStatus;
   favorites: CloudFavorites;
   subscriptions: CloudIssueSubscriptions;
   labels: CloudLabels;
@@ -240,6 +243,7 @@ export interface CloudRuntime {
   };
   git: {
     connections: CloudGitConnections;
+    apps: CloudGitHubApps;
     accounts: CloudGitAccounts;
     gitHubSignIn: CloudGitHubSignIn;
     statusRules: CloudGitStatusRules;
@@ -368,6 +372,16 @@ export function createCloudRuntime(
     gitFetch,
     (provider, id) => gitConnections.webhookUrl(provider, id),
     origin.startsWith("https://"),
+  );
+  const gitApps = new CloudGitHubApps(
+    database,
+    options.credentialsCipher ?? null,
+    gitFetch,
+    {
+      origin,
+      webhookUrl: (id) => gitConnections.webhookUrl("github", id),
+      oauthCallbackUrl: gitConnections.oauthCallbackUrl("github"),
+    },
   );
   const gitAccounts = new CloudGitAccounts(
     database,
@@ -540,6 +554,7 @@ export function createCloudRuntime(
     options.credentialsCipher ?? null,
     gitFetch,
     gitSync,
+    gitIdentities,
     issueChanges,
     origin,
     options.gitCacheDirectory ??
@@ -714,6 +729,7 @@ export function createCloudRuntime(
     },
     sidebar: new CloudSidebar(database),
     settings: new CloudSettingsStore(database),
+    setup: new CloudSetupStatus(database),
     favorites: new CloudFavorites(database),
     subscriptions: new CloudIssueSubscriptions(database),
     labels,
@@ -750,11 +766,8 @@ export function createCloudRuntime(
     git: {
       connections: gitConnections,
       accounts: gitAccounts,
-      gitHubSignIn: new CloudGitHubSignIn(
-        database,
-        gitConnections,
-        gitAccounts,
-      ),
+      apps: gitApps,
+      gitHubSignIn: new CloudGitHubSignIn(database, gitAccounts),
       statusRules: new CloudGitStatusRules(database),
       reviewSettings: new CloudGitReviewSettings(database),
       sync: gitSync,
@@ -781,7 +794,11 @@ export function createCloudRuntime(
         pullRequests,
         gitFetch,
       ),
-      syncLoop: new CloudPeriodicLoop("Git sync", () => gitSync.tick(), 1),
+      syncLoop: new CloudPeriodicLoop(
+        "Git sync",
+        async () => (await gitApps.refreshTokens()) + (await gitSync.tick()),
+        1,
+      ),
       issueSync,
       issueSyncLoop: new CloudPeriodicLoop(
         "Git issue sync",

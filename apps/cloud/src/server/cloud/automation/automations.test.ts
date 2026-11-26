@@ -237,7 +237,7 @@ it("prevents automations from triggering themselves or looping endlessly", async
     (await runtime.automations.service.runs(owner, { issueId: issue.id }))
       .filter((run) => run.state === "skipped")
       .map((run) => run.error),
-  ).toContain("This loop already ran earlier in the same chain.");
+  ).toContain("This automation already ran earlier in the same chain.");
 });
 
 it("asks Agent on mentions as the commenter and applies proposals", async () => {

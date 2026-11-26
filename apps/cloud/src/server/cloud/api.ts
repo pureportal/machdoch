@@ -18,6 +18,7 @@ import { handleMagicLinkApi, handleEmailSettingsApi } from "./auth/api";
 import { handleAiActivityApi } from "./activity/api";
 import {
   handleGitApi,
+  handleGitHubAppCallback,
   handleGitOAuthCallback,
   handleGitWebhook,
 } from "./git/api";
@@ -359,6 +360,14 @@ async function route(
   if (path[0] === "runner") return handleRunnerApi(runtime, request);
   if (path[0] === "integrations" && path[2] === "webhooks" && path.length === 4)
     return handleGitWebhook(runtime, request, path[1] ?? "", path[3] ?? "");
+  if (
+    path[0] === "integrations" &&
+    path[1] === "github" &&
+    path[2] === "app" &&
+    (path[3] === "start" || path[3] === "created" || path[3] === "installed") &&
+    path.length === 4
+  )
+    return handleGitHubAppCallback(runtime, request, path[3]);
   if (
     path[0] === "integrations" &&
     path[2] === "oauth" &&

@@ -3,6 +3,7 @@ import type { SettingsCipher } from "../../settings-crypto";
 import { CloudError } from "../access";
 import type { CloudSql } from "../database";
 import { gitConnection, requireCodeAccess } from "./connections";
+import type { GitAccess } from "./git-client";
 
 const publicHost = "github.com";
 
@@ -63,6 +64,10 @@ export async function requireFetchableRepository(
     );
 }
 
+export function tokenAuthorization(access: GitAccess): string {
+  return `Basic ${Buffer.from(`${tokenUsers[access.provider]}:${access.token}`).toString("base64")}`;
+}
+
 export async function repositoryAuthorization(
   sql: CloudSql,
   cipher: SettingsCipher | null,
@@ -77,5 +82,5 @@ export async function repositoryAuthorization(
   const connection = requireCodeAccess(
     await gitConnection(sql, cipher, organizationId, repository.connectionId),
   );
-  return `Basic ${Buffer.from(`${tokenUsers[repository.provider]}:${connection.token}`).toString("base64")}`;
+  return tokenAuthorization(connection);
 }

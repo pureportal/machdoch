@@ -1,5 +1,8 @@
 import type { AutomationAction } from "./cloud-automation-contract";
-import { renderAutomationText, type AutomationVariables } from "./automation-text";
+import {
+  renderAutomationText,
+  type AutomationVariables,
+} from "./automation-text";
 
 const previewLength = 160;
 
@@ -60,7 +63,7 @@ export function dryRunDetail(
     case "send_webhook":
       return `Would send webhook to ${new URL(action.url).host}`;
     case "fan_out":
-      return `Would run another loop on up to ${action.concurrency} issues at a time`;
+      return `Would run another automation on up to ${action.concurrency} issues at a time`;
     default:
       return `Would ${action.kind.replaceAll("_", " ")}`;
   }

@@ -182,7 +182,9 @@ function AgentProgress({
     ? turn.state === "cancel_requested"
       ? "Stopping…"
       : `Working · ${duration(elapsed)}`
-    : `Worked for ${duration(elapsed)}`;
+    : turn.steps.length
+      ? `${duration(elapsed)} · ${turn.steps.length} ${turn.steps.length === 1 ? "step" : "steps"}`
+      : duration(elapsed);
   if (!turn.steps.length)
     return (
       <p className="cloud-agent-progress" role={active ? "status" : undefined}>
@@ -292,7 +294,7 @@ function ActionResult({ action }: { action: AgentAction }) {
       href={
         result.href ??
         (result.kind === "automation"
-          ? `/cloud/loops/${result.id}`
+          ? `/cloud/automations/${result.id}`
           : `/cloud/${result.kind === "issue" ? "issues" : result.kind === "release" ? "releases" : "projects"}/${result.id}`)
       }
     >

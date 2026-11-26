@@ -47,6 +47,7 @@ export interface GitPullRequestRecord {
   baseRef: string;
   mergeable: boolean | null;
   mergeableState: string | null;
+  autoMerge: boolean;
   additions: number | null;
   deletions: number | null;
   changedFiles: number | null;
@@ -143,6 +144,12 @@ export interface GitClient {
   ): Promise<GitConversationEntry[]>;
   commits(fullName: string, number: number): Promise<GitCommit[]>;
   merge(fullName: string, number: number, input: GitMergeInput): Promise<void>;
+  setAutoMerge(
+    fullName: string,
+    number: number,
+    enabled: boolean,
+    method: GitMergeMethod,
+  ): Promise<void>;
   mergePolicy(fullName: string, branch: string): Promise<GitMergePolicy>;
   enqueue(fullName: string, number: number, headSha: string): Promise<void>;
   teamMembers(team: string): Promise<string[]>;

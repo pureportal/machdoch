@@ -326,7 +326,7 @@ export function filterFieldDefinitions(
     { field: "duplicate", label: "Duplicate", icon: Copy, options: flag },
     {
       field: "automated",
-      label: "Created by agent or loop",
+      label: "Created by agent or automation",
       icon: Workflow,
       options: flag,
     },

@@ -1,10 +1,13 @@
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { cloudId, type CloudActor } from "../../../lib/cloud-contract";
 import {
   gitAccountInputSchema,
   type CloudIssueGitActivity,
   gitCommentInputSchema,
+  gitAutoMergeInputSchema,
   gitConnectionInputSchema,
+  gitHubAppSetupInputSchema,
   gitMergeInputSchema,
   gitProviderSchema,
   gitRepositoryInputSchema,
@@ -22,7 +25,6 @@ import {
 import type { GitProvider } from "../../../lib/git-providers";
 import { pullRequestFixInputSchema } from "../../../lib/pull-request-fixes";
 import { CloudError } from "../access";
-import type { GitHubSignInTarget } from "./github-sign-in";
 import { readBody, readRawBody } from "../request-body";
 import type { CloudRuntime } from "../runtime";
 
@@ -71,6 +73,92 @@ const oauthErrors: Record<string, string> = {
   git_account_taken: "taken",
 };
 
+const appSetupErrors: Record<string, string> = {
+  git_app_setup: "app_expired",
+  git_connection_exists: "app_exists",
+};
+
+function settingsRedirect(
+  runtime: CloudRuntime,
+  params: Record<string, string>,
+): Response {
+  const target = new URL("/cloud/settings/integrations", runtime.origin);
+  for (const [key, value] of Object.entries(params))
+    target.searchParams.set(key, value);
+  return new Response(null, {
+    status: 303,
+    headers: { Location: target.href },
+  });
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function registrationPage(registration: {
+  action: string;
+  manifest: string;
+}): Response {
+  const nonce = randomBytes(16).toString("base64");
+  return new Response(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect GitHub</title><form method="post" action="${escapeHtml(registration.action)}"><input type="hidden" name="manifest" value="${escapeHtml(registration.manifest)}"><button type="submit">Continue on GitHub</button></form><script nonce="${nonce}">document.forms[0].submit();</script>`,
+    {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; form-action ${new URL(registration.action).origin}; base-uri 'none'; frame-ancestors 'none'`,
+      },
+    },
+  );
+}
+
+export async function handleGitHubAppCallback(
+  runtime: CloudRuntime,
+  request: Request,
+  step: string,
+): Promise<Response> {
+  if (request.method !== "GET")
+    return new Response(null, { status: 405, headers: { Allow: "GET" } });
+  const query = new URL(request.url).searchParams;
+  const state = query.get("state") ?? "";
+  const code = query.get("code") ?? "";
+  const installation = Number(query.get("installation_id"));
+  const valid =
+    state.length > 0 &&
+    state.length <= 100 &&
+    (step === "start" ||
+      (step === "created"
+        ? code.length > 0 && code.length <= 500
+        : Number.isSafeInteger(installation) && installation > 0));
+  if (!valid)
+    return settingsRedirect(
+      runtime,
+      step === "installed" && !state ? {} : { gitError: "app_denied" },
+    );
+  try {
+    if (step === "start")
+      return registrationPage(await runtime.git.apps.registration(state));
+    if (step === "created")
+      return new Response(null, {
+        status: 303,
+        headers: { Location: await runtime.git.apps.created(code, state) },
+      });
+    return settingsRedirect(runtime, {
+      gitConnected: await runtime.git.apps.installed(installation, state),
+    });
+  } catch (error) {
+    if (!(error instanceof CloudError)) throw error;
+    return settingsRedirect(runtime, {
+      gitError: appSetupErrors[error.code] ?? "app_failed",
+    });
+  }
+}
+
 export async function handleGitOAuthCallback(
   runtime: CloudRuntime,
   request: Request,
@@ -106,18 +194,15 @@ async function gitHubSignIn(
   runtime: CloudRuntime,
   request: Request,
   actor: CloudActor,
-  target: GitHubSignInTarget,
   rest: string[],
 ): Promise<Response | null> {
   const signIn = runtime.git.gitHubSignIn;
   const route = `${request.method} ${rest.join("/")}`;
-  if (route === "GET ") return Response.json(await signIn.get(actor, target));
+  if (route === "GET ") return Response.json(await signIn.get(actor));
   if (route !== "POST " && route !== "POST cancel") return null;
   await readBody(request, z.strictObject({}));
   return Response.json(
-    route === "POST "
-      ? await signIn.start(actor, target)
-      : await signIn.cancel(actor, target),
+    route === "POST " ? await signIn.start(actor) : await signIn.cancel(actor),
   );
 }
 
@@ -139,7 +224,7 @@ async function handleGitSettings(
         await runtime.git.oauth.start(actor, gitProviderSchema.parse(path[2])),
       );
     if (path[2] === "github" && path[3] === "sign-in")
-      return gitHubSignIn(runtime, request, actor, "account", path.slice(4));
+      return gitHubSignIn(runtime, request, actor, path.slice(4));
     if (path.length !== 3) return null;
     const provider = gitProviderSchema.parse(path[2]);
     if (method === "PUT")
@@ -198,8 +283,18 @@ async function handleGitSettings(
     await connections.removeRepository(actor, cloudId.parse(path[2]));
     return Response.json({ ok: true });
   }
-  if (path[1] === "github" && path[2] === "sign-in")
-    return gitHubSignIn(runtime, request, actor, "connection", path.slice(3));
+  if (
+    path.length === 3 &&
+    path[1] === "github" &&
+    path[2] === "app" &&
+    method === "POST"
+  )
+    return Response.json(
+      await runtime.git.apps.start(
+        actor,
+        await readBody(request, gitHubAppSetupInputSchema),
+      ),
+    );
   if (path[1] === "connections" && path.length >= 3) {
     const connectionId = cloudId.parse(path[2]);
     const route = `${method} ${path.slice(3).join("/")}`;
@@ -293,6 +388,18 @@ async function handlePullRequests(
         await readBody(request, gitMergeInputSchema),
       ),
     );
+  if (route === "POST close") {
+    await readBody(request, z.strictObject({}));
+    return Response.json(await pullRequests.close(actor, id));
+  }
+  if (route === "PUT auto-merge") {
+    await pullRequests.setAutoMerge(
+      actor,
+      id,
+      await readBody(request, gitAutoMergeInputSchema),
+    );
+    return Response.json({ ok: true });
+  }
   if (route === "POST update-branch") {
     await pullRequests.updateBranch(
       actor,

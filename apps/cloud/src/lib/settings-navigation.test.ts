@@ -4,6 +4,7 @@ import {
   legacySettingsHref,
   legacySettingsSection,
   settingsNavigation,
+  settingsPageLabel,
   settingsSectionAccess,
   settingsSectionIds,
   settingsTeamTree,
@@ -24,32 +25,33 @@ describe("settings navigation", () => {
       ]),
     ).toEqual([
       [
-        "Personal",
+        "Account",
         [
+          "Get started",
           "Preferences",
           "Profile",
           "Notifications",
-          "Code & reviews",
-          "Security & access",
-          "Connected accounts",
-          "Agent personalization",
+          "Git & code review",
+          "Security",
+          "Linked accounts",
+          "My agent",
         ],
       ],
-      ["Issues", ["Labels", "Workflow states", "SLAs", "Templates"]],
-      ["Projects", ["Labels", "Statuses", "Updates"]],
       [
-        "Features",
+        "Planning",
         [
-          "AI & agents",
-          "Execution",
-          "Loops",
+          "Issue labels",
+          "Issue statuses",
+          "SLAs",
+          "Issue templates",
+          "Project labels",
+          "Project statuses",
+          "Project updates",
           "Initiatives",
-          "Customer requests",
-          "Releases",
-          "Pulse",
-          "Integrations",
         ],
       ],
+      ["Agents & automation", ["Agents & models", "Execution", "Automations"]],
+      ["Workspace", ["Customer feedback", "Releases", "Pulse", "Integrations"]],
       [
         "Administration",
         [
@@ -66,6 +68,11 @@ describe("settings navigation", () => {
   });
 
   it("finds sections by keyword", () => {
+    expect(
+      settingsNavigation(holder("member"), "loops").flatMap((group) =>
+        group.entries.map((entry) => entry.id),
+      ),
+    ).toEqual(["automations"]);
     const found = settingsNavigation(holder("member"), "2FA").flatMap((group) =>
       group.entries.map((entry) => entry.id),
     );
@@ -99,7 +106,7 @@ describe("settings navigation", () => {
       group.entries.map((entry) => entry.id),
     );
     expect(viewerIds).not.toContain("invitations");
-    expect(viewerIds).toContain("loops");
+    expect(viewerIds).toContain("automations");
     expect(
       settingsNavigation(viewer)
         .flatMap((group) => group.entries)
@@ -134,6 +141,21 @@ describe("settings navigation", () => {
     expect(legacySettingsHref("connections", {})).toBe(
       "/cloud/settings/security",
     );
+  });
+
+  it("names the current settings page", () => {
+    const teams = [{ id: "t1", name: "Platform", parentId: null }];
+    expect(settingsPageLabel("/cloud/settings/automations", teams)).toBe(
+      "Automations",
+    );
+    expect(settingsPageLabel("/cloud/settings/teams/t1/cycles", teams)).toBe(
+      "Platform",
+    );
+    expect(settingsPageLabel("/cloud/settings/teams/t9/cycles", teams)).toBe(
+      null,
+    );
+    expect(settingsPageLabel("/cloud/settings/unknown", teams)).toBe(null);
+    expect(settingsPageLabel("/cloud/issues", teams)).toBe(null);
   });
 
   it("builds the nested team tree", () => {

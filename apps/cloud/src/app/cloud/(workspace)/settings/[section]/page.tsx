@@ -16,12 +16,13 @@ export default async function SettingsSectionPage({
   searchParams: Promise<{ project?: string }>;
 }) {
   const { section } = await params;
+  if (section === "loops") redirect(settingsHref("automations"));
   if (!isSettingsSection(section)) notFound();
   const { runtime, actor, workspace } = await requireCloudWorkspace();
   const access = settingsSectionAccess(workspace.actor, section);
   if (access === "hidden") redirect(settingsHref("preferences"));
   return (
-    <>
+    <div className="cloud-settings-page">
       <header className="cloud-page-header">
         <h1>{settingsSections[section].label}</h1>
       </header>
@@ -33,6 +34,6 @@ export default async function SettingsSectionPage({
         workspace={workspace}
         project={(await searchParams).project ?? null}
       />
-    </>
+    </div>
   );
 }

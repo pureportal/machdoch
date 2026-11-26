@@ -115,7 +115,7 @@ export function requireLoopOwner(loop: LoopIdentity, actor: CloudActor): void {
     throw new CloudError(
       403,
       "loop_owner_required",
-      "Only the loop owner can change it in the browser.",
+      "Only the automation owner can change it in the browser.",
     );
 }
 

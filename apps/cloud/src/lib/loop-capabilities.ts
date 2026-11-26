@@ -97,14 +97,14 @@ export function checkLoopCapabilities(
   if (blocked.length)
     return {
       available: false,
-      reason: "Loops may not access this repository.",
+      reason: "Automations may not access this repository.",
     };
   if (
     request.required.includes("repository") &&
     request.codeAccess.mode === "selected" &&
     !request.codeAccess.repositoryIds.length
   )
-    return { available: false, reason: "Loops may not access code." };
+    return { available: false, reason: "Automations may not access code." };
   if (request.placement !== "automatic") {
     const missing = missingFor(request.placement, request.required);
     return missing.length

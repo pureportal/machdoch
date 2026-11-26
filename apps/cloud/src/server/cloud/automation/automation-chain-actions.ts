@@ -69,7 +69,7 @@ export async function automationChainActions(
     );
     return succeeded(
       `${action.enabled ? "Turned on" : "Paused"} ${target.name}`,
-      `/cloud/loops/${target.id}`,
+      `/cloud/automations/${target.id}`,
     );
   }
   if (run.depth + 1 >= maximumAutomationDepth)
@@ -92,7 +92,7 @@ export async function automationChainActions(
       },
     );
     return started.id
-      ? succeeded(`Started ${target.name}`, "/cloud/loops")
+      ? succeeded(`Started ${target.name}`, "/cloud/automations")
       : skipped(
           `${target.name} did not start. ${started.rejection?.reason ?? "It already started for this step."}`,
         );

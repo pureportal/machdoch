@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import {
   isCloudCliProvider,
   type CloudAiProvider,
@@ -10,6 +11,7 @@ import {
   defaultProviderLimits,
   defaultProviderModels,
   keyLabels,
+  keyUrls,
   providerChoices,
   providerLabels,
   providerModelChoices,
@@ -206,6 +208,17 @@ export function ProviderDialog({
             required
             maxLength={8192}
           />
+          {keyUrls[kind] && (
+            <a
+              className="cloud-git-token-link"
+              href={keyUrls[kind]}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Get {keyLabels[kind]}
+              <ExternalLink size={12} aria-hidden="true" />
+            </a>
+          )}
         </Field>
       )}
       <fieldset className="cloud-provider-model-field">

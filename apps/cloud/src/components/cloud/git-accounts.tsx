@@ -1,12 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { ExternalLink } from "lucide-react";
 import type { GitAccount, GitAccounts } from "@/lib/cloud-git-contract";
 import {
   defaultGitApiUrls,
   gitProviderLabels,
   gitProviders,
+  gitTokenUrl,
   type GitProvider,
 } from "@/lib/git-providers";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -48,6 +51,10 @@ function AccountSection({
   );
   const heading = `${provider}-account-heading`;
   const mismatched = account && apiUrl && account.apiUrl !== apiUrl;
+  const [tokenApiUrl, setTokenApiUrl] = useState(
+    apiUrl ?? account?.apiUrl ?? defaultGitApiUrls[provider],
+  );
+  const tokenUrl = gitTokenUrl(provider, tokenApiUrl, "account");
   return (
     <section className="cloud-settings-section" aria-labelledby={heading}>
       <header>
@@ -148,7 +155,7 @@ function AccountSection({
             <ConfirmButton
               trigger={<Button variant="ghost">Disconnect</Button>}
               title={`Disconnect ${label}`}
-              description="Actions you start use the organization connection. Automations you own that act as you stop working."
+              description={`Pull request actions, agent tasks and automations you own stop acting on ${label} until you connect again.`}
               actionLabel="Disconnect"
               onConfirm={async () => {
                 await cloudRequest(`git/accounts/${provider}`, {
@@ -178,18 +185,21 @@ function AccountSection({
           await onChanged();
         }}
       >
-        <Field label="API address" htmlFor={`${provider}-account-api-url`}>
-          <Input
-            id={`${provider}-account-api-url`}
-            name="apiUrl"
-            type="url"
-            required
-            maxLength={300}
-            defaultValue={
-              apiUrl ?? account?.apiUrl ?? defaultGitApiUrls[provider]
-            }
-          />
-        </Field>
+        {apiUrl ? (
+          <input type="hidden" name="apiUrl" value={apiUrl} />
+        ) : (
+          <Field label="API address" htmlFor={`${provider}-account-api-url`}>
+            <Input
+              id={`${provider}-account-api-url`}
+              name="apiUrl"
+              type="url"
+              required
+              maxLength={300}
+              value={tokenApiUrl}
+              onChange={(event) => setTokenApiUrl(event.target.value)}
+            />
+          </Field>
+        )}
         <Field
           label="Personal access token"
           htmlFor={`${provider}-account-token`}
@@ -204,6 +214,17 @@ function AccountSection({
             autoComplete="off"
             spellCheck={false}
           />
+          {tokenUrl && (
+            <a
+              className="cloud-git-token-link"
+              href={tokenUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Create a token on {label}
+              <ExternalLink size={12} aria-hidden="true" />
+            </a>
+          )}
         </Field>
       </FormDialog>
     </section>
@@ -217,7 +238,7 @@ const signInErrors: Record<string, string> = {
   failed: "Sign-in failed. Try again.",
 };
 
-export function GitAccountSettings() {
+export function GitAccountSettings({ canManage }: { canManage: boolean }) {
   const signInError = signInErrors[useSearchParams().get("gitError") ?? ""];
   const [data, setData] = useState<GitAccounts | null>(null);
   const [error, setError] = useState("");
@@ -242,7 +263,22 @@ export function GitAccountSettings() {
   const providers = gitProviders.filter(
     (provider) => data.connections[provider] || data.accounts[provider],
   );
-  if (!providers.length) return <p>Your organization has no Git connection.</p>;
+  if (!providers.length)
+    return (
+      <section className="cloud-settings-section">
+        <header>
+          <h2>Git</h2>
+          {canManage && (
+            <Button asChild>
+              <Link href="/cloud/settings/integrations?connect=github">
+                Connect GitHub
+              </Link>
+            </Button>
+          )}
+        </header>
+        <p>Your organization has no Git connection.</p>
+      </section>
+    );
   return (
     <>
       {signInError && (

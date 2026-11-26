@@ -77,7 +77,7 @@ export const loopExecutorSchema = z
   })
   .refine(
     (executor) => (executor.placement === "automatic") === !executor.targetId,
-    { path: ["targetId"], message: "Choose where the loop runs." },
+    { path: ["targetId"], message: "Choose where the automation runs." },
   );
 export type LoopExecutor = z.output<typeof loopExecutorSchema>;
 
@@ -152,7 +152,7 @@ export const loopSettingsSchema = z
   .refine(
     (settings) =>
       (settings.defaultPlacement === "automatic") === !settings.defaultTargetId,
-    { path: ["defaultTargetId"], message: "Choose where loops run." },
+    { path: ["defaultTargetId"], message: "Choose where automations run." },
   );
 export type LoopSettingsInput = z.output<typeof loopSettingsSchema>;
 export const loopSettingsUpdateSchema = z.strictObject({

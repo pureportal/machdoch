@@ -67,8 +67,8 @@ export function LoopDetail({
     <div className="cloud-loop-detail">
       <header className="cloud-page-header">
         <div className="flex items-center gap-2">
-          <Button asChild size="icon" variant="ghost" aria-label="Loops">
-            <Link href="/cloud/loops">
+          <Button asChild size="icon" variant="ghost" aria-label="Automations">
+            <Link href="/cloud/automations">
               <ArrowLeft />
             </Link>
           </Button>

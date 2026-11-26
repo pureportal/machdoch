@@ -86,7 +86,7 @@ const suggestions: Record<ChatContextKind | "workspace", string[]> = {
     "What changed for customers?",
   ],
   loop: [
-    "How has this loop been running?",
+    "How has this automation been running?",
     "Why did the last run fail?",
     "Suggest improvements",
   ],

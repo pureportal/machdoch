@@ -24,7 +24,9 @@ import {
 const cipher = new SettingsCipher(randomBytes(32));
 const organizationToken = `github_pat_${"o".repeat(40)}`;
 const memberToken = `github_pat_${"m".repeat(40)}`;
+const ownerToken = `github_pat_${"w".repeat(40)}`;
 const gitlabToken = `glpat-${"g".repeat(30)}`;
+const gitlabOwnerToken = `glpat-${"w".repeat(30)}`;
 const issuePath = "/repos/acme/app/issues/12";
 const gitlabIssuePath = `/api/v4/projects/${encodeURIComponent(gitlabProject)}/issues/12`;
 
@@ -234,6 +236,23 @@ async function comments(issueId: string) {
     .sort((left, right) => left.body.localeCompare(right.body));
 }
 
+async function syncError() {
+  return (
+    await database.engine.query<{ last_error: string | null }>(
+      "SELECT last_error FROM cloud_git_synced_issues WHERE organization_id=$1",
+      [owner.organizationId],
+    )
+  ).rows[0]!.last_error;
+}
+
+async function retry() {
+  await database.engine.query(
+    "UPDATE cloud_git_synced_issues SET attempted_at=NULL WHERE organization_id=$1",
+    [owner.organizationId],
+  );
+  return drain();
+}
+
 async function drain() {
   let pushed = 0;
   for (let round = 0; round < 20; round++) {
@@ -274,6 +293,8 @@ beforeEach(async () => {
   server.logins.set(organizationToken, "acme-bot");
   server.logins.set(memberToken, "member-gh");
   server.logins.set(gitlabToken, "acme-gl");
+  server.logins.set(ownerToken, "owner-gh");
+  server.logins.set(gitlabOwnerToken, "owner-gl");
   const organizationId = randomUUID();
   owner = { userId: randomUUID(), organizationId };
   member = { userId: randomUUID(), organizationId };
@@ -413,7 +434,7 @@ it("creates and updates issues from GitHub issue webhooks exactly once per deliv
   );
 });
 
-it("pushes cloud edits, labels, assignees and attributed comments to GitHub without echoing them back", async () => {
+it("pushes cloud edits, labels, assignees and each author's own comments to GitHub without echoing them back", async () => {
   await connect("github");
   await runtime.git.accounts.connect(member, "github", {
     revision: 0,
@@ -469,13 +490,28 @@ it("pushes cloud edits, labels, assignees and attributed comments to GitHub with
     server.callsTo(`${issuePath}/labels`, "POST").map((call) => call.body),
   ).toEqual([{ labels: ["Ready"] }]);
   expect(server.callsTo(`${issuePath}/labels/bug`, "DELETE")).toHaveLength(1);
-  const posted = server.callsTo(`${issuePath}/comments`, "POST");
-  expect(posted.map((call) => call.body)).toEqual([
-    { body: `On it\n\n${automationMarker}` },
-    { body: `*Olivia* via machdoch\n\nThanks\n\n${automationMarker}` },
+  const posted = () =>
+    server
+      .callsTo(`${issuePath}/comments`, "POST")
+      .map((call) => [call.authorization, call.body]);
+  expect(posted()).toEqual([
+    [`Bearer ${memberToken}`, { body: `On it\n\n${automationMarker}` }],
   ]);
-  expect(posted[0]!.authorization).toContain(memberToken);
-  expect(posted[1]!.authorization).toContain(organizationToken);
+  expect(await syncError()).toBe(
+    "Waiting for Olivia to link a GitHub account.",
+  );
+  expect(await drain()).toBe(0);
+  await runtime.git.accounts.connect(owner, "github", {
+    revision: 0,
+    apiUrl: githubApiUrl,
+    token: ownerToken,
+  });
+  expect(await retry()).toBe(1);
+  expect(posted()).toEqual([
+    [`Bearer ${memberToken}`, { body: `On it\n\n${automationMarker}` }],
+    [`Bearer ${ownerToken}`, { body: `Thanks\n\n${automationMarker}` }],
+  ]);
+  expect(await syncError()).toBeNull();
 
   const pushed = githubIssue({
     title: "Crash on cold start",
@@ -507,7 +543,7 @@ it("pushes cloud edits, labels, assignees and attributed comments to GitHub with
   expect(server.callsTo(`${issuePath}/comments`, "POST")).toHaveLength(2);
 });
 
-it("posts comments through the organization connection when the personal account is expired or rejected", async () => {
+it("holds comments until the author signs in again when their personal account is rejected or expired", async () => {
   await connect("github");
   await runtime.git.accounts.connect(member, "github", {
     revision: 0,
@@ -516,42 +552,51 @@ it("posts comments through the organization connection when the personal account
   });
   await deliverGitHub("issues", issuesEvent("opened", githubIssue()));
   const issueId = await syncedIssueId();
+  const synced = async () =>
+    (
+      await database.engine.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM cloud_git_synced_comments WHERE organization_id=$1",
+        [owner.organizationId],
+      )
+    ).rows[0]!.count;
 
   revoked.add(memberToken);
   await runtime.comments.create(member, randomUUID(), issueId, "Rejected");
   expect(await drain()).toBe(1);
+  expect(await syncError()).toContain("rejected your sign-in");
+  expect(
+    (await runtime.git.accounts.get(member)).accounts.github?.lastError,
+  ).toContain("Sign in again");
+  expect(await synced()).toBe(0);
+
+  revoked.delete(memberToken);
   await database.engine.query(
     "UPDATE cloud_git_accounts SET expires_at=clock_timestamp()-interval '1 hour' WHERE organization_id=$1 AND user_id=$2",
     [owner.organizationId, member.userId],
   );
   await runtime.comments.create(member, randomUUID(), issueId, "Expired");
-  expect(await drain()).toBe(1);
+  expect(await retry()).toBe(1);
+  expect(await syncError()).toBe("Waiting for Mia to link a GitHub account.");
+  expect(await synced()).toBe(0);
 
-  const posted = server.callsTo(`${issuePath}/comments`, "POST");
+  await runtime.git.accounts.connect(member, "github", {
+    revision: (await runtime.git.accounts.get(member)).accounts.github!
+      .revision,
+    apiUrl: githubApiUrl,
+    token: memberToken,
+  });
+  expect(await retry()).toBe(1);
   expect(
-    posted.map((call) => [
-      call.authorization?.includes(memberToken) ? "personal" : "organization",
-      call.body,
-    ]),
+    server
+      .callsTo(`${issuePath}/comments`, "POST")
+      .map((call) => [call.authorization, call.body]),
   ).toEqual([
-    ["personal", { body: `Rejected\n\n${automationMarker}` }],
-    [
-      "organization",
-      { body: `*Mia* via machdoch\n\nRejected\n\n${automationMarker}` },
-    ],
-    [
-      "organization",
-      { body: `*Mia* via machdoch\n\nExpired\n\n${automationMarker}` },
-    ],
+    [`Bearer ${memberToken}`, { body: `Rejected\n\n${automationMarker}` }],
+    [`Bearer ${memberToken}`, { body: `Rejected\n\n${automationMarker}` }],
+    [`Bearer ${memberToken}`, { body: `Expired\n\n${automationMarker}` }],
   ]);
-  expect(
-    (
-      await database.engine.query(
-        "SELECT count(*)::int AS count FROM cloud_git_synced_comments WHERE organization_id=$1",
-        [owner.organizationId],
-      )
-    ).rows,
-  ).toEqual([{ count: 2 }]);
+  expect(await synced()).toBe(2);
+  expect(await syncError()).toBeNull();
   expect(await drain()).toBe(0);
 });
 
@@ -560,7 +605,10 @@ it("keeps unsynced issues dirty and retries after a failed push", async () => {
   await deliverGitHub("issues", issuesEvent("opened", githubIssue()));
   const issueId = await syncedIssueId();
   revoked.add(organizationToken);
-  await runtime.comments.create(owner, randomUUID(), issueId, "Retry me");
+  await runtime.issueChanges.apply(owner, randomUUID(), {
+    issues: [{ id: issueId }],
+    changes: { title: "Retry me" },
+  });
   expect(await drain()).toBe(1);
   const [failed] = (
     await database.engine.query<{
@@ -657,6 +705,11 @@ it("syncs GitLab issues and notes in both directions", async () => {
     changes: { assigneeId: member.userId },
   });
   await addLabel(owner, issueId, "Urgent");
+  await runtime.git.accounts.connect(owner, "gitlab", {
+    revision: 0,
+    apiUrl: gitlabApiUrl,
+    token: gitlabOwnerToken,
+  });
   await runtime.comments.create(owner, randomUUID(), issueId, "Reopened");
   expect(await drain()).toBe(1);
   expect(
@@ -664,9 +717,10 @@ it("syncs GitLab issues and notes in both directions", async () => {
   ).toEqual([{ state_event: "reopen", add_labels: "Urgent" }]);
   expect(
     server.callsTo(`${gitlabIssuePath}/notes`, "POST").map((call) => call.body),
-  ).toEqual([
-    { body: `*Olivia* via machdoch\n\nReopened\n\n${automationMarker}` },
-  ]);
+  ).toEqual([{ body: `Reopened\n\n${automationMarker}` }]);
+  expect(
+    server.callsTo(`${gitlabIssuePath}/notes`, "POST")[0]!.authorization,
+  ).toContain(gitlabOwnerToken);
 });
 
 it("keeps one synced issue per repository number, lowercase label snapshots and drops snapshots with their repository", async () => {

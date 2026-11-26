@@ -7,6 +7,7 @@ import type {
 import { settingsSections, teamSettingsHref } from "@/lib/settings-navigation";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import { holderCan } from "@/lib/cloud-permissions";
+import { setupChecklist } from "@/lib/setup-checklist";
 import { AppearancePreferences } from "@/components/fleet-appearance";
 import type { requireCloudPageSession } from "@/server/cloud/page-auth";
 import { AccountCredentials } from "./account-credentials";
@@ -33,7 +34,8 @@ import {
   ReviewPreferences,
 } from "./setting-forms";
 import { CloudSettings, type AdministrationSection } from "./settings";
-import { SlaManager } from "./sla-manager";
+import { SetupChecklist } from "./setup-checklist";
+import { SlaSettings } from "./sla-manager";
 import { SsoAccount } from "./sso-account";
 
 type PageSession = Awaited<ReturnType<typeof requireCloudPageSession>>;
@@ -58,7 +60,7 @@ function isAdministrationSection(
 const sectionLinks: Partial<
   Record<SettingsSectionId, { href: string; label: string }>
 > = {
-  loops: { href: "/cloud/loops", label: "Open loops" },
+  automations: { href: "/cloud/automations", label: "Open automations" },
   initiatives: { href: "/cloud/initiatives", label: "Open initiatives" },
   releases: { href: "/cloud/releases", label: "Open releases" },
 };
@@ -89,7 +91,7 @@ export async function SettingsSectionContent({
         section={section}
       />
     );
-  if (section === "loops" && holderCan(workspace.actor, "ai.manage")) {
+  if (section === "automations" && holderCan(workspace.actor, "ai.manage")) {
     const [settings, sources, repositories] = await Promise.all([
       runtime.automations.loops.getSettings(actor),
       runtime.automations.sources.list(actor),
@@ -105,6 +107,15 @@ export async function SettingsSectionContent({
     );
   }
   switch (section) {
+    case "setup":
+      return (
+        <SetupChecklist
+          steps={setupChecklist(
+            workspace.actor,
+            await runtime.setup.facts(actor),
+          )}
+        />
+      );
     case "preferences":
       return (
         <div className="cloud-settings">
@@ -157,7 +168,9 @@ export async function SettingsSectionContent({
       const personalization = await runtime.chat.personalization.get(actor);
       return (
         <div className="cloud-settings">
-          <GitAccountSettings />
+          <GitAccountSettings
+            canManage={holderCan(workspace.actor, "git.manage")}
+          />
           <McpConnectorSettings initial={personalization.connectors} />
         </div>
       );
@@ -276,17 +289,7 @@ export async function SettingsSectionContent({
         </TeamRows>
       );
     case "slas":
-      return (
-        <TeamRows workspace={workspace}>
-          {(team) => (
-            <SlaManager
-              teamId={team.id}
-              teamName={team.name}
-              writable={writable}
-            />
-          )}
-        </TeamRows>
-      );
+      return <SlaSettings teams={workspace.teams} writable={writable} />;
     case "project-statuses":
       return (
         <ProjectStatusManager

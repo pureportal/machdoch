@@ -21,7 +21,12 @@ import { PullRequestTimeline } from "./pull-request-timeline";
 import { RelativeTime } from "./relative-time";
 
 const pollMs = 30_000;
-const pullRequestTabs = ["overview", "guide", "commits", "diff"] as const;
+const pullRequestTabs = [
+  "conversation",
+  "walkthrough",
+  "commits",
+  "files",
+] as const;
 type PullRequestTab = (typeof pullRequestTabs)[number];
 
 export function PullRequestPage({
@@ -36,7 +41,7 @@ export function PullRequestPage({
   const [details, setDetails] = useState<CloudPullRequestDetails | null>(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<PullRequestTab>(
-    pullRequestTabs.find((entry) => entry === initialTab) ?? "overview",
+    pullRequestTabs.find((entry) => entry === initialTab) ?? "conversation",
   );
   const id = initial.id;
   useAgentPageEntity({
@@ -72,7 +77,7 @@ export function PullRequestPage({
   const showGuide = Boolean(
     guide.error || guide.state?.enabled || guide.state?.guide,
   );
-  const activeTab = tab === "guide" && !showGuide ? "overview" : tab;
+  const activeTab = tab === "walkthrough" && !showGuide ? "conversation" : tab;
   return (
     <>
       <PullRequestHeader
@@ -93,21 +98,23 @@ export function PullRequestPage({
             className="cloud-pull-request-main"
           >
             <TabsList aria-label="Pull request">
-              <TabsTrigger value="overview">
-                Overview
+              <TabsTrigger value="conversation">
+                Conversation
                 <span className="cloud-tab-count">
                   {details.conversation.length + details.comments.length}
                 </span>
               </TabsTrigger>
-              {showGuide && <TabsTrigger value="guide">Guide</TabsTrigger>}
+              {showGuide && (
+                <TabsTrigger value="walkthrough">Walkthrough</TabsTrigger>
+              )}
               <TabsTrigger value="commits">
                 Commits
                 <span className="cloud-tab-count">
                   {details.commits.length}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="diff">
-                Diff
+              <TabsTrigger value="files">
+                Files
                 <span className="cloud-tab-count">
                   {pullRequest.changedFiles}
                 </span>
@@ -123,9 +130,9 @@ export function PullRequestPage({
                 )}
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="overview">
+            <TabsContent value="conversation">
               <PullRequestTimeline details={details} />
-              {details.canMerge && (
+              {details.canMerge && details.actingAs && (
                 <PullRequestComposer
                   pullRequestId={pullRequest.id}
                   actingAs={details.actingAs}
@@ -134,7 +141,7 @@ export function PullRequestPage({
               )}
             </TabsContent>
             {showGuide && (
-              <TabsContent value="guide">
+              <TabsContent value="walkthrough">
                 <PullRequestGuide
                   pullRequestId={pullRequest.id}
                   handle={guide}
@@ -169,7 +176,7 @@ export function PullRequestPage({
                 </ol>
               )}
             </TabsContent>
-            <TabsContent value="diff">
+            <TabsContent value="files">
               <PullRequestFiles
                 pullRequestId={pullRequest.id}
                 url={pullRequest.url}
@@ -182,7 +189,7 @@ export function PullRequestPage({
             <PullRequestActions
               details={details}
               launch={launch}
-              onMerged={(merged) =>
+              onFinished={(merged) =>
                 setDetails({ ...details, pullRequest: merged, canMerge: false })
               }
               onUpdated={() => void load()}

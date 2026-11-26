@@ -73,7 +73,7 @@ describe("loop capabilities", () => {
       }),
     ).toEqual({
       available: false,
-      reason: "Loops may not access this repository.",
+      reason: "Automations may not access this repository.",
     });
     expect(
       checkLoopCapabilities({
@@ -82,7 +82,7 @@ describe("loop capabilities", () => {
         repositoryIds: [],
         codeAccess: { mode: "selected", repositoryIds: [] },
       }),
-    ).toEqual({ available: false, reason: "Loops may not access code." });
+    ).toEqual({ available: false, reason: "Automations may not access code." });
   });
 
   it("offers only the capabilities of the chosen executor", () => {

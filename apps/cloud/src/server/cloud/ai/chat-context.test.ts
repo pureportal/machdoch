@@ -282,7 +282,7 @@ it("attaches pull requests, views, releases, loops, documents and repositories a
     "Faster checkout for everyone.",
     `## Release [Web 2026.05.1](/cloud/releases/pipelines/${entities.pipeline}/${entities.deployment})`,
     "Deployed to production at",
-    `## Loop [Nightly triage](/cloud/loops/${entities.loop})`,
+    `## Automation [Nightly triage](/cloud/automations/${entities.loop})`,
     "failed: Model unavailable",
     `## Document [Runbook](/cloud/documents/${entities.document})\n### Deploy\nRun the web pipeline after merging.`,
     "## Repository acme/app\ngithub; default branch main; private.",

@@ -201,6 +201,7 @@ body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
   input[type="checkbox"]:not([role="switch"], .cloud-task-checkbox) {
   display: inline-grid;
   flex-shrink: 0;
+  vertical-align: middle;
   place-content: center;
   width: 16px;
   height: 16px;

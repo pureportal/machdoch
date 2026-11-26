@@ -16,16 +16,18 @@ import type { IssueChangeSet } from "../../../lib/cloud-issue-changes-contract";
 import { completeTaskList } from "../../../lib/issue-text";
 import {
   gitClient,
+  type GitAccess,
   type GitCommitStatusState,
   type GitPullRequestRecord,
 } from "../git/git-client";
+import type { ActingAccess, GitIdentities } from "../git/identity";
 import {
   gitConnection,
   requireCodeAccess,
   type GitConnectionRecord,
 } from "../git/connections";
 import { gitEvent, queueGitEvents, type StoredRepository } from "../git/events";
-import { repositoryAuthorization } from "../git/repository-access";
+import { tokenAuthorization } from "../git/repository-access";
 import type { CloudGitSync } from "../git/sync";
 import { mergeReadiness } from "../git/merge-readiness";
 import { pushCandidate } from "./candidate-push";
@@ -50,6 +52,7 @@ interface StoredDelivery extends Record<string, unknown> {
   pull_request_id: string | null;
   pull_request_number: number | null;
   auto_merge: boolean;
+  merge_requested_by: string | null;
   attempts: number;
 }
 
@@ -78,7 +81,7 @@ const deliveryColumns = `kind,state,branch,base_branch AS "baseBranch",head_sha 
   to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt",
   to_char(merged_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "mergedAt"`;
 
-const storedColumns = `kind,organization_id,run_id,issue_id,repository,state,branch,base_branch,head_sha,pull_request_id,pull_request_number,auto_merge,attempts`;
+const storedColumns = `kind,organization_id,run_id,issue_id,repository,state,branch,base_branch,head_sha,pull_request_id,pull_request_number,auto_merge,merge_requested_by,attempts`;
 
 export async function readRunDelivery(
   sql: CloudSql,
@@ -204,6 +207,7 @@ export class CloudDeliveries {
     private readonly cipher: SettingsCipher | null,
     private readonly transport: typeof fetch,
     private readonly sync: CloudGitSync,
+    private readonly identities: GitIdentities,
     private readonly issueChanges: CloudIssueChanges,
     private readonly origin: string,
     private readonly cacheDirectory: string,
@@ -521,7 +525,12 @@ export class CloudDeliveries {
       await this.sync.store(connection, repository, fresh);
       if (fresh.state === "merged") {
         if (delivery.state === "merging")
-          await this.removeBranch(connection, repository, delivery.branch);
+          await this.removeBranch(
+            connection,
+            this.merger(delivery, run),
+            repository,
+            delivery.branch,
+          );
         return await this.merged(delivery, run);
       }
       if (fresh.state === "closed")
@@ -569,18 +578,22 @@ export class CloudDeliveries {
           retryInSeconds: 60,
         });
       }
+      const merger = gitClient(
+        await this.acting(connection, this.merger(delivery, run)),
+        this.transport,
+      );
       if (readiness.action === "enqueue") {
-        await client.enqueue(repository.fullName, fresh.number, fresh.headSha);
+        await merger.enqueue(repository.fullName, fresh.number, fresh.headSha);
         return await this.update(delivery, "merging", {
           reason: "In the merge queue.",
           attempts: delivery.attempts + 1,
           retryInSeconds: 60,
         });
       }
-      await client.merge(repository.fullName, fresh.number, {
-        method: client.mergeMethods.includes("squash")
+      await merger.merge(repository.fullName, fresh.number, {
+        method: merger.mergeMethods.includes("squash")
           ? "squash"
-          : client.mergeMethods[0]!,
+          : merger.mergeMethods[0]!,
         headSha: delivery.head_sha,
       });
       await this.sync.store(
@@ -588,7 +601,12 @@ export class CloudDeliveries {
         repository,
         await client.pullRequest(repository.fullName, fresh.number),
       );
-      await this.removeBranch(connection, repository, delivery.branch);
+      await this.removeBranch(
+        connection,
+        this.merger(delivery, run),
+        repository,
+        delivery.branch,
+      );
       await this.merged(delivery, run);
     } catch (error) {
       const attempts = delivery.attempts + 1;
@@ -596,7 +614,11 @@ export class CloudDeliveries {
         error instanceof Error
           ? error.message.slice(0, 500)
           : "Publishing failed.";
-      if (isCloudError(error) && error.code === "repository_unconnected")
+      if (
+        isCloudError(error) &&
+        (error.code === "repository_unconnected" ||
+          error.code === "git_account_required")
+      )
         return this.update(delivery, "needs_person", { reason: error.message });
       if (attempts >= maximumAttempts && delivery.state === "publishing")
         return this.update(delivery, "failed", { reason: message, attempts });
@@ -614,13 +636,8 @@ export class CloudDeliveries {
     connection: GitConnectionRecord,
     run: RunSource,
   ): Promise<void> {
+    const author = await this.acting(connection, run.actorId);
     const prepared = await this.database.transaction(async (sql) => ({
-      authorization: await repositoryAuthorization(
-        sql,
-        this.cipher,
-        delivery.organization_id,
-        delivery.repository,
-      ),
       bundle: await this.bundle(sql, delivery),
       review: (
         await sql.query<{
@@ -649,7 +666,7 @@ export class CloudDeliveries {
       cacheDirectory: this.cacheDirectory,
       organizationId: delivery.organization_id,
       remote: `${delivery.repository.replace(/\.git$/, "")}.git`,
-      authorization: prepared.authorization,
+      authorization: tokenAuthorization(author),
       bundle: prepared.bundle,
       baseCommit: run.baseCommit,
       ...(run.manifest.subject.kind === "pull_request" &&
@@ -659,7 +676,7 @@ export class CloudDeliveries {
       candidateCommit: delivery.head_sha,
       branch: delivery.branch,
     });
-    const client = gitClient(connection, this.transport);
+    const client = gitClient(author, this.transport);
     const title =
       `${run.identifier ? `${run.identifier} ` : ""}${run.title}`.slice(0, 250);
     const review = prepared.review
@@ -842,13 +859,35 @@ export class CloudDeliveries {
     return bytes;
   }
 
+  private merger(delivery: StoredDelivery, run: RunSource): string {
+    return delivery.merge_requested_by ?? run.actorId;
+  }
+
+  private async acting(
+    connection: GitConnectionRecord,
+    userId: string,
+  ): Promise<ActingAccess> {
+    await this.identities.refreshExpiring(connection.organizationId, userId);
+    return this.database.transaction((sql) =>
+      this.identities.acting(sql, connection, userId),
+    );
+  }
+
   private async removeBranch(
     connection: GitConnectionRecord,
+    userId: string,
     repository: StoredRepository,
     branch: string,
   ): Promise<void> {
+    let access: GitAccess;
     try {
-      await gitClient(connection, this.transport).deleteBranch(
+      access = await this.acting(connection, userId);
+    } catch (error) {
+      if (isCloudError(error) && error.code === "git_account_required") return;
+      throw error;
+    }
+    try {
+      await gitClient(access, this.transport).deleteBranch(
         repository.fullName,
         branch,
       );
@@ -872,7 +911,7 @@ export class CloudDeliveries {
   private async cleanup(): Promise<number> {
     const stale = await this.database.transaction((sql) =>
       sql.query<StoredDelivery>(
-        `SELECT d.kind,d.organization_id,d.run_id,d.issue_id,d.repository,d.state,d.branch,d.base_branch,d.head_sha,d.pull_request_id,d.pull_request_number,d.auto_merge,d.attempts
+        `SELECT d.kind,d.organization_id,d.run_id,d.issue_id,d.repository,d.state,d.branch,d.base_branch,d.head_sha,d.pull_request_id,d.pull_request_number,d.auto_merge,d.merge_requested_by,d.attempts
         FROM cloud_run_deliveries d JOIN cloud_issues i ON i.organization_id=d.organization_id AND i.id=d.issue_id
         WHERE d.state IN ('open','merging','needs_person','failed') AND (i.state IN ('complete','canceled') OR i.archived) AND d.next_attempt_at<=clock_timestamp()
         ORDER BY d.updated_at LIMIT ${batchSize}`,
@@ -897,13 +936,21 @@ export class CloudDeliveries {
           continue;
         }
         if (fresh.state === "open")
-          await client.closePullRequest(repository.fullName, fresh.number);
+          await gitClient(
+            await this.acting(connection, run.actorId),
+            this.transport,
+          ).closePullRequest(repository.fullName, fresh.number);
         await this.sync.store(
           connection,
           repository,
           await client.pullRequest(repository.fullName, fresh.number),
         );
-        await this.removeBranch(connection, repository, delivery.branch);
+        await this.removeBranch(
+          connection,
+          run.actorId,
+          repository,
+          delivery.branch,
+        );
         await this.update(delivery, "closed", {
           reason:
             "The issue was closed, so its pull request and branch were removed.",

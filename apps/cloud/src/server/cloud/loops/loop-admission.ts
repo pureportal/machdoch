@@ -74,7 +74,7 @@ export async function admitAutomationRun(
     return {
       admitted: false,
       code: "unavailable",
-      reason: "The loop is unavailable.",
+      reason: "The automation is unavailable.",
       maxDurationMinutes: 60,
     };
   const capability = checkLoopCapabilities({

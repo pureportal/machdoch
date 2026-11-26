@@ -158,7 +158,7 @@ it("links every entity kind to its page", () => {
     team: "/cloud/teams/x",
     pull_request: "/cloud/pull-requests/x",
     release: "/cloud/releases/x",
-    loop: "/cloud/loops/x",
+    loop: "/cloud/automations/x",
   };
   for (const kind of agentEntityKinds)
     expect(agentEntityHref({ kind, id: "x" })).toBe(routes[kind]);

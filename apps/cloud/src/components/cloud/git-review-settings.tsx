@@ -4,24 +4,27 @@ import { useState } from "react";
 import type { GitReviewSettings } from "@/lib/cloud-git-contract";
 import { cloudRequest } from "./api-client";
 
-const toggles: {
-  key: keyof Omit<GitReviewSettings, "revision">;
+type ReviewToggleKey = keyof Omit<GitReviewSettings, "revision">;
+
+const toggleGroups: {
   label: string;
+  toggles: { key: ReviewToggleKey; label: string }[];
 }[] = [
-  { key: "reviewGuides", label: "Generate review guides" },
-  { key: "mergeIssues", label: "Link or create an issue on merge" },
-  { key: "commitLinks", label: "Link commits with magic words" },
   {
-    key: "backlinksPrivate",
-    label: "Back-link comments on private repositories",
+    label: "Pull requests",
+    toggles: [
+      { key: "reviewGuides", label: "Generate review walkthroughs" },
+      { key: "mergeIssues", label: "Link or create an issue on merge" },
+      { key: "commitLinks", label: "Link commits by issue key" },
+    ],
   },
   {
-    key: "backlinksPublic",
-    label: "Back-link comments on public repositories",
-  },
-  {
-    key: "backlinkDescriptions",
-    label: "Include issue descriptions in back-links",
+    label: "Back-link comments",
+    toggles: [
+      { key: "backlinksPrivate", label: "Private repositories" },
+      { key: "backlinksPublic", label: "Public repositories" },
+      { key: "backlinkDescriptions", label: "Include issue descriptions" },
+    ],
   },
 ];
 
@@ -40,34 +43,42 @@ export function GitReviewSettingsSection({
       aria-labelledby="git-review-settings-heading"
     >
       <header>
-        <h2 id="git-review-settings-heading">Reviews & commits</h2>
+        <h2 id="git-review-settings-heading">Code review</h2>
       </header>
-      <ul className="cloud-git-review-settings">
-        {toggles.map((toggle) => (
-          <li key={toggle.key}>
-            <span id={`git-review-${toggle.key}`}>{toggle.label}</span>
-            <button
-              type="button"
-              role="switch"
-              className="cloud-automation-switch"
-              aria-checked={settings[toggle.key]}
-              aria-labelledby={`git-review-${toggle.key}`}
-              disabled={pending}
-              onClick={() => {
-                setPending(true);
-                setError("");
-                void cloudRequest("git/settings", {
-                  method: "PUT",
-                  body: { ...settings, [toggle.key]: !settings[toggle.key] },
-                })
-                  .then(onChanged)
-                  .catch((reason: Error) => setError(reason.message))
-                  .finally(() => setPending(false));
-              }}
-            />
-          </li>
-        ))}
-      </ul>
+      {toggleGroups.map((group) => (
+        <fieldset key={group.label} className="cloud-git-review-group">
+          <legend>{group.label}</legend>
+          <ul className="cloud-git-review-settings">
+            {group.toggles.map((toggle) => (
+              <li key={toggle.key}>
+                <span id={`git-review-${toggle.key}`}>{toggle.label}</span>
+                <button
+                  type="button"
+                  role="switch"
+                  className="cloud-automation-switch"
+                  aria-checked={settings[toggle.key]}
+                  aria-labelledby={`git-review-${toggle.key}`}
+                  disabled={pending}
+                  onClick={() => {
+                    setPending(true);
+                    setError("");
+                    void cloudRequest("git/settings", {
+                      method: "PUT",
+                      body: {
+                        ...settings,
+                        [toggle.key]: !settings[toggle.key],
+                      },
+                    })
+                      .then(onChanged)
+                      .catch((reason: Error) => setError(reason.message))
+                      .finally(() => setPending(false));
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      ))}
       {error && (
         <p role="alert" className="cloud-error">
           {error}

@@ -66,7 +66,7 @@ function IssuePreview({ entry }: { entry: InboxEntry }) {
             (entry.projectId
               ? "Project"
               : loopInboxKinds.includes(entry.kind)
-                ? "Loop"
+                ? "Automation"
                 : "AI task")}
         </span>
         <Button asChild variant="ghost" size="sm">

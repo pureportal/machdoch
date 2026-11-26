@@ -84,7 +84,7 @@ export function McpConnectorSettings({
           ))}
         </ul>
       )}
-      <form className="cloud-setting-form" onSubmit={add}>
+      <form className="cloud-setting-form grid gap-4" onSubmit={add}>
         <Field label="Name" htmlFor="agent-connector-name">
           <Input
             id="agent-connector-name"

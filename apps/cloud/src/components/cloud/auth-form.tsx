@@ -71,6 +71,7 @@ export function CloudAuthForm({
       ))}
       {(passwordAvailable || emailAvailable) && (
         <form
+          method="post"
           onSubmit={(event) => {
             event.preventDefault();
             if (pending) return;

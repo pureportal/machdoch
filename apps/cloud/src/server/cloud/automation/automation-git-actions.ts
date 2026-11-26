@@ -2,7 +2,6 @@ import type { CloudActor } from "../../../lib/cloud-contract";
 import type {
   AutomationAction,
   AutomationStep,
-  GitIdentity,
 } from "../../../lib/cloud-automation-contract";
 import {
   renderAutomationText,
@@ -11,7 +10,6 @@ import {
 import { automationMarker } from "../../../lib/git-events";
 import { CloudError } from "../access";
 import type { CloudGitPullRequests } from "../git/pull-requests";
-import type { ActingMode } from "../git/identity";
 
 export type GitAction = Extract<
   AutomationAction,
@@ -32,10 +30,6 @@ const reviewDone = {
   request_changes: "Requested changes",
   comment: "Reviewed",
 } as const;
-
-function actingMode(identity: GitIdentity): ActingMode {
-  return identity === "owner" ? "personal_first" : "organization";
-}
 
 function eventPullRequest(variables: AutomationVariables): {
   id: string;
@@ -69,7 +63,6 @@ export async function executeGitAction(
   variables: AutomationVariables,
 ): Promise<GitStepOutcome> {
   const target = eventPullRequest(variables);
-  const mode = actingMode(action.identity);
   const current = await pullRequests.get(owner, target.id);
   if (current.state !== "open")
     return {
@@ -86,12 +79,7 @@ export async function executeGitAction(
           detail: "The comment is empty.",
           link: null,
         };
-      const result = await pullRequests.comment(
-        owner,
-        target.id,
-        marked(body),
-        mode,
-      );
+      const result = await pullRequests.comment(owner, target.id, marked(body));
       return {
         state: "succeeded",
         detail: `Commented as ${result.actingAs}`,
@@ -106,12 +94,10 @@ export async function executeGitAction(
           detail: "The review needs a message.",
           link: null,
         };
-      const result = await pullRequests.review(
-        owner,
-        target.id,
-        { decision: action.decision, body },
-        mode,
-      );
+      const result = await pullRequests.review(owner, target.id, {
+        decision: action.decision,
+        body,
+      });
       return {
         state: "succeeded",
         detail: `${reviewDone[action.decision]} as ${result.actingAs}`,
@@ -132,12 +118,10 @@ export async function executeGitAction(
           detail: "The pull request has merge conflicts. Nothing was merged.",
           link: current.url,
         };
-      const merged = await pullRequests.merge(
-        owner,
-        target.id,
-        { method: action.method, headSha },
-        mode,
-      );
+      const merged = await pullRequests.merge(owner, target.id, {
+        method: action.method,
+        headSha,
+      });
       return {
         state: "succeeded",
         detail: `Merged into ${merged.baseRef}`,
@@ -145,7 +129,7 @@ export async function executeGitAction(
       };
     }
     case "git_update_branch":
-      await pullRequests.updateBranch(owner, target.id, current.headSha, mode);
+      await pullRequests.updateBranch(owner, target.id, current.headSha);
       return {
         state: "succeeded",
         detail: `Updating ${current.headRef} with ${current.baseRef}`,
@@ -159,12 +143,7 @@ export async function executeGitAction(
           detail: "The pull request is not stacked on a merged pull request.",
           link: current.url,
         };
-      const retargeted = await pullRequests.retarget(
-        owner,
-        target.id,
-        baseRef,
-        mode,
-      );
+      const retargeted = await pullRequests.retarget(owner, target.id, baseRef);
       return {
         state: "succeeded",
         detail: `Retargeted onto ${retargeted.baseRef}`,

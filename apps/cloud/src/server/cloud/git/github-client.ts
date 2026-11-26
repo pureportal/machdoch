@@ -4,6 +4,7 @@ import type {
   GitCommit,
   GitConversationEntry,
   GitMergeInput,
+  GitMergeMethod,
   GitPullRequestFile,
   GitReview,
   GitReviewComment,
@@ -102,6 +103,7 @@ export const githubPullRequestSchema = z.object({
   base: z.object({ ref: z.string() }),
   mergeable: z.boolean().nullable().optional(),
   mergeable_state: z.string().nullable().optional(),
+  auto_merge: z.object({}).nullable().optional(),
   additions: z.number().optional(),
   deletions: z.number().optional(),
   changed_files: z.number().optional(),
@@ -132,6 +134,7 @@ export function githubPullRequest(
     baseRef: pullRequest.base.ref,
     mergeable: pullRequest.mergeable ?? null,
     mergeableState: pullRequest.mergeable_state ?? null,
+    autoMerge: Boolean(pullRequest.auto_merge),
     additions: pullRequest.additions ?? null,
     deletions: pullRequest.deletions ?? null,
     changedFiles: pullRequest.changed_files ?? null,
@@ -362,6 +365,30 @@ export class GitHubClient implements GitClient {
         body: { merge_method: input.method, sha: input.headSha },
       },
     );
+  }
+
+  async setAutoMerge(
+    fullName: string,
+    number: number,
+    enabled: boolean,
+    method: GitMergeMethod,
+  ): Promise<void> {
+    const { node_id: id } = await this.request(
+      `/repos/${fullName}/pulls/${number}`,
+      z.object({ node_id: z.string() }),
+    );
+    if (enabled)
+      await this.graphql(
+        "mutation($id: ID!, $method: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $method }) { clientMutationId } }",
+        { id, method: method.toUpperCase() },
+        z.unknown(),
+      );
+    else
+      await this.graphql(
+        "mutation($id: ID!) { disablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }",
+        { id },
+        z.unknown(),
+      );
   }
 
   async mergePolicy(fullName: string, branch: string): Promise<GitMergePolicy> {

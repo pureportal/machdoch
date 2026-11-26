@@ -406,25 +406,19 @@
   color: var(--cloud-danger);
   font-size: 12px;
 }
-.cloud-loop-section,
-.cloud-loop-group {
+.cloud-loop-section {
   display: grid;
   gap: 10px;
   min-width: 0;
 }
-.cloud-loop-group {
-  margin-bottom: 24px;
-}
-.cloud-loop-section > header,
-.cloud-loop-group > header {
+.cloud-loop-section > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   min-height: 32px;
 }
-.cloud-loop-section h2,
-.cloud-loop-group h2 {
+.cloud-loop-section h2 {
   font-size: 14px;
   font-weight: 600;
 }
@@ -520,4 +514,145 @@
 .cloud-loop-transcript > li {
   display: grid;
   gap: 6px;
+}
+.cloud-loop-table td {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.cloud-loop-table tbody th a {
+  color: var(--foreground);
+}
+.cloud-loop-table tbody th a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cloud-loop-table .cloud-loop-team-row > th {
+  display: table-cell;
+  padding-block: 4px;
+  background: var(--cloud-subtle);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+.cloud-loop-table .cloud-loop-team-row > th > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cloud-loop-table .cloud-loop-team-row:hover {
+  background: none;
+}
+.cloud-loop-table .cloud-loop-team-row button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+}
+.cloud-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.cloud-form-grid > .cloud-form-span,
+.cloud-form-grid > fieldset {
+  grid-column: 1 / -1;
+}
+.cloud-form-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 640px) {
+  .cloud-form-grid,
+  .cloud-form-grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.cloud-loop-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.cloud-loop-usage {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--cloud-subtle);
+}
+.cloud-loop-usage > div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+}
+.cloud-loop-usage > div + div {
+  border-left: 1px solid var(--border);
+}
+.cloud-loop-usage dt {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-loop-usage dd {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-settings-page .cloud-loop-config {
+  max-width: none;
+}
+.cloud-sla-list {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.cloud-sla-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 0;
+}
+.cloud-sla-list li + li {
+  border-top: 1px solid var(--border);
+}
+.cloud-sla-list li > :first-child {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
+  text-align: left;
+}
+.cloud-sla-list li > button:first-child:hover {
+  color: var(--primary);
+}
+.cloud-sla-list strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.cloud-status-group {
+  display: grid;
+  gap: 4px;
+}
+.cloud-status-group + .cloud-status-group {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.cloud-status-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+}
+.cloud-status-group h3 {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+.cloud-status-group > header button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
 }

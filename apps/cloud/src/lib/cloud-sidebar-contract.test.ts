@@ -199,7 +199,7 @@ describe("sidebar preferences", () => {
     expect(
       canSeeSidebarItem(item("clients"), { ...access.member, git: false }),
     ).toBe(true);
-    expect(hrefs("automations", access.member)).toEqual(["/cloud/loops"]);
+    expect(hrefs("automations", access.member)).toEqual(["/cloud/automations"]);
     expect(hrefs("activity", access.member)).toEqual([
       "/cloud/activity",
       "/cloud/tasks",

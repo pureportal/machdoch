@@ -19,11 +19,13 @@ import { SettingsCipher } from "../../settings-crypto";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
 import { createTestCloudDatabase } from "../test-database";
 import { FakeGitServer, githubApiUrl, sha } from "../git/test-git-server";
+import { tokenAuthorization } from "../git/repository-access";
 import { storeTestArtifact, verificationFixture } from "./test-artifacts";
 import type { CandidatePush } from "./candidate-push";
 
 const cipher = new SettingsCipher(randomBytes(32));
 const token = `github_pat_${"o".repeat(40)}`;
+const personalToken = `github_pat_${"p".repeat(40)}`;
 const base = sha(100);
 const candidate = sha(200);
 const patch = `diff --git a/locales/de.json b/locales/de.json
@@ -58,6 +60,7 @@ beforeEach(async () => {
   );
   server = new FakeGitServer();
   server.logins.set(token, "acme-bot");
+  server.logins.set(personalToken, "owner-dev");
   pushes = [];
   owner = { userId: randomUUID(), organizationId: randomUUID() };
   await database.engine.query(
@@ -107,6 +110,11 @@ beforeEach(async () => {
     },
   ));
   await runtime.git.connections.addRepository(owner, connectionId, "acme/app");
+  await runtime.git.accounts.connect(owner, "github", {
+    revision: 0,
+    apiUrl: githubApiUrl,
+    token: personalToken,
+  });
   projectId = (
     await runtime.projects.create(owner, randomUUID(), {
       teamId,
@@ -404,10 +412,22 @@ it("takes an issue assigned to AI through review, pull request and merge", async
       baseCommit: base,
       candidateCommit: candidate,
       remote: "https://github.test/acme/app.git",
+      authorization: tokenAuthorization({
+        provider: "github",
+        apiUrl: githubApiUrl,
+        token: personalToken,
+      }),
     }),
   ]);
   const pullRequest = server.github.get(1)!;
   expect(pullRequest).toMatchObject({ state: "merged", baseRef: "main" });
+  for (const [path, method] of [
+    ["/repos/acme/app/pulls", "POST"],
+    ["/repos/acme/app/pulls/1/merge", "PUT"],
+  ] as const)
+    expect(
+      server.callsTo(path, method).map((call) => call.authorization),
+    ).toEqual([`Bearer ${personalToken}`]);
   expect(pullRequest.title).toBe("PLAT-1 Use a formal German greeting");
   expect(pullRequest.body).toContain("Closes PLAT-1");
   expect(pullRequest.body).toContain("approved in round 2");
@@ -432,6 +452,96 @@ it("takes an issue assigned to AI through review, pull request and merge", async
       expect.objectContaining({ kind: "addition", newLine: 2 }),
     ]),
   );
+}, 60_000);
+
+it("waits for a person when the requester has not linked their GitHub account", async () => {
+  const revision = (await runtime.git.accounts.get(owner)).accounts.github!
+    .revision;
+  await runtime.git.accounts.disconnect(owner, "github", revision);
+  await aiIssue("Use a formal German greeting");
+  await runtime.autopilot.autopilot.tick();
+  const { claim, worker } = await claimTask();
+  await review(worker, claim, 1, {
+    decision: "approve",
+    summary: "Only the German value changed.",
+    findings: [],
+  });
+  await runtime.execution.leases.finish(worker, finish(claim));
+  await deliver();
+  expect(pushes).toEqual([]);
+  expect(server.callsTo("/repos/acme/app/pulls", "POST")).toEqual([]);
+  expect(
+    (await runtime.execution.runs.get(owner, claim.runId)).delivery,
+  ).toMatchObject({
+    state: "needs_person",
+    reason: expect.stringContaining("Link your GitHub account"),
+  });
+}, 60_000);
+
+it("merges a held pull request as the person who asked for the merge", async () => {
+  const memberToken = `github_pat_${"q".repeat(40)}`;
+  server.logins.set(memberToken, "member-dev");
+  const member = { organizationId: owner.organizationId, userId: randomUUID() };
+  await database.engine.query(
+    "INSERT INTO cloud_users (id,email,name,password_hash) VALUES ($1,'member@example.test','Member','test')",
+    [member.userId],
+  );
+  await database.engine.query(
+    "INSERT INTO cloud_memberships (organization_id,user_id,role) VALUES ($1,$2,'member')",
+    [owner.organizationId, member.userId],
+  );
+  await aiIssue("Harden sessions");
+  await runtime.autopilot.autopilot.tick();
+  const { claim, worker } = await claimTask();
+  await database.engine.query(
+    "UPDATE cloud_artifact_chunks SET bytes=$1 WHERE artifact_id=(SELECT id FROM cloud_run_artifacts WHERE run_id=$2 AND kind='diff')",
+    [
+      Buffer.from(`diff --git a/src/auth/session.ts b/src/auth/session.ts
+--- a/src/auth/session.ts
++++ b/src/auth/session.ts
+@@ -1,1 +1,1 @@
+-export const lifetime = 60;
++export const lifetime = 30;
+`),
+      claim.runId,
+    ],
+  );
+  for (let round = 1; round <= 3; round++)
+    await review(worker, claim, round, {
+      decision: "approve",
+      summary: "Looks fine.",
+      findings: [],
+    });
+  await runtime.execution.leases.finish(worker, finish(claim));
+  await deliver();
+  expect(
+    (await runtime.execution.runs.get(owner, claim.runId)).delivery?.state,
+  ).toBe("open");
+  await expect(
+    runtime.execution.runs.merge(member, claim.runId),
+  ).resolves.toEqual({ id: claim.runId });
+  await deliver();
+  expect(
+    (await runtime.execution.runs.get(owner, claim.runId)).delivery?.state,
+  ).toBe("needs_person");
+  expect(server.callsTo("/repos/acme/app/pulls/1/merge", "PUT")).toEqual([]);
+
+  await runtime.git.accounts.connect(member, "github", {
+    revision: 0,
+    apiUrl: githubApiUrl,
+    token: memberToken,
+  });
+  await runtime.execution.runs.merge(member, claim.runId);
+  await deliver();
+  expect(server.github.get(1)!.state).toBe("merged");
+  expect(
+    server
+      .callsTo("/repos/acme/app/pulls/1/merge", "PUT")
+      .map((call) => call.authorization),
+  ).toEqual([`Bearer ${memberToken}`]);
+  expect(
+    server.callsTo("/repos/acme/app/pulls", "POST")[0]!.authorization,
+  ).toBe(`Bearer ${personalToken}`);
 }, 60_000);
 
 it("delivers work handed off from an agent turn on a machdoch branch", async () => {

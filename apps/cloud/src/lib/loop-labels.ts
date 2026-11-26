@@ -19,9 +19,9 @@ export const loopSourceLabels: Record<LoopSource, string> = {
 export const rejectionLabels: Record<LoopRejectionReason, string> = {
   source_disabled: "Source is off",
   invalid_secret: "Invalid secret",
-  untrusted: "Not trusted by the loop",
-  loops_disabled: "Loops are off",
-  killed: "Loop is killed",
+  untrusted: "Not trusted by the automation",
+  loops_disabled: "Automations are off",
+  killed: "Automation is killed",
 };
 
 export const overlapLabels: Record<LoopOverlapPolicy, string> = {

@@ -1,11 +1,7 @@
 "use client";
 
 import { Select } from "@/components/ui/select";
-import {
-  gitIdentities,
-  type AutomationAction,
-  type GitIdentity,
-} from "@/lib/cloud-automation-contract";
+import type { AutomationAction } from "@/lib/cloud-automation-contract";
 import {
   gitMergeMethods,
   gitReviewDecisionInputs,
@@ -25,11 +21,6 @@ export type GitAction = Extract<
       | "git_retarget";
   }
 >;
-
-const identityLabels: Record<GitIdentity, string> = {
-  owner: "As me",
-  organization: "As the organization connection",
-};
 
 const decisionLabels: Record<GitReviewInput, string> = {
   approve: "Approve",
@@ -103,22 +94,6 @@ export function GitActionFields({
           onChange={(body) => onChange({ ...action, body })}
         />
       )}
-      <Select
-        aria-label="Act as"
-        value={action.identity}
-        onChange={(event) =>
-          onChange({
-            ...action,
-            identity: event.target.value as GitIdentity,
-          })
-        }
-      >
-        {gitIdentities.map((identity) => (
-          <option key={identity} value={identity}>
-            {identityLabels[identity]}
-          </option>
-        ))}
-      </Select>
     </>
   );
 }

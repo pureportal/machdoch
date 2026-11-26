@@ -86,14 +86,14 @@ export function defaultAction(
     case "send_webhook":
       return { kind, url: "", body: "" };
     case "git_comment":
-      return { kind, body: "", identity: "owner" };
+      return { kind, body: "" };
     case "git_review":
-      return { kind, decision: "comment", body: "", identity: "owner" };
+      return { kind, decision: "comment", body: "" };
     case "git_merge":
-      return { kind, method: "squash", identity: "owner" };
+      return { kind, method: "squash" };
     case "git_update_branch":
     case "git_retarget":
-      return { kind, identity: "owner" };
+      return { kind };
     case "start_client_session":
       return {
         kind,

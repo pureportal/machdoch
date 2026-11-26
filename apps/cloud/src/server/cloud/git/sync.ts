@@ -572,9 +572,11 @@ export class CloudGitSync {
         >(
           `SELECT p.organization_id AS "organizationId",p.id AS "pullRequestId",p.number,${repositoryColumns} FROM cloud_git_pull_requests p
           JOIN cloud_git_repositories r ON r.organization_id=p.organization_id AND r.id=p.repository_id
-          WHERE p.state='open' AND (p.signals_synced_at IS NULL OR ((r.hook_id IS NULL OR p.mergeable_state='unknown')
+          JOIN cloud_git_connections c ON c.organization_id=r.organization_id AND c.id=r.connection_id
+          WHERE p.state='open' AND (p.signals_synced_at IS NULL OR (((r.hook_id IS NULL AND (c.app_id IS NULL OR NOT $1)) OR p.mergeable_state='unknown')
             AND p.signals_synced_at < clock_timestamp() - interval '${openPullRequestRefreshMinutes} minutes'))
           ORDER BY p.signals_synced_at NULLS FIRST LIMIT 1 FOR UPDATE OF p SKIP LOCKED`,
+          [this.secureOrigin],
         )
       ).rows[0];
       if (!row) return null;

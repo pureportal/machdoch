@@ -4,7 +4,7 @@ const help: Partial<Record<SidebarPageHref, string>> = {
   "/cloud/pulse": `
 **Write with Agent** posts an update for each chosen project. Agent reads the project's issues and earlier updates and follows the Pulse **Instructions**, which set the TL;DR, health and structure.
 
-To post updates on a timetable, add a [loop](/cloud/loops) with the action **Write project updates**.
+To post updates on a timetable, add an [automation](/cloud/automations) with the action **Write project updates**.
 `,
   "/cloud/reviews": `
 Reviews match pull requests to the GitHub and GitLab accounts linked on your account page. Pull requests you opened appear by what they need next; requests for your review appear until you submit one.
@@ -41,10 +41,10 @@ Add the LinkedIn or Reddit app credentials, copy the shown redirect URL into tha
 
 Posting to LinkedIn company pages needs the Community Management API.
 `,
-  "/cloud/loops": `
-A loop is an **automation** that reacts to events or webhooks, or a **schedule** that runs at set times. It runs in a cloud sandbox, on a linked client or in a runner pool.
+  "/cloud/automations": `
+An automation reacts to events or webhooks, or runs on a **schedule**. It runs in a cloud sandbox, on a linked client or in a runner pool.
 
-Actions run with the loop owner's permissions. A loop's own changes never trigger it again. Budgets, code access and trusted sources are set in **Settings → Loops**.
+Actions run with the owner's permissions. An automation's own changes never trigger it again. Budgets, code access and trusted sources are set in **Settings → Automations**.
 `,
   "/enrollment": `
 1. Create an enrollment key.

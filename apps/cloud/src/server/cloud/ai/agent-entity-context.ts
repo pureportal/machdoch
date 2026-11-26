@@ -247,7 +247,7 @@ const loopSection: SectionBuilder = async (sql, actor, id) => {
     )
   ).rows;
   return [
-    `## Loop [${label}](/cloud/loops/${id})`,
+    `## Automation [${label}](/cloud/automations/${id})`,
     `${loop.enabled ? "Enabled" : "Paused"}; runs on ${loop.placement} with ${loop.harness}${loop.model ? ` (${loop.model})` : ""}.`,
     ...(loop.description
       ? [`Description: ${excerpt(loop.description, 800)}`]

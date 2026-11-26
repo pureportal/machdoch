@@ -68,15 +68,19 @@ export function admitLoopRun(input: LoopAdmissionInput): LoopAdmission {
     return {
       admitted: false,
       code: "loops_disabled",
-      reason: "Loops are turned off.",
+      reason: "Automations are turned off.",
     };
   if (input.killed)
-    return { admitted: false, code: "killed", reason: "The loop was stopped." };
+    return {
+      admitted: false,
+      code: "killed",
+      reason: "The automation was stopped.",
+    };
   if (input.chainAutomationIds.includes(input.automationId))
     return {
       admitted: false,
       code: "chain_loop",
-      reason: "This loop already ran earlier in the same chain.",
+      reason: "This automation already ran earlier in the same chain.",
     };
   if (input.dryRun)
     return { admitted: true, reservedCents: 0, cancelActive: false };

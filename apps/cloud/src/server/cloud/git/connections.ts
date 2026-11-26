@@ -25,14 +25,19 @@ import { requireCredentialStorage } from "../credential-storage";
 import type { CloudDatabase, CloudSql } from "../database";
 import { readStatusRules } from "./automations";
 import { gitClient, type GitAccess } from "./git-client";
-import type { OAuthApp } from "./oauth";
+import {
+  gitHubInstallationRepositories,
+  removeGitHubInstallation,
+  type GitHubAppKey,
+} from "./github-app";
+import { providerWebOrigin, type OAuthApp } from "./oauth";
 import { gitReviewSettings } from "./review-settings";
 
 export const currentHookVersion = 4;
 
 const timestamp = `'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'`;
 
-function tokenContext(
+export function tokenContext(
   provider: GitProvider,
   organizationId: string,
   apiUrl: string,
@@ -42,7 +47,7 @@ function tokenContext(
   );
 }
 
-function webhookContext(
+export function webhookContext(
   provider: GitProvider,
   organizationId: string,
   webhookId: string,
@@ -56,7 +61,7 @@ function webhookContext(
   );
 }
 
-function oauthContext(
+export function oauthContext(
   provider: GitProvider,
   organizationId: string,
   clientId: string,
@@ -70,10 +75,17 @@ function oauthContext(
   );
 }
 
+export interface GitHubAppInstallation {
+  id: number;
+  slug: string;
+  installationId: number;
+}
+
 export interface GitConnectionRecord extends GitAccess {
   id: string;
   organizationId: string;
   account: string;
+  app: GitHubAppInstallation | null;
   oauth: OAuthApp | null;
   webhookId: string;
   webhookSecret: string;
@@ -96,6 +108,9 @@ type StoredConnection = {
   code_access: boolean;
   oauth_client_id: string | null;
   oauth_secret: Uint8Array | null;
+  app_id: string | null;
+  app_slug: string | null;
+  app_installation_id: string | null;
 };
 
 function unconfigured(): CloudError {
@@ -145,6 +160,14 @@ function unlock(
       actorId: row.actor_id,
       automate: row.automate,
       codeAccess: row.code_access,
+      app:
+        row.app_id && row.app_slug && row.app_installation_id
+          ? {
+              id: Number(row.app_id),
+              slug: row.app_slug,
+              installationId: Number(row.app_installation_id),
+            }
+          : null,
       oauth:
         row.oauth_client_id && row.oauth_secret
           ? {
@@ -171,8 +194,54 @@ function unlock(
   }
 }
 
+export function appKeyContext(
+  organizationId: string,
+  connectionId: string,
+): Buffer {
+  return Buffer.from(
+    JSON.stringify({
+      kind: "cloud.github.app-key",
+      organizationId,
+      connectionId,
+    }),
+  );
+}
+
+export async function gitHubAppKey(
+  sql: CloudSql,
+  cipher: SettingsCipher | null,
+  organizationId: string,
+  connectionId: string,
+): Promise<GitHubAppKey | null> {
+  const row = (
+    await sql.query<{ app_id: string | null; app_key: Uint8Array | null }>(
+      "SELECT app_id,app_key FROM cloud_git_connections WHERE organization_id=$1 AND id=$2",
+      [organizationId, connectionId],
+    )
+  ).rows[0];
+  if (!row?.app_id || !row.app_key) return null;
+  const storage = await requireCredentialStorage(sql, cipher);
+  try {
+    return {
+      appId: Number(row.app_id),
+      privateKey: storage
+        .decrypt(
+          Buffer.from(row.app_key),
+          appKeyContext(organizationId, connectionId),
+        )
+        .toString("utf8"),
+    };
+  } catch {
+    throw new CloudError(
+      503,
+      "credential_storage",
+      "The GitHub App key cannot be unlocked. Connect GitHub again.",
+    );
+  }
+}
+
 const storedColumns =
-  "id,organization_id,provider,api_url,account,secret,webhook_id,webhook_secret,actor_id,automate,code_access,oauth_client_id,oauth_secret";
+  "id,organization_id,provider,api_url,account,secret,webhook_id,webhook_secret,actor_id,automate,code_access,oauth_client_id,oauth_secret,app_id,app_slug,app_installation_id";
 
 export async function gitConnection(
   sql: CloudSql,
@@ -229,7 +298,11 @@ export class CloudGitConnections {
         await sql.query<
           Omit<
             GitConnection,
-            "webhookUrl" | "webhookSecret" | "repositories" | "oauthCallbackUrl"
+            | "webhookUrl"
+            | "webhookSecret"
+            | "repositories"
+            | "oauthCallbackUrl"
+            | "app"
           >
         >(
           `SELECT c.id,c.provider,c.api_url AS "apiUrl",c.account,c.token_prefix AS "tokenPrefix",c.automate,c.code_access AS "codeAccess",
@@ -263,7 +336,16 @@ export class CloudGitConnections {
           webhookUrl: this.webhookUrl(row.provider, record.webhookId),
           oauthCallbackUrl: this.oauthCallbackUrl(row.provider),
           webhookSecret: record.webhookSecret,
-          repositories,
+          app: record.app && {
+            slug: record.app.slug,
+            configureUrl: `${providerWebOrigin(record.provider, record.apiUrl)}/apps/${record.app.slug}/installations/new`,
+          },
+          repositories: record.app
+            ? repositories.map((repository) => ({
+                ...repository,
+                webhook: true,
+              }))
+            : repositories,
         });
       }
       return {
@@ -295,9 +377,29 @@ export class CloudGitConnections {
     provider: GitProvider,
     input: GitConnectionInput,
   ): Promise<{ id: string; revision: number }> {
-    await this.database.transaction((sql) =>
-      requireMembership(sql, actor, "git.manage"),
-    );
+    await this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "git.manage");
+      if (!input.connectionId) return;
+      const app = (
+        await sql.query<{ api_url: string; oauth_client_id: string | null }>(
+          "SELECT api_url,oauth_client_id FROM cloud_git_connections WHERE organization_id=$1 AND id=$2 AND app_id IS NOT NULL",
+          [actor.organizationId, input.connectionId],
+        )
+      ).rows[0];
+      if (
+        app &&
+        (input.token ||
+          input.oauthClientSecret ||
+          app.api_url !== input.apiUrl ||
+          (input.oauthClientId !== undefined &&
+            input.oauthClientId !== app.oauth_client_id))
+      )
+        throw new CloudError(
+          409,
+          "git_app_managed",
+          "This connection is managed by its GitHub App.",
+        );
+    });
     const viewer = input.token
       ? await gitClient(
           { provider, apiUrl: input.apiUrl, token: input.token },
@@ -465,10 +567,10 @@ export class CloudGitConnections {
     actor: CloudActor,
     connectionId: string,
   ): Promise<GitAvailableRepository[]> {
-    return gitClient(
-      await this.access(actor, connectionId),
-      this.transport,
-    ).repositories();
+    const access = await this.access(actor, connectionId);
+    return access.app
+      ? gitHubInstallationRepositories(access, this.transport)
+      : gitClient(access, this.transport).repositories();
   }
 
   async addRepository(
@@ -479,17 +581,18 @@ export class CloudGitConnections {
     const access = await this.access(actor, connectionId);
     const client = gitClient(access, this.transport);
     const repository = await client.repository(fullName);
-    const hookId = this.origin.startsWith("https://")
-      ? await client
-          .createWebhook(repository.fullName, {
-            url: this.webhookUrl(access.provider, access.webhookId),
-            secret: access.webhookSecret,
-          })
-          .catch((error: unknown) => {
-            if (!isCloudError(error)) throw error;
-            return null;
-          })
-      : null;
+    const hookId =
+      !access.app && this.origin.startsWith("https://")
+        ? await client
+            .createWebhook(repository.fullName, {
+              url: this.webhookUrl(access.provider, access.webhookId),
+              secret: access.webhookSecret,
+            })
+            .catch((error: unknown) => {
+              if (!isCloudError(error)) throw error;
+              return null;
+            })
+        : null;
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "git.manage");
       const inserted = (
@@ -581,25 +684,39 @@ export class CloudGitConnections {
       ).rows[0];
       if (!current) return null;
       checkRevision(current.revision, revision);
+      const app = await gitHubAppKey(
+        sql,
+        this.cipher,
+        actor.organizationId,
+        connectionId,
+      );
       const hooks = (
         await sql.query<{ full_name: string; hook_id: string }>(
           "SELECT full_name,hook_id FROM cloud_git_repositories WHERE organization_id=$1 AND connection_id=$2 AND hook_id IS NOT NULL",
           [actor.organizationId, connectionId],
         )
       ).rows;
-      return hooks.length
-        ? {
-            access: await gitConnection(
-              sql,
-              this.cipher,
-              actor.organizationId,
-              connectionId,
-            ),
-            hooks,
-          }
-        : null;
+      return {
+        access: await gitConnection(
+          sql,
+          this.cipher,
+          actor.organizationId,
+          connectionId,
+        ),
+        hooks,
+        app,
+      };
     });
-    if (webhooks) {
+    if (webhooks?.app && webhooks.access.app)
+      await removeGitHubInstallation(
+        webhooks.access.apiUrl,
+        webhooks.app,
+        webhooks.access.app.installationId,
+        this.transport,
+      ).catch((error: unknown) => {
+        if (!isCloudError(error)) throw error;
+      });
+    if (webhooks?.hooks.length) {
       const client = gitClient(webhooks.access, this.transport);
       await Promise.all(
         webhooks.hooks.map((hook) =>

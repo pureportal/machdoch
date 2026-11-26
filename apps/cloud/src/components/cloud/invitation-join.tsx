@@ -32,6 +32,7 @@ export function InvitationJoin() {
   return (
     <AuthFrame>
       <form
+        method="post"
         onSubmit={(event) => {
           event.preventDefault();
           if (!ready) return;

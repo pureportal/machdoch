@@ -210,9 +210,9 @@ export class CloudRuns {
       const run = await readRun(sql, actor.organizationId, id, false);
       await requireTeam(sql, actor, run.teamId);
       const updated = await sql.query(
-        `UPDATE cloud_run_deliveries SET state='merging',auto_merge=true,reason=NULL,attempts=0,next_attempt_at=clock_timestamp(),updated_at=clock_timestamp()
+        `UPDATE cloud_run_deliveries SET state='merging',auto_merge=true,merge_requested_by=$3,reason=NULL,attempts=0,next_attempt_at=clock_timestamp(),updated_at=clock_timestamp()
         WHERE organization_id=$1 AND run_id=$2 AND state IN ('open','needs_person') AND pull_request_number IS NOT NULL RETURNING run_id`,
-        [actor.organizationId, id],
+        [actor.organizationId, id, actor.userId],
       );
       if (!updated.rows.length)
         throw new CloudError(
