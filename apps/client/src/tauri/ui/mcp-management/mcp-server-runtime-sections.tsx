@@ -26,6 +26,7 @@ import {
   McpSection,
   ToggleField,
 } from "./mcp-form-fields";
+import { McpProcessSection } from "./mcp-server-connection-sections";
 import type { McpServerEditor } from "./use-mcp-server-editor";
 
 interface SectionProps {
@@ -277,6 +278,7 @@ export const McpAdvancedSection = ({
 
   return (
     <div className="grid gap-4">
+      <McpProcessSection editor={editor} server={server} />
       <McpSection title="Runtime permissions">
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Roots">

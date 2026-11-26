@@ -5,6 +5,7 @@ import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-
 import { SubmitShortcut } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { invokeWorkspaceTools } from "../../../workspace-management/workspace-platform";
+import { McpConfigJsonEditor } from "../../../mcp-management/mcp-config-json-editor";
 import { McpDraftActions } from "../../../mcp-management/mcp-draft-actions";
 import { McpServerDetail } from "../../../mcp-management/mcp-server-detail";
 import { McpServerList } from "../../../mcp-management/mcp-server-list";
@@ -14,7 +15,7 @@ import {
 } from "../../../mcp-management/use-mcp-server-editor";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 import { ProviderSyncControl } from "./provider-sync-control";
-import { SettingsCard, SettingsStatus } from "./shared";
+import { ChoiceButtons, SettingsCard, SettingsStatus } from "./shared";
 import type { McpSettingsControls } from "./types";
 
 export interface McpSettingsPanelProps {
@@ -24,14 +25,36 @@ export interface McpSettingsPanelProps {
 }
 
 type PageView = "servers" | "provider-sync";
+type EditorMode = "form" | "json";
 
-const ConfigError = ({ error }: { error: string }): JSX.Element => (
-  <p
-    role="alert"
-    className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200"
-  >
-    {error}
-  </p>
+const EDITOR_MODE_OPTIONS = [
+  { value: "form", label: "Form" },
+  { value: "json", label: "JSON" },
+] as const;
+
+const useEditorMode = (
+  editor: McpServerEditor,
+): [EditorMode, (mode: EditorMode) => void] => {
+  const [mode, setMode] = useState<EditorMode>("form");
+  return [editor.parsed.error ? "json" : mode, setMode];
+};
+
+const EditorModeSwitch = ({
+  editor,
+  mode,
+  onModeChange,
+}: {
+  editor: McpServerEditor;
+  mode: EditorMode;
+  onModeChange: (mode: EditorMode) => void;
+}): JSX.Element => (
+  <ChoiceButtons
+    label="Editor mode"
+    value={mode}
+    disabled={Boolean(editor.parsed.error)}
+    options={EDITOR_MODE_OPTIONS}
+    onChange={onModeChange}
+  />
 );
 
 const McpPageLayout = ({
@@ -42,21 +65,34 @@ const McpPageLayout = ({
   showProviderSync: boolean;
 }): JSX.Element => {
   const [view, setView] = useState<PageView>("servers");
+  const [mode, setMode] = useEditorMode(editor);
   const { setup, parsed, selectedServer } = editor;
   const providerSyncVisible = showProviderSync && view === "provider-sync";
+  const jsonVisible = mode === "json" && !providerSyncVisible;
 
   return (
     <SubmitShortcut asChild>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-900 px-6 py-4">
-          <div className="grid min-w-0 gap-0.5">
-            <h1 className="text-lg font-semibold text-slate-100">
+        <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-3 border-b border-slate-900 px-6 py-3">
+          <div className="grid min-w-48 flex-1 gap-0.5">
+            <h1 className="truncate text-lg font-semibold text-slate-100">
               MCP servers
             </h1>
-            <p className="truncate font-mono text-xs text-slate-500">
+            <p
+              title={setup.document.path}
+              className="truncate font-mono text-xs text-slate-500"
+            >
               {setup.document.path}
             </p>
           </div>
+          <EditorModeSwitch
+            editor={editor}
+            mode={mode}
+            onModeChange={(nextMode) => {
+              setView("servers");
+              setMode(nextMode);
+            }}
+          />
           <McpDraftActions editor={editor} />
         </header>
 
@@ -66,75 +102,83 @@ const McpPageLayout = ({
           </div>
         ) : null}
 
-        <div className="app-management-panes grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(11rem,30vh)_minmax(0,1fr)] lg:grid-cols-[20rem_minmax(0,1fr)] lg:grid-rows-1">
-          <aside className="flex min-h-0 min-w-0 flex-col border-r border-slate-900 bg-slate-950/70">
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
-              {parsed.error ? null : (
-                <McpServerList
-                  editor={editor}
-                  selectionVisible={!providerSyncVisible}
-                  onSelectServer={(serverId) => {
-                    setView("servers");
-                    editor.selectServer(serverId);
-                  }}
-                />
-              )}
-            </div>
-            <div className="grid shrink-0 gap-1 border-t border-slate-900 p-2">
-              {showProviderSync ? (
-                <button
-                  type="button"
-                  aria-pressed={providerSyncVisible}
-                  onClick={() => setView("provider-sync")}
-                  className={cn(
-                    "flex h-9 w-full items-center gap-2.5 rounded-lg border px-3 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sky-500/60",
-                    providerSyncVisible
-                      ? "border-sky-500/30 bg-sky-500/10 text-slate-100"
-                      : "border-transparent text-slate-300 hover:border-slate-800 hover:bg-slate-900",
-                  )}
-                >
-                  <ArrowLeftRight
-                    aria-hidden="true"
-                    className="size-4 text-slate-500"
-                  />
-                  Provider sync
-                </button>
-              ) : null}
-              <div className="px-3 py-2">
-                <McpAppsSettings
-                  invoke={(workspaceRoot, input) =>
-                    invokeWorkspaceTools("run_mcp_app_command", {
-                      workspaceRoot,
-                      input,
-                    })
-                  }
-                />
-              </div>
-            </div>
-          </aside>
-
-          <section className="min-h-0 min-w-0 overflow-y-auto">
-            <div className="mx-auto grid w-full max-w-4xl min-w-0 gap-5 px-6 py-6">
-              {parsed.error ? (
-                <ConfigError error={parsed.error} />
-              ) : providerSyncVisible ? (
-                <div className="grid gap-4">
-                  <h2 className="text-lg font-semibold tracking-tight text-slate-100">
-                    Provider sync
-                  </h2>
-                  <ProviderSyncControl
-                    workspaceRoot={setup.workspaceRoot}
-                    showDiagnostics
+        {jsonVisible ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5">
+            <McpConfigJsonEditor editor={editor} className="flex-1" />
+          </div>
+        ) : (
+          <div className="app-management-panes grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(11rem,30vh)_minmax(0,1fr)] lg:grid-cols-[18rem_minmax(0,1fr)] lg:grid-rows-1">
+            <aside className="flex min-h-0 min-w-0 flex-col overflow-y-auto border-b border-slate-900 bg-slate-950/70 lg:overflow-hidden lg:border-r lg:border-b-0">
+              {parsed.servers.length > 0 ? (
+                <div className="shrink-0 p-2 lg:min-h-0 lg:flex-1 lg:shrink lg:overflow-y-auto">
+                  <McpServerList
+                    editor={editor}
+                    selectionVisible={!providerSyncVisible}
+                    onSelectServer={(serverId) => {
+                      setView("servers");
+                      editor.selectServer(serverId);
+                    }}
                   />
                 </div>
-              ) : selectedServer ? (
-                <McpServerDetail editor={editor} server={selectedServer} />
-              ) : (
-                <EmptyState icon={Server} title="No MCP servers" size="large" />
-              )}
-            </div>
-          </section>
-        </div>
+              ) : null}
+              <div className="grid shrink-0 gap-0.5 border-t border-slate-900 p-2 first:border-t-0">
+                {showProviderSync ? (
+                  <button
+                    type="button"
+                    aria-pressed={providerSyncVisible}
+                    onClick={() => setView("provider-sync")}
+                    className={cn(
+                      "flex h-9 w-full items-center gap-2.5 rounded-lg border px-3 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sky-500/60",
+                      providerSyncVisible
+                        ? "border-sky-500/30 bg-sky-500/10 text-slate-100"
+                        : "border-transparent text-slate-300 hover:border-slate-800 hover:bg-slate-900",
+                    )}
+                  >
+                    <ArrowLeftRight
+                      aria-hidden="true"
+                      className="size-4 text-slate-500"
+                    />
+                    Provider sync
+                  </button>
+                ) : null}
+                <div className="px-3 py-2 text-slate-300">
+                  <McpAppsSettings
+                    invoke={(workspaceRoot, input) =>
+                      invokeWorkspaceTools("run_mcp_app_command", {
+                        workspaceRoot,
+                        input,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </aside>
+
+            <section className="min-h-0 min-w-0 overflow-y-auto">
+              <div className="grid w-full max-w-5xl min-w-0 gap-5 px-6 py-5">
+                {providerSyncVisible ? (
+                  <div className="grid gap-4">
+                    <h2 className="text-lg font-semibold tracking-tight text-slate-100">
+                      Provider sync
+                    </h2>
+                    <ProviderSyncControl
+                      workspaceRoot={setup.workspaceRoot}
+                      showDiagnostics
+                    />
+                  </div>
+                ) : selectedServer ? (
+                  <McpServerDetail editor={editor} server={selectedServer} />
+                ) : (
+                  <EmptyState
+                    icon={Server}
+                    title="No MCP servers"
+                    size="large"
+                  />
+                )}
+              </div>
+            </section>
+          </div>
+        )}
       </div>
     </SubmitShortcut>
   );
@@ -147,6 +191,7 @@ const McpCardLayout = ({
   editor: McpServerEditor;
   showProviderSync: boolean;
 }): JSX.Element => {
+  const [mode, setMode] = useEditorMode(editor);
   const { setup, parsed, selectedServer } = editor;
 
   return (
@@ -154,14 +199,22 @@ const McpCardLayout = ({
       <SubmitShortcut asChild>
         <div className="grid gap-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="min-w-0 flex-1 break-all font-mono text-xs leading-5 text-slate-500">
+            <p
+              title={setup.document.path}
+              className="min-w-0 flex-1 truncate font-mono text-xs leading-5 text-slate-500"
+            >
               {setup.document.path}
             </p>
+            <EditorModeSwitch
+              editor={editor}
+              mode={mode}
+              onModeChange={setMode}
+            />
             <McpDraftActions editor={editor} />
           </div>
 
-          {parsed.error ? (
-            <ConfigError error={parsed.error} />
+          {mode === "json" ? (
+            <McpConfigJsonEditor editor={editor} />
           ) : (
             <div
               className={cn(

@@ -27,6 +27,7 @@ import {
   parseStringList,
   parseStringRecord,
   setRecordValue,
+  TRANSPORT_LABELS,
   TRANSPORT_TYPES,
   type AuthType,
   type ServerRecord,
@@ -176,50 +177,8 @@ export const McpSetupSection = ({
   return (
     <div className="grid gap-4">
       <IssueList issues={editor.selectedIssues} />
-      <McpSection title="Identity">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="ID">
-            <Input
-              value={getString(server, "id")}
-              disabled={editor.disabled}
-              onChange={(event) =>
-                editor.renameSelectedServer(
-                  normalizeServerId(event.target.value),
-                )
-              }
-              className={MCP_INPUT_CLASS}
-            />
-          </Field>
-          <Field label="Title">
-            <Input
-              value={getString(server, "title")}
-              disabled={editor.disabled}
-              onChange={(event) =>
-                editor.updateSelectedField("title", event.target.value)
-              }
-              className={MCP_TEXT_INPUT_CLASS}
-            />
-          </Field>
-          <Field label="Description" className="md:col-span-2">
-            <Textarea
-              value={getString(server, "description")}
-              disabled={editor.disabled}
-              onChange={(event) =>
-                editor.updateSelectedField("description", event.target.value)
-              }
-              className={MCP_PROSE_TEXTAREA_CLASS}
-            />
-          </Field>
-          <ClientNameFields
-            key={editor.selectedServerKey}
-            editor={editor}
-            server={server}
-          />
-        </div>
-      </McpSection>
-
-      <McpSection title="Transport">
-        <div className="grid gap-4 md:grid-cols-[12rem_minmax(0,1fr)]">
+      <McpSection title="Connection">
+        <div className="grid gap-4 md:grid-cols-[15rem_minmax(0,1fr)]">
           <Field label="Transport">
             <select
               value={transportType}
@@ -237,7 +196,7 @@ export const McpSetupSection = ({
             >
               {TRANSPORT_TYPES.map((type) => (
                 <option key={type} value={type}>
-                  {type}
+                  {TRANSPORT_LABELS[type]}
                 </option>
               ))}
             </select>
@@ -291,6 +250,75 @@ export const McpSetupSection = ({
               detail="KEY=value, one per line."
               placeholder="API_KEY=${env:API_KEY}"
             />
+          </div>
+        ) : (
+          <RecordListField
+            editor={editor}
+            record="transport"
+            label="Headers"
+            field="headers"
+            detail="KEY=value, one per line."
+          />
+        )}
+      </McpSection>
+
+      <McpSection title="Details">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Title">
+            <Input
+              value={getString(server, "title")}
+              disabled={editor.disabled}
+              onChange={(event) =>
+                editor.updateSelectedField("title", event.target.value)
+              }
+              className={MCP_TEXT_INPUT_CLASS}
+            />
+          </Field>
+          <Field label="ID">
+            <Input
+              value={getString(server, "id")}
+              disabled={editor.disabled}
+              onChange={(event) =>
+                editor.renameSelectedServer(
+                  normalizeServerId(event.target.value),
+                )
+              }
+              className={MCP_INPUT_CLASS}
+            />
+          </Field>
+          <Field label="Description" className="md:col-span-2">
+            <Textarea
+              value={getString(server, "description")}
+              disabled={editor.disabled}
+              rows={2}
+              onChange={(event) =>
+                editor.updateSelectedField("description", event.target.value)
+              }
+              className={MCP_PROSE_TEXTAREA_CLASS}
+            />
+          </Field>
+        </div>
+      </McpSection>
+    </div>
+  );
+};
+
+export const McpProcessSection = ({
+  editor,
+  server,
+}: SectionProps): JSX.Element => {
+  const transport = getRecord(server, "transport");
+
+  return (
+    <McpSection title="Process">
+      <div className="grid gap-4 md:grid-cols-2">
+        <ClientNameFields
+          key={editor.selectedServerKey}
+          editor={editor}
+          server={server}
+        />
+        {getTransportType(server) === "stdio" ? (
+          <>
             <TextField
               editor={editor}
               record="transport"
@@ -315,18 +343,10 @@ export const McpSetupSection = ({
                 <option value="ignore">ignore</option>
               </select>
             </Field>
-          </div>
-        ) : (
-          <RecordListField
-            editor={editor}
-            record="transport"
-            label="Headers"
-            field="headers"
-            detail="KEY=value, one per line."
-          />
-        )}
-      </McpSection>
-    </div>
+          </>
+        ) : null}
+      </div>
+    </McpSection>
   );
 };
 

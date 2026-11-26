@@ -3,6 +3,8 @@ import {
   CUSTOM_CLIENT_NAME_OPTION,
   createTransport,
   describeServerConnection,
+  duplicateServer,
+  filterServerIndexes,
   getClientNameOption,
   getFirstMcpServerId,
   getServerKey,
@@ -131,5 +133,47 @@ describe("MCP config model", () => {
       "Gemini CLI MCP Client",
     );
     expect(getClientNameOption("My Agent")).toBe(CUSTOM_CLIENT_NAME_OPTION);
+  });
+
+  it("duplicates a server with a unique id and copied title", () => {
+    const servers = [
+      {
+        id: "docs",
+        title: "Docs",
+        transport: { type: "stdio", command: "npx" },
+      },
+      { id: "docs-copy", transport: { type: "stdio", command: "npx" } },
+    ];
+    const copy = duplicateServer(servers, 0);
+
+    expect(copy).toEqual({
+      id: "docs-copy-2",
+      title: "Docs copy",
+      transport: { type: "stdio", command: "npx" },
+    });
+    expect(copy.transport).not.toBe(servers[0]?.transport);
+    expect(() => duplicateServer(servers, 5)).toThrow(
+      "No MCP server at position 6.",
+    );
+  });
+
+  it("filters servers by id, title, transport, and target", () => {
+    const servers = [
+      {
+        id: "docs",
+        title: "Context Docs",
+        transport: { type: "sse", url: "https://docs.dev/mcp" },
+      },
+      {
+        id: "browser",
+        transport: { type: "stdio", command: "npx", args: ["playwright"] },
+      },
+    ];
+
+    expect(filterServerIndexes(servers, "")).toEqual([0, 1]);
+    expect(filterServerIndexes(servers, "context")).toEqual([0]);
+    expect(filterServerIndexes(servers, "stdio playwright")).toEqual([1]);
+    expect(filterServerIndexes(servers, "docs.dev")).toEqual([0]);
+    expect(filterServerIndexes(servers, "missing")).toEqual([]);
   });
 });

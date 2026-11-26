@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { McpSettingsControls } from "../chat-session/components/settings-dialog-panels/types";
 import {
+  duplicateServer,
   getRecord,
   getServerId,
   getServerKey,
@@ -45,6 +46,9 @@ export interface McpServerEditor {
   ) => void;
   addServer: (server: ServerRecord) => void;
   addPreset: (presetId: string, serverId: string) => void;
+  duplicateSelectedServer: () => void;
+  setServerEnabled: (index: number, enabled: boolean) => void;
+  testSelectedServer: () => void;
   removeSelectedServer: () => void;
   discardChanges: () => void;
 }
@@ -162,6 +166,36 @@ export const useMcpServerEditor = (
       setup.onPresetInsert(presetId);
       selectServer(serverId);
       setSelectedTab("setup");
+    },
+    duplicateSelectedServer: () => {
+      if (selectedIndex < 0) {
+        return;
+      }
+
+      const copy = duplicateServer(parsed.servers, selectedIndex);
+      writeServers([
+        ...parsed.servers.slice(0, selectedIndex + 1),
+        copy,
+        ...parsed.servers.slice(selectedIndex + 1),
+      ]);
+      selectServer(getServerId(copy, selectedIndex + 1));
+    },
+    setServerEnabled: (serverIndex, enabled) => {
+      writeServers(
+        parsed.servers.map((server, index) =>
+          index === serverIndex
+            ? setRecordValue(server, "enabled", enabled)
+            : server,
+        ),
+      );
+    },
+    testSelectedServer: () => {
+      if (!selectedServer) {
+        return;
+      }
+
+      setSelectedTab("capabilities");
+      void setup.onDiscoverServer(getServerId(selectedServer, selectedIndex));
     },
     removeSelectedServer: () => {
       if (selectedIndex < 0) {

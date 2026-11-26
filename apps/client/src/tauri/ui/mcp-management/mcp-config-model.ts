@@ -45,6 +45,12 @@ export const TRANSPORT_TYPES: readonly TransportType[] = [
   "sse",
 ];
 
+export const TRANSPORT_LABELS: Record<TransportType, string> = {
+  stdio: "Local command (stdio)",
+  "streamable-http": "Remote (HTTP)",
+  sse: "Remote (SSE)",
+};
+
 const MCP_PRESET_CATEGORIES = [
   { id: "web-search", label: "Web & Search" },
   { id: "docs-knowledge", label: "Docs & Knowledge" },
@@ -393,6 +399,43 @@ export const getUniqueServerId = (
   }
 
   return `${normalized}-${Date.now()}`;
+};
+
+export const duplicateServer = (
+  servers: ServerRecord[],
+  index: number,
+): ServerRecord => {
+  const source = servers[index];
+  if (!source) {
+    throw new Error(`No MCP server at position ${index + 1}.`);
+  }
+  const sourceId = getServerId(source, index);
+  const copy = structuredClone(source);
+  copy.id = getUniqueServerId(servers, `${sourceId}-copy`);
+  const title = getString(source, "title");
+  if (title) {
+    copy.title = `${title} copy`;
+  }
+  return copy;
+};
+
+export const filterServerIndexes = (
+  servers: readonly ServerRecord[],
+  query: string,
+): number[] => {
+  const terms = query.trim().toLowerCase().split(/\s+/u).filter(Boolean);
+  return servers.flatMap((server, index) => {
+    const haystack = [
+      getServerId(server, index),
+      getString(server, "title"),
+      getString(server, "description"),
+      getTransportType(server),
+      describeServerConnection(server),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return terms.every((term) => haystack.includes(term)) ? [index] : [];
+  });
 };
 
 export const isValidHttpUrl = (value: string): boolean => {

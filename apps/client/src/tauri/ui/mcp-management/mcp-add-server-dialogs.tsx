@@ -10,6 +10,7 @@ import {
   DialogTrigger,
 } from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
+import { SearchField } from "@machdoch/media-studio/tauri/ui/components/ui/search-field.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
@@ -22,6 +23,7 @@ import {
   groupMcpPresets,
   isValidHttpUrl,
   normalizeServerId,
+  TRANSPORT_LABELS,
   TRANSPORT_TYPES,
   type TransportType,
 } from "./mcp-config-model";
@@ -171,7 +173,7 @@ export const CustomServerDialog = ({
               >
                 {TRANSPORT_TYPES.map((type) => (
                   <option key={type} value={type}>
-                    {type}
+                    {TRANSPORT_LABELS[type]}
                   </option>
                 ))}
               </select>
@@ -254,10 +256,17 @@ export const PresetDialog = ({
 }: {
   editor: McpServerEditor;
 }): JSX.Element => {
-  const groups = useMemo(
-    () => groupMcpPresets(editor.setup.presets),
-    [editor.setup.presets],
-  );
+  const [query, setQuery] = useState("");
+  const groups = useMemo(() => {
+    const terms = query.trim().toLowerCase().split(/\s+/u).filter(Boolean);
+    return groupMcpPresets(
+      editor.setup.presets.filter((preset) => {
+        const haystack =
+          `${preset.title} ${preset.description} ${preset.serverId}`.toLowerCase();
+        return terms.every((term) => haystack.includes(term));
+      }),
+    );
+  }, [editor.setup.presets, query]);
   const installedIds = new Set(
     editor.parsed.servers.map((server, index) =>
       normalizeServerId(getServerId(server, index)),
@@ -265,7 +274,7 @@ export const PresetDialog = ({
   );
 
   return (
-    <Dialog>
+    <Dialog onOpenChange={(open) => (open ? setQuery("") : undefined)}>
       <DialogTrigger asChild>
         <Button
           type="button"
@@ -281,8 +290,15 @@ export const PresetDialog = ({
         aria-describedby={undefined}
         className="max-h-[min(46rem,calc(100vh-2rem))] w-[min(52rem,calc(100vw-2rem))] max-w-none gap-4 overflow-hidden border-slate-800 bg-slate-950 text-slate-100 sm:max-w-none"
       >
-        <DialogHeader>
+        <DialogHeader className="flex-row items-center justify-between gap-4 pr-8">
           <DialogTitle>Add MCP preset</DialogTitle>
+          <SearchField
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="Search presets"
+            placeholder="Search presets"
+            className="h-8 w-56 rounded-lg border-slate-800 bg-slate-950 text-sm"
+          />
         </DialogHeader>
         <div
           role="region"
@@ -291,7 +307,9 @@ export const PresetDialog = ({
         >
           {groups.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-800 bg-slate-950/60 px-3 py-6 text-center text-sm text-slate-500">
-              No MCP presets available.
+              {query.trim()
+                ? "No matching presets."
+                : "No MCP presets available."}
             </p>
           ) : null}
           {groups.map((group) => (
