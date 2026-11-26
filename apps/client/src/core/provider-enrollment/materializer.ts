@@ -711,6 +711,9 @@ const renderClaudeEnrollment = async (
         "",
       CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
       CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
+      ...(projection.startupTimeoutMs > 0
+        ? { MCP_TIMEOUT: String(projection.startupTimeoutMs) }
+        : {}),
     },
     route: "claude-system-prompt-file",
     files: [

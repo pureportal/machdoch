@@ -367,6 +367,41 @@ describe("MCP projector", () => {
     });
   });
 
+  it("reports the longest configured server startup timeout", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-projector-timeout-"));
+    roots.push(root);
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(root, "user");
+    const configDirectory = join(root, ".machdoch", "mcp");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(
+      join(configDirectory, "mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "fast",
+            enabled: true,
+            transport: { type: "stdio", command: "node" },
+            timeoutMs: 10_000,
+          },
+          {
+            id: "slow",
+            enabled: true,
+            transport: { type: "stdio", command: "npx" },
+            timeoutMs: 90_000,
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const projection = await projectMcpForProvider("claude-cli", root, {
+      machdochCliLaunch: createLaunch(root),
+    });
+
+    expect(projection.startupTimeoutMs).toBe(90_000);
+  });
+
   it("keeps workspace overrides out of the global user projection", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-projector-scope-"));
     roots.push(root);

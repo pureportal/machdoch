@@ -40,7 +40,8 @@ export interface McpProjectionOptions {
   skipUnreachableMcpServers?: boolean;
 }
 
-const ENVIRONMENT_TEMPLATE_PATTERN = /\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/gu;
+const LOCAL_MCP_STARTUP_TIMEOUT_MS = 30_000;
+const ENVIRONMENT_TEMPLATE_PATTERN =/\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}/gu;
 const HAS_ENVIRONMENT_TEMPLATE_PATTERN = /\$\{env:[A-Za-z_][A-Za-z0-9_]*\}/u;
 
 const getCapabilities = (
@@ -345,7 +346,7 @@ const createLocalMcpProjection = (
       },
     },
     securityProfile: "weak",
-    timeoutMs: 30_000,
+    timeoutMs: LOCAL_MCP_STARTUP_TIMEOUT_MS,
     maxTotalTimeoutMs: 3_600_000,
     idleShutdownMs: 900_000,
     maxResponseChars: 60_000,
@@ -727,6 +728,11 @@ export const projectMcpForProvider = async (
     uncoveredServers,
     config,
     environment,
+    startupTimeoutMs: Math.max(
+      0,
+      ...availableServers.map((server) => server.timeoutMs),
+      ...(options.localMcp ? [LOCAL_MCP_STARTUP_TIMEOUT_MS] : []),
+    ),
     warnings,
   };
 };

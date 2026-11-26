@@ -102,6 +102,7 @@ export interface McpProjection {
   uncoveredServers: McpUncoveredServer[];
   config: Record<string, unknown>;
   environment: Record<string, string>;
+  startupTimeoutMs: number;
   warnings: string[];
 }
 
