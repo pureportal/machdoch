@@ -3,6 +3,7 @@ import {
   CircleAlert,
   ExternalLink,
   LoaderCircle,
+  Pencil,
   Play,
   RotateCw,
   Square,
@@ -254,6 +255,7 @@ export const WorkspaceRunDetails = ({
   onValuesChange,
   onAction,
   onSelectConfiguration,
+  onEdit,
   onOpenUrl,
 }: {
   status: WorkspaceRunConfigurationStatus;
@@ -264,6 +266,7 @@ export const WorkspaceRunDetails = ({
   onValuesChange: (values: WorkspaceRunInputValues) => void;
   onAction: (action: WorkspaceRunAction) => void;
   onSelectConfiguration: (configurationId: string) => void;
+  onEdit: () => void;
   onOpenUrl: (url: string) => void;
 }): JSX.Element => {
   const { configuration } = status;
@@ -285,6 +288,17 @@ export const WorkspaceRunDetails = ({
             <LastRunArguments status={status} inputs={inputs} />
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label={`Edit ${configuration.name}`}
+              tooltip="Edit"
+              onClick={onEdit}
+              className="text-slate-400 hover:text-slate-100"
+            >
+              <Pencil aria-hidden="true" />
+            </Button>
             {workspaceRunCanRestart(status) ? (
               <Button
                 type="button"

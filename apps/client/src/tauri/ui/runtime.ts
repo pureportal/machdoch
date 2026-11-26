@@ -277,13 +277,11 @@ import {
   isReasoningExecutionMode,
 } from "../../core/runtime-contract.generated.js";
 import { MAX_TASK_INPUT_BYTES } from "../../shared/task-input-limits.js";
-import {
-  createEmptyWorkspaceRunDocument,
-  workspaceRunPrimaryConfigurationId,
-  type WorkspaceRunConfigurationDocument,
-  type WorkspaceRunInputValues,
-  type WorkspaceRunLogBatch,
-  type WorkspaceRunSnapshot,
+import type {
+  WorkspaceRunConfigurationDocument,
+  WorkspaceRunInputValues,
+  WorkspaceRunLogBatch,
+  WorkspaceRunSnapshot,
 } from "../../shared/workspace-run.js";
 import { MCP_PRESETS } from "../../core/mcp/presets.js";
 import {
@@ -359,6 +357,17 @@ import {
   switchPreviewWorkspaceGitBranches,
 } from "./workspace-management/workspace-preview-git";
 import { searchPreviewCloudIssues } from "./workspace-management/workspace-preview-git-reads";
+import {
+  listPreviewInstructions,
+  mutatePreviewInstructions,
+} from "./instruction-management/instruction-preview-library";
+import {
+  loadPreviewWorkspaceRunDocument,
+  loadPreviewWorkspaceRunSnapshot,
+  precheckPreviewWorkspaceRunJson,
+  runPreviewWorkspaceRunAction,
+  savePreviewWorkspaceRunDocument,
+} from "./workspace-management/workspace-preview-run";
 
 export type UserApiKeyProvider = SharedUserApiProvider;
 
@@ -4793,27 +4802,7 @@ export const listInstructions = async (
   workspaceRoot: string | null | undefined,
 ): Promise<InstructionRegistryResult> => {
   if (!getRemoteInstructionPlatform() && !canInvokeTauriCommands()) {
-    return {
-      schemaVersion: 2,
-      revision: 0,
-      profiles: [],
-      workspaces: [
-        {
-          id: "preview-machdoch",
-          root: "C:\\Projects\\machdoch",
-          displayName: "Machdoch",
-          tags: [],
-          scopes: [{ path: ".", profiles: [] }],
-        },
-        {
-          id: "preview-alphartis",
-          root: "C:\\Projects\\alphartis",
-          displayName: "Alphartis",
-          tags: [],
-          scopes: [{ path: ".", profiles: [] }],
-        },
-      ],
-    };
+    return listPreviewInstructions();
   }
   return runInstructionCommand<InstructionRegistryResult>(
     workspaceRoot,
@@ -4825,12 +4814,16 @@ export const listInstructions = async (
 export const mutateInstructions = async (
   workspaceRoot: string | null | undefined,
   input: InstructionMutationInput,
-): Promise<InstructionMutationResult> =>
-  runInstructionCommand<InstructionMutationResult>(
+): Promise<InstructionMutationResult> => {
+  if (!getRemoteInstructionPlatform() && !canInvokeTauriCommands()) {
+    return mutatePreviewInstructions(input);
+  }
+  return runInstructionCommand<InstructionMutationResult>(
     workspaceRoot,
     createInstructionMutationArguments(input),
     assertInstructionDesktopAvailable,
   );
+};
 
 export const loadWorkspaceGitRepositories = async (
   workspaceRoot: string,
@@ -5257,21 +5250,12 @@ export const switchWorkspaceGitBranches = async (
 export const WORKSPACE_RUN_STATE_EVENT = "workspace-run-state-changed";
 export const WORKSPACE_RUN_LOG_EVENT = "workspace-run-log-appended";
 
-const createEmptyWorkspaceRunSnapshot = (
-  workspaceRoot: string,
-): WorkspaceRunSnapshot => ({
-  workspaceRoot,
-  primaryConfigurationId: null,
-  inputs: [],
-  configurations: [],
-});
-
 export const loadWorkspaceRunConfigurationDocument = async (
   workspaceRoot: string,
 ): Promise<WorkspaceRunConfigurationDocument> => {
   const root = requireWorkspaceRoot(workspaceRoot);
   if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform())
-    return createEmptyWorkspaceRunDocument();
+    return loadPreviewWorkspaceRunDocument();
   try {
     return await invokeWorkspaceTools<WorkspaceRunConfigurationDocument>(
       "get_workspace_run_configuration_document",
@@ -5287,7 +5271,7 @@ export const loadWorkspaceRunSnapshot = async (
 ): Promise<WorkspaceRunSnapshot> => {
   const root = requireWorkspaceRoot(workspaceRoot);
   if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform())
-    return createEmptyWorkspaceRunSnapshot(root);
+    return loadPreviewWorkspaceRunSnapshot(root);
   try {
     return await invokeWorkspaceTools<WorkspaceRunSnapshot>(
       "get_workspace_run_snapshot",
@@ -5304,13 +5288,7 @@ export const saveWorkspaceRunConfigurationDocument = async (
 ): Promise<WorkspaceRunSnapshot> => {
   const root = requireWorkspaceRoot(workspaceRoot);
   if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
-    return {
-      ...createEmptyWorkspaceRunSnapshot(root),
-      primaryConfigurationId: workspaceRunPrimaryConfigurationId(
-        document.configurations,
-      ),
-      configurations: [],
-    };
+    return savePreviewWorkspaceRunDocument(root, document);
   }
   try {
     return await invokeWorkspaceTools<WorkspaceRunSnapshot>(
@@ -5344,7 +5322,16 @@ const runWorkspaceConfigurationAction = async (
 ): Promise<WorkspaceRunSnapshot> => {
   const root = requireWorkspaceRoot(workspaceRoot);
   if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform())
-    return createEmptyWorkspaceRunSnapshot(root);
+    return runPreviewWorkspaceRunAction(
+      root,
+      action === "start_workspace_run_configuration"
+        ? "start"
+        : action === "stop_workspace_run_configuration"
+          ? "stop"
+          : "restart",
+      configurationId,
+      inputs,
+    );
   try {
     return await invokeWorkspaceTools<WorkspaceRunSnapshot>(action, {
       request: {
@@ -5417,9 +5404,7 @@ export const precheckWorkspaceRunConfigurationJson = async (
 ): Promise<WorkspaceRunConfigurationDocument> => {
   const root = requireWorkspaceRoot(workspaceRoot);
   if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
-    throw new Error(
-      "Run configuration precheck is only available in the desktop app.",
-    );
+    return precheckPreviewWorkspaceRunJson(documentJson);
   }
   try {
     return await invokeWorkspaceTools<WorkspaceRunConfigurationDocument>(

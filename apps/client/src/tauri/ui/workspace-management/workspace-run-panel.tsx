@@ -1,4 +1,10 @@
-import { ArrowLeft, CircleAlert, LoaderCircle, Play, Settings2, Sparkles } from "lucide-react";
+import {
+  CircleAlert,
+  LoaderCircle,
+  Play,
+  Settings2,
+  Sparkles,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -92,6 +98,7 @@ export const WorkspaceRunPanel = ({
   >(null);
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(false);
+  const [editTargetId, setEditTargetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [busyActions, setBusyActions] = useState<
     Record<string, WorkspaceRunAction>
@@ -173,6 +180,7 @@ export const WorkspaceRunPanel = ({
     setSelectedConfigurationId(null);
     setQuery("");
     setEditing(false);
+    setEditTargetId(null);
     setSnapshotError(null);
     setDocumentError(null);
     setActionError(null);
@@ -350,8 +358,13 @@ export const WorkspaceRunPanel = ({
     setEditing(false);
   };
 
-  const detect = (): void => {
+  const openEditor = (configurationId: string | null): void => {
+    setEditTargetId(configurationId);
     setEditing(true);
+  };
+
+  const detect = (): void => {
+    openEditor(null);
     void startWorkspaceRunDetection(normalizedRoot);
   };
 
@@ -364,6 +377,8 @@ export const WorkspaceRunPanel = ({
     <WorkspaceRunEditor
       workspaceRoot={normalizedRoot}
       document={document}
+      initialSelectedId={editTargetId}
+      onBack={leaveEditor}
       onDirtyChange={handleDocumentDirtyChange}
       onDetectionComplete={handleDetectionComplete}
       onSaved={(nextDocument, nextSnapshot) => {
@@ -415,7 +430,9 @@ export const WorkspaceRunPanel = ({
   const selectedInputs = selectedStatus
     ? workspaceRunStatusInputs(selectedStatus, inputs)
     : [];
-  const selectedValues = selectedStatus ? statusInputValues(selectedStatus) : {};
+  const selectedValues = selectedStatus
+    ? statusInputValues(selectedStatus)
+    : {};
 
   return (
     <section
@@ -423,11 +440,13 @@ export const WorkspaceRunPanel = ({
       aria-busy={loading}
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 sm:flex-row"
     >
-      {!empty ? (
+      {!empty && !showEditor ? (
         <aside className="flex max-h-56 min-h-0 shrink-0 flex-col border-b border-slate-800 bg-slate-950/40 sm:max-h-none sm:w-64 sm:border-r sm:border-b-0">
           <WorkspaceRunList
             statuses={statuses}
-            selectedConfigurationId={showEditor ? null : selectedStatus?.configuration.id ?? null}
+            selectedConfigurationId={
+              showEditor ? null : (selectedStatus?.configuration.id ?? null)
+            }
             query={query}
             busyConfigurationIds={new Set(Object.keys(busyActions))}
             configurationHasArguments={(status) =>
@@ -459,8 +478,9 @@ export const WorkspaceRunPanel = ({
               type="button"
               size="sm"
               variant="ghost"
-              aria-pressed={editing}
-              onClick={() => (editing ? leaveEditor() : setEditing(true))}
+              onClick={() =>
+                openEditor(selectedStatus?.configuration.id ?? null)
+              }
               className="w-full justify-start text-slate-400 hover:text-slate-100"
             >
               <Settings2 aria-hidden="true" />
@@ -473,24 +493,10 @@ export const WorkspaceRunPanel = ({
         {errorBanner}
         {showEditor ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex shrink-0 items-center gap-2 border-b border-slate-800 px-3 py-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={leaveEditor}
-              >
-                <ArrowLeft aria-hidden="true" />
-                Back
-              </Button>
-              <h2 className="text-sm font-medium text-slate-200">
-                Configuration
-              </h2>
-            </div>
-            <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto p-4">
-              {detectionNotice}
-              {editor}
-            </div>
+            {detectionNotice ? (
+              <div className="shrink-0 px-4 pt-3">{detectionNotice}</div>
+            ) : null}
+            {editor}
           </div>
         ) : loading && !snapshot ? (
           <div className="grid flex-1 place-items-center">
@@ -515,7 +521,7 @@ export const WorkspaceRunPanel = ({
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => setEditing(true)}
+                    onClick={() => openEditor(null)}
                   >
                     <Settings2 aria-hidden="true" />
                     Edit configuration
@@ -540,6 +546,7 @@ export const WorkspaceRunPanel = ({
             }
             onAction={(action) => void runAction(selectedStatus, action)}
             onSelectConfiguration={setSelectedConfigurationId}
+            onEdit={() => openEditor(selectedStatus.configuration.id)}
             onOpenUrl={(url) => {
               setActionError(null);
               const source = [selectedStatus, ...selectedStatus.children].find(

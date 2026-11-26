@@ -1,12 +1,4 @@
-import {
-  FileText,
-  Globe2,
-  LoaderCircle,
-  Plus,
-  RefreshCw,
-  Search,
-  Tags,
-} from "lucide-react";
+import { FileText, LoaderCircle, Plus } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -16,52 +8,41 @@ import {
   useState,
   type JSX,
 } from "react";
-import { InstructionEditor } from "./instruction-editor";
-import { useInstructionCommands } from "./use-instruction-commands";
-import type { InstructionTagRule } from "@machdoch/fleet-protocol/instruction-contract";
-import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
-import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
-import { SearchField } from "@machdoch/media-studio/tauri/ui/components/ui/search-field.js";
-import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type {
   InstructionMutationInput,
   InstructionProfileView,
+  InstructionTagRule,
 } from "@machdoch/fleet-protocol/instruction-contract";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
+import { InstructionEditor } from "./instruction-editor";
+import { InstructionFileList } from "./instruction-file-list";
 import {
   createInstructionAiTask,
   extractInstructionAiBody,
 } from "./instruction-ai";
-import type {
-  InstructionManagementControls,
-  InstructionRuntime,
-  FileFilter,
-  ContentMode,
-} from "./types";
 import {
   isInstructionFormDirty,
   validateInstructionForm,
   type InstructionFormBaseline,
   type InstructionFormDraft,
 } from "./instruction-form";
-
-const fileIsEnabled = (file: InstructionProfileView): boolean => file.enabled;
-
-const fileTags = (file: InstructionProfileView): string[] => file.tags;
-
-const fileStatusText = (file: InstructionProfileView): string => {
-  if (file.global) return "Global";
-  if (!fileIsEnabled(file)) {
-    return `${file.match ? "Tag match" : "Manual"} · Disabled`;
-  }
-  if (file.match) return "Tag match";
-  return "Manual";
-};
-
-const fileStatusIcon = (file: InstructionProfileView): JSX.Element => {
-  if (file.global) return <Globe2 className="size-3.5" aria-hidden="true" />;
-  if (file.match) return <Tags className="size-3.5" aria-hidden="true" />;
-  return <FileText className="size-3.5" aria-hidden="true" />;
-};
+import {
+  countInstructionFiles,
+  filterInstructionFiles,
+  instructionActivation,
+  instructionWorkspaceReach,
+  type InstructionActivation,
+} from "./instruction-library-model";
+import { createEmptyTagGroup } from "./tag-rule-editor";
+import { useInstructionCommands } from "./use-instruction-commands";
+import type {
+  ContentMode,
+  FileFilter,
+  InstructionManagementControls,
+  InstructionRuntime,
+} from "./types";
 
 export const InstructionManager = ({
   setup,
@@ -102,7 +83,6 @@ export const InstructionManager = ({
   const previousSelectionRef = useRef<string | null>(null);
   const validationErrorId = useId();
   const pendingTagMessageId = useId();
-  const contentViewId = useId();
 
   useEffect(() => {
     void setup.onRefresh();
@@ -288,27 +268,11 @@ export const InstructionManager = ({
     void setup.onRefresh();
   };
 
-  const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredFiles = useMemo(
-    () =>
-      files.filter((file) => {
-        const matchesFilter =
-          filter === "all" ||
-          (filter === "global" && file.global) ||
-          (filter === "tag-match" && file.match !== undefined) ||
-          (filter === "manual" && !file.global && file.match === undefined) ||
-          (filter === "disabled" && !fileIsEnabled(file));
-        if (!matchesFilter) return false;
-        return (
-          !normalizedQuery ||
-          [file.name, file.description ?? "", ...fileTags(file)]
-            .join(" ")
-            .toLocaleLowerCase()
-            .includes(normalizedQuery)
-        );
-      }),
-    [files, filter, normalizedQuery],
+    () => filterInstructionFiles(files, filter, query),
+    [files, filter, query],
   );
+  const fileCounts = useMemo(() => countInstructionFiles(files), [files]);
 
   const saveFile = async (): Promise<void> => {
     if (
@@ -383,7 +347,7 @@ export const InstructionManager = ({
       }
       setBody(nextBody);
       setAiRequest("");
-      setContentMode("edit");
+      setContentMode((mode) => (mode === "preview" ? "edit" : mode));
     } catch (error) {
       setAiError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -491,6 +455,48 @@ export const InstructionManager = ({
     }
   };
 
+  const setActivation = (next: InstructionActivation): void => {
+    if (formDisabled || hasManualAssignments) return;
+    if (next === "global") {
+      setGlobalMode(true);
+      return;
+    }
+    setGlobal(false);
+    setMatch(next === "tag-match" ? (match ?? createEmptyTagGroup()) : null);
+  };
+
+  const enableBlockedReason = (file: InstructionProfileView): string | null => {
+    if (file.global) return "Global files are always on.";
+    if (dirty || creating) return "Save or discard changes first.";
+    if (busy || setup.loading || libraryUnavailable) return "";
+    return null;
+  };
+
+  const toggleFileEnabled = (
+    file: InstructionProfileView,
+    nextEnabled: boolean,
+  ): void => {
+    if (!registry || enableBlockedReason(file) !== null) return;
+    void mutate({
+      operation: "profile-edit",
+      profileId: file.id,
+      enabled: nextEnabled,
+      expectedRevision: registry.revision,
+    });
+  };
+
+  const activation = instructionActivation({ global, match });
+  const selectedProfileId = creating ? null : (selectedFile?.id ?? null);
+  const workspaces = registry?.workspaces;
+  const reach = useMemo(
+    () =>
+      instructionWorkspaceReach(
+        { id: selectedProfileId, global, match },
+        workspaces ?? [],
+      ),
+    [global, match, selectedProfileId, workspaces],
+  );
+
   useInstructionCommands({
     files,
     filteredFiles,
@@ -534,40 +540,11 @@ export const InstructionManager = ({
 
   return (
     <main className="app-management-view flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-900 px-6 py-4">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-100">Instructions</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            disabled={formDisabled}
-            onClick={startFile}
-          >
-            <Plus className="size-4" />
-            New file
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            disabled={setup.loading || busy}
-            aria-label="Refresh instructions"
-            onClick={refresh}
-          >
-            <RefreshCw
-              className={cn("size-4", setup.loading && "animate-spin")}
-            />
-          </Button>
-        </div>
-      </header>
-
       {setup.message ? (
         <div
           role={setup.message.tone === "error" ? "alert" : "status"}
           className={cn(
-            "shrink-0 border-b px-6 py-2 text-sm",
+            "shrink-0 border-b px-5 py-2 text-sm",
             setup.message.tone === "error"
               ? "border-red-950 bg-red-950/30 text-red-200"
               : "border-slate-900 bg-slate-900/35 text-slate-300",
@@ -581,7 +558,7 @@ export const InstructionManager = ({
       "INSTRUCTION_LIBRARY_RECOVERY_STATUS_UNAVAILABLE" ? (
         <div
           role="alert"
-          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-amber-900/60 bg-amber-950/20 px-6 py-3 text-sm text-amber-200"
+          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-amber-900/60 bg-amber-950/20 px-5 py-3 text-sm text-amber-200"
         >
           <span className="min-w-0 flex-1">
             {recovery.errorMessage ?? "Recovery status could not be loaded."}
@@ -601,7 +578,7 @@ export const InstructionManager = ({
       {registry?.libraryError && recovery?.primaryValid !== false ? (
         <div
           role="alert"
-          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-red-900/60 bg-red-950/25 px-6 py-3 text-sm text-red-200"
+          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-red-900/60 bg-red-950/25 px-5 py-3 text-sm text-red-200"
         >
           <span className="min-w-0 flex-1">{registry.libraryError}</span>
           <Button
@@ -619,7 +596,7 @@ export const InstructionManager = ({
       {recovery && !recovery.primaryValid ? (
         <div
           role="alert"
-          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-red-900/60 bg-red-950/25 px-6 py-3 text-sm text-red-200"
+          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-red-900/60 bg-red-950/25 px-5 py-3 text-sm text-red-200"
         >
           <span className="min-w-0 flex-1">
             {recovery.errorMessage ?? "Instruction library unavailable."}
@@ -647,100 +624,101 @@ export const InstructionManager = ({
         </div>
       ) : null}
 
-      <div className="app-management-panes grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(11rem,30vh)_minmax(0,1fr)] lg:grid-cols-[20rem_minmax(0,1fr)] lg:grid-rows-1">
-        <aside className="flex min-h-0 min-w-0 flex-col border-r border-slate-900 bg-slate-950/70">
-          <div className="shrink-0 space-y-3 border-b border-slate-900 p-4">
-            <SearchField
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              aria-label="Search instruction files"
-              placeholder="Search files"
-              className="h-9 border-slate-800 bg-slate-950"
-            />
-            <div
-              className="flex flex-wrap gap-1"
-              role="group"
-              aria-label="File filter"
-            >
-              {(
-                ["all", "global", "tag-match", "manual", "disabled"] as const
-              ).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={filter === value}
-                  onClick={() => setFilter(value)}
-                  className={cn(
-                    "rounded-md px-2 py-1 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60",
-                    filter === value
-                      ? "bg-sky-500/15 text-sky-200"
-                      : "text-slate-500 hover:bg-slate-900 hover:text-slate-200",
-                  )}
-                >
-                  {value === "tag-match"
-                    ? "Tag match"
-                    : `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {setup.loading && !registry ? (
-              <div className="grid h-32 place-items-center text-slate-500">
-                <LoaderCircle className="size-5 animate-spin" />
-              </div>
-            ) : libraryUnavailable ? null : filteredFiles.length === 0 ? (
-              <EmptyState
-                icon={Search}
-                title={
-                  files.length === 0
-                    ? "No instruction files"
-                    : "No matching files"
-                }
-                size="compact"
-              />
-            ) : (
-              <div className="space-y-1">
-                {filteredFiles.map((file) => (
-                  <button
-                    key={file.id}
-                    type="button"
-                    aria-pressed={selectedFileId === file.id}
-                    onClick={() => selectFile(file.id)}
-                    className={cn(
-                      "w-full rounded-lg border px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60",
-                      selectedFileId === file.id
-                        ? "border-sky-800/70 bg-sky-950/25"
-                        : "border-transparent hover:border-slate-800 hover:bg-slate-900/55",
-                      !fileIsEnabled(file) && "opacity-60",
-                    )}
-                  >
-                    <div className="flex min-w-0 items-center gap-2">
-                      <FileText className="size-4 shrink-0 text-slate-500" />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-200">
-                        {file.name}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 flex min-w-0 items-center gap-1.5 pl-6 text-[11px] text-slate-500">
-                      {fileStatusIcon(file)}
-                      <span>{fileStatusText(file)}</span>
-                      {file.description ? (
-                        <>
-                          <span aria-hidden="true">·</span>
-                          <span className="truncate">{file.description}</span>
-                        </>
-                      ) : null}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </aside>
+      <div className="app-management-panes grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(12rem,32vh)_minmax(0,1fr)] lg:grid-cols-[20rem_minmax(0,1fr)] lg:grid-rows-1">
+        <InstructionFileList
+          files={files}
+          filteredFiles={filteredFiles}
+          counts={fileCounts}
+          query={query}
+          filter={filter}
+          selectedFileId={creating ? null : selectedFileId}
+          loading={setup.loading}
+          busy={busy}
+          libraryUnavailable={libraryUnavailable}
+          enableBlockedReason={enableBlockedReason}
+          onQueryChange={setQuery}
+          onFilterChange={setFilter}
+          onNew={startFile}
+          onRefresh={refresh}
+          onSelect={selectFile}
+          onToggleEnabled={toggleFileEnabled}
+        />
 
-        <section className="min-h-0 min-w-0 overflow-y-auto">
-          {!editing ? (
-            <div className="grid h-full min-h-64 place-items-center p-6">
+        <section className="flex min-h-0 min-w-0 flex-col">
+          {editing ? (
+            <InstructionEditor
+              title={
+                name.trim() ||
+                (creating ? "New instruction file" : (selectedFile?.name ?? ""))
+              }
+              creating={creating}
+              activation={activation}
+              enabled={enabled}
+              dirty={dirty}
+              canSave={
+                !formDisabled &&
+                !tagDraftPending &&
+                dirty &&
+                validationError === null
+              }
+              formDisabled={formDisabled}
+              canManageFile={Boolean(selectedFile && registry && !creating)}
+              deleteBlocked={hasManualAssignments}
+              validationError={validationError}
+              validationErrorId={validationErrorId}
+              pendingTagMessageId={pendingTagMessageId}
+              tagDraftPending={tagDraftPending}
+              bodyInvalid={bodyInvalid}
+              body={body}
+              contentMode={contentMode}
+              aiRequest={aiRequest}
+              aiBusy={aiBusy}
+              aiCancelling={aiCancelling}
+              aiError={aiError}
+              aiUnavailableReason={
+                !setup.workspaceRoot
+                  ? "Select a workspace to use AI editing."
+                  : !name.trim()
+                    ? "Enter a name first."
+                    : null
+              }
+              runtime={runtime}
+              details={{
+                name,
+                description,
+                activation,
+                match,
+                tags,
+                reach,
+                workspaceCount: workspaces?.length ?? 0,
+                formDisabled,
+                activationLocked: hasManualAssignments,
+                nameInvalid,
+                descriptionInvalid,
+                matchInvalid,
+                tagDraftPending,
+                validationErrorId,
+                pendingTagMessageId,
+                onNameChange: setName,
+                onDescriptionChange: setDescription,
+                onActivationChange: setActivation,
+                onMatchChange: setMatch,
+                onTagsChange: setTags,
+                onTagDraftPendingChange: setTagDraftPending,
+              }}
+              onEnabledChange={setEnabled}
+              onSave={() => void saveFile()}
+              onDiscard={discardChanges}
+              onDuplicate={() => void duplicateFile()}
+              onDelete={() => void deleteFile()}
+              onBodyChange={setBody}
+              onContentModeChange={setContentMode}
+              onAiRequestChange={setAiRequest}
+              onAiRun={() => void runAiAssist()}
+              onAiCancel={() => void cancelAiAssist()}
+            />
+          ) : (
+            <div className="grid flex-1 place-items-center p-6">
               {setup.loading && !registry ? (
                 <LoaderCircle className="size-5 animate-spin text-slate-500" />
               ) : (
@@ -749,7 +727,7 @@ export const InstructionManager = ({
                   title={
                     libraryUnavailable
                       ? "Instruction library unavailable"
-                      : "Select an instruction file"
+                      : "No instruction files"
                   }
                   action={
                     libraryUnavailable ? undefined : (
@@ -767,54 +745,6 @@ export const InstructionManager = ({
                 />
               )}
             </div>
-          ) : (
-            <InstructionEditor
-              creating={creating}
-              global={global}
-              name={name}
-              selectedFile={selectedFile}
-              match={match}
-              tags={tags}
-              dirty={dirty}
-              formDisabled={formDisabled}
-              discardChanges={discardChanges}
-              tagDraftPending={tagDraftPending}
-              validationError={validationError}
-              pendingTagMessageId={pendingTagMessageId}
-              saveFile={saveFile}
-              registry={registry}
-              duplicateFile={duplicateFile}
-              deleteFile={deleteFile}
-              hasManualAssignments={hasManualAssignments}
-              validationErrorId={validationErrorId}
-              nameInvalid={nameInvalid}
-              setName={setName}
-              description={description}
-              descriptionInvalid={descriptionInvalid}
-              setDescription={setDescription}
-              bodyInvalid={bodyInvalid}
-              enabled={enabled}
-              setEnabled={setEnabled}
-              setGlobalMode={setGlobalMode}
-              setTagDraftPending={setTagDraftPending}
-              setTags={setTags}
-              setMatch={setMatch}
-              matchInvalid={matchInvalid}
-              body={body}
-              contentMode={contentMode}
-              setContentMode={setContentMode}
-              contentViewId={contentViewId}
-              aiBusy={aiBusy}
-              aiRequest={aiRequest}
-              setAiRequest={setAiRequest}
-              aiCancelling={aiCancelling}
-              cancelAiAssist={cancelAiAssist}
-              runAiAssist={runAiAssist}
-              aiError={aiError}
-              setup={setup}
-              runtime={runtime}
-              setBody={setBody}
-            />
           )}
         </section>
       </div>

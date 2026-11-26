@@ -1,11 +1,5 @@
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { Plus, RefreshCw } from "lucide-react";
 import { LoadingState } from "./loading-state";
 import "./skills-management.css";
 
@@ -50,16 +44,6 @@ const emptySkill: SkillDraft = {
   description: "",
   content: "",
   enabled: true,
-};
-
-const fieldStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  border: "1px solid color-mix(in srgb, currentColor 25%, transparent)",
-  borderRadius: 8,
-  padding: "8px 10px",
-  background: "transparent",
-  color: "inherit",
 };
 
 const editSkill = (skill: ManagedSkill | null): SkillEditor => ({
@@ -307,41 +291,9 @@ export function SkillsManagement({
   };
 
   return (
-    <section className="m-skills-library" aria-labelledby={id + "-title"}>
-      <header
-        className="m-memory-dialog-header"
-        style={{ flexWrap: "wrap", gap: 12 }}
-      >
-        <h2 id={id + "-title"}>Skills</h2>
-        <div className="m-memory-dialog-actions">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => requestAction({ type: "reload" })}
-          >
-            Reload
-          </button>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => requestAction({ type: "select", skill: null })}
-          >
-            New skill
-          </button>
-        </div>
-      </header>
-      {loadError || error ? <p role="alert">{loadError ?? error}</p> : null}
-      {loading ? <LoadingState label="Loading skills…" compact /> : null}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns:
-            "repeat(auto-fit, minmax(min(100%, 20rem), 1fr))",
-          gap: 24,
-          alignItems: "start",
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
+    <section className="m-skills-library" aria-label="Skills">
+      <aside className="m-skills-sidebar">
+        <div className="m-skills-toolbar">
           <input
             type="search"
             aria-label="Search skills"
@@ -349,156 +301,176 @@ export function SkillsManagement({
             value={query}
             disabled={disabled}
             onChange={(event) => setQuery(event.target.value)}
-            style={{ ...fieldStyle, marginBottom: 12 }}
+            className="m-skills-field"
           />
-          {!loading && !loadError && filteredSkills.length === 0 ? (
-            <p className="m-memory-empty">
-              {skills.length === 0 ? "No skills." : "No matching skills."}
-            </p>
-          ) : null}
-          <ul
-            style={{
-              listStyle: "none",
-              margin: 0,
-              padding: 0,
-              display: "grid",
-              gap: 8,
-            }}
+          <button
+            type="button"
+            aria-label="Reload"
+            title="Reload"
+            className="m-skills-icon-button"
+            disabled={busy}
+            onClick={() => requestAction({ type: "reload" })}
           >
-            {filteredSkills.map((skill) => (
+            <RefreshCw aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label="New skill"
+            className="m-skills-button m-skills-button-primary"
+            disabled={disabled}
+            onClick={() => requestAction({ type: "select", skill: null })}
+          >
+            <Plus aria-hidden="true" />
+            New
+          </button>
+        </div>
+        {loadError ? <p role="alert">{loadError}</p> : null}
+        {loading ? <LoadingState label="Loading skills…" compact /> : null}
+        {!loading && !loadError && filteredSkills.length === 0 ? (
+          <p className="m-memory-empty">
+            {skills.length === 0 ? "No skills." : "No matching skills."}
+          </p>
+        ) : null}
+        <ul className="m-skills-list">
+          {filteredSkills.map((skill) => {
+            const selected = editor?.original?.name === skill.name;
+            return (
               <li key={skill.name}>
                 <button
                   type="button"
                   aria-label={skill.name}
-                  aria-pressed={editor?.original?.name === skill.name}
+                  aria-pressed={selected}
+                  data-enabled={skill.enabled}
                   disabled={disabled}
                   onClick={() => requestAction({ type: "select", skill })}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    display: "grid",
-                    gap: 4,
-                    padding: 12,
-                    border:
-                      "1px solid color-mix(in srgb, currentColor 20%, transparent)",
-                    borderRadius: 8,
-                    background:
-                      editor?.original?.name === skill.name
-                        ? "color-mix(in srgb, currentColor 8%, transparent)"
-                        : "transparent",
-                    overflowWrap: "anywhere",
-                    fontWeight:
-                      editor?.original?.name === skill.name ? 600 : 400,
-                  }}
                 >
-                  <span>{skill.name}</span>
-                  <span style={{ fontWeight: 400 }}>{skill.description}</span>
+                  <span className="m-skills-list-name">{skill.name}</span>
+                  <span className="m-skills-list-description">
+                    {skill.description}
+                  </span>
                 </button>
               </li>
-            ))}
-          </ul>
-        </div>
-        {editor ? (
-          <form
-            aria-label={editor.original ? "Edit skill" : "New skill"}
-            aria-busy={pending !== null}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
-            style={{ display: "grid", gap: 16, minWidth: 0 }}
-          >
-            <label style={{ display: "grid", gap: 6 }}>
-              Name
-              <input
-                style={fieldStyle}
-                value={editor.draft.name}
-                disabled={disabled || editor.original !== null}
-                required
-                maxLength={64}
-                pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-                onInvalid={(event) => {
-                  if (event.currentTarget.validity.patternMismatch) {
-                    event.currentTarget.setCustomValidity(
-                      "Use lowercase letters, numbers, and single hyphens.",
-                    );
+            );
+          })}
+        </ul>
+      </aside>
+      {editor ? (
+        <form
+          className="m-skills-editor"
+          aria-label={editor.original ? "Edit skill" : "New skill"}
+          aria-busy={pending !== null}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save();
+          }}
+        >
+          <header className="m-skills-editor-header">
+            <h2>{editor.draft.name || "New skill"}</h2>
+            <span id={id + "-enabled"}>Enabled</span>
+            <button
+              type="button"
+              role="switch"
+              aria-labelledby={id + "-enabled"}
+              aria-checked={editor.draft.enabled}
+              data-checked={editor.draft.enabled}
+              className="m-memory-switch"
+              disabled={disabled}
+              onClick={() => updateDraft({ enabled: !editor.draft.enabled })}
+            >
+              <span />
+            </button>
+            <button
+              type="submit"
+              className="m-skills-button m-skills-button-primary"
+              disabled={disabled || !dirty}
+            >
+              {pending === "save" ? "Saving…" : "Save"}
+            </button>
+            {editor.original ? (
+              <button
+                type="button"
+                className="m-skills-button m-skills-button-danger"
+                disabled={disabled}
+                onClick={() => {
+                  if (editor.original) {
+                    requestAction({ type: "delete", skill: editor.original });
                   }
                 }}
-                onChange={(event) => {
-                  event.currentTarget.setCustomValidity("");
-                  updateDraft({ name: event.target.value });
-                }}
-              />
-            </label>
-            <div style={{ display: "grid", gap: 6 }}>
-              <label htmlFor={id + "-description"}>Description</label>
-              <textarea
-                id={id + "-description"}
-                value={editor.draft.description}
-                disabled={disabled}
-                required
-                maxLength={1024}
-                rows={3}
-                onChange={(event) =>
-                  updateDraft({ description: event.target.value })
-                }
-                style={{ ...fieldStyle, resize: "vertical" }}
-              />
+              >
+                {pending === "delete" ? "Deleting…" : "Delete"}
+              </button>
+            ) : null}
+          </header>
+          {error ? (
+            <p role="alert" className="m-skills-error">
+              {error}
+            </p>
+          ) : null}
+          <div className="m-skills-editor-body">
+            <div className="m-skills-editor-meta">
+              <label>
+                Name
+                <input
+                  className="m-skills-field m-skills-mono"
+                  value={editor.draft.name}
+                  disabled={disabled || editor.original !== null}
+                  required
+                  maxLength={64}
+                  pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                  onInvalid={(event) => {
+                    if (event.currentTarget.validity.patternMismatch) {
+                      event.currentTarget.setCustomValidity(
+                        "Use lowercase letters, numbers, and single hyphens.",
+                      );
+                    }
+                  }}
+                  onChange={(event) => {
+                    event.currentTarget.setCustomValidity("");
+                    updateDraft({ name: event.target.value });
+                  }}
+                />
+              </label>
+              <label htmlFor={id + "-description"}>
+                Description
+                <textarea
+                  id={id + "-description"}
+                  className="m-skills-field"
+                  value={editor.draft.description}
+                  disabled={disabled}
+                  required
+                  maxLength={1024}
+                  rows={2}
+                  onChange={(event) =>
+                    updateDraft({ description: event.target.value })
+                  }
+                />
+              </label>
             </div>
-            <div style={{ display: "grid", gap: 6 }}>
-              <label htmlFor={id + "-content"}>Content</label>
+            <label htmlFor={id + "-content"} className="m-skills-content">
+              Content
               <textarea
                 id={id + "-content"}
+                className="m-skills-field m-skills-mono"
                 value={editor.draft.content}
                 disabled={disabled}
                 required
-                rows={12}
+                spellCheck={false}
                 onChange={(event) =>
                   updateDraft({ content: event.target.value })
                 }
-                style={{
-                  ...fieldStyle,
-                  resize: "vertical",
-                  fontFamily: "monospace",
-                }}
               />
-            </div>
-            <div className="m-memory-dialog-actions">
-              <span id={id + "-enabled"}>Enabled</span>
-              <button
-                type="button"
-                role="switch"
-                aria-labelledby={id + "-enabled"}
-                aria-checked={editor.draft.enabled}
-                data-checked={editor.draft.enabled}
-                className="m-memory-switch"
-                disabled={disabled}
-                onClick={() => updateDraft({ enabled: !editor.draft.enabled })}
-              >
-                <span />
-              </button>
-            </div>
-            <div className="m-memory-dialog-actions">
-              <button type="submit" disabled={disabled || !dirty}>
-                {pending === "save" ? "Saving…" : "Save"}
-              </button>
-              {editor.original ? (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    if (editor.original) {
-                      requestAction({ type: "delete", skill: editor.original });
-                    }
-                  }}
-                >
-                  {pending === "delete" ? "Deleting…" : "Delete"}
-                </button>
-              ) : null}
-            </div>
-          </form>
-        ) : null}
-      </div>
+            </label>
+          </div>
+        </form>
+      ) : (
+        <div className="m-skills-editor">
+          {error ? (
+            <p role="alert" className="m-skills-error">
+              {error}
+            </p>
+          ) : null}
+        </div>
+      )}
       {confirmation ? (
         <SkillConfirmation
           action={confirmation}

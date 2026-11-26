@@ -28,4 +28,4 @@ export interface InstructionRuntime {
 }
 
 export type FileFilter = "all" | "global" | "tag-match" | "manual" | "disabled";
-export type ContentMode = "edit" | "preview";
+export type ContentMode = "edit" | "split" | "preview";

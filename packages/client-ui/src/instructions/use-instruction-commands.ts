@@ -12,11 +12,21 @@ import type {
   InstructionRegistryResult,
 } from "@machdoch/fleet-protocol/instruction-contract";
 import { createEmptyTagGroup } from "./tag-rule-editor";
+import {
+  INSTRUCTION_FILE_FILTER_LABELS,
+  INSTRUCTION_FILE_FILTERS,
+} from "./instruction-library-model";
 import type {
   InstructionManagementControls,
   FileFilter,
   ContentMode,
 } from "./types";
+
+const CONTENT_MODES: readonly { mode: ContentMode; title: string }[] = [
+  { mode: "edit", title: "Edit" },
+  { mode: "split", title: "Split" },
+  { mode: "preview", title: "Preview" },
+];
 
 interface InstructionCommandState {
   files: InstructionProfileView[];
@@ -238,14 +248,9 @@ export function useInstructionCommands(
           groups: [
             {
               id: "filters",
-              items: (
-                ["all", "global", "tag-match", "manual", "disabled"] as const
-              ).map((value, index) => ({
+              items: INSTRUCTION_FILE_FILTERS.map((value, index) => ({
                 id: value,
-                title:
-                  value === "tag-match"
-                    ? "Tag match"
-                    : `${value[0]?.toUpperCase()}${value.slice(1)}`,
+                title: INSTRUCTION_FILE_FILTER_LABELS[value],
                 current: state().filter === value,
                 numericKey: numericKey(index),
                 execute: () => state().setFilter(value),
@@ -271,9 +276,9 @@ export function useInstructionCommands(
           groups: [
             {
               id: "views",
-              items: (["edit", "preview"] as const).map((mode, index) => ({
+              items: CONTENT_MODES.map(({ mode, title }, index) => ({
                 id: mode,
-                title: mode === "edit" ? "Edit" : "Preview",
+                title,
                 current: state().contentMode === mode,
                 numericKey: numericKey(index),
                 execute: () => state().setContentMode(mode),

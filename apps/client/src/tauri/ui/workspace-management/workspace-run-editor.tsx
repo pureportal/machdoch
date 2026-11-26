@@ -1,7 +1,8 @@
-import { LoaderCircle, Save, Sparkles } from "lucide-react";
+import { ArrowLeft, LoaderCircle, Save, Sparkles } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type JSX } from "react";
 import type {
   WorkspaceRunConfigurationDocument,
+  WorkspaceRunDetection,
   WorkspaceRunSnapshot,
 } from "../../../shared/workspace-run.js";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
@@ -10,6 +11,7 @@ import {
   SubmitShortcut,
 } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
+import { ChoiceButtons } from "../chat-session/components/settings-dialog-panels/shared";
 import {
   precheckWorkspaceRunConfigurationJson,
   saveWorkspaceRunConfigurationDocument,
@@ -18,14 +20,33 @@ import {
   clearWorkspaceRunDetection,
   startWorkspaceRunDetection,
   useWorkspaceRunDetectionState,
-  type WorkspaceRunDetectionResult,
 } from "./workspace-run-detection-state";
+import {
+  parseWorkspaceRunDraft,
+  serializeWorkspaceRunDocument,
+  workspaceRunConfigurationIssues,
+  type WorkspaceRunDraftParseResult,
+} from "./workspace-run-editor-model";
+import { WorkspaceRunForm } from "./workspace-run-form";
+import {
+  RunFieldDraftContext,
+  type RunFieldDraft,
+} from "./workspace-run-form-fields";
 import { createWorkspaceRootKey } from "./workspace-management-model";
 import { formatWorkspaceRunDuration } from "./workspace-run-model";
+
+type EditorMode = "form" | "json";
+
+const EDITOR_MODE_OPTIONS = [
+  { value: "form", label: "Form" },
+  { value: "json", label: "JSON" },
+] as const;
 
 interface WorkspaceRunEditorProps {
   workspaceRoot: string;
   document: WorkspaceRunConfigurationDocument;
+  initialSelectedId?: string | null;
+  onBack?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onDetectionComplete?: () => void;
   onSaved: (
@@ -46,43 +67,72 @@ export const WorkspaceRunEditor = (
 const WorkspaceRunEditorSession = ({
   workspaceRoot,
   document,
+  initialSelectedId = null,
+  onBack,
   onDirtyChange,
   onDetectionComplete,
   onSaved,
 }: WorkspaceRunEditorProps): JSX.Element => {
   const serializedDocument = useMemo(
-    () => JSON.stringify(document, null, 2),
+    () => serializeWorkspaceRunDocument(document),
     [document],
   );
-  const [draft, setDraft] = useState(serializedDocument);
+  const [draftState, setDraftState] = useState<
+    WorkspaceRunDraftParseResult & { text: string }
+  >({
+    text: serializedDocument,
+    document,
+    error: null,
+  });
+  const draft = draftState.text;
+  const [fieldDrafts, setFieldDrafts] = useState<Record<string, RunFieldDraft>>(
+    {},
+  );
   const [baseline, setBaseline] = useState(serializedDocument);
+  const [mode, setMode] = useState<EditorMode>("form");
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialSelectedId,
+  );
   const previousDocumentRef = useRef(serializedDocument);
   const lifecycleRef = useRef(0);
   const savingRef = useRef(false);
   const dirtyCallbackRef = useRef(onDirtyChange);
   dirtyCallbackRef.current = onDirtyChange;
-  const [detected, setDetected] = useState<WorkspaceRunDetectionResult | null>(
-    null,
-  );
+  const [detections, setDetections] = useState<WorkspaceRunDetection[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const detectionState = useWorkspaceRunDetectionState(workspaceRoot);
   const [detectionElapsed, setDetectionElapsed] = useState(0);
   const errorId = useId();
-  const dirty = draft !== baseline;
+  const parsed = draftState;
+  const schemaError = useMemo(
+    () => parseWorkspaceRunDraft(draft).error,
+    [draft],
+  );
+  const effectiveMode: EditorMode = parsed.document ? mode : "json";
+  const invalidField = Object.values(fieldDrafts).find((field) => field.error);
+  const dirty = draft !== baseline || Boolean(invalidField);
   const busy =
     detectionState.phase === "detecting" ? "detect" : saving ? "save" : null;
-  const error = saveError ?? detectionState.error;
+  const issueCount = parsed.document
+    ? workspaceRunConfigurationIssues(parsed.document).length
+    : 0;
+  const error =
+    saveError ??
+    detectionState.error ??
+    invalidField?.error ??
+    (effectiveMode === "form" && issueCount === 0 ? schemaError : null);
 
   useEffect(() => {
     const previous = previousDocumentRef.current;
     previousDocumentRef.current = serializedDocument;
-    // Background refreshes may update the saved document while the user edits.
-    setDraft((current) =>
-      current === previous ? serializedDocument : current,
+    setDraftState((current) =>
+      current.text === previous
+        ? { text: serializedDocument, document, error: null }
+        : current,
     );
     setBaseline(serializedDocument);
-  }, [serializedDocument]);
+  }, [document, serializedDocument]);
 
   useEffect(() => {
     lifecycleRef.current++;
@@ -96,10 +146,18 @@ const WorkspaceRunEditorSession = ({
     if (detectionState.phase !== "complete" || !detectionState.result) {
       return;
     }
-    const nextDraft = JSON.stringify(detectionState.result.document, null, 2);
-    setDetected(detectionState.result);
-    setDraft(nextDraft);
+    const nextDraft = serializeWorkspaceRunDocument(
+      detectionState.result.document,
+    );
+    setDraftState({
+      text: nextDraft,
+      document: detectionState.result.document,
+      error: null,
+    });
+    setFieldDrafts({});
     setBaseline(nextDraft);
+    setSelectedId(null);
+    setDetections(detectionState.result.detections);
     clearWorkspaceRunDetection(workspaceRoot);
     onDirtyChange?.(false);
     onDetectionComplete?.();
@@ -129,6 +187,44 @@ const WorkspaceRunEditorSession = ({
     return () => window.clearInterval(interval);
   }, [detectionState.phase, detectionState.revision]);
 
+  const updateDraft = (nextDraft: string): void => {
+    if (savingRef.current || busy) return;
+    setDraftState({ text: nextDraft, ...parseWorkspaceRunDraft(nextDraft) });
+    setFieldDrafts({});
+    setSaveError(null);
+    setDetections([]);
+    clearWorkspaceRunDetection(workspaceRoot);
+  };
+
+  const updateDocument = (next: WorkspaceRunConfigurationDocument): void => {
+    if (savingRef.current || busy) return;
+    setDraftState({
+      text: serializeWorkspaceRunDocument(next),
+      document: next,
+      error: null,
+    });
+    const activeFields = new Set([
+      ...next.configurations.flatMap((configuration) =>
+        configuration.kind === "task"
+          ? ["ports", "urls", "environment"].map(
+              (field) => `task:${configuration.id}:${field}`,
+            )
+          : [],
+      ),
+      ...next.inputs
+        .filter((input) => input.type === "select")
+        .map((input) => `input:${input.id}:options`),
+    ]);
+    setFieldDrafts((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([key]) => activeFields.has(key)),
+      ),
+    );
+    setSaveError(null);
+    setDetections([]);
+    clearWorkspaceRunDetection(workspaceRoot);
+  };
+
   const detect = (): void => {
     if (savingRef.current || busy || dirty) return;
     setSaveError(null);
@@ -136,7 +232,7 @@ const WorkspaceRunEditorSession = ({
   };
 
   const save = async (): Promise<void> => {
-    if (savingRef.current || busy) return;
+    if (savingRef.current || busy || invalidField || schemaError) return;
     savingRef.current = true;
     const lifecycle = lifecycleRef.current;
     const isCurrent = () => lifecycleRef.current === lifecycle;
@@ -153,10 +249,14 @@ const WorkspaceRunEditorSession = ({
         checkedDocument,
       );
       if (!isCurrent()) return;
-      const savedDraft = JSON.stringify(checkedDocument, null, 2);
-      setDraft(savedDraft);
+      const savedDraft = serializeWorkspaceRunDocument(checkedDocument);
+      setDraftState({
+        text: savedDraft,
+        document: checkedDocument,
+        error: null,
+      });
+      setFieldDrafts({});
       setBaseline(savedDraft);
-      setDetected(null);
       clearWorkspaceRunDetection(workspaceRoot);
       onDirtyChange?.(false);
       onSaved(checkedDocument, snapshot);
@@ -171,13 +271,33 @@ const WorkspaceRunEditorSession = ({
 
   return (
     <SubmitShortcut asChild>
-      <div aria-busy={busy !== null} className="grid gap-3">
-        <div className="flex flex-wrap gap-2">
+      <div aria-busy={busy !== null} className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-800 px-3 py-2">
+          {onBack ? (
+            <Button type="button" size="sm" variant="ghost" onClick={onBack}>
+              <ArrowLeft aria-hidden="true" />
+              Back
+            </Button>
+          ) : null}
+          <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-slate-200">
+            Run configuration
+          </h2>
+          <ChoiceButtons
+            label="Editor mode"
+            value={effectiveMode}
+            options={EDITOR_MODE_OPTIONS}
+            disabled={!parsed.document || Boolean(invalidField)}
+            onChange={(next) => {
+              setFieldDrafts({});
+              setMode(next);
+            }}
+          />
           <Button
             type="button"
             size="sm"
             variant="outline"
             disabled={busy !== null || dirty}
+            tooltip={dirty ? "Save or discard changes first." : undefined}
             onClick={detect}
           >
             {busy === "detect" ? (
@@ -192,10 +312,39 @@ const WorkspaceRunEditorSession = ({
               ? `Detecting ${formatWorkspaceRunDuration(detectionElapsed)}`
               : "Detect"}
           </Button>
+          {dirty ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={busy !== null}
+              onClick={() => {
+                setDraftState({
+                  text: baseline,
+                  ...parseWorkspaceRunDraft(baseline),
+                });
+                setFieldDrafts({});
+                setSaveError(null);
+              }}
+            >
+              Discard
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="sm"
-            disabled={busy !== null}
+            disabled={
+              busy !== null ||
+              !dirty ||
+              issueCount > 0 ||
+              Boolean(invalidField) ||
+              schemaError !== null
+            }
+            tooltip={
+              issueCount > 0
+                ? "Fix the highlighted configurations first."
+                : undefined
+            }
             onClick={() => void save()}
             {...SUBMIT_SHORTCUT_ACTION_PROPS}
           >
@@ -210,81 +359,51 @@ const WorkspaceRunEditorSession = ({
             Save
           </Button>
         </div>
-        {dirty ? (
-          <p className="text-xs text-slate-400">
-            Save your edits before detecting configurations.
-          </p>
-        ) : null}
-        {detected ? (
-          <section
-            aria-label="Detected run configurations"
-            className="grid gap-2 rounded-md border border-slate-800 p-3 text-xs"
-          >
-            {detected.document.configurations.map((configuration) => {
-              const metadata = detected.detections.find(
-                (entry) => entry.configurationId === configuration.id,
-              );
-              return (
-                <div key={configuration.id} className="grid gap-1">
-                  <div className="font-medium text-slate-200">
-                    {configuration.name}
-                    <span className="ml-2 font-normal text-slate-500">
-                      {[
-                        configuration.kind === "composite"
-                          ? "Group"
-                          : configuration.runType === "job"
-                            ? "Job"
-                            : "Service",
-                        configuration.group,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                    {configuration.primary ? (
-                      <span className="ml-2 text-sky-300">Default</span>
-                    ) : null}
-                  </div>
-                  <code className="break-all text-slate-400">
-                    {configuration.kind === "task"
-                      ? configuration.command
-                      : configuration.children.join(", ")}
-                  </code>
-                  {metadata?.uncertainFields.map((field) => (
-                    <span key={field} className="text-amber-300">
-                      Review {field.charAt(0).toUpperCase() + field.slice(1)}
-                    </span>
-                  ))}
-                </div>
-              );
-            })}
-            {detected.document.configurations.length === 0 ? (
-              <p>No runnable configurations were detected.</p>
-            ) : null}
-          </section>
-        ) : null}
         {error ? (
-          <p id={errorId} role="alert" className="text-xs text-red-300">
+          <p
+            id={errorId}
+            role="alert"
+            className="shrink-0 border-b border-red-900/50 bg-red-950/20 px-4 py-2 text-xs text-red-200"
+          >
             {error}
           </p>
         ) : null}
-        <Textarea
-          aria-label="Run configuration JSON"
-          aria-invalid={error !== null}
-          aria-describedby={error ? errorId : undefined}
-          value={draft}
-          disabled={busy !== null}
-          spellCheck={false}
-          onChange={(event) => {
-            if (savingRef.current || busy) return;
-            const nextDraft = event.currentTarget.value;
-            setDraft(nextDraft);
-            onDirtyChange?.(nextDraft !== baseline);
-            setDetected(null);
-            setSaveError(null);
-            clearWorkspaceRunDetection(workspaceRoot);
-          }}
-          className="min-h-72 max-h-[min(32rem,55vh)] resize-y overflow-auto border-slate-800 bg-slate-950 font-mono text-xs leading-5 text-slate-200"
-        />
+        {effectiveMode === "form" && parsed.document ? (
+          <RunFieldDraftContext.Provider
+            value={{
+              values: fieldDrafts,
+              onChange: (key, field) =>
+                setFieldDrafts((current) => ({ ...current, [key]: field })),
+            }}
+          >
+            <WorkspaceRunForm
+              document={parsed.document}
+              selectedId={selectedId}
+              detections={detections}
+              disabled={busy !== null}
+              onSelect={setSelectedId}
+              onChange={updateDocument}
+            />
+          </RunFieldDraftContext.Provider>
+        ) : (
+          <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto p-4">
+            {parsed.error ? (
+              <p role="alert" className="text-xs text-red-300">
+                {parsed.error}
+              </p>
+            ) : null}
+            <Textarea
+              aria-label="Run configuration JSON"
+              aria-invalid={error !== null || parsed.error !== null}
+              aria-describedby={error ? errorId : undefined}
+              value={draft}
+              disabled={busy !== null}
+              spellCheck={false}
+              onChange={(event) => updateDraft(event.currentTarget.value)}
+              className="min-h-[28rem] resize-y border-slate-800 bg-slate-950 font-mono text-xs leading-5 text-slate-200"
+            />
+          </div>
+        )}
       </div>
     </SubmitShortcut>
   );
