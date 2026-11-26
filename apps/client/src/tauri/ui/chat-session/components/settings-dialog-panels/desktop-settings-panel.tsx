@@ -366,6 +366,8 @@ export const DesktopSettingsPanel = ({
         </div>
       ) : null}
 
+      <UpdateSettingsControl />
+
       <SettingsCard title="Startup">
         <div className="grid gap-0">
           <SettingPanel label="Launch on sign-in">
@@ -557,8 +559,6 @@ export const DesktopSettingsPanel = ({
           </SettingPanel>
         </div>
       </SettingsCard>
-
-      <UpdateSettingsControl />
 
       {isTauri() ? (
         <SettingsCard
