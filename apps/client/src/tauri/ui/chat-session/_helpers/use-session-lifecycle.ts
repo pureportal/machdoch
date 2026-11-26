@@ -11,7 +11,8 @@ import {
   rememberRecentWorkspace,
   resetSessionTime as resetSessionRecordTime,
   sortSessionsByUpdatedAt,
-  withSessionGitBranch,
+  withSelectedSessionGitBranch,
+  withSessionPromptVariables,
   type ChatSessionRecord,
   type ShellPersistedState,
 } from "../../chat-session.model";
@@ -36,7 +37,13 @@ export interface SessionLifecycleActions {
   moveSessionToTop: (sessionId: string) => void;
   cloneSession: (sessionId: string, mode: "duplicate" | "branch") => void;
   commitSessionTags: (tags: string[]) => void;
-  commitSessionGitBranch: (branchName: string | null) => void;
+  commitSessionGitBranch: (
+    branchName: string | null,
+    syncBranchVariable: boolean,
+  ) => void;
+  commitSessionPromptVariables: (
+    promptVariables: Record<string, string>,
+  ) => void;
   toggleSessionTagFilter: (tag: string) => void;
   exportSessions: () => void;
   importSessions: (file: File) => void;
@@ -131,18 +138,21 @@ export const useSessionLifecycle = (options: {
   const { providerChooserState, state } = options;
   const defaultNewSessionWorkspace =
     state.shellState.recentWorkspaces[0] ?? state.activeSession.workspace;
-  const importSessionPayload = useCallback((payload: unknown): number => {
-    let importedCount = 0;
-    let nextActiveSessionId = state.activeSessionId;
-    state.applyShellState((previous) => {
-      const next = importSessionsIntoShellState(previous, payload);
-      importedCount = next.sessions.length - previous.sessions.length;
-      nextActiveSessionId = next.activeSessionId;
-      return next;
-    });
-    state.setActiveSessionId(nextActiveSessionId);
-    return importedCount;
-  }, [state.activeSessionId, state.applyShellState, state.setActiveSessionId]);
+  const importSessionPayload = useCallback(
+    (payload: unknown): number => {
+      let importedCount = 0;
+      let nextActiveSessionId = state.activeSessionId;
+      state.applyShellState((previous) => {
+        const next = importSessionsIntoShellState(previous, payload);
+        importedCount = next.sessions.length - previous.sessions.length;
+        nextActiveSessionId = next.activeSessionId;
+        return next;
+      });
+      state.setActiveSessionId(nextActiveSessionId);
+      return importedCount;
+    },
+    [state.activeSessionId, state.applyShellState, state.setActiveSessionId],
+  );
 
   return useMemo(
     () => ({
@@ -374,9 +384,19 @@ export const useSessionLifecycle = (options: {
           };
         });
       },
-      commitSessionGitBranch: (branchName: string | null): void => {
+      commitSessionGitBranch: (
+        branchName: string | null,
+        syncBranchVariable: boolean,
+      ): void => {
         state.updateActiveSession((session) =>
-          withSessionGitBranch(session, branchName),
+          withSelectedSessionGitBranch(session, branchName, syncBranchVariable),
+        );
+      },
+      commitSessionPromptVariables: (
+        promptVariables: Record<string, string>,
+      ): void => {
+        state.updateActiveSession((session) =>
+          withSessionPromptVariables(session, promptVariables),
         );
       },
       toggleSessionTagFilter: (tag: string): void => {
@@ -426,6 +446,11 @@ export const useSessionLifecycle = (options: {
       },
       importSessionPayload,
     }),
-    [defaultNewSessionWorkspace, providerChooserState.chooserProviders, state, importSessionPayload],
+    [
+      defaultNewSessionWorkspace,
+      providerChooserState.chooserProviders,
+      state,
+      importSessionPayload,
+    ],
   );
 };

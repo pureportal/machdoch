@@ -16,10 +16,21 @@ interface ChatInputNeededPlaceholderMatch {
 }
 
 const CHAT_INPUT_NEEDED_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_-]{0,79}/u;
-const CHAT_INPUT_NEEDED_PLACEHOLDER_PATTERN = /(?<!\\)\[\[\s*([^\]\r\n]+?)\s*\]\]/gu;
+const CHAT_INPUT_NEEDED_PLACEHOLDER_PATTERN =
+  /(?<!\\)\[\[\s*([^\]\r\n]+?)\s*\]\]/gu;
 
 const normalizePlaceholderLookupKey = (key: string): string =>
   key.trim().toLowerCase();
+
+export const normalizeChatInputNeededVariableKey = (
+  key: string,
+): string | null => {
+  const trimmedKey = key.trim();
+
+  return CHAT_INPUT_NEEDED_KEY_PATTERN.exec(trimmedKey)?.[0] === trimmedKey
+    ? normalizePlaceholderLookupKey(trimmedKey)
+    : null;
+};
 
 const dedupeOptions = (options: readonly string[]): string[] => {
   const seen = new Set<string>();
@@ -54,7 +65,9 @@ const appendDefaultOption = (
 ): string[] => {
   if (
     !defaultValue ||
-    options.some((option) => option.toLowerCase() === defaultValue.toLowerCase())
+    options.some(
+      (option) => option.toLowerCase() === defaultValue.toLowerCase(),
+    )
   ) {
     return options;
   }

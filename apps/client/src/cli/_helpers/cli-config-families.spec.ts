@@ -192,6 +192,7 @@ it("preserves the complete catalogue order", () => {
     "provider-sync.copilot-cli",
     "agent.adaptive",
     "agent.share-user-activity",
+    "agent.sync-branch-variable",
     "agent-limits.automatic-retries",
     "agent-limits.retry-attempts",
     "agent-limits.stop-queue-on-failure",

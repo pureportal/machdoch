@@ -126,6 +126,8 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "default",
       "inactivity",
       "minutes",
+      "branch",
+      "variable",
     ],
   },
   {

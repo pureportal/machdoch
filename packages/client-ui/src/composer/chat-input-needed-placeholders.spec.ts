@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractChatInputNeededPlaceholders,
+  normalizeChatInputNeededVariableKey,
   replaceChatInputNeededPlaceholders,
 } from "./chat-input-needed-placeholders";
 
@@ -180,5 +181,13 @@ describe("chat input-needed placeholders", () => {
     ).toBe(
       "Use [[scope:path=ALL]], [[workspace.root]], [[BROKEN|]], and fill docs.",
     );
+  });
+
+  it("normalizes variable keys to lookup keys", () => {
+    expect(normalizeChatInputNeededVariableKey(" Branch ")).toBe("branch");
+    expect(normalizeChatInputNeededVariableKey("api_key-2")).toBe("api_key-2");
+    expect(normalizeChatInputNeededVariableKey("bad key")).toBeNull();
+    expect(normalizeChatInputNeededVariableKey("2fast")).toBeNull();
+    expect(normalizeChatInputNeededVariableKey("")).toBeNull();
   });
 });

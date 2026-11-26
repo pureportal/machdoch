@@ -1,4 +1,4 @@
-import { normalizeTaskExecutionFileChange } from '@machdoch/fleet-protocol/task-file-change-normalization';
+import { normalizeTaskExecutionFileChange } from "@machdoch/fleet-protocol/task-file-change-normalization";
 import { describe, expect, it } from "vitest";
 import { contextPackExportSchema } from "@machdoch/fleet-protocol/context-pack-contract";
 import { mediaPoseJoints } from "@machdoch/media-studio/core/media/contracts.js";
@@ -26,8 +26,11 @@ import {
   rememberRecentWorkspace,
   resetSessionTime,
   sortSessionsByUpdatedAt,
+  withSelectedSessionGitBranch,
+  withSessionPromptVariables,
   QUICK_VOICE_SESSION_KIND,
   type ChatSessionMessage,
+  type ChatSessionRecord,
 } from "./chat-session.model";
 import {
   createMockExecutionFixture,
@@ -43,9 +46,16 @@ import {
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
 
 it("persists conversation speech overrides without changing the global voice profile", () => {
-  const state=createInitialShellState();
-  const session=createSession({voiceAutoSpeakOverride:true,voiceProfileOverride:"profile-narrator"});
-  const normalized=normalizeShellState({...state,activeSessionId:session.id,sessions:[session]});
+  const state = createInitialShellState();
+  const session = createSession({
+    voiceAutoSpeakOverride: true,
+    voiceProfileOverride: "profile-narrator",
+  });
+  const normalized = normalizeShellState({
+    ...state,
+    activeSessionId: session.id,
+    sessions: [session],
+  });
   expect(normalized.sessions[0]?.voiceAutoSpeakOverride).toBe(true);
   expect(normalized.sessions[0]?.voiceProfileOverride).toBe("profile-narrator");
   expect(normalized.voice).toEqual(state.voice);
@@ -67,6 +77,87 @@ it("persists a valid session Git branch and drops invalid stored names", () => {
   expect(
     normalized.sessions.find((session) => session.id === invalid.id),
   ).not.toHaveProperty("gitBranch");
+});
+
+describe("session prompt variables", () => {
+  it("persists valid variables by lookup key and drops invalid entries", () => {
+    const session = {
+      ...createSession(),
+      promptVariables: {
+        Branch: " main ",
+        "bad key": "value",
+        empty: "  ",
+        count: 3,
+      },
+    } as unknown as ChatSessionRecord;
+    const normalized = normalizeShellState({
+      ...createInitialShellState(),
+      activeSessionId: session.id,
+      sessions: [session],
+    });
+
+    expect(normalized.sessions[0]?.promptVariables).toEqual({
+      branch: "main",
+    });
+  });
+
+  it("does not keep variables on Quick Chat sessions", () => {
+    const session = createSession({
+      specialSession: QUICK_VOICE_SESSION_KIND,
+      promptVariables: { branch: "main" },
+    });
+
+    expect(session).not.toHaveProperty("promptVariables");
+  });
+
+  it("replaces variables and drops the field when cleared", () => {
+    const session = createSession({ updatedAt: 1 });
+    const remembered = withSessionPromptVariables(session, {
+      Branch: "main",
+    });
+    const cleared = withSessionPromptVariables(remembered, {});
+
+    expect(remembered.promptVariables).toEqual({ branch: "main" });
+    expect(remembered.updatedAt).toBeGreaterThan(1);
+    expect(withSessionPromptVariables(remembered, { branch: "main" })).toBe(
+      remembered,
+    );
+    expect(cleared).not.toHaveProperty("promptVariables");
+  });
+});
+
+describe("withSelectedSessionGitBranch", () => {
+  it("sets the branch variable when syncing is enabled", () => {
+    const session = createSession({
+      promptVariables: { branch: "main", ticket: "ABC-1" },
+    });
+    const next = withSelectedSessionGitBranch(session, "feature/login", true);
+
+    expect(next.gitBranch).toBe("feature/login");
+    expect(next.promptVariables).toEqual({
+      branch: "feature/login",
+      ticket: "ABC-1",
+    });
+  });
+
+  it("leaves variables unchanged when syncing is disabled", () => {
+    const session = createSession({ promptVariables: { branch: "main" } });
+    const next = withSelectedSessionGitBranch(session, "feature/login", false);
+
+    expect(next.gitBranch).toBe("feature/login");
+    expect(next.promptVariables).toEqual({ branch: "main" });
+  });
+
+  it("keeps the branch variable when the branch is cleared", () => {
+    const session = createSession({
+      gitBranch: "feature/login",
+      promptVariables: { branch: "feature/login" },
+    });
+    const next = withSelectedSessionGitBranch(session, null, true);
+
+    expect(next).not.toHaveProperty("gitBranch");
+    expect(next.promptVariables).toEqual({ branch: "feature/login" });
+  });
 });
 
 describe("session goal state", () => {
@@ -755,9 +846,10 @@ describe("normalizeShellState", () => {
     );
 
     expect(normalizeRecentWorkspaces(workspaces)).toEqual(workspaces);
-    expect(
-      rememberRecentWorkspace(workspaces, "/work/project-new"),
-    ).toEqual(["/work/project-new", ...workspaces]);
+    expect(rememberRecentWorkspace(workspaces, "/work/project-new")).toEqual([
+      "/work/project-new",
+      ...workspaces,
+    ]);
   });
 
   it("preserves the active timeout state across session restoration", () => {
@@ -1565,11 +1657,18 @@ describe("normalizeShellState", () => {
       contextAttachments: [],
       variables: Array.from({ length: 20 }, (_, index) => ({
         name: "variable_" + "x".repeat(60) + index,
-        defaultValue: "Default\n" + "Grüß 🌿\n".repeat(index === 0 ? 40_000 : 40) + "End",
+        defaultValue:
+          "Default\n" + "Grüß 🌿\n".repeat(index === 0 ? 40_000 : 40) + "End",
       })),
       trigger: {
-        phrases: Array.from({ length: 20 }, (_, index) => "phrase " + "x".repeat(120) + index),
-        pathPatterns: Array.from({ length: 20 }, (_, index) => "src/" + "directory/".repeat(20) + index + "/*.md"),
+        phrases: Array.from(
+          { length: 20 },
+          (_, index) => "phrase " + "x".repeat(120) + index,
+        ),
+        pathPatterns: Array.from(
+          { length: 20 },
+          (_, index) => "src/" + "directory/".repeat(20) + index + "/*.md",
+        ),
       },
       createdAt: 1,
       updatedAt: 2,
@@ -1586,7 +1685,9 @@ describe("normalizeShellState", () => {
       contextPacks: archive.contextPacks,
     });
     expect(imported.contextPacks).toEqual([pack]);
-    expect(normalizeShellState(JSON.parse(JSON.stringify(imported))).contextPacks).toEqual([pack]);
+    expect(
+      normalizeShellState(JSON.parse(JSON.stringify(imported))).contextPacks,
+    ).toEqual([pack]);
   });
 
   it("preserves explicit context pack setting overrides", () => {

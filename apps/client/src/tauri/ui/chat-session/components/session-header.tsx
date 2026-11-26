@@ -20,6 +20,7 @@ import { workspaceGitSummaryStore } from "../../workspace-management/workspace-g
 import { WorkspaceDockToggles } from "./workspace-dock-toggles";
 import { WorkspaceQuickAccessControl } from "./workspace-quick-access-control";
 import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
+import { SessionVariablesControl } from "./session-variables-control";
 import {
   Popover,
   PopoverContent,
@@ -44,6 +45,7 @@ export interface SessionHeaderProps {
   canClearSessionHistory: boolean;
   onTagCommit: (tags: string[]) => void;
   onGitBranchCommit: (branchName: string | null) => void;
+  onPromptVariablesCommit: (promptVariables: Record<string, string>) => void;
   onTogglePinnedSession: () => void;
   onBranchSession: () => void;
   onRenameValueChange: (value: string) => void;
@@ -73,6 +75,7 @@ export const SessionHeader = ({
   canClearSessionHistory,
   onTagCommit,
   onGitBranchCommit,
+  onPromptVariablesCommit,
   onTogglePinnedSession,
   onBranchSession,
   onRenameValueChange,
@@ -140,6 +143,12 @@ export const SessionHeader = ({
         workspaceRoot={activeSession.workspace}
         primaryTaskRunning={primaryTaskRunning}
       />
+      {canEditSessionMetadata ? (
+        <SessionVariablesControl
+          promptVariables={activeSession.promptVariables}
+          onCommit={onPromptVariablesCommit}
+        />
+      ) : null}
       {canEditSessionMetadata ? (
         <SubmitShortcut asChild onSubmitShortcut={commitTags}>
           <Input

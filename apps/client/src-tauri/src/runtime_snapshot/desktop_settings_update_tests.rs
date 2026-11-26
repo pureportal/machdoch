@@ -19,6 +19,7 @@ fn settings(shortcut: &str) -> UserDesktopSettings {
         quick_voice_silence_seconds: 2.0,
         quick_voice_max_messages: 10,
         share_user_activity: false,
+        sync_branch_variable: true,
     }
 }
 

@@ -26,7 +26,16 @@ import {
   REASONING_MODES,
   VALID_TOOLS,
 } from "../../core/runtime-contract.generated.js";
-import type { ConversationMemoryEntry, TaskExecutionTokenUsage, TaskExecutionNarrative, TaskExecutionResult, TaskExecutionSection, TaskExecutionStatus, TaskExecutionTimeoutState, TaskRunPreview } from "../../core/types.js";
+import type {
+  ConversationMemoryEntry,
+  TaskExecutionTokenUsage,
+  TaskExecutionNarrative,
+  TaskExecutionResult,
+  TaskExecutionSection,
+  TaskExecutionStatus,
+  TaskExecutionTimeoutState,
+  TaskRunPreview,
+} from "../../core/types.js";
 import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
 import type {
   MediaAssetKind,
@@ -59,6 +68,7 @@ import {
 import { normalizeChatSessionOptionalString } from "./chat-session/_helpers/normalize-chat-session-optional-string.helper";
 import { createWorkspaceRootKey } from "./workspace-management/workspace-management-model";
 import { isValidGitBranchName } from "@machdoch/client-ui/git-branch/branch-name";
+import { normalizeChatInputNeededVariableKey } from "@machdoch/client-ui/composer/chat-input-needed-placeholders";
 import {
   normalizeExecutionAttempt,
   type ExecutionAttempt,
@@ -68,7 +78,11 @@ import {
   type PromptEnhancementAttempt,
 } from "./chat-session/_helpers/prompt-enhancement-attempt";
 import { retainTaskActionOutput } from "@machdoch/client-ui/conversation/task-action-output";
-import { taskThinkingActionOutputSummarySchema,finalAnswerStreamSchema,agentLiveStateSchema } from "@machdoch/fleet-protocol/task-thinking";
+import {
+  taskThinkingActionOutputSummarySchema,
+  finalAnswerStreamSchema,
+  agentLiveStateSchema,
+} from "@machdoch/fleet-protocol/task-thinking";
 
 export type ChatSessionMessageSource =
   | { kind: "preview"; preview: TaskRunPreview }
@@ -285,6 +299,7 @@ export interface ChatSessionRecord {
   manualTitle?: string;
   gitBranch?: string;
   tags: string[];
+  promptVariables?: Record<string, string>;
   messages: ChatSessionMessage[];
   promptHistory: string[];
   promptContextHistory: ChatSessionContextAttachment[][];
@@ -297,7 +312,7 @@ export interface ChatSessionRecord {
 
 export interface ShellVoiceSettings {
   autoSpeakResponses: boolean;
-  answerMode?:"completed"|"streaming";
+  answerMode?: "completed" | "streaming";
   speechProfileId?: string;
   preferredVoiceURI?: string;
   rate: number;
@@ -1376,6 +1391,27 @@ export const normalizeSessionTags = (value: unknown): string[] => {
   return tags;
 };
 
+export const normalizeSessionPromptVariables = (
+  value: unknown,
+): Record<string, string> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const promptVariables = new Map<string, string>();
+
+  for (const [key, entry] of Object.entries(value)) {
+    const lookupKey = normalizeChatInputNeededVariableKey(key);
+    const variableValue = typeof entry === "string" ? entry.trim() : "";
+
+    if (lookupKey && variableValue) {
+      promptVariables.set(lookupKey, variableValue);
+    }
+  }
+
+  return Object.fromEntries(promptVariables);
+};
+
 export const createSession = (
   overrides: Partial<ChatSessionRecord> = {},
 ): ChatSessionRecord => {
@@ -1429,6 +1465,9 @@ export const createSession = (
     ? overrides.specialSession
     : undefined;
   const isQuickTaskSession = specialSession === QUICK_VOICE_SESSION_KIND;
+  const promptVariables = isQuickTaskSession
+    ? {}
+    : normalizeSessionPromptVariables(overrides.promptVariables);
 
   return {
     id: overrides.id ?? crypto.randomUUID(),
@@ -1479,6 +1518,7 @@ export const createSession = (
     ...(overrides.manualTitle ? { manualTitle: overrides.manualTitle } : {}),
     ...(overrides.gitBranch ? { gitBranch: overrides.gitBranch } : {}),
     tags: normalizeSessionTags(overrides.tags),
+    ...(Object.keys(promptVariables).length > 0 ? { promptVariables } : {}),
     messages: (overrides.messages ?? []).filter(
       (message) => messageTombstones[message.id] === undefined,
     ),
@@ -1493,8 +1533,13 @@ export const createSession = (
     ...(overrides.temporaryPackSettings
       ? { temporaryPackSettings: overrides.temporaryPackSettings }
       : {}),
-    ...(typeof overrides.voiceAutoSpeakOverride === "boolean" ? { voiceAutoSpeakOverride: overrides.voiceAutoSpeakOverride } : {}),
-    ...(typeof overrides.voiceProfileOverride === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(overrides.voiceProfileOverride) ? { voiceProfileOverride: overrides.voiceProfileOverride } : {}),
+    ...(typeof overrides.voiceAutoSpeakOverride === "boolean"
+      ? { voiceAutoSpeakOverride: overrides.voiceAutoSpeakOverride }
+      : {}),
+    ...(typeof overrides.voiceProfileOverride === "string" &&
+    /^[A-Za-z0-9_-]{1,128}$/u.test(overrides.voiceProfileOverride)
+      ? { voiceProfileOverride: overrides.voiceProfileOverride }
+      : {}),
     sessionMemory: isQuickTaskSession ? [] : (overrides.sessionMemory ?? []),
   };
 };
@@ -2025,7 +2070,9 @@ const normalizeThinkingTrace = (
       ? (value.status as TaskThinkingTrace["status"])
       : "complete";
   const modelStream = normalizeThinkingModelStream(value.modelStream);
-  const answerStream=finalAnswerStreamSchema.safeParse(value.finalAnswerStream);
+  const answerStream = finalAnswerStreamSchema.safeParse(
+    value.finalAnswerStream,
+  );
   const actionOutputLines = normalizeThinkingActionOutputLines(
     value.actionOutputLines,
   );
@@ -2070,7 +2117,7 @@ const normalizeThinkingTrace = (
         }
       : {}),
     ...(modelStream ? { modelStream } : {}),
-    ...(answerStream.success?{finalAnswerStream:answerStream.data}:{}),
+    ...(answerStream.success ? { finalAnswerStream: answerStream.data } : {}),
     ...retainTaskActionOutput(
       { actionOutputLines, actionOutputSummaries, timelineEvents },
       status === "complete"
@@ -2665,8 +2712,13 @@ const normalizeSessionRecord = (
     temporaryPackSettings: normalizeTemporaryPackSettings(
       session.temporaryPackSettings,
     ),
-    ...(typeof session.voiceAutoSpeakOverride === "boolean" ? { voiceAutoSpeakOverride: session.voiceAutoSpeakOverride } : {}),
-    ...(typeof session.voiceProfileOverride === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(session.voiceProfileOverride) ? { voiceProfileOverride: session.voiceProfileOverride } : {}),
+    ...(typeof session.voiceAutoSpeakOverride === "boolean"
+      ? { voiceAutoSpeakOverride: session.voiceAutoSpeakOverride }
+      : {}),
+    ...(typeof session.voiceProfileOverride === "string" &&
+    /^[A-Za-z0-9_-]{1,128}$/u.test(session.voiceProfileOverride)
+      ? { voiceProfileOverride: session.voiceProfileOverride }
+      : {}),
     adaptiveControllerOverride:
       typeof session.adaptiveControllerOverride === "boolean"
         ? session.adaptiveControllerOverride
@@ -3017,9 +3069,11 @@ export const normalizeShellState = (
       : undefined;
   const normalizedVoice: ShellVoiceSettings = {
     autoSpeakResponses: voiceCandidate?.autoSpeakResponses === true,
-    answerMode:voiceCandidate?.answerMode==="streaming"?"streaming":"completed",
+    answerMode:
+      voiceCandidate?.answerMode === "streaming" ? "streaming" : "completed",
     rate: clampVoiceRate(voiceCandidate?.rate),
-    ...(typeof voiceCandidate?.speechProfileId === "string" && voiceCandidate.speechProfileId.trim()
+    ...(typeof voiceCandidate?.speechProfileId === "string" &&
+    voiceCandidate.speechProfileId.trim()
       ? { speechProfileId: voiceCandidate.speechProfileId.trim() }
       : {}),
     ...(normalizedPreferredVoiceURI
@@ -3316,6 +3370,49 @@ export const withSessionGitBranch = (
     ...(nextBranch ? { gitBranch: nextBranch } : {}),
     updatedAt: Date.now(),
   };
+};
+
+export const withSessionPromptVariables = (
+  session: ChatSessionRecord,
+  promptVariables: Record<string, string>,
+): ChatSessionRecord => {
+  const nextPromptVariables = normalizeSessionPromptVariables(promptVariables);
+  const currentPromptVariables = session.promptVariables ?? {};
+  const nextKeys = Object.keys(nextPromptVariables);
+
+  if (
+    nextKeys.length === Object.keys(currentPromptVariables).length &&
+    nextKeys.every(
+      (key) => currentPromptVariables[key] === nextPromptVariables[key],
+    )
+  ) {
+    return session;
+  }
+
+  const { promptVariables: _previousPromptVariables, ...rest } = session;
+
+  return {
+    ...rest,
+    ...(nextKeys.length > 0 ? { promptVariables: nextPromptVariables } : {}),
+    updatedAt: Date.now(),
+  };
+};
+
+export const withSelectedSessionGitBranch = (
+  session: ChatSessionRecord,
+  branchName: string | null,
+  syncBranchVariable: boolean,
+): ChatSessionRecord => {
+  const nextSession = withSessionGitBranch(session, branchName);
+
+  if (!syncBranchVariable || !nextSession.gitBranch) {
+    return nextSession;
+  }
+
+  return withSessionPromptVariables(nextSession, {
+    ...nextSession.promptVariables,
+    branch: nextSession.gitBranch,
+  });
 };
 
 export const canDeleteSession = (session: ChatSessionRecord): boolean => {

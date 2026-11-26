@@ -582,6 +582,7 @@ export interface UserDesktopSettings {
   quickVoiceSilenceSeconds: number;
   quickVoiceMaxMessages: number;
   shareUserActivity: boolean;
+  syncBranchVariable: boolean;
 }
 `;
 

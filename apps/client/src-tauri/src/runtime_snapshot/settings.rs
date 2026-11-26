@@ -363,6 +363,7 @@ pub(super) fn normalize_user_desktop_settings_input(
             settings.quick_voice_max_messages,
         ),
         share_user_activity: settings.share_user_activity,
+        sync_branch_variable: settings.sync_branch_variable,
     })
 }
 

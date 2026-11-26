@@ -1219,6 +1219,12 @@ const mergeSessionConcurrentFields = (
       baseSession.tags,
       latestSession.tags,
     ),
+    promptVariables: mergeSessionFieldForPersistence(
+      primarySession.promptVariables,
+      localSession.promptVariables,
+      baseSession.promptVariables,
+      latestSession.promptVariables,
+    ),
     sessionMemoryEnabled: mergeSessionFieldForPersistence(
       primarySession.sessionMemoryEnabled,
       localSession.sessionMemoryEnabled,
@@ -1654,6 +1660,7 @@ const createSessionMutationComparable = (
     manualTitle: session.manualTitle,
     gitBranch: session.gitBranch,
     tags: session.tags,
+    promptVariables: session.promptVariables,
     messageTombstones: session.messageTombstones,
     messages: session.messages,
     promptHistory: session.promptHistory,

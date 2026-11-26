@@ -80,7 +80,8 @@ import {
   rememberRecentWorkspace,
   removeRecentWorkspace,
   trimSessionTaskGroupsToVisibleMessageLimit,
-  withSessionGitBranch,
+  withSelectedSessionGitBranch,
+  withSessionPromptVariables,
   type ChatSessionMessage,
   type ChatSessionMessagePromptEnhancement,
   type ChatSessionMessageReference,
@@ -329,6 +330,7 @@ type ChatInputNeededSubmission =
 interface ChatInputNeededState {
   submission: ChatInputNeededSubmission;
   placeholders: ChatInputNeededPlaceholder[];
+  rememberedValues: Record<string, string>;
 }
 
 interface ComposerStatusMessage {
@@ -5641,14 +5643,21 @@ export const useChatSessionController = (
   );
 
   const requestChatInputNeededValues = useCallback(
-    (submission: ChatInputNeededSubmission): boolean => {
-      const placeholders = extractChatInputNeededPlaceholders(submission.task);
+    (
+      submission: ChatInputNeededSubmission,
+      rememberedValues: Record<string, string> = {},
+    ): boolean => {
+      const placeholders = extractChatInputNeededPlaceholders(
+        submission.task,
+      ).filter(
+        (placeholder) => rememberedValues[placeholder.lookupKey] === undefined,
+      );
 
       if (placeholders.length === 0) {
         return false;
       }
 
-      setChatInputNeeded({ submission, placeholders });
+      setChatInputNeeded({ submission, placeholders, rememberedValues });
 
       return true;
     },
@@ -7347,7 +7356,11 @@ export const useChatSessionController = (
     onSetSessionWorkspace: applyRemoteWorkspaceSelection,
     onSetSessionGitBranch: (sessionId, branch) => {
       state.updateSessionById(sessionId, (session) =>
-        withSessionGitBranch(session, branch),
+        withSelectedSessionGitBranch(
+          session,
+          branch,
+          runtime.userDesktopSettings.syncBranchVariable,
+        ),
       );
     },
     onAddWorkspace: addWorkspaceToHistory,
@@ -8682,21 +8695,39 @@ export const useChatSessionController = (
   }, []);
 
   const completeChatInputNeeded = useCallback(
-    (valuesByLookupKey: Record<string, string>): void => {
+    (valuesByLookupKey: Record<string, string>, remember: boolean): void => {
       if (!chatInputNeeded) {
         return;
       }
 
+      const { submission, rememberedValues } = chatInputNeeded;
+
       setChatInputNeeded(null);
+
+      if (remember && submission.kind !== "quick-task") {
+        state.updateSessionById(
+          submission.sessionSnapshot.id,
+          (session) =>
+            withSessionPromptVariables(session, {
+              ...session.promptVariables,
+              ...valuesByLookupKey,
+            }),
+        );
+      }
+
       submitResolvedChatInputNeededSubmission(
-        chatInputNeeded.submission,
-        replaceChatInputNeededPlaceholders(
-          chatInputNeeded.submission.task,
-          valuesByLookupKey,
-        ),
+        submission,
+        replaceChatInputNeededPlaceholders(submission.task, {
+          ...rememberedValues,
+          ...valuesByLookupKey,
+        }),
       );
     },
-    [chatInputNeeded, submitResolvedChatInputNeededSubmission],
+    [
+      chatInputNeeded,
+      state.updateSessionById,
+      submitResolvedChatInputNeededSubmission,
+    ],
   );
 
   const handleSend = (
@@ -8806,11 +8837,21 @@ export const useChatSessionController = (
         : {}),
     };
 
-    if (!goalCommand && requestChatInputNeededValues(submission)) {
+    const rememberedValues = sessionSnapshot.promptVariables ?? {};
+
+    if (
+      !goalCommand &&
+      requestChatInputNeededValues(submission, rememberedValues)
+    ) {
       return;
     }
 
-    submitResolvedChatInputNeededSubmission(submission, task);
+    submitResolvedChatInputNeededSubmission(
+      submission,
+      goalCommand
+        ? task
+        : replaceChatInputNeededPlaceholders(task, rememberedValues),
+    );
   };
 
   const conversationPromptEnhancementPreview =
@@ -8986,7 +9027,12 @@ export const useChatSessionController = (
       runtimeLoading: runtime.runtimeLoading,
       runtimeError: runtime.runtimeError,
       onTagCommit: lifecycleActions.commitSessionTags,
-      onGitBranchCommit: lifecycleActions.commitSessionGitBranch,
+      onGitBranchCommit: (branchName: string | null) =>
+        lifecycleActions.commitSessionGitBranch(
+          branchName,
+          runtime.userDesktopSettings.syncBranchVariable,
+        ),
+      onPromptVariablesCommit: lifecycleActions.commitSessionPromptVariables,
       onTogglePinnedSession: () =>
         lifecycleActions.togglePinnedSession(state.activeSession.id),
       onBranchSession: () =>
@@ -9087,7 +9133,16 @@ export const useChatSessionController = (
       ? {
           placeholders: chatInputNeeded.placeholders,
           onCancel: cancelChatInputNeeded,
-          onComplete: completeChatInputNeeded,
+          onComplete: (valuesByLookupKey: Record<string, string>) =>
+            completeChatInputNeeded(valuesByLookupKey, false),
+          ...(chatInputNeeded.submission.kind === "active-session" &&
+          !isQuickVoiceSession(chatInputNeeded.submission.sessionSnapshot)
+            ? {
+                onCompleteAndRemember: (
+                  valuesByLookupKey: Record<string, string>,
+                ) => completeChatInputNeeded(valuesByLookupKey, true),
+              }
+            : {}),
         }
       : null,
     composer: {

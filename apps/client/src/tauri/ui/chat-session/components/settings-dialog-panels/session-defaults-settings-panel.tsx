@@ -29,6 +29,7 @@ export const SessionDefaultsSettingsPanel = ({
   const sessionDefaults = {
     adaptiveControllerEnabled: draft.adaptiveControllerEnabled,
     shareUserActivity: draft.shareUserActivity,
+    syncBranchVariable: draft.syncBranchVariable,
     aiContextMaxMessages: clampIntegerSetting(
       draft.aiContextMaxMessages,
       DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min,
@@ -46,6 +47,7 @@ export const SessionDefaultsSettingsPanel = ({
     sessionDefaults.adaptiveControllerEnabled !==
       setup.settings.adaptiveControllerEnabled ||
     sessionDefaults.shareUserActivity !== setup.settings.shareUserActivity ||
+    sessionDefaults.syncBranchVariable !== setup.settings.syncBranchVariable ||
     sessionDefaults.aiContextMaxMessages !==
       setup.settings.aiContextMaxMessages ||
     sessionDefaults.chatIdleTimeoutMinutes !==
@@ -122,6 +124,16 @@ export const SessionDefaultsSettingsPanel = ({
             disabled={setup.saving}
             onCheckedChange={(checked) =>
               setDraft({ ...draft, shareUserActivity: checked })
+            }
+          />
+        </SettingPanel>
+        <SettingPanel label="Set branch variable on branch change">
+          <SettingsToggle
+            label="Set branch variable on branch change"
+            checked={draft.syncBranchVariable}
+            disabled={setup.saving}
+            onCheckedChange={(checked) =>
+              setDraft({ ...draft, syncBranchVariable: checked })
             }
           />
         </SettingPanel>

@@ -127,6 +127,14 @@ export const ADDITIONAL_CONFIG_SETTINGS: readonly AdditionalSetting[] = [
     DEFAULT_USER_DESKTOP_SETTINGS.shareUserActivity,
   ),
   booleanSetting(
+    "agent.sync-branch-variable",
+    "Set branch variable on branch change",
+    "Session defaults",
+    "user",
+    ["desktop", "syncBranchVariable"],
+    DEFAULT_USER_DESKTOP_SETTINGS.syncBranchVariable,
+  ),
+  booleanSetting(
     "agent-limits.automatic-retries",
     "Automatic retries",
     "Agent",
@@ -165,7 +173,8 @@ export const ADDITIONAL_CONFIG_SETTINGS: readonly AdditionalSetting[] = [
     defaultValue: DEFAULT_USER_AGENT_LIMITS_SETTINGS.questionTimeoutMinutes,
     min: AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.min,
     max: AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.max,
-    description: "Minutes an agent question waits for an answer; 0 waits until answered",
+    description:
+      "Minutes an agent question waits for an answer; 0 waits until answered",
     acceptedValues: `${AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.min}..${AGENT_LIMIT_BOUNDS.questionTimeoutMinutes.max}`,
   },
   booleanSetting(

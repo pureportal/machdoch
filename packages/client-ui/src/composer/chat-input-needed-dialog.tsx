@@ -1,4 +1,4 @@
-import { Check, CornerDownRight } from "lucide-react";
+import { Bookmark, Check, CornerDownRight } from "lucide-react";
 import { useId, useRef, useState, type FormEvent, type JSX } from "react";
 import type { ChatInputNeededPlaceholder } from "./chat-input-needed-placeholders";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
@@ -20,6 +20,7 @@ interface ChatInputNeededDialogProps {
   placeholders: readonly ChatInputNeededPlaceholder[];
   onCancel: () => void;
   onComplete: (valuesByLookupKey: Record<string, string>) => void;
+  onCompleteAndRemember?: (valuesByLookupKey: Record<string, string>) => void;
 }
 
 const getInitialPlaceholderValue = (
@@ -44,6 +45,7 @@ export const ChatInputNeededDialog = ({
   placeholders,
   onCancel,
   onComplete,
+  onCompleteAndRemember,
 }: ChatInputNeededDialogProps): JSX.Element | null => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [valuesByLookupKey, setValuesByLookupKey] = useState<
@@ -64,9 +66,7 @@ export const ChatInputNeededDialog = ({
   const isLastRequest = currentIndex >= placeholders.length - 1;
   const canSubmit = placeholder.optional || Boolean(normalizedValue);
 
-  const submitValue = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-
+  const submitValue = (remember: boolean): void => {
     if (!canSubmit) {
       return;
     }
@@ -78,7 +78,11 @@ export const ChatInputNeededDialog = ({
     const nextPlaceholder = placeholders[currentIndex + 1];
 
     if (!nextPlaceholder) {
-      onComplete(nextValuesByLookupKey);
+      if (remember && onCompleteAndRemember) {
+        onCompleteAndRemember(nextValuesByLookupKey);
+      } else {
+        onComplete(nextValuesByLookupKey);
+      }
       return;
     }
 
@@ -120,88 +124,107 @@ export const ChatInputNeededDialog = ({
         </DialogHeader>
 
         <SubmitShortcut asChild>
-            <form onSubmit={submitValue} className="grid gap-4 p-5">
-              <div className="grid gap-2">
-                <div className="flex min-w-0 items-center justify-between gap-3">
-                  <label
-                    htmlFor={inputId}
-                    className="min-w-0 truncate text-sm font-semibold text-slate-50"
-                  >
-                    {placeholder.key}
-                  </label>
-                  {placeholder.occurrenceCount > 1 ? (
-                    <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
-                      {placeholder.occurrenceCount} uses
-                    </span>
-                  ) : null}
-                  {placeholder.optional ? (
-                    <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
-                      optional
-                    </span>
-                  ) : null}
-                </div>
-                {placeholder.options ? (
-                  <select
-                    id={inputId}
-                    ref={(node) => {
-                      inputRef.current = node;
-                    }}
-                    aria-label={`Value for ${placeholder.key}`}
-                    value={value}
-                    onChange={(event) => setValue(event.target.value)}
-                    className="h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus-visible:border-sky-500/70 focus-visible:ring-1 focus-visible:ring-sky-500/40"
-                  >
-                    {placeholder.optional ? (
-                      <option value="">No value</option>
-                    ) : null}
-                    {placeholder.options.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <Textarea
-                    id={inputId}
-                    ref={(node) => {
-                      inputRef.current = node;
-                    }}
-                    aria-label={`Value for ${placeholder.key}`}
-                    value={value}
-                    onChange={(event) => setValue(event.target.value)}
-                    placeholder={`Enter ${placeholder.key}`}
-                    className="min-h-28 resize-y border-slate-700 bg-slate-900 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:ring-sky-500/40"
-                  />
-                )}
+          <form
+            onSubmit={(event: FormEvent<HTMLFormElement>) => {
+              event.preventDefault();
+              submitValue(false);
+            }}
+            className="grid gap-4 p-5"
+          >
+            <div className="grid gap-2">
+              <div className="flex min-w-0 items-center justify-between gap-3">
+                <label
+                  htmlFor={inputId}
+                  className="min-w-0 truncate text-sm font-semibold text-slate-50"
+                >
+                  {placeholder.key}
+                </label>
+                {placeholder.occurrenceCount > 1 ? (
+                  <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
+                    {placeholder.occurrenceCount} uses
+                  </span>
+                ) : null}
+                {placeholder.optional ? (
+                  <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
+                    optional
+                  </span>
+                ) : null}
               </div>
+              {placeholder.options ? (
+                <select
+                  id={inputId}
+                  ref={(node) => {
+                    inputRef.current = node;
+                  }}
+                  aria-label={`Value for ${placeholder.key}`}
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  className="h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus-visible:border-sky-500/70 focus-visible:ring-1 focus-visible:ring-sky-500/40"
+                >
+                  {placeholder.optional ? (
+                    <option value="">No value</option>
+                  ) : null}
+                  {placeholder.options.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Textarea
+                  id={inputId}
+                  ref={(node) => {
+                    inputRef.current = node;
+                  }}
+                  aria-label={`Value for ${placeholder.key}`}
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  placeholder={`Enter ${placeholder.key}`}
+                  className="min-h-28 resize-y border-slate-700 bg-slate-900 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:ring-sky-500/40"
+                />
+              )}
+            </div>
 
-              <DialogFooter className="sm:flex-row">
+            <DialogFooter className="sm:flex-row">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onCancel}
+                className="text-slate-400 hover:bg-slate-900 hover:text-white"
+              >
+                Cancel
+              </Button>
+              {isLastRequest && onCompleteAndRemember ? (
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onCancel}
-                  className="text-slate-400 hover:bg-slate-900 hover:text-white"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
+                  variant="outline"
                   size="sm"
                   disabled={!canSubmit}
-                  {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                  className="bg-sky-600 text-white hover:bg-sky-700 disabled:bg-slate-800 disabled:text-slate-500"
+                  onClick={() => submitValue(true)}
+                  className="border-slate-700 bg-transparent text-slate-200 hover:bg-slate-900 hover:text-white"
                 >
-                  {isLastRequest ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : (
-                    <CornerDownRight className="h-3.5 w-3.5" />
-                  )}
-                  {isLastRequest ? "Start" : "Next"}
+                  <Bookmark className="h-3.5 w-3.5" />
+                  Send & Remember
                 </Button>
-              </DialogFooter>
-            </form>
-          </SubmitShortcut>
+              ) : null}
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!canSubmit}
+                {...SUBMIT_SHORTCUT_ACTION_PROPS}
+                className="bg-sky-600 text-white hover:bg-sky-700 disabled:bg-slate-800 disabled:text-slate-500"
+              >
+                {isLastRequest ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : (
+                  <CornerDownRight className="h-3.5 w-3.5" />
+                )}
+                {isLastRequest ? "Send" : "Next"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </SubmitShortcut>
       </DialogContent>
     </Dialog>
   );

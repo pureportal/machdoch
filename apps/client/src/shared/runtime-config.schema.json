@@ -227,11 +227,31 @@
           "minimum": 1,
           "maximum": 1000
         },
-        "goalStalledPasses": { "type": "integer", "minimum": 1, "maximum": 100 },
-        "goalVerificationMinutes": { "type": "integer", "minimum": 1, "maximum": 1440 },
-        "goalBackgroundWaitMinutes": { "type": "integer", "minimum": 10, "maximum": 10080 },
-        "goalUsageWaitMinutes": { "type": "integer", "minimum": 0, "maximum": 10080 },
-        "questionTimeoutMinutes": { "type": "integer", "minimum": 0, "maximum": 1440 }
+        "goalStalledPasses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "goalVerificationMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440
+        },
+        "goalBackgroundWaitMinutes": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 10080
+        },
+        "goalUsageWaitMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10080
+        },
+        "questionTimeoutMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1440
+        }
       }
     },
     "WorkspaceConfigFile": {
@@ -843,6 +863,9 @@
         },
         "shareUserActivity": {
           "type": "boolean"
+        },
+        "syncBranchVariable": {
+          "type": "boolean"
         }
       }
     },
@@ -863,7 +886,8 @@
         "quickVoiceShortcut",
         "quickVoiceSilenceSeconds",
         "quickVoiceMaxMessages",
-        "shareUserActivity"
+        "shareUserActivity",
+        "syncBranchVariable"
       ],
       "properties": {
         "autostartEnabled": {
@@ -933,6 +957,10 @@
         "shareUserActivity": {
           "type": "boolean",
           "default": false
+        },
+        "syncBranchVariable": {
+          "type": "boolean",
+          "default": true
         }
       }
     },

@@ -205,6 +205,7 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
             "quickVoiceSilenceSeconds",
             "quickVoiceMaxMessages",
             "shareUserActivity",
+            "syncBranchVariable",
         ],
     );
     merge_known_object_members(

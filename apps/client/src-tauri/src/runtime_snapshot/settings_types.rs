@@ -102,6 +102,7 @@ pub struct UserDesktopSettings {
     pub(crate) quick_voice_silence_seconds: f64,
     pub(crate) quick_voice_max_messages: u32,
     pub(crate) share_user_activity: bool,
+    pub(crate) sync_branch_variable: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -220,6 +221,7 @@ pub(super) struct UserDesktopConfigFile {
     pub(super) quick_voice_silence_seconds: Option<f64>,
     pub(super) quick_voice_max_messages: Option<u32>,
     pub(super) share_user_activity: Option<bool>,
+    pub(super) sync_branch_variable: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
