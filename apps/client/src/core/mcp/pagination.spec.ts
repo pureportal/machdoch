@@ -1,3 +1,4 @@
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, it, vi } from "vitest";
 import { collectMcpPages } from "./pagination.js";
 
@@ -40,6 +41,23 @@ describe("bounded MCP discovery", () => {
       .mockResolvedValue({ items: Array(6_000).fill(0) });
     await expect(collectMcpPages(load)).rejects.toThrow("10,000 entries");
     expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats an unimplemented list method as an empty catalog", async () => {
+    const load = vi.fn(async () => {
+      throw new McpError(ErrorCode.MethodNotFound, "Method not found");
+    });
+    await expect(collectMcpPages(load)).resolves.toEqual([]);
+  });
+
+  it("rejects an unimplemented list method after the first page", async () => {
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [1], nextCursor: "next" })
+      .mockRejectedValue(
+        new McpError(ErrorCode.MethodNotFound, "Method not found"),
+      );
+    await expect(collectMcpPages(load)).rejects.toThrow("Method not found");
   });
 
   it("bounds serialized metadata even when there are few entries", async () => {

@@ -684,6 +684,39 @@ describe("McpClientManager lifecycle", () => {
     });
   });
 
+  it("discovers tools from servers that leave advertised list methods unimplemented", async () => {
+    const methodNotFound = async (): Promise<never> => {
+      throw new McpError(ErrorCode.MethodNotFound, "Method not found");
+    };
+    const client = createClient({
+      getServerCapabilities: vi.fn(() => ({
+        tools: {},
+        resources: {},
+        prompts: {},
+      })),
+      listTools: vi.fn(async () => ({
+        tools: [{ name: "search", inputSchema: { type: "object" } }],
+      })),
+      listResources: vi.fn(async () => ({ resources: [] })),
+      listResourceTemplates: vi.fn(methodNotFound),
+      listPrompts: vi.fn(methodNotFound),
+    } as Partial<Client>);
+    const manager = new McpClientManager({
+      createClient: () => client,
+      createTransport: () => createTransport(),
+      loadRuntimeEnvironment: async () => ({}),
+    });
+
+    const discovery = await manager.discoverServer(
+      "C:/workspace",
+      createServer(),
+    );
+
+    expect(discovery.tools.map((tool) => tool.name)).toEqual(["search"]);
+    expect(discovery.resourceTemplates).toEqual([]);
+    expect(discovery.prompts).toEqual([]);
+  });
+
   it("registers configured roots and reports effective connection capabilities", async () => {
     const workspaceRoot = await createWorkspace();
     const transport = createTransport();

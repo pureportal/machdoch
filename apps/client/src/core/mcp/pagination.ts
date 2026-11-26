@@ -4,6 +4,9 @@ const MAX_DISCOVERY_PAGES = 100;
 const MAX_DISCOVERY_ITEMS = 10_000;
 const MAX_DISCOVERY_BYTES = 16 * 1024 * 1024;
 
+const isMethodNotFound = (error: unknown): boolean =>
+  error instanceof McpError && error.code === ErrorCode.MethodNotFound;
+
 export const collectMcpPages = async <T>(
   load: (
     cursor: string | undefined,
@@ -14,7 +17,12 @@ export const collectMcpPages = async <T>(
   let cursor: string | undefined;
   let bytes = 0;
   for (let page = 0; page < MAX_DISCOVERY_PAGES; page += 1) {
-    const result = await load(cursor);
+    const result = await load(cursor).catch(
+      (error: unknown): { items: T[]; nextCursor?: string } => {
+        if (page === 0 && isMethodNotFound(error)) return { items: [] };
+        throw error;
+      },
+    );
     if (result.items.length > MAX_DISCOVERY_ITEMS - items.length) {
       throw new McpError(
         ErrorCode.InvalidRequest,

@@ -2233,18 +2233,20 @@ export class McpClientManager {
         const capabilities = client.getServerCapabilities() as
           | Record<string, unknown>
           | undefined;
-        const tools = hasCapability(capabilities, "tools")
-          ? await listAllTools(client, server, options)
-          : [];
-        const resources = hasCapability(capabilities, "resources")
-          ? await listAllResources(client, server, options)
-          : [];
-        const resourceTemplates = hasCapability(capabilities, "resources")
-          ? await listAllResourceTemplates(client, server, options)
-          : [];
-        const prompts = hasCapability(capabilities, "prompts")
-          ? await listAllPrompts(client, server, options)
-          : [];
+        const supportsResources = hasCapability(capabilities, "resources");
+        const [tools, resources, resourceTemplates, prompts] =
+          await Promise.all([
+            hasCapability(capabilities, "tools")
+              ? listAllTools(client, server, options)
+              : [],
+            supportsResources ? listAllResources(client, server, options) : [],
+            supportsResources
+              ? listAllResourceTemplates(client, server, options)
+              : [],
+            hasCapability(capabilities, "prompts")
+              ? listAllPrompts(client, server, options)
+              : [],
+          ]);
         const serverVersion = client.getServerVersion();
         const instructions = client.getInstructions();
 
