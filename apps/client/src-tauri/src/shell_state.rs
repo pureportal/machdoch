@@ -34,6 +34,7 @@ struct ShellStateTombstones {
     messages: BTreeMap<String, u64>,
     queued_messages: BTreeMap<String, u64>,
     context_packs: BTreeMap<String, u64>,
+    context_pack_flows: BTreeMap<String, u64>,
 }
 
 /// Serializes shell-state compare-and-swap operations across every webview.
@@ -347,6 +348,11 @@ fn prepare_next_state(current: &Value, mut requested: Value, revision: u64) -> V
         &tombstones.queued_messages,
     );
     retain_live_entries(&mut requested, "contextPacks", &tombstones.context_packs);
+    retain_live_entries(
+        &mut requested,
+        "contextPackFlows",
+        &tombstones.context_pack_flows,
+    );
     retain_live_messages(&mut requested, &tombstones.messages);
 
     record_removed_ids(
@@ -368,6 +374,12 @@ fn prepare_next_state(current: &Value, mut requested: Value, revision: u64) -> V
         revision,
     );
     record_removed_ids(
+        collect_ids(current, "contextPackFlows"),
+        collect_ids(&requested, "contextPackFlows"),
+        &mut tombstones.context_pack_flows,
+        revision,
+    );
+    record_removed_ids(
         collect_message_ids(current),
         collect_message_ids(&requested),
         &mut tombstones.messages,
@@ -378,6 +390,7 @@ fn prepare_next_state(current: &Value, mut requested: Value, revision: u64) -> V
     trim_tombstones(&mut tombstones.messages);
     trim_tombstones(&mut tombstones.queued_messages);
     trim_tombstones(&mut tombstones.context_packs);
+    trim_tombstones(&mut tombstones.context_pack_flows);
 
     if let Some(requested_object) = requested.as_object_mut() {
         if let Ok(serialized_tombstones) = serde_json::to_value(tombstones) {
@@ -1355,7 +1368,8 @@ mod tests {
             "version": 1,
             "sessions": [{ "id": "session-1", "messages": [] }],
             "queuedSessionMessages": [{ "id": "queued-1" }],
-            "contextPacks": [{ "id": "pack-1" }]
+            "contextPacks": [{ "id": "pack-1" }],
+            "contextPackFlows": [{ "id": "flow-1" }]
         });
         let deleted = prepare_next_state(
             &current,
@@ -1363,7 +1377,8 @@ mod tests {
                 "version": 1,
                 "sessions": [],
                 "queuedSessionMessages": [],
-                "contextPacks": []
+                "contextPacks": [],
+                "contextPackFlows": []
             }),
             2,
         );
@@ -1374,6 +1389,9 @@ mod tests {
             .as_array()
             .is_some_and(Vec::is_empty));
         assert!(stale["contextPacks"].as_array().is_some_and(Vec::is_empty));
+        assert!(stale["contextPackFlows"]
+            .as_array()
+            .is_some_and(Vec::is_empty));
     }
 
     #[test]

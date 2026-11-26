@@ -79,6 +79,55 @@ it("persists a valid session Git branch and drops invalid stored names", () => {
   ).not.toHaveProperty("gitBranch");
 });
 
+it("persists context pack flows and drops malformed flows and steps", () => {
+  const normalized = normalizeShellState({
+    ...createInitialShellState(),
+    contextPackFlows: [
+      {
+        id: "flow-1",
+        workspace: " C:/repo ",
+        name: "  Ship   it ",
+        steps: [
+          { id: "step-1", packId: "implement" },
+          { id: "step-1", packId: "commit" },
+          { id: "step-3", packId: " " },
+          "invalid",
+        ],
+        createdAt: 10,
+        updatedAt: 5,
+        lastUsedAt: 20,
+      },
+      { id: "flow-1", name: "Duplicate", steps: [] },
+      { name: "", steps: [{ packId: "review" }] },
+      null,
+    ],
+  } as unknown as Parameters<typeof normalizeShellState>[0]);
+
+  expect(normalized.contextPackFlows).toEqual([
+    {
+      id: "flow-1",
+      workspace: "C:/repo",
+      name: "Ship it",
+      steps: [
+        { id: "step-1", packId: "implement" },
+        { id: "flow-1-step-1", packId: "commit" },
+      ],
+      createdAt: 10,
+      updatedAt: 10,
+      lastUsedAt: 20,
+    },
+    {
+      id: "context-pack-flow-2",
+      workspace: null,
+      name: "Flow 3",
+      steps: [{ id: "context-pack-flow-2-step-0", packId: "review" }],
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  ]);
+  expect(createInitialShellState().contextPackFlows).toEqual([]);
+});
+
 describe("session prompt variables", () => {
   it("persists valid variables by lookup key and drops invalid entries", () => {
     const session = {

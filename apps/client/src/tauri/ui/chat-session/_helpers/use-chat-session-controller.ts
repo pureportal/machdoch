@@ -274,10 +274,23 @@ import {
   getSmartContextPacksForWorkspace,
 } from "@machdoch/client-ui/context-packs/helpers";
 import {
+  collectContextPackFlowPlaceholders,
+  getContextPackFlowIssue,
+  getContextPackFlowsForWorkspace,
+  MAX_CONTEXT_PACK_FLOWS,
+  resolveContextPackFlowSteps,
+} from "@machdoch/client-ui/context-packs/flows";
+import {
+  type ContextPackFlow,
+  type SaveContextPackFlowInput,
   type SaveSmartContextPackInput,
   type SmartContextPackScope,
   type SmartContextPackScopeFilter,
 } from "@machdoch/client-ui/context-packs/model";
+import {
+  createQueuedContextPackFlowSteps,
+  type ContextPackFlowRunStep,
+} from "./context-pack-flows";
 import { useChatSessionRuntime } from "./use-chat-session-runtime";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
 import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
@@ -327,11 +340,44 @@ type ChatInputNeededSubmission =
       contextAttachments: ChatSessionContextAttachment[];
     };
 
+interface ContextPackFlowSubmission {
+  kind: "context-pack-flow";
+  flowId: string;
+  sessionId: string;
+  flowName: string;
+  steps: ContextPackFlowRunStep[];
+  promptEnhancementMode: PromptEnhancementMode;
+}
+
 interface ChatInputNeededState {
-  submission: ChatInputNeededSubmission;
+  submission: ChatInputNeededSubmission | ContextPackFlowSubmission;
   placeholders: ChatInputNeededPlaceholder[];
   rememberedValues: Record<string, string>;
 }
+
+const revalidateContextPackAttachments = async (
+  attachments: ChatSessionContextAttachment[],
+): Promise<ChatSessionContextAttachment[]> => {
+  if (attachments.length === 0) {
+    return attachments;
+  }
+
+  try {
+    const resolution = await resolveDroppedPaths(
+      attachments
+        .filter(isPathContextAttachment)
+        .map((attachment) => attachment.path),
+    );
+
+    return [
+      ...attachments.filter(isMediaAssetContextAttachment),
+      ...resolution.entries.map(createContextAttachment),
+    ];
+  } catch (error) {
+    console.error("Failed to revalidate context pack paths", error);
+    return attachments;
+  }
+};
 
 interface ComposerStatusMessage {
   sessionId: string;
@@ -1338,6 +1384,14 @@ export const useChatSessionController = (
         activeComposerSession.workspace,
       ),
     [activeComposerSession.workspace, state.shellState.contextPacks],
+  );
+  const workspaceContextPackFlows = useMemo(
+    () =>
+      getContextPackFlowsForWorkspace(
+        state.shellState.contextPackFlows,
+        activeComposerSession.workspace,
+      ),
+    [activeComposerSession.workspace, state.shellState.contextPackFlows],
   );
   const matchedContextPackIds = useMemo(() => {
     if (
@@ -4516,27 +4570,9 @@ export const useChatSessionController = (
           .map((message) => message.id),
       );
       const packRevisionSignature = JSON.stringify(pack);
-      let contextAttachments = pack.contextAttachments;
-
-      if (pack.contextAttachments.length > 0) {
-        try {
-          const mediaAttachments = pack.contextAttachments.filter(
-            isMediaAssetContextAttachment,
-          );
-          const pathAttachments = pack.contextAttachments.filter(
-            isPathContextAttachment,
-          );
-          const resolution = await resolveDroppedPaths(
-            pathAttachments.map((attachment) => attachment.path),
-          );
-          contextAttachments = [
-            ...mediaAttachments,
-            ...resolution.entries.map(createContextAttachment),
-          ];
-        } catch (error) {
-          console.error("Failed to revalidate context pack paths", error);
-        }
-      }
+      const contextAttachments = await revalidateContextPackAttachments(
+        pack.contextAttachments,
+      );
 
       const packForApplication: SmartContextPack = {
         ...pack,
@@ -4731,6 +4767,80 @@ export const useChatSessionController = (
       state.applyShellState((prev) => ({
         ...prev,
         contextPacks: prev.contextPacks.filter((pack) => pack.id !== packId),
+      }));
+    },
+    [state.applyShellState],
+  );
+
+  const handleSaveContextPackFlow = useCallback(
+    (input: SaveContextPackFlowInput): void => {
+      const name = input.name.replace(/\s+/gu, " ").trim();
+      const workspace =
+        input.scope === "global" ? null : activeComposerSession.workspace;
+
+      const issue = name
+        ? getContextPackFlowIssue(
+            resolveContextPackFlowSteps(
+              {
+                workspace,
+                steps: input.steps.map((step) => ({
+                  id: step.id ?? "",
+                  packId: step.packId,
+                })),
+              },
+              state.shellState.contextPacks,
+            ),
+          )
+        : "Add a name";
+
+      if (issue) {
+        throw new Error(issue);
+      }
+
+      state.applyShellState((prev) => {
+        const now = Date.now();
+        const existingFlow = input.id
+          ? prev.contextPackFlows.find((flow) => flow.id === input.id)
+          : undefined;
+        const flow: ContextPackFlow = {
+          id: existingFlow?.id ?? crypto.randomUUID(),
+          workspace,
+          name,
+          steps: input.steps.map((step) => ({
+            id: step.id ?? crypto.randomUUID(),
+            packId: step.packId,
+          })),
+          createdAt: existingFlow?.createdAt ?? now,
+          updatedAt: now,
+          ...(existingFlow?.lastUsedAt !== undefined
+            ? { lastUsedAt: existingFlow.lastUsedAt }
+            : {}),
+        };
+
+        return {
+          ...prev,
+          contextPackFlows: existingFlow
+            ? prev.contextPackFlows.map((entry) =>
+                entry.id === existingFlow.id ? flow : entry,
+              )
+            : [flow, ...prev.contextPackFlows].slice(0, MAX_CONTEXT_PACK_FLOWS),
+        };
+      });
+    },
+    [
+      activeComposerSession.workspace,
+      state.applyShellState,
+      state.shellState.contextPacks,
+    ],
+  );
+
+  const handleDeleteContextPackFlow = useCallback(
+    (flowId: string): void => {
+      state.applyShellState((prev) => ({
+        ...prev,
+        contextPackFlows: prev.contextPackFlows.filter(
+          (flow) => flow.id !== flowId,
+        ),
       }));
     },
     [state.applyShellState],
@@ -8690,6 +8800,181 @@ export const useChatSessionController = (
   );
   remoteSessionMessageSubmitRef.current = submitRemoteSessionMessage;
 
+  const queueContextPackFlow = useCallback(
+    (
+      submission: ContextPackFlowSubmission,
+      valuesByLookupKey: Record<string, string>,
+    ): void => {
+      const targetSession = shellStateRef.current.sessions.find(
+        (session) => session.id === submission.sessionId,
+      );
+
+      if (!targetSession) {
+        return;
+      }
+
+      const runningAction = getSessionMessageRunningAction({
+        session: targetSession,
+        activeTaskId: getActiveDesktopTaskIdForSession(targetSession.id),
+        unsettledTaskId: getUnsettledDesktopTaskIdForSession(targetSession.id),
+        runningAction: runningTaskMessageAction,
+      });
+      const insertAtFront = runningAction === "stop-and-send";
+      const sessionRanks = shellStateRef.current.queuedSessionMessages
+        .filter((message) => message.sessionId === targetSession.id)
+        .map((message) => message.orderRank);
+      const timestamp = Date.now();
+      const messages = createQueuedContextPackFlowSteps({
+        session: targetSession,
+        flowName: submission.flowName,
+        steps: submission.steps,
+        valuesByLookupKey,
+        availableProviders: providerChooserState.chooserProviders,
+        promptEnhancementMode: submission.promptEnhancementMode,
+        orderRank: insertAtFront
+          ? Math.min(0, ...sessionRanks) - submission.steps.length
+          : Math.max(-1, ...sessionRanks) + 1,
+        timestamp,
+      });
+      const unsupportedImageStepIndex = messages.findIndex(
+        (message) =>
+          message.settings &&
+          getImageAttachmentPaths(message.contextAttachments).length > 0 &&
+          !modelSupportsImageInput(
+            message.settings.provider,
+            message.settings.model,
+          ),
+      );
+
+      if (unsupportedImageStepIndex !== -1) {
+        setPromptEnhancementStatus({
+          sessionId: targetSession.id,
+          tone: "error",
+          text: `Step ${unsupportedImageStepIndex + 1}: ${createImageInputUnsupportedModelMessage(
+            messages[unsupportedImageStepIndex]?.settings?.provider ??
+              targetSession.provider,
+            messages[unsupportedImageStepIndex]?.settings?.model ??
+              targetSession.model,
+          )}`,
+        });
+        return;
+      }
+
+      const packIds = new Set(submission.steps.map((step) => step.pack.id));
+
+      updateQueuedSessionMessages((current) => [...current, ...messages]);
+      state.applyShellState((prev) => ({
+        ...prev,
+        contextPacks: prev.contextPacks.map((pack) =>
+          packIds.has(pack.id)
+            ? { ...pack, lastUsedAt: timestamp, useCount: pack.useCount + 1 }
+            : pack,
+        ),
+        contextPackFlows: prev.contextPackFlows.map((flow) =>
+          flow.id === submission.flowId
+            ? { ...flow, lastUsedAt: timestamp }
+            : flow,
+        ),
+      }));
+
+      if (insertAtFront) {
+        requestTaskCancellation(targetSession);
+      }
+    },
+    [
+      providerChooserState.chooserProviders,
+      requestTaskCancellation,
+      runningTaskMessageAction,
+      state.applyShellState,
+      updateQueuedSessionMessages,
+    ],
+  );
+
+  const handleRunContextPackFlow = useCallback(
+    async (flowId: string): Promise<void> => {
+      const flow = workspaceContextPackFlows.find(
+        (entry) => entry.id === flowId,
+      );
+
+      if (!flow || activeMessageEditRef.current) {
+        return;
+      }
+
+      const sessionId = activeComposerSession.id;
+      const resolvedSteps = resolveContextPackFlowSteps(
+        flow,
+        state.shellState.contextPacks,
+      );
+      const issue = getContextPackFlowIssue(resolvedSteps);
+      const packs = resolvedSteps.flatMap((entry) =>
+        entry.pack ? [entry.pack] : [],
+      );
+      const unavailableEnhancementStepIndex = packs.findIndex(
+        (pack) =>
+          (pack.promptEnhancementMode ?? activePromptEnhancementMode) ===
+            "web-search" && !promptEnhancementWebSearchAvailable,
+      );
+      const errorText =
+        issue ??
+        (unavailableEnhancementStepIndex === -1
+          ? null
+          : `Step ${unavailableEnhancementStepIndex + 1}: ${PROMPT_ENHANCEMENT_WEB_SEARCH_UNAVAILABLE_REASON}`);
+
+      if (errorText) {
+        setPromptEnhancementStatus({
+          sessionId,
+          tone: "error",
+          text: errorText,
+        });
+        return;
+      }
+
+      const steps: ContextPackFlowRunStep[] = await Promise.all(
+        packs.map(async (pack) => ({
+          pack,
+          contextAttachments: await revalidateContextPackAttachments(
+            pack.contextAttachments,
+          ),
+        })),
+      );
+      const session = state.getSessionById(sessionId);
+
+      if (!session) {
+        return;
+      }
+
+      const submission: ContextPackFlowSubmission = {
+        kind: "context-pack-flow",
+        flowId: flow.id,
+        sessionId,
+        flowName: flow.name,
+        steps,
+        promptEnhancementMode: activePromptEnhancementMode,
+      };
+      const rememberedValues = session.promptVariables ?? {};
+      const placeholders = collectContextPackFlowPlaceholders(
+        packs,
+        rememberedValues,
+      );
+
+      if (placeholders.length > 0) {
+        setChatInputNeeded({ submission, placeholders, rememberedValues });
+        return;
+      }
+
+      queueContextPackFlow(submission, rememberedValues);
+    },
+    [
+      activeComposerSession.id,
+      activePromptEnhancementMode,
+      promptEnhancementWebSearchAvailable,
+      queueContextPackFlow,
+      state.getSessionById,
+      state.shellState.contextPacks,
+      workspaceContextPackFlows,
+    ],
+  );
+
   const cancelChatInputNeeded = useCallback((): void => {
     setChatInputNeeded(null);
   }, []);
@@ -8706,13 +8991,23 @@ export const useChatSessionController = (
 
       if (remember && submission.kind !== "quick-task") {
         state.updateSessionById(
-          submission.sessionSnapshot.id,
+          submission.kind === "context-pack-flow"
+            ? submission.sessionId
+            : submission.sessionSnapshot.id,
           (session) =>
             withSessionPromptVariables(session, {
               ...session.promptVariables,
               ...valuesByLookupKey,
             }),
         );
+      }
+
+      if (submission.kind === "context-pack-flow") {
+        queueContextPackFlow(submission, {
+          ...rememberedValues,
+          ...valuesByLookupKey,
+        });
+        return;
       }
 
       submitResolvedChatInputNeededSubmission(
@@ -8725,6 +9020,7 @@ export const useChatSessionController = (
     },
     [
       chatInputNeeded,
+      queueContextPackFlow,
       state.updateSessionById,
       submitResolvedChatInputNeededSubmission,
     ],
@@ -9135,8 +9431,9 @@ export const useChatSessionController = (
           onCancel: cancelChatInputNeeded,
           onComplete: (valuesByLookupKey: Record<string, string>) =>
             completeChatInputNeeded(valuesByLookupKey, false),
-          ...(chatInputNeeded.submission.kind === "active-session" &&
-          !isQuickVoiceSession(chatInputNeeded.submission.sessionSnapshot)
+          ...(chatInputNeeded.submission.kind === "context-pack-flow" ||
+          (chatInputNeeded.submission.kind === "active-session" &&
+            !isQuickVoiceSession(chatInputNeeded.submission.sessionSnapshot))
             ? {
                 onCompleteAndRemember: (
                   valuesByLookupKey: Record<string, string>,
@@ -9190,6 +9487,12 @@ export const useChatSessionController = (
       onStatusMessageDismiss: dismissPromptEnhancementStatus,
       contextAttachments: activeComposerSession.draftContextAttachments,
       contextPacks: workspaceContextPacks,
+      contextPackFlows: {
+        flows: workspaceContextPackFlows,
+        onRun: handleRunContextPackFlow,
+        onSave: handleSaveContextPackFlow,
+        onDelete: handleDeleteContextPackFlow,
+      },
       matchedContextPackIds,
       imageInputSupported: activeSessionImageInputSupported,
       imageInputDisabledReason: activeSessionImageInputSupported

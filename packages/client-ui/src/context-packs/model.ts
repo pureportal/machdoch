@@ -69,3 +69,32 @@ export interface SmartContextPackExportPayload {
   exportedAt: number;
   contextPacks: SmartContextPack[];
 }
+
+export interface ContextPackFlowStep {
+  id: string;
+  packId: string;
+}
+
+export interface ContextPackFlow {
+  id: string;
+  workspace: string | null;
+  name: string;
+  steps: ContextPackFlowStep[];
+  createdAt: number;
+  updatedAt: number;
+  lastUsedAt?: number;
+}
+
+export interface SaveContextPackFlowInput {
+  id?: string;
+  name: string;
+  scope: SmartContextPackScope;
+  steps: Array<Pick<ContextPackFlowStep, "packId"> & { id?: string }>;
+}
+
+export interface ContextPackFlowControls {
+  flows: ContextPackFlow[];
+  onRun: (flowId: string) => void | Promise<void>;
+  onSave: (input: SaveContextPackFlowInput) => void | Promise<void>;
+  onDelete: (flowId: string) => void | Promise<void>;
+}

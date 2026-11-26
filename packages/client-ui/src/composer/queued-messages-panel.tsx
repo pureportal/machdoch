@@ -26,6 +26,7 @@ import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/to
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { getClipboardImageFiles } from "./clipboard-image-files";
 import type { AttachmentSelectionKind } from "./model";
+import { formatRequestIterationLabel } from "./model";
 import {
   findQueuedMessageBlockIndex,
   getQueuedMessageBlocks,
@@ -234,7 +235,8 @@ export const QueuedMessagesPanel = ({
     drag?.messageId ?? null,
   );
   const visibleDropSlot =
-    drag && drag.dropSlot !== null &&
+    drag &&
+    drag.dropSlot !== null &&
     getQueuedMessageDropTargetIndex(messages, drag.messageId, drag.dropSlot) !==
       null
       ? drag.dropSlot
@@ -315,7 +317,7 @@ export const QueuedMessagesPanel = ({
           const isInProgress =
             message.status === "enhancing" || message.status === "dispatching";
           const stateLabel = message.waitingForIteration
-            ? `Waiting for iteration ${message.waitingForIteration}`
+            ? `Waiting for ${message.iteration?.label ? "step" : "iteration"} ${message.waitingForIteration}`
             : getQueueStateLabel(message.status, index);
 
           return (
@@ -387,8 +389,7 @@ export const QueuedMessagesPanel = ({
                     ) : null}
                     {message.iteration ? (
                       <span className="text-[11px] leading-5 font-medium text-sky-200">
-                        Iteration {message.iteration.index} of{" "}
-                        {message.iteration.total}
+                        {formatRequestIterationLabel(message.iteration)}
                       </span>
                     ) : null}
                     {message.promptEnhancementMode ? (

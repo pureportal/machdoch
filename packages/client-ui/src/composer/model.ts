@@ -39,7 +39,15 @@ export interface ChatSessionRequestIteration {
   index: number;
   total: number;
   mode?: "repeat-prompt" | "continue" | "repeat-prompt-and-continue";
+  label?: string;
 }
+
+export const formatRequestIterationLabel = (
+  iteration: ChatSessionRequestIteration,
+): string =>
+  iteration.label
+    ? `${iteration.label} · Step ${iteration.index} of ${iteration.total}`
+    : `Iteration ${iteration.index} of ${iteration.total}`;
 
 export const MAX_REQUEST_ITERATIONS = 20;
 

@@ -1,9 +1,15 @@
 import { normalizeTaskExecutionFileChanges } from "@machdoch/fleet-protocol/task-file-change-normalization";
 import type {
+  ContextPackFlow,
+  ContextPackFlowStep,
   SmartContextPack,
   SmartContextPackVariable,
   SmartContextPackTrigger,
 } from "@machdoch/client-ui/context-packs/model";
+import {
+  MAX_CONTEXT_PACK_FLOWS,
+  MAX_CONTEXT_PACK_FLOW_STEPS,
+} from "@machdoch/client-ui/context-packs/flows";
 import { contextPackLimits } from "@machdoch/fleet-protocol/context-pack-contract";
 import { parseContextWindow } from "../../core/context-windows.js";
 import type { ContextWindow } from "@machdoch/fleet-protocol/context-window";
@@ -369,6 +375,7 @@ export interface ShellPersistedState {
   queuedMessageTombstones: Record<string, number>;
   handledFleetCommandIds: string[];
   contextPacks: SmartContextPack[];
+  contextPackFlows: ContextPackFlow[];
   recentWorkspaces: string[];
   voice: ShellVoiceSettings;
   lastSelectedProvider: RuntimeProvider;
@@ -1356,6 +1363,101 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
   });
 };
 
+const normalizeContextPackFlowSteps = (
+  value: unknown,
+  flowId: string,
+): ContextPackFlowStep[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seenIds = new Set<string>();
+  const steps: ContextPackFlowStep[] = [];
+
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const packId = normalizeString(entry.packId).trim();
+
+    if (!packId) {
+      continue;
+    }
+
+    const idCandidate = normalizeString(entry.id).trim();
+    const id =
+      idCandidate && !seenIds.has(idCandidate)
+        ? idCandidate
+        : `${flowId}-step-${index}`;
+
+    if (seenIds.has(id)) {
+      continue;
+    }
+
+    seenIds.add(id);
+    steps.push({ id, packId });
+
+    if (steps.length >= MAX_CONTEXT_PACK_FLOW_STEPS) {
+      break;
+    }
+  }
+
+  return steps;
+};
+
+const normalizeContextPackFlows = (value: unknown): ContextPackFlow[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seenIds = new Set<string>();
+  const flows: ContextPackFlow[] = [];
+
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const id = normalizeString(entry.id).trim() || `context-pack-flow-${index}`;
+
+    if (seenIds.has(id)) {
+      continue;
+    }
+
+    seenIds.add(id);
+
+    const name =
+      normalizeString(entry.name)
+        .replace(/\s+/gu, " ")
+        .trim()
+        .slice(0, contextPackLimits.identifier) || `Flow ${index + 1}`;
+    const workspace = normalizeString(entry.workspace).trim();
+    const createdAt = Math.max(0, normalizeFiniteNumber(entry.createdAt, 0));
+    const updatedAt = Math.max(
+      createdAt,
+      normalizeFiniteNumber(entry.updatedAt, createdAt),
+    );
+    const lastUsedAt = normalizeOptionalFiniteNumber(entry.lastUsedAt);
+
+    flows.push({
+      id,
+      workspace: workspace || null,
+      name,
+      steps: normalizeContextPackFlowSteps(entry.steps, id),
+      createdAt,
+      updatedAt,
+      ...(lastUsedAt !== undefined && lastUsedAt >= 0 ? { lastUsedAt } : {}),
+    });
+
+    if (flows.length >= MAX_CONTEXT_PACK_FLOWS) {
+      break;
+    }
+  }
+
+  return flows;
+};
+
 export const normalizeSessionTags = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -1608,6 +1710,7 @@ export const createInitialShellState = (): ShellPersistedState => {
     queuedMessageTombstones: {},
     handledFleetCommandIds: [],
     contextPacks: [],
+    contextPackFlows: [],
     recentWorkspaces: [],
     voice: createDefaultShellVoiceSettings(),
     lastSelectedProvider: DEFAULT_PROVIDER,
@@ -2221,6 +2324,7 @@ const normalizeRequestIteration = (
     value.mode === "repeat-prompt-and-continue"
       ? value.mode
       : undefined;
+  const label = normalizeString(value.label).trim();
   return groupId &&
     typeof index === "number" &&
     Number.isInteger(index) &&
@@ -2229,7 +2333,13 @@ const normalizeRequestIteration = (
     index >= 1 &&
     index <= total &&
     total <= MAX_REQUEST_ITERATIONS
-    ? { groupId, index, total, ...(mode ? { mode } : {}) }
+    ? {
+        groupId,
+        index,
+        total,
+        ...(mode ? { mode } : {}),
+        ...(label ? { label } : {}),
+      }
     : undefined;
 };
 
@@ -3134,6 +3244,7 @@ export const normalizeShellState = (
     handledFleetCommandIds,
     queuedMessageTombstones,
     contextPacks: normalizeSmartContextPacks(candidate.contextPacks),
+    contextPackFlows: normalizeContextPackFlows(candidate.contextPackFlows),
     recentWorkspaces,
     voice: normalizedVoice,
     lastSelectedProvider,

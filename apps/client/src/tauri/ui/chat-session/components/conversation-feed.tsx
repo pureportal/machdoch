@@ -42,7 +42,10 @@ import {
   type ChatSessionMessage,
   type ChatSessionMessageReference,
 } from "../../chat-session.model";
-import { type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
+import {
+  type ChatSessionContextAttachment,
+  formatRequestIterationLabel,
+} from "@machdoch/client-ui/composer/model";
 import { Avatar } from "../../components/ui/avatar";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
@@ -79,10 +82,7 @@ import { MessageViewLocation } from "@machdoch/client-ui/conversation/message-vi
 import { MessageReferenceLink } from "@machdoch/client-ui/conversation/message-reference-link";
 import { ExecutionInsightRow } from "@machdoch/client-ui/conversation/execution-insight-row";
 import { FollowUpSuggestions } from "@machdoch/client-ui/conversation/follow-up-suggestions";
-import {
-  AgentLiveRunExtras,
-  RunExecutionPanel,
-} from "./agent-live-run-extras";
+import { AgentLiveRunExtras, RunExecutionPanel } from "./agent-live-run-extras";
 import { getTaskFileChangeFiles, getTaskFileChangeHunks } from "../../runtime";
 import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 import { PromptEnhancementPending } from "./prompt-enhancement-pending";
@@ -425,10 +425,21 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
               />
             ) : null}
 
-            {thinkingTrace && <McpAppResults thinking={thinkingTrace} workspaceRoot={workspaceRoot} invoke={(root, input) => invokeWorkspaceTools("run_mcp_app_command", { workspaceRoot: root, input })} />}
+            {thinkingTrace && (
+              <McpAppResults
+                thinking={thinkingTrace}
+                workspaceRoot={workspaceRoot}
+                invoke={(root, input) =>
+                  invokeWorkspaceTools("run_mcp_app_command", {
+                    workspaceRoot: root,
+                    input,
+                  })
+                }
+              />
+            )}
             {message.role === "user" && message.iteration ? (
               <span className="px-1 text-xs font-medium text-sky-200">
-                Iteration {message.iteration.index} of {message.iteration.total}
+                {formatRequestIterationLabel(message.iteration)}
               </span>
             ) : null}
 
@@ -754,7 +765,12 @@ export const ConversationFeed = ({
       onOpenAttachment,
       onOpenMessageReference,
     };
-  }, [onOpenWorkspaceFile, onOpenLocalFile, onOpenAttachment, onOpenMessageReference]);
+  }, [
+    onOpenWorkspaceFile,
+    onOpenLocalFile,
+    onOpenAttachment,
+    onOpenMessageReference,
+  ]);
   const openMessageReference = useCallback(
     (reference: ChatSessionMessageReference) => {
       openCallbacksRef.current.onOpenMessageReference?.(reference);
@@ -1239,7 +1255,11 @@ export const ConversationFeed = ({
 
   return (
     <div className="app-conversation-feed mx-auto flex w-full max-w-6xl min-w-0 flex-col gap-5 pb-2 px-5 pt-5 lg:px-6">
-      {voicePlayback.errorText ? <p role="alert" className="text-sm text-red-400">{voicePlayback.errorText}</p> : null}
+      {voicePlayback.errorText ? (
+        <p role="alert" className="text-sm text-red-400">
+          {voicePlayback.errorText}
+        </p>
+      ) : null}
       {activeNavigationMessageId && currentNavigationPosition ? (
         <nav
           aria-label="Message navigation"

@@ -3,7 +3,17 @@ import {
   type SmartContextPackEditorInitialValue,
   type PackModelOption,
 } from "./editor";
-import { ContextPackDeleteDialog, type ContextPackDeletion } from "./delete-dialog";
+import {
+  ContextPackDeleteDialog,
+  type ContextPackDeletion,
+} from "./delete-dialog";
+import { ContextPackFlowEditorDialog } from "./flow-editor";
+import {
+  ContextPackFlowDeleteDialog,
+  ContextPackFlowList,
+  type ContextPackFlowDeletion,
+} from "./flows-panel";
+import { matchesContextPackFlowSearch } from "./flows";
 import { ContextPacksIcon } from "@machdoch/product-ui";
 import {
   Download,
@@ -64,6 +74,9 @@ import {
   getSmartContextPackSortTimestamp,
 } from "@machdoch/client-ui/context-packs/helpers";
 import {
+  type ContextPackFlow,
+  type ContextPackFlowControls,
+  type SaveContextPackFlowInput,
   type SaveSmartContextPackInput,
   type SmartContextPackScope,
   type SmartContextPackScopeFilter,
@@ -104,9 +117,18 @@ export interface SmartContextPackPickerProps {
     file: File,
     scope: SmartContextPackScope,
   ) => void | Promise<void>;
+  contextPackFlows?: ContextPackFlowControls;
 }
 
 type SmartContextPackView = "apply" | "configure";
+
+type SmartContextPackTab = "packs" | "flows";
+
+interface ContextPackFlowDialogState {
+  key: string;
+  flow: ContextPackFlow | null;
+  initialScope: SmartContextPackScope;
+}
 
 interface SmartContextPackListItem {
   pack: SmartContextPack;
@@ -373,8 +395,15 @@ export const SmartContextPackPicker = ({
   onDeleteContextPack,
   onExportContextPacks,
   onImportContextPacks,
+  contextPackFlows,
 }: SmartContextPackPickerProps): JSX.Element => {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<SmartContextPackTab>("packs");
+  const [flowDialog, setFlowDialog] =
+    useState<ContextPackFlowDialogState | null>(null);
+  const [flowDeletion, setFlowDeletion] =
+    useState<ContextPackFlowDeletion | null>(null);
+  const [runningFlowId, setRunningFlowId] = useState<string | null>(null);
   const [view, setView] = useState<SmartContextPackView>("apply");
   const [packDialog, setPackDialog] =
     useState<SmartContextPackDialogState | null>(null);
@@ -448,6 +477,28 @@ export const SmartContextPackPicker = ({
   const globalPackCount = packItems.filter(
     (item) => item.scope === "global",
   ).length;
+  const flows = contextPackFlows?.flows;
+  const scopedFlows = useMemo(
+    () =>
+      (flows ?? []).filter(
+        (flow) =>
+          scopeFilter === "all" ||
+          getSmartContextPackScope(flow) === scopeFilter,
+      ),
+    [flows, scopeFilter],
+  );
+  const visibleFlows = useMemo(
+    () =>
+      scopedFlows.filter((flow) =>
+        matchesContextPackFlowSearch(flow, contextPacks, packSearchText),
+      ),
+    [contextPacks, packSearchText, scopedFlows],
+  );
+  const workspaceFlowCount = (flows ?? []).filter(
+    (flow) => getSmartContextPackScope(flow) === "workspace",
+  ).length;
+  const globalFlowCount = (flows?.length ?? 0) - workspaceFlowCount;
+  const activeTab = contextPackFlows ? tab : "packs";
   const configuringPack =
     configuringPackId === null
       ? null
@@ -494,7 +545,7 @@ export const SmartContextPackPicker = ({
         model: activeModel,
         runMode: activeRunMode,
         reasoning: activeReasoning,
-          contextWindow: activeContextWindow,
+        contextWindow: activeContextWindow,
         promptEnhancementMode: activePromptEnhancementMode,
         interviewEnabled: activeInterviewEnabled,
         sessionMemoryEnabled: activeSessionMemoryEnabled,
@@ -544,7 +595,9 @@ export const SmartContextPackPicker = ({
         ...(pack.model ? { model: pack.model } : {}),
         ...(pack.mode ? { runMode: pack.mode } : {}),
         ...(pack.reasoning ? { reasoning: pack.reasoning } : {}),
-          ...(pack.contextWindow !== undefined ? { contextWindow: pack.contextWindow } : {}),
+        ...(pack.contextWindow !== undefined
+          ? { contextWindow: pack.contextWindow }
+          : {}),
         ...(pack.promptEnhancementMode !== undefined
           ? { promptEnhancementMode: pack.promptEnhancementMode }
           : {}),
@@ -624,6 +677,17 @@ export const SmartContextPackPicker = ({
       return;
     }
 
+    if (activeTab === "flows") {
+      const bestFlow = visibleFlows[0];
+
+      if (bestFlow) {
+        event.preventDefault();
+        runFlow(bestFlow);
+      }
+
+      return;
+    }
+
     const bestMatch = visiblePackItems[0];
 
     if (!bestMatch) {
@@ -677,6 +741,95 @@ export const SmartContextPackPicker = ({
         (reason: unknown) =>
           setDeletion((current) =>
             current?.pack.id === pack.id
+              ? {
+                  ...current,
+                  deleting: false,
+                  error:
+                    reason instanceof Error ? reason.message : String(reason),
+                }
+              : current,
+          ),
+      );
+  };
+
+  const openCreateFlowDialog = useCallback((): void => {
+    setFlowDialog({
+      key: `create-${Date.now()}`,
+      flow: null,
+      initialScope:
+        !workspaceRoot || scopeFilter === "global" ? "global" : "workspace",
+    });
+    setOpen(false);
+    setPackSearchText("");
+  }, [scopeFilter, workspaceRoot]);
+
+  const openEditFlowDialog = useCallback((flow: ContextPackFlow): void => {
+    setFlowDialog({
+      key: `edit-${flow.id}-${Date.now()}`,
+      flow,
+      initialScope: getSmartContextPackScope(flow),
+    });
+    setOpen(false);
+    setPackSearchText("");
+  }, []);
+
+  const closeFlowDialog = (): void => {
+    setFlowDialog(null);
+    setOpen(true);
+  };
+
+  const handleFlowDialogSubmit = async (
+    input: SaveContextPackFlowInput,
+  ): Promise<void> => {
+    if (!contextPackFlows) {
+      return;
+    }
+
+    await contextPackFlows.onSave(input);
+    closeFlowDialog();
+  };
+
+  const runFlow = useCallback(
+    (flow: ContextPackFlow): void => {
+      if (!contextPackFlows || runningFlowId) {
+        return;
+      }
+
+      setRunningFlowId(flow.id);
+      void Promise.resolve()
+        .then(() => contextPackFlows.onRun(flow.id))
+        .then(() => {
+          setOpen(false);
+          setPackSearchText("");
+        })
+        .catch((error) => {
+          console.error("Failed to run context pack flow", error);
+        })
+        .finally(() => {
+          setRunningFlowId(null);
+        });
+    },
+    [contextPackFlows, runningFlowId],
+  );
+
+  const requestDeleteFlow = useCallback((flow: ContextPackFlow): void => {
+    setFlowDeletion({ flow, deleting: false, error: null });
+  }, []);
+
+  const confirmDeleteFlow = (): void => {
+    if (!flowDeletion || !contextPackFlows) {
+      return;
+    }
+
+    const { flow } = flowDeletion;
+    setFlowDeletion({ ...flowDeletion, deleting: true, error: null });
+    void Promise.resolve()
+      .then(() => contextPackFlows.onDelete(flow.id))
+      .then(
+        () => setFlowDeletion(null),
+        (reason: unknown) =>
+          setFlowDeletion((current) =>
+            current?.flow.id === flow.id
               ? {
                   ...current,
                   deleting: false,
@@ -790,6 +943,49 @@ export const SmartContextPackPicker = ({
           ],
         }),
       },
+      ...(contextPackFlows
+        ? [
+            {
+              id: "chat.context-pack-flow.run",
+              title: "Run context pack flow",
+              group: "Chat",
+              keywords: ["chain", "sequence"],
+              scope: { kind: "view", ownerId: "chat" },
+              palette: "visible",
+              overlayPolicy: "replace-non-modal",
+              availability: () =>
+                contextPackFlows.flows.length === 0
+                  ? { state: "disabled", reason: "No flows" }
+                  : runningFlowId
+                    ? { state: "disabled", reason: "A flow is starting" }
+                    : { state: "enabled" },
+              children: () => ({
+                id: "chat-context-pack-flow-run",
+                title: "Run context pack flow",
+                searchPlaceholder: "Choose flow",
+                groups: [
+                  {
+                    id: "flows",
+                    items: contextPackFlows.flows.map((flow) => ({
+                      id: flow.id,
+                      title: flow.name,
+                      execute: () => runFlow(flow),
+                    })),
+                  },
+                ],
+              }),
+            } satisfies CommandDefinition,
+            {
+              id: "chat.context-pack-flow.create",
+              title: "Create context pack flow",
+              group: "Chat",
+              scope: { kind: "view", ownerId: "chat" },
+              palette: "visible",
+              overlayPolicy: "replace-non-modal",
+              execute: () => openCreateFlowDialog(),
+            } satisfies CommandDefinition,
+          ]
+        : []),
       {
         id: "chat.context-pack.create",
         title: "Save current setup as context pack",
@@ -927,12 +1123,16 @@ export const SmartContextPackPicker = ({
     [
       applyingPackId,
       applyPack,
+      contextPackFlows,
       onExportContextPacks,
+      openCreateFlowDialog,
       openImportPicker,
       openCreateDialog,
       openEditDialog,
       packItems,
       requestDeletePack,
+      runFlow,
+      runningFlowId,
       sortedPacks,
       workspaceRoot,
     ],
@@ -974,7 +1174,11 @@ export const SmartContextPackPicker = ({
           sideOffset={8}
           className="w-[28rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-slate-800 bg-slate-950/98 p-0 shadow-xl shadow-slate-950/40 backdrop-blur-xl"
           onFocusOutside={(event) => {
-            if (view === "configure" || deletion !== null) {
+            if (
+              view === "configure" ||
+              deletion !== null ||
+              flowDeletion !== null
+            ) {
               event.preventDefault();
             }
           }}
@@ -986,56 +1190,105 @@ export const SmartContextPackPicker = ({
           <div className="border-b border-slate-800/80 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[11px] font-medium text-slate-500">
-                  Context packs
-                </p>
+                {contextPackFlows ? (
+                  <div
+                    role="tablist"
+                    aria-label="Context pack view"
+                    className="flex items-center gap-3"
+                  >
+                    {(["packs", "flows"] as const).map((entry) => (
+                      <button
+                        key={entry}
+                        type="button"
+                        role="tab"
+                        aria-selected={activeTab === entry}
+                        onClick={() => {
+                          setTab(entry);
+                          setView("apply");
+                          setConfiguringPackId(null);
+                          setPackSearchText("");
+                          packSearchInputRef.current?.focus();
+                        }}
+                        className={cn(
+                          "text-[11px] font-medium transition-colors",
+                          activeTab === entry
+                            ? "text-slate-100"
+                            : "text-slate-500 hover:text-slate-300",
+                        )}
+                      >
+                        {entry === "packs" ? "Packs" : "Flows"}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] font-medium text-slate-500">
+                    Context packs
+                  </p>
+                )}
                 <p className="mt-1 truncate text-sm font-semibold text-slate-100">
                   {workspaceLabel}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  {globalPackCount} global / {workspacePackCount} workspace
+                  {activeTab === "flows"
+                    ? `${globalFlowCount} global / ${workspaceFlowCount} workspace`
+                    : `${globalPackCount} global / ${workspacePackCount} workspace`}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="Import context packs"
-                  tooltip={`Import ${formatScopeFilterLabel(
-                    workspaceRoot && scopeFilter !== "global"
-                      ? "workspace"
-                      : "global",
-                  ).toLowerCase()} context packs`}
-                  onClick={() => openImportPicker()}
-                  className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100"
-                >
-                  <Upload className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="Export context packs"
-                  tooltip={`Export ${formatScopeFilterLabel(
-                    scopeFilter,
-                  ).toLowerCase()} context packs`}
-                  disabled={scopedPackItems.length === 0}
-                  onClick={() => onExportContextPacks(scopeFilter)}
-                  className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-600"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={openCreateDialog}
-                  className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Save
-                </Button>
+                {activeTab === "flows" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={openCreateFlowDialog}
+                    className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New flow
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="Import context packs"
+                      tooltip={`Import ${formatScopeFilterLabel(
+                        workspaceRoot && scopeFilter !== "global"
+                          ? "workspace"
+                          : "global",
+                      ).toLowerCase()} context packs`}
+                      onClick={() => openImportPicker()}
+                      className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="Export context packs"
+                      tooltip={`Export ${formatScopeFilterLabel(
+                        scopeFilter,
+                      ).toLowerCase()} context packs`}
+                      disabled={scopedPackItems.length === 0}
+                      onClick={() => onExportContextPacks(scopeFilter)}
+                      className="h-8 w-8 rounded-full border-slate-800 bg-slate-900/70 text-slate-300 shadow-none hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-600"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={openCreateDialog}
+                      className="h-8 rounded-full border-sky-500/20 bg-sky-500/10 px-3 text-xs text-sky-100 shadow-none hover:bg-sky-500/15 hover:text-white"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Save
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
             <div className="mt-3 flex rounded-full border border-slate-800 bg-slate-900/55 p-0.5">
@@ -1061,8 +1314,14 @@ export const SmartContextPackPicker = ({
                 value={packSearchText}
                 onChange={(event) => setPackSearchText(event.target.value)}
                 onKeyDown={handlePackSearchKeyDown}
-                aria-label="Search context packs"
-                placeholder="Search packs"
+                aria-label={
+                  activeTab === "flows"
+                    ? "Search context pack flows"
+                    : "Search context packs"
+                }
+                placeholder={
+                  activeTab === "flows" ? "Search flows" : "Search packs"
+                }
                 autoComplete="off"
                 spellCheck={false}
                 containerClassName="mt-3"
@@ -1071,7 +1330,18 @@ export const SmartContextPackPicker = ({
             ) : null}
           </div>
 
-          {view === "apply" ? (
+          {activeTab === "flows" ? (
+            <ContextPackFlowList
+              flows={visibleFlows}
+              hasFlowsInScope={scopedFlows.length > 0}
+              contextPacks={contextPacks}
+              runningFlowId={runningFlowId}
+              onCreate={openCreateFlowDialog}
+              onEdit={openEditFlowDialog}
+              onRun={runFlow}
+              onDelete={requestDeleteFlow}
+            />
+          ) : view === "apply" ? (
             <div className="grid max-h-[26rem] gap-1.5 overflow-y-auto p-3">
               {scopedPackItems.length === 0 ? (
                 <button
@@ -1204,6 +1474,28 @@ export const SmartContextPackPicker = ({
           deletion={deletion}
           onCancel={() => setDeletion(null)}
           onConfirm={confirmDeletePack}
+        />
+      ) : null}
+      {flowDialog ? (
+        <ContextPackFlowEditorDialog
+          key={flowDialog.key}
+          flow={flowDialog.flow}
+          initialScope={flowDialog.initialScope}
+          contextPacks={contextPacks}
+          workspaceRoot={workspaceRoot}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              closeFlowDialog();
+            }
+          }}
+          onSubmit={handleFlowDialogSubmit}
+        />
+      ) : null}
+      {flowDeletion ? (
+        <ContextPackFlowDeleteDialog
+          deletion={flowDeletion}
+          onCancel={() => setFlowDeletion(null)}
+          onConfirm={confirmDeleteFlow}
         />
       ) : null}
     </>

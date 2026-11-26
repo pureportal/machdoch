@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -8,9 +8,27 @@
   type RefCallback,
   type SetStateAction,
 } from "react";
-import { createInitialShellState, createVisibleConversationMessages, getLatestCompletedSessionResponseAt, getLatestRunningTaskId, getSessionTitle, isTransientChatOperationMessage, markSessionRead, mergeRecentWorkspacesForPersistence, normalizeShellState, recoverInterruptedTasksForLaunch, sortSessionsByUpdatedAt, type ChatSessionMessage, type ChatSessionQueuedMessage, type ChatSessionRecord, type ShellPersistedState } from "../../chat-session.model";
-import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
-import { isMediaAssetContextAttachment, type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
+import {
+  createInitialShellState,
+  createVisibleConversationMessages,
+  getLatestCompletedSessionResponseAt,
+  getLatestRunningTaskId,
+  getSessionTitle,
+  isTransientChatOperationMessage,
+  markSessionRead,
+  mergeRecentWorkspacesForPersistence,
+  normalizeShellState,
+  recoverInterruptedTasksForLaunch,
+  sortSessionsByUpdatedAt,
+  type ChatSessionMessage,
+  type ChatSessionQueuedMessage,
+  type ChatSessionRecord,
+  type ShellPersistedState,
+} from "../../chat-session.model";
+import {
+  isMediaAssetContextAttachment,
+  type ChatSessionContextAttachment,
+} from "@machdoch/client-ui/composer/model";
 import {
   broadcastShellStateChanged,
   compareAndSwapShellStatePatch,
@@ -1757,13 +1775,24 @@ const preserveCurrentSessionState = (
   };
 };
 
-const getContextPackPersistenceTimestamp = (pack: SmartContextPack): number => {
+interface PersistedContextPackDocument {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  lastUsedAt?: number;
+}
+
+const getContextPackPersistenceTimestamp = (
+  pack: PersistedContextPackDocument,
+): number => {
   return Math.max(pack.updatedAt, pack.lastUsedAt ?? 0, pack.createdAt);
 };
 
-const sortContextPacksForPersistence = (
-  packs: SmartContextPack[],
-): SmartContextPack[] => {
+const sortContextPackDocumentsForPersistence = <
+  T extends PersistedContextPackDocument,
+>(
+  packs: T[],
+): T[] => {
   return [...packs].sort(
     (left, right) =>
       getContextPackPersistenceTimestamp(right) -
@@ -1771,11 +1800,13 @@ const sortContextPacksForPersistence = (
   );
 };
 
-const mergeContextPacksForPersistence = (
-  localPacks: SmartContextPack[],
-  basePacks: SmartContextPack[],
-  latestPacks: SmartContextPack[],
-): SmartContextPack[] => {
+const mergeContextPackDocumentsForPersistence = <
+  T extends PersistedContextPackDocument,
+>(
+  localPacks: T[],
+  basePacks: T[],
+  latestPacks: T[],
+): T[] => {
   const localPacksById = new Map(localPacks.map((pack) => [pack.id, pack]));
   const basePacksById = new Map(basePacks.map((pack) => [pack.id, pack]));
   const latestPacksById = new Map(latestPacks.map((pack) => [pack.id, pack]));
@@ -1787,7 +1818,7 @@ const mergeContextPacksForPersistence = (
     }
   }
 
-  const mergedPacksById = new Map<string, SmartContextPack>();
+  const mergedPacksById = new Map<string, T>();
 
   for (const packId of new Set([
     ...latestPacksById.keys(),
@@ -1835,7 +1866,7 @@ const mergeContextPacksForPersistence = (
     );
   }
 
-  return sortContextPacksForPersistence([...mergedPacksById.values()]);
+  return sortContextPackDocumentsForPersistence([...mergedPacksById.values()]);
 };
 
 const mergeQueuedMessageVersionForPersistence = (
@@ -2263,10 +2294,15 @@ export const mergeShellStateForPersistence = (
         ...localState.handledFleetCommandIds,
       ]),
     ].slice(-512),
-    contextPacks: mergeContextPacksForPersistence(
+    contextPacks: mergeContextPackDocumentsForPersistence(
       localState.contextPacks,
       baseState.contextPacks,
       latestState.contextPacks,
+    ),
+    contextPackFlows: mergeContextPackDocumentsForPersistence(
+      localState.contextPackFlows,
+      baseState.contextPackFlows,
+      latestState.contextPackFlows,
     ),
     recentWorkspaces:
       localRecentWorkspacesChanged && latestRecentWorkspacesChanged

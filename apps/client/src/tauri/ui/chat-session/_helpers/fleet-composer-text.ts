@@ -61,7 +61,9 @@ export function createFleetComposerText(
         ...(message.iteration
           ? {
               iteration: {
-                ...message.iteration,
+                groupId: message.iteration.groupId,
+                index: message.iteration.index,
+                total: message.iteration.total,
                 mode: message.iteration.mode ?? "continue",
               },
             }

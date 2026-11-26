@@ -57,7 +57,10 @@ import {
   isQuickVoiceSession,
   type ChatSessionRecord,
 } from "../../chat-session.model";
-import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
+import {
+  type ContextPackFlowControls,
+  type SmartContextPack,
+} from "@machdoch/client-ui/context-packs/model";
 import {
   FastTierIcon,
   ReviewChangesIcon,
@@ -146,6 +149,7 @@ export interface SessionComposerProps {
   workspaceMemoryEntries: readonly ConversationMemoryEntry[];
   globalMemoryEntries: readonly ConversationMemoryEntry[];
   contextPacks: SmartContextPack[];
+  contextPackFlows?: ContextPackFlowControls;
   matchedContextPackIds: string[];
   imageInputSupported: boolean;
   imageInputDisabledReason: string | null;
@@ -332,6 +336,7 @@ export const SessionComposer = ({
   onRemoveContextAttachment,
   onClearContextAttachments,
   onSaveContextPack,
+  contextPackFlows,
   onApplyContextPack,
   onResetTemporaryContextPack,
   onDeleteContextPack,
@@ -596,6 +601,7 @@ export const SessionComposer = ({
         onDeleteContextPack={onDeleteContextPack}
         onExportContextPacks={onExportContextPacks}
         onImportContextPacks={onImportContextPacks}
+        contextPackFlows={contextPackFlows}
       />
     </>
   );
