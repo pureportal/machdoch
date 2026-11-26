@@ -144,6 +144,10 @@ export const useDebouncedAutoSave = ({
 };
 
 const SettingsSectionTitleContext = createContext<string | null>(null);
+const SettingsAdvancedVisibleContext = createContext(true);
+
+export const SettingsAdvancedVisibilityProvider =
+  SettingsAdvancedVisibleContext.Provider;
 
 export const SettingsSectionTitleProvider =
   SettingsSectionTitleContext.Provider;
@@ -151,6 +155,7 @@ export const SettingsSectionTitleProvider =
 export interface SettingsCardProps {
   title: string;
   description?: string;
+  advanced?: boolean;
   children: ReactNode;
   className?: string;
 }
@@ -158,12 +163,17 @@ export interface SettingsCardProps {
 export const SettingsCard = ({
   title,
   description,
+  advanced = false,
   children,
   className,
-}: SettingsCardProps): JSX.Element => {
+}: SettingsCardProps): JSX.Element | null => {
   const titleId = useId();
-  const titleRepeatsSection =
-    useContext(SettingsSectionTitleContext) === title;
+  const titleRepeatsSection = useContext(SettingsSectionTitleContext) === title;
+  const advancedVisible = useContext(SettingsAdvancedVisibleContext);
+
+  if (advanced && !advancedVisible) {
+    return null;
+  }
 
   return (
     <section
@@ -202,6 +212,7 @@ export const SettingsCard = ({
 export interface SettingPanelProps {
   label: string;
   detail?: string;
+  advanced?: boolean;
   children: ReactNode;
   className?: string;
   contentClassName?: string;
@@ -210,16 +221,23 @@ export interface SettingPanelProps {
 export const SettingPanel = ({
   label,
   detail,
+  advanced = false,
   children,
   className,
   contentClassName,
-}: SettingPanelProps): JSX.Element => {
+}: SettingPanelProps): JSX.Element | null => {
+  const advancedVisible = useContext(SettingsAdvancedVisibleContext);
+
+  if (advanced && !advancedVisible) {
+    return null;
+  }
+
   return (
     <div
       data-setting-panel
       data-setting-label={label}
       className={cn(
-        "grid min-w-0 gap-2.5 border-b border-slate-800/70 py-4 last:border-b-0 @min-[36rem]/settings-card:grid-cols-[minmax(12rem,0.85fr)_minmax(0,1.5fr)] @min-[36rem]/settings-card:items-center @min-[36rem]/settings-card:gap-8",
+        "grid min-w-0 gap-2.5 border-b border-slate-800/70 py-3.5 last:border-b-0 @min-[36rem]/settings-card:grid-cols-[minmax(12rem,0.85fr)_minmax(0,1.5fr)] @min-[36rem]/settings-card:items-center @min-[36rem]/settings-card:gap-8",
         className,
       )}
     >

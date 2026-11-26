@@ -127,7 +127,7 @@ export const SessionDefaultsSettingsPanel = ({
             }
           />
         </SettingPanel>
-        <SettingPanel label="Set branch variable on branch change">
+        <SettingPanel label="Set branch variable on branch change" advanced>
           <SettingsToggle
             label="Set branch variable on branch change"
             checked={draft.syncBranchVariable}
@@ -137,7 +137,7 @@ export const SessionDefaultsSettingsPanel = ({
             }
           />
         </SettingPanel>
-        <SettingPanel label="AI context cap">
+        <SettingPanel label="AI context cap" advanced>
           <SettingsNumberInput
             aria-label="AI context message limit"
             min={DESKTOP_SETTING_BOUNDS.aiContextMaxMessages.min}

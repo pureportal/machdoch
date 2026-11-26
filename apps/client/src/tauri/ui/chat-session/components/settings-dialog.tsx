@@ -61,9 +61,11 @@ import {
 import { ProviderSettingsPanel } from "./settings-dialog-panels/provider-settings-panel";
 import { SettingsTransferPanel } from "./settings-dialog-panels/settings-transfer-panel";
 import {
+  SettingsAdvancedVisibilityProvider,
   SettingsCard,
   SettingsSectionTitleProvider,
 } from "./settings-dialog-panels/shared";
+import { SettingsToggle } from "./settings-dialog-panels/settings-toggle";
 import type {
   AgentLimitsSettingsControls,
   AppearanceSettingsControls,
@@ -86,6 +88,8 @@ import {
   type SettingsDialogSectionId,
   type SettingsDialogSectionDefinition,
 } from "./settings-navigation";
+
+const ADVANCED_SETTINGS_STORAGE_KEY = "machdoch.settings.show-advanced";
 
 type PendingNavigation =
   | { target: "close"; guard: SettingsNavigationGuardState }
@@ -236,6 +240,10 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
     primaryAction,
   } = props;
   const [searchQuery, setSearchQuery] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(
+    () => window.localStorage.getItem(ADVANCED_SETTINGS_STORAGE_KEY) === "true",
+  );
+  const [revealAdvanced, setRevealAdvanced] = useState(false);
   const [introActive, setIntroActive] = useState(Boolean(introSection));
   const [navigationGuard, setNavigationGuard] =
     useState<SettingsNavigationGuardState | null>(null);
@@ -365,6 +373,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
     if (section) {
       const query = searchQuery;
       setSearchQuery("");
+      setRevealAdvanced(query.trim().length > 0);
       if (query.trim()) {
         window.setTimeout(() => {
           const panels = document.querySelectorAll<HTMLElement>(
@@ -1361,15 +1370,34 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
               />
             </aside>
             <div className="flex min-h-0 min-w-0 flex-col">
-              <header className="sr-only md:not-sr-only md:flex md:min-h-15 md:shrink-0 md:items-center md:justify-between md:gap-4 md:border-b md:border-slate-800/70 md:px-8">
+              <header className="flex min-h-11 shrink-0 items-center justify-between gap-4 border-b border-slate-800/70 px-5 md:min-h-15 md:px-8">
                 <h2
                   id="active-settings-section-title"
                   tabIndex={-1}
-                  className="truncate text-lg font-semibold tracking-tight text-slate-100 outline-none"
+                  className="sr-only truncate text-lg font-semibold tracking-tight text-slate-100 outline-none md:not-sr-only"
                 >
                   {activeSection.label}
                 </h2>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className="text-[13px] text-slate-400"
+                  >
+                    Advanced
+                  </span>
+                  <SettingsToggle
+                    size="sm"
+                    label="Show advanced settings"
+                    checked={showAdvanced || revealAdvanced}
+                    onCheckedChange={(checked) => {
+                      setShowAdvanced(checked);
+                      setRevealAdvanced(false);
+                      window.localStorage.setItem(
+                        ADVANCED_SETTINGS_STORAGE_KEY,
+                        String(checked),
+                      );
+                    }}
+                  />
                   {navigationGuard ? (
                     <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-200">
                       Changes pending
@@ -1393,18 +1421,23 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                 aria-labelledby="active-settings-section-title"
                 className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:w-2.5 [&_[data-slot=scroll-area-thumb]]:bg-slate-700/80 [&_[data-slot=scroll-area-thumb]]:hover:bg-slate-500"
               >
-                <div className="mx-auto grid w-full max-w-4xl min-w-0 content-start gap-7 px-5 py-6 md:px-8 md:py-7">
+                <div className="mx-auto grid w-full max-w-4xl min-w-0 content-start gap-6 px-5 py-5 md:px-8 md:py-6">
                   <SettingsSectionTitleProvider value={activeSection.label}>
-                    <SettingsNavigationGuardProvider
-                      onGuardChange={setNavigationGuard}
+                    <SettingsAdvancedVisibilityProvider
+                      value={showAdvanced || revealAdvanced}
                     >
-                      {activeSectionId === INTRO_SECTION_ID && introSection
-                        ? introSection.content
-                        : renderSettingsPanel({
-                            ...props,
-                            settingsSection: activeSectionId as SettingsSection,
-                          })}
-                    </SettingsNavigationGuardProvider>
+                      <SettingsNavigationGuardProvider
+                        onGuardChange={setNavigationGuard}
+                      >
+                        {activeSectionId === INTRO_SECTION_ID && introSection
+                          ? introSection.content
+                          : renderSettingsPanel({
+                              ...props,
+                              settingsSection:
+                                activeSectionId as SettingsSection,
+                            })}
+                      </SettingsNavigationGuardProvider>
+                    </SettingsAdvancedVisibilityProvider>
                   </SettingsSectionTitleProvider>
                 </div>
               </ScrollArea>

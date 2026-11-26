@@ -405,6 +405,7 @@ export const DesktopSettingsPanel = ({
           <SettingPanel
             label="Always run as administrator"
             detail="Request elevated access when Machdoch starts."
+            advanced
           >
             <SettingsToggle
               label="Always run as administrator"
@@ -514,6 +515,7 @@ export const DesktopSettingsPanel = ({
           <SettingPanel
             label="Silence timeout"
             detail="Seconds before speech input is submitted."
+            advanced
           >
             <SettingsNumberInput
               aria-label="Quick Chat silence timeout in seconds"
@@ -535,6 +537,7 @@ export const DesktopSettingsPanel = ({
           <SettingPanel
             label="Quick Chat cap"
             detail="Maximum messages kept in Quick Chat context."
+            advanced
           >
             <SettingsNumberInput
               aria-label="Quick Chat message limit"
@@ -561,6 +564,7 @@ export const DesktopSettingsPanel = ({
         <SettingsCard
           title="Local data"
           description="Inspect or clear local runtime data without removing app settings."
+          advanced
         >
           <div className="grid gap-0">
             {isTauri() ? (

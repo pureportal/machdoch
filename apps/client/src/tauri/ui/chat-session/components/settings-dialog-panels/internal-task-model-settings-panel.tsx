@@ -223,7 +223,7 @@ export const InternalTaskModelSettingsPanel = ({
         </select>
       </SettingPanel>
 
-      <SettingPanel label="Reasoning">
+      <SettingPanel label="Reasoning" advanced>
         <select
           aria-label="Internal task reasoning"
           value={selection?.reasoning ?? "default"}

@@ -10,7 +10,13 @@ import {
   type CommandDefinition,
   type CommandPageItem,
 } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
-import { getCatalogModelsForProvider, getDefaultReviewModelForProvider, SUPPORTED_PROVIDER_ORDER, type ProviderModelCatalogSnapshot, type RuntimeProvider } from "../../../model-catalog";
+import {
+  getCatalogModelsForProvider,
+  getDefaultReviewModelForProvider,
+  SUPPORTED_PROVIDER_ORDER,
+  type ProviderModelCatalogSnapshot,
+  type RuntimeProvider,
+} from "../../../model-catalog";
 import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import {
   loadProviderModelCatalog,
@@ -161,10 +167,18 @@ export const hasAgentLimitsDraftChanges = (
 
 const GOAL_LIMIT_FIELDS = [
   ["goalPasses", "Goal passes", "Native goal reruns before pausing."],
-  ["goalStalledPasses", "Stalled goal passes", "Passes without new progress before pausing."],
+  [
+    "goalStalledPasses",
+    "Stalled goal passes",
+    "Passes without new progress before pausing.",
+  ],
   ["goalVerificationMinutes", "Goal check minutes", undefined],
   ["goalBackgroundWaitMinutes", "Background job wait minutes", undefined],
-  ["goalUsageWaitMinutes", "Usage limit wait minutes", "0 pauses the goal instead of waiting."],
+  [
+    "goalUsageWaitMinutes",
+    "Usage limit wait minutes",
+    "0 pauses the goal instead of waiting.",
+  ],
 ] as const;
 
 export const AgentLimitsSettingsPanel = ({
@@ -531,8 +545,8 @@ export const AgentLimitsSettingsPanel = ({
   useOptionalRegisterCommands(agentCommands);
 
   return (
-    <SettingsCard title="Agent execution">
-      <div className="grid gap-0">
+    <div className="grid gap-6">
+      <SettingsCard title="Execution">
         <SettingPanel label="Automatic retries">
           <ChoiceButtons
             label="Automatic retries"
@@ -597,6 +611,9 @@ export const AgentLimitsSettingsPanel = ({
             className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100"
           />
         </SettingPanel>
+      </SettingsCard>
+
+      <SettingsCard title="Limits">
         <SettingPanel
           label="Limit mode"
           detail="The inactivity safety timeout still applies."
@@ -621,6 +638,7 @@ export const AgentLimitsSettingsPanel = ({
         <SettingPanel
           label="Executor turns"
           detail="Model/tool turns inside one executor cycle."
+          advanced
         >
           <SettingsNumberInput
             aria-label="Executor turn limit"
@@ -642,6 +660,7 @@ export const AgentLimitsSettingsPanel = ({
         <SettingPanel
           label="Machdoch continuations"
           detail="Executor cycles allowed after review feedback or a Claude CLI turn-limit stop."
+          advanced
         >
           <SettingsNumberInput
             aria-label="Machdoch continuation limit"
@@ -661,20 +680,32 @@ export const AgentLimitsSettingsPanel = ({
         </SettingPanel>
 
         {GOAL_LIMIT_FIELDS.map(([key, label, detail]) => (
-          <SettingPanel key={key} label={label} {...(detail ? { detail } : {})}>
+          <SettingPanel
+            key={key}
+            label={label}
+            advanced={key !== "goalPasses"}
+            {...(detail ? { detail } : {})}
+          >
             <SettingsNumberInput
               aria-label={label}
               min={AGENT_LIMIT_BOUNDS[key].min}
               max={AGENT_LIMIT_BOUNDS[key].max}
               step="1"
               value={draft[key]}
-              disabled={setup.saving || (key === "goalPasses" && draft.infinite)}
+              disabled={
+                setup.saving || (key === "goalPasses" && draft.infinite)
+              }
               onValueChange={(value) => setDraft({ ...draft, [key]: value })}
               className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50"
             />
           </SettingPanel>
         ))}
+      </SettingsCard>
 
+      <SettingsCard
+        title="Review"
+        advanced={normalizedReviewDraft.mode === "base"}
+      >
         <SettingPanel
           label="Review model"
           detail="Applies to validator passes."
@@ -784,7 +815,7 @@ export const AgentLimitsSettingsPanel = ({
             </SettingPanel>
           </>
         ) : null}
-      </div>
+      </SettingsCard>
 
       <SettingsAutoSaveStatus
         dirty={settingsDirty}
@@ -810,6 +841,6 @@ export const AgentLimitsSettingsPanel = ({
       <SettingsStatus
         message={setup.message?.tone === "success" ? null : setup.message}
       />
-    </SettingsCard>
+    </div>
   );
 };
