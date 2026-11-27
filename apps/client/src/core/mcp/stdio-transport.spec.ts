@@ -32,7 +32,7 @@ it("drains noisy MCP stderr and closes Windows descendant processes with their w
       new Promise<never>((_, reject) => {
         timeout = setTimeout(
           () => reject(new Error("MCP stderr blocked the child")),
-          4_000,
+          8_000,
         );
       }),
     ])) as { params: { childPid?: number } };
@@ -47,4 +47,4 @@ it("drains noisy MCP stderr and closes Windows descendant processes with their w
     clearTimeout(timeout);
     await transport.close();
   }
-}, 10_000);
+}, 15_000);

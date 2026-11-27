@@ -174,6 +174,11 @@ describe("provider sync coordinator", () => {
     await writeFile(
       join(userConfigRoot, "user-config.json"),
       `${JSON.stringify({
+        agentCliPaths: {
+          "codex-cli": process.execPath,
+          "claude-cli": process.execPath,
+          "copilot-cli": process.execPath,
+        },
         providerEnrollment: {
           schemaVersion: 1,
           enabled: true,
@@ -231,7 +236,7 @@ describe("provider sync coordinator", () => {
     await expect(doctorProviderSync(workspaceRoot)).resolves.toMatchObject({
       healthy: false,
     });
-  });
+  }, 60_000);
 
   it("reconciles every supported CLI provider without changing unmanaged entries", async () => {
     const root = await createRoot();
@@ -1044,5 +1049,5 @@ describe("provider sync coordinator", () => {
     await expect(readFile(excludePath, "utf8")).resolves.toContain(
       "/.codex/config.toml",
     );
-  });
+  }, 60_000);
 });

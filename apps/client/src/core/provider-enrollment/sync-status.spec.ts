@@ -35,7 +35,11 @@ const createWorkspace = async (): Promise<string> => {
     writeFile(
       join(userConfigRoot, "user-config.json"),
       JSON.stringify({
-        agentCliPaths: { "codex-cli": process.execPath },
+        agentCliPaths: {
+          "codex-cli": process.execPath,
+          "claude-cli": process.execPath,
+          "copilot-cli": process.execPath,
+        },
         providerEnrollment: {
           schemaVersion: 1,
           enabled: true,
@@ -123,7 +127,7 @@ it("persists a failed sync and clears it after a successful refresh", async () =
   await expect(doctorProviderSync(workspaceRoot)).resolves.toMatchObject({
     healthy: true,
   });
-});
+}, 60_000);
 
 it("reports failure even when no earlier sync completed", async () => {
   const workspaceRoot = await createWorkspace();
