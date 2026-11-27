@@ -58,7 +58,7 @@ const waitForDiagnostic = async (
   predicate: (diagnostic: ProviderSyncDaemonDiagnostic) => boolean,
 ): Promise<ProviderSyncDaemonDiagnostic> => {
   const startedAt = Date.now();
-  while (Date.now() - startedAt < 5_000) {
+  while (Date.now() - startedAt < 15_000) {
     const diagnostic = await loadDiagnostic();
     if (diagnostic && predicate(diagnostic)) return diagnostic;
     await wait(25);

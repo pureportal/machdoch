@@ -45,6 +45,20 @@ describe("atomic file persistence", () => {
     );
   });
 
+  it("scavenges only the named file's stale temporary artifacts when asked", async () => {
+    const directory = await createTemporaryDirectory("atomic-scoped-scavenge-");
+    const own = join(directory, ".mcp-config.json.123.0a1b2c3d-0000-4000-8000-000000000001.tmp");
+    const other = join(directory, ".settings.json.123.0a1b2c3d-0000-4000-8000-000000000002.tmp");
+    await writeFile(own, "stale", "utf8");
+    await writeFile(other, "stale", "utf8");
+
+    expect(
+      await scavengeAtomicTemporaryFiles(directory, { maxAgeMs: 0, fileName: "mcp-config.json" }),
+    ).toBe(1);
+    await expect(readFile(own, "utf8")).rejects.toThrow();
+    expect(await readFile(other, "utf8")).toBe("stale");
+  });
+
   it("runs a final stale-write guard before replacing the destination", async () => {
     const directory = await createTemporaryDirectory("atomic-guard-");
     const path = join(directory, "record.json");

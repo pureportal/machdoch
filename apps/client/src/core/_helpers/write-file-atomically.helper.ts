@@ -55,7 +55,7 @@ const loadExistingFileMode = async (
 
 export const scavengeAtomicTemporaryFiles = async (
   directory: string,
-  options: { maxAgeMs?: number; now?: number } = {},
+  options: { maxAgeMs?: number; now?: number; fileName?: string } = {},
 ): Promise<number> => {
   const maxAgeMs = options.maxAgeMs ?? 24 * 60 * 60_000;
   const now = options.now ?? Date.now();
@@ -65,7 +65,12 @@ export const scavengeAtomicTemporaryFiles = async (
     () => [],
   );
   for (const entry of entries) {
-    if (!entry.isFile() || !ATOMIC_TEMPORARY_FILE_PATTERN.test(entry.name)) {
+    if (
+      !entry.isFile() ||
+      !ATOMIC_TEMPORARY_FILE_PATTERN.test(entry.name) ||
+      (options.fileName !== undefined &&
+        !entry.name.startsWith(`.${options.fileName}.`))
+    ) {
       continue;
     }
 

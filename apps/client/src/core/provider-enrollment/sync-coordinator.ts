@@ -489,11 +489,13 @@ const reconcileProviderScope = async (
       .map((record) => [getManagedTargetPathIdentity(record.path), record]),
   );
   let ownershipCheckpointCommitted = false;
+  let projected = false;
   try {
     const projection = await projectMcpForProvider(provider, workspaceRoot, {
       persistent: true,
       scope,
     });
+    projected = true;
     let mcpInstall:
       | Awaited<ReturnType<typeof installManagedTarget>>
       | undefined;
@@ -550,7 +552,7 @@ const reconcileProviderScope = async (
     };
   } catch (error) {
     if (ownershipCheckpointCommitted) throw error;
-    if (previousMcp) {
+    if (previousMcp && !projected) {
       try {
         const removal = await uninstallManagedTarget(previousMcp, {
           force: true,

@@ -3,7 +3,10 @@ import { realpathSync, watch, type FSWatcher } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
-import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
+import {
+  scavengeAtomicTemporaryFiles,
+  writeJsonAtomically,
+} from "../_helpers/write-file-atomically.helper.js";
 import { getUserConfigPath } from "../env.js";
 import { loadProviderEnrollmentConfig } from "./config.js";
 import { resolveMachdochCliLaunch } from "./machdoch-cli-launch.js";
@@ -713,6 +716,9 @@ export const runProviderSyncDaemon = async (
 ): Promise<void> => {
   if (options.signal?.aborted) return;
   const daemonLease = await acquireDaemon(workspaceRoot);
+  await scavengeAtomicTemporaryFiles(
+    getProviderEnrollmentStateDirectory(),
+  ).catch(() => undefined);
   let controlTimer: ReturnType<typeof setInterval> | undefined;
   let activeControlCheck: Promise<void> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;

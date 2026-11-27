@@ -279,6 +279,7 @@ fn cleanup_stale_candidates(path: &Path, runtime: &impl LockRuntime) {
         return;
     };
     let candidate_marker = format!("{LOCK_SUFFIX}.candidate.");
+    let quarantine_marker = format!("{LOCK_SUFFIX}.quarantine.");
 
     for entry in entries.flatten() {
         let Ok(file_type) = entry.file_type() else {
@@ -288,7 +289,16 @@ fn cleanup_stale_candidates(path: &Path, runtime: &impl LockRuntime) {
         let Some(name) = name.to_str() else {
             continue;
         };
-        if !file_type.is_dir() || !name.contains(&candidate_marker) {
+        if !file_type.is_dir() {
+            continue;
+        }
+        if name.contains(&quarantine_marker) {
+            if is_path_stale(&entry.path(), runtime) {
+                let _ = remove_directory_tree(&entry.path(), runtime);
+            }
+            continue;
+        }
+        if !name.contains(&candidate_marker) {
             continue;
         }
 
@@ -658,6 +668,35 @@ mod tests {
 
         assert!(!stale_candidate.exists());
         drop(acquired);
+        remove_directory_tree(&directory, &SystemLockRuntime)
+            .expect("test directory should be removable");
+    }
+
+    #[test]
+    fn acquisition_reaps_only_stale_quarantined_owners() {
+        let (destination, directory) = test_destination();
+        let quarantine = PathBuf::from(format!(
+            "{}.quarantine.2000000000.dead-owner.interrupted",
+            lock_path(&destination).display()
+        ));
+        fs::create_dir_all(quarantine.join("owner.dead-owner"))
+            .expect("quarantined owner should be created");
+
+        let recent = acquire_cooperative_file_lock_with_runtime(
+            &destination,
+            &TestLockRuntime::new(SystemTime::now(), true),
+        )
+        .expect("lock acquisition should succeed");
+        drop(recent);
+        assert!(quarantine.exists());
+
+        let later = acquire_cooperative_file_lock_with_runtime(
+            &destination,
+            &TestLockRuntime::new(SystemTime::now() + Duration::from_secs(180), true),
+        )
+        .expect("lock acquisition should succeed");
+        drop(later);
+        assert!(!quarantine.exists());
         remove_directory_tree(&directory, &SystemLockRuntime)
             .expect("test directory should be removable");
     }

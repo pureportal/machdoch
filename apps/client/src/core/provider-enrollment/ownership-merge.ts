@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { readStableRegularFile } from "../_helpers/read-stable-regular-file.helper.js";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
 import {
+  scavengeAtomicTemporaryFiles,
   writeFileAtomically,
   writeJsonAtomically,
 } from "../_helpers/write-file-atomically.helper.js";
 import { compareCanonicalStrings, digestJson, sha256 } from "@machdoch/model-runtime/digests";
+import { PROJECTED_MCP_SERVER_KEY_PATTERN } from "./mcp-projector.js";
 
 const TOML_START = "# machdoch-managed:provider-enrollment:start";
 const TOML_END = "# machdoch-managed:provider-enrollment:end";
@@ -453,6 +455,9 @@ const installManagedTargetUnlocked = async (
       `Previous ownership metadata does not describe ${params.provider} ${params.scope} target ${params.path}.`,
     );
   }
+  await scavengeAtomicTemporaryFiles(dirname(params.path), {
+    fileName: basename(params.path),
+  });
   const before = await readStableManagedTarget(params.path);
   const existed = Boolean(before);
   const existing = before?.content ?? "";
@@ -474,13 +479,22 @@ const installManagedTargetUnlocked = async (
     const current = parseJsonRecord(existing);
     const currentServers = getManagedMcpServers(current);
     const previouslyOwnedKeys = new Set(params.previous?.managedKeys ?? []);
-    const unmanagedCollisions = managedKeys.filter(
+    const collisions = managedKeys.filter(
       (key) =>
         Object.hasOwn(currentServers, key) && !previouslyOwnedKeys.has(key),
+    );
+    const unmanagedCollisions = collisions.filter(
+      (key) => !PROJECTED_MCP_SERVER_KEY_PATTERN.test(key),
     );
     if (unmanagedCollisions.length > 0) {
       throw new Error(
         `Refusing to overwrite unmanaged MCP server entr${unmanagedCollisions.length === 1 ? "y" : "ies"} in ${params.path}: ${unmanagedCollisions.join(", ")}.`,
+      );
+    }
+    if (collisions.length > 0) {
+      const backupPath = await createBackup(params.path, existing);
+      warnings.push(
+        `Reclaimed Machdoch MCP entr${collisions.length === 1 ? "y" : "ies"} whose ownership record was lost (${collisions.join(", ")}); the previous file was backed up to ${backupPath}.`,
       );
     }
     const previousManaged = Object.fromEntries(

@@ -1,6 +1,7 @@
 import {
   mkdtemp,
   open,
+  readdir,
   readFile,
   rm,
   stat,
@@ -161,6 +162,42 @@ describe("provider ownership merge", () => {
       }),
     ).rejects.toThrow("Refusing to overwrite unmanaged");
     expect(await readFile(path, "utf8")).toBe(original);
+  });
+
+  it("reclaims generated MCP entries whose ownership record was lost and backs up the file", async () => {
+    const root = await createRoot();
+    const path = join(root, ".claude.json");
+    const original = `${JSON.stringify({
+      note: "keep",
+      mcpServers: {
+        "machdoch-play-41e9ac7c": { command: "old-proxy" },
+        user: { command: "user-command" },
+      },
+    })}\n`;
+    await writeFile(path, original, "utf8");
+
+    const installed = await installManagedTarget({
+      path,
+      provider: "claude-cli",
+      scope: "user",
+      format: "json",
+      payload: { mcpServers: { "machdoch-play-41e9ac7c": { command: "machdoch" } } },
+    });
+
+    expect(installed.record.managedKeys).toEqual(["machdoch-play-41e9ac7c"]);
+    expect(installed.warnings).toEqual([
+      expect.stringContaining("Reclaimed Machdoch MCP entry whose ownership record was lost (machdoch-play-41e9ac7c)"),
+    ]);
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+      note: "keep",
+      mcpServers: {
+        "machdoch-play-41e9ac7c": { command: "machdoch" },
+        user: { command: "user-command" },
+      },
+    });
+    const backups = (await readdir(root)).filter((name) => name.startsWith(".claude.json.machdoch-backup-"));
+    expect(backups).toHaveLength(1);
+    expect(await readFile(join(root, backups[0]!), "utf8")).toBe(original);
   });
 
   it("blocks malformed existing MCP container shapes without changing the file", async () => {

@@ -18,6 +18,31 @@ import {
 } from "./with-cooperative-file-lock.helper.ts";
 
 describe("withCooperativeFileLock", () => {
+  it("reaps stale quarantined owners left behind by interrupted releases", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "machdoch-file-lock-quarantine-"),
+    );
+    const destination = join(directory, "daemon.json");
+    const stale = `${destination}.machdoch.lock.quarantine.1.old.token`;
+    const fresh = `${destination}.machdoch.lock.quarantine.2.new.token`;
+    try {
+      for (const path of [stale, fresh]) {
+        await mkdir(path);
+        await writeFile(join(path, "owner.json"), "{}", "utf8");
+      }
+      const old = new Date(Date.now() - 10 * 60_000);
+      await utimes(stale, old, old);
+
+      await withCooperativeFileLock(destination, async () => undefined);
+
+      expect((await readdir(directory)).sort()).toEqual([
+        "daemon.json.machdoch.lock.quarantine.2.new.token",
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("cancels a queued lock without entering its operation or leaving an owner candidate", async () => {
     const directory = await mkdtemp(
       join(tmpdir(), "machdoch-file-lock-cancel-"),

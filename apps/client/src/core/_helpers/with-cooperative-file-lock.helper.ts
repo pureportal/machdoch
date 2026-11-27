@@ -127,6 +127,15 @@ const createQuarantinePath = (lockPath: string, token: string): string => {
   return `${lockPath}.quarantine.${process.pid}.${token}.${randomUUID()}`;
 };
 
+const removeQuarantinedOwner = async (quarantinePath: string): Promise<void> => {
+  await rm(quarantinePath, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: LOCK_RETRY_DELAY_MS,
+  }).catch(() => undefined);
+};
+
 const createOwnedDirectoryCandidate = async (
   targetPath: string,
   token: string,
@@ -153,6 +162,22 @@ const cleanupStaleCandidates = async (
     withFileTypes: true,
   }).catch(() => []);
   const candidateMarker = `${LOCK_SUFFIX}.candidate.`;
+  const quarantineMarker = `${LOCK_SUFFIX}.quarantine.`;
+
+  await Promise.all(
+    entries
+      .filter(
+        (entry) =>
+          entry.isDirectory() && entry.name.includes(quarantineMarker),
+      )
+      .map(async (entry) => {
+        const quarantinePath = join(dirname(lockPath), entry.name);
+        const metadata = await stat(quarantinePath).catch(() => null);
+        if (metadata && Date.now() - metadata.mtimeMs >= staleLockAgeMs) {
+          await removeQuarantinedOwner(quarantinePath);
+        }
+      }),
+  );
 
   await Promise.all(
     entries
@@ -285,7 +310,7 @@ const quarantineAbandonedLock = async (
         throw error;
       }
       await removeCanonicalIfEmpty(lockPath);
-      await rm(quarantinePath, { recursive: true, force: true });
+      await removeQuarantinedOwner(quarantinePath);
     }
 
     const metadata = await stat(lockPath).catch(() => null);
@@ -321,7 +346,7 @@ const quarantineAbandonedLock = async (
   }
 
   await removeCanonicalIfEmpty(lockPath);
-  await rm(quarantinePath, { recursive: true, force: true });
+  await removeQuarantinedOwner(quarantinePath);
 };
 
 export const inspectCooperativeFileLock = async (
@@ -464,7 +489,7 @@ const releaseOwnedLock = async (
     }
   }
   await removeCanonicalIfEmpty(lockPath);
-  await rm(quarantinePath, { recursive: true, force: true });
+  await removeQuarantinedOwner(quarantinePath);
 };
 
 /**
