@@ -34,6 +34,33 @@ describe("OpenAI Responses conformance", () => {
     expect(createOpenAIResponseToolSelection([])).toEqual({});
   });
 
+  it("sends tools with map-typed objects as non-strict because strict schemas need declared properties", () => {
+    const inputSchema = {
+      type: "object",
+      additionalProperties: false,
+      required: ["serverId", "promptName"],
+      properties: {
+        serverId: { type: "string" },
+        promptName: { type: "string" },
+        arguments: { type: "object", additionalProperties: { type: "string" } },
+      },
+    };
+    const [promptTool, plainTool] = createOpenAITools([
+      { name: "mcp_get_prompt", description: "Fetch a prompt.", inputSchema },
+      {
+        name: "read_file",
+        description: "Read a file.",
+        inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+      },
+    ]);
+
+    expect(promptTool).toMatchObject({ strict: false, parameters: inputSchema });
+    expect(plainTool).toMatchObject({
+      strict: true,
+      parameters: { additionalProperties: false, required: ["path"] },
+    });
+  });
+
   it("preserves non-strict tool schemas for arbitrary nested JSON arguments", () => {
     expect(
       createOpenAITools([

@@ -78,6 +78,31 @@ const makeSchemaNullable = (
   };
 };
 
+const listSubschemas = (schema: Record<string, unknown>): unknown[] => [
+  ...(isSchemaRecord(schema.properties) ? Object.values(schema.properties) : []),
+  ...(isSchemaRecord(schema.$defs) ? Object.values(schema.$defs) : []),
+  ...(isSchemaRecord(schema.definitions) ? Object.values(schema.definitions) : []),
+  ...(Array.isArray(schema.items) ? schema.items : [schema.items]),
+  ...(Array.isArray(schema.prefixItems) ? schema.prefixItems : []),
+  ...(Array.isArray(schema.anyOf) ? schema.anyOf : []),
+  ...(Array.isArray(schema.oneOf) ? schema.oneOf : []),
+  ...(Array.isArray(schema.allOf) ? schema.allOf : []),
+  schema.not,
+];
+
+export const isOpenAIStrictCompatibleSchema = (
+  schema: Record<string, unknown>,
+): boolean => {
+  const isObject =
+    schema.type === "object" ||
+    (Array.isArray(schema.type) && schema.type.includes("object"));
+  if (isObject && !isSchemaRecord(schema.properties)) return false;
+  return listSubschemas(schema).every(
+    (subschema) =>
+      !isSchemaRecord(subschema) || isOpenAIStrictCompatibleSchema(subschema),
+  );
+};
+
 export const normalizeOpenAIStrictInputSchema = (
   schema: Record<string, unknown>,
 ): Record<string, unknown> => {

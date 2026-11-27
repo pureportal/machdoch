@@ -23,7 +23,10 @@ import { hasImageInputs } from "./image-inputs.ts";
 import { withProviderRequest } from "./request.ts";
 import { OpenAIFinalAnswerStream } from "./openai-answer-stream.ts";
 import { decodeOpenAIToolArguments } from "./tool-arguments.ts";
-import { normalizeOpenAIStrictInputSchema } from "./schema-normalization.ts";
+import {
+  isOpenAIStrictCompatibleSchema,
+  normalizeOpenAIStrictInputSchema,
+} from "./schema-normalization.ts";
 import {
   emitProviderStreamError,
   emitProviderStreamEvent,
@@ -39,16 +42,19 @@ import { supportsNativeSubagents } from "../native-subagents.ts";
 import type { ParallelAgentMode } from "../types.ts";
 
 export const createOpenAITools = (tools: AgentModelToolSpec[]) => {
-  return tools.map((tool) => ({
-    type: "function" as const,
-    name: tool.name,
-    description: tool.description,
-    parameters:
-      tool.strict === false
-        ? tool.inputSchema
-        : normalizeOpenAIStrictInputSchema(tool.inputSchema),
-    strict: tool.strict !== false,
-  }));
+  return tools.map((tool) => {
+    const strict =
+      tool.strict !== false && isOpenAIStrictCompatibleSchema(tool.inputSchema);
+    return {
+      type: "function" as const,
+      name: tool.name,
+      description: tool.description,
+      parameters: strict
+        ? normalizeOpenAIStrictInputSchema(tool.inputSchema)
+        : tool.inputSchema,
+      strict,
+    };
+  });
 };
 
 export const createOpenAIResponseToolSelection = (
@@ -223,6 +229,8 @@ type OpenAIResponseOutputItemLike = {
 
 type OpenAIResponseLike = {
   id: string;
+  status?: string | null;
+  incomplete_details?: { reason?: string | null } | null;
   usage?: unknown;
   output?: OpenAIResponseOutputItemLike[];
   output_text?: string | undefined;
@@ -755,9 +763,13 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
       });
     }
 
+    const stopReason =
+      response.incomplete_details?.reason ?? response.status ?? undefined;
+
     return {
       text: getOpenAIResponseText(response),
       toolCalls,
+      ...(stopReason ? { stopReason } : {}),
       ...(usage ? { usage } : {}),
     };
   }
