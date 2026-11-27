@@ -91,7 +91,8 @@ const mapReasoningToGeminiThinkingLevel = (
     low: ThinkingLevel.LOW,
     medium: ThinkingLevel.MEDIUM,
     high: ThinkingLevel.HIGH,
-  }[reasoning as "low" | "medium" | "high"];
+    xhigh: ThinkingLevel.XHIGH,
+  }[reasoning as "low" | "medium" | "high" | "xhigh"];
 
   if (!level) {
     throw new Error(`Unsupported Gemini thinking level: ${reasoning}.`);

@@ -25,6 +25,19 @@ type InteractionReply = Pick<
   "id" | "status" | "steps" | "usage"
 >;
 
+const GOOGLE_THINKING_LEVELS = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const;
+
+const isGoogleThinkingLevel = (
+  reasoning: string,
+): reasoning is (typeof GOOGLE_THINKING_LEVELS)[number] =>
+  (GOOGLE_THINKING_LEVELS as readonly string[]).includes(reasoning);
+
 export function normalizeInteractionUsage(
   usage: Interactions.Interaction["usage"],
 ): AgentModelStreamUsage | undefined {
@@ -159,6 +172,7 @@ export class GoogleInteractionsAdapter implements AgentModelAdapter {
       ...(params.maxOutputTokens !== undefined
         ? { max_output_tokens: params.maxOutputTokens }
         : {}),
+      ...(params.onStreamEvent ? { thinking_summaries: "auto" } : {}),
     };
     if (params.reasoning && params.reasoning !== "default") {
       assertReasoningModeSupportedForProviderModel(
@@ -166,15 +180,11 @@ export class GoogleInteractionsAdapter implements AgentModelAdapter {
         "google",
         params.model,
       );
-      if (!["minimal", "low", "medium", "high"].includes(params.reasoning))
+      if (!isGoogleThinkingLevel(params.reasoning))
         throw new Error(
           `Unsupported Google thinking level: ${params.reasoning}.`,
         );
-      generation.thinking_level = params.reasoning as
-        | "minimal"
-        | "low"
-        | "medium"
-        | "high";
+      generation.thinking_level = params.reasoning;
     }
     if (
       params.structuredOutput &&
