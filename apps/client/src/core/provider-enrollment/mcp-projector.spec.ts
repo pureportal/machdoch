@@ -568,6 +568,64 @@ describe("MCP projector", () => {
     );
   });
 
+  it("forwards inherited environment names to Codex without Machdoch process variables", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-projector-inherit-"));
+    roots.push(root);
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(root, "user");
+    process.env.MCP_PROJECTOR_TEST_TOKEN = "fixture-secret";
+    const originalRunControlToken = process.env.MACHDOCH_RUN_CONTROL_TOKEN;
+    process.env.MACHDOCH_RUN_CONTROL_TOKEN = "run-secret";
+    const configDirectory = join(root, ".machdoch", "mcp");
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(
+      join(configDirectory, "mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "inherit-server",
+            enabled: true,
+            transport: { type: "stdio", command: "node", inheritEnvironment: true },
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const projectEnvironmentNames = async (): Promise<string[] | undefined> => {
+      const projection = await projectMcpForProvider("codex-cli", root, {
+        machdochCliLaunch: createLaunch(root, true),
+      });
+      expect(JSON.stringify(projection.config)).not.toContain("run-secret");
+      return (projection.servers[0]?.providerConfig as { env_vars?: string[] })
+        .env_vars;
+    };
+
+    try {
+      const environmentNames = await projectEnvironmentNames();
+
+      expect(
+        environmentNames?.filter((name) => name.toUpperCase().startsWith("MACHDOCH_")),
+      ).toEqual([]);
+      if (process.platform === "win32") {
+        expect(environmentNames?.map((name) => name.toUpperCase())).toEqual(
+          expect.arrayContaining(["PATH", "SYSTEMROOT", "USERPROFILE"]),
+        );
+        expect(environmentNames).not.toContain("MCP_PROJECTOR_TEST_TOKEN");
+        process.env.MCP_PROJECTOR_OPTIONAL_TOKEN = "session-only";
+        expect(await projectEnvironmentNames()).toEqual(environmentNames);
+      } else {
+        expect(environmentNames).toContain("MCP_PROJECTOR_TEST_TOKEN");
+      }
+    } finally {
+      if (originalRunControlToken === undefined) {
+        delete process.env.MACHDOCH_RUN_CONTROL_TOKEN;
+      } else {
+        process.env.MACHDOCH_RUN_CONTROL_TOKEN = originalRunControlToken;
+      }
+    }
+  });
+
   it("pins user-scoped proxy commands to the user configuration", async () => {
     const root = await mkdtemp(
       join(tmpdir(), "machdoch-projector-user-proxy-"),

@@ -21,6 +21,7 @@ import {
   type MachdochCliLaunch,
 } from "./machdoch-cli-launch.js";
 import { isMcpToolEnabledForProjection } from "./mcp-tool-exposure.js";
+import { listInheritedEnvironmentNames } from "./inherited-environment-names.js";
 import type {
   McpProjectedServer,
   McpProjection,
@@ -178,6 +179,8 @@ const shouldProxyServer = (
   }
   return undefined;
 };
+
+export const PROJECTED_MCP_SERVER_KEY_PATTERN = /^machdoch-[a-z0-9_-]{1,4}-[0-9a-f]{8}$/u;
 
 const createProjectedServerId = (
   provider: AgentCliProvider,
@@ -491,15 +494,15 @@ const resolveProjectionEnvironment = async (
   return environment;
 };
 
-const getProxyEnvironmentKeys = (
+const getProxyEnvironmentKeys = async (
   server: McpEffectiveServerConfig,
   environment: Record<string, string>,
-): string[] => {
+): Promise<string[]> => {
   if (
     server.transport.type === "stdio" &&
     server.transport.inheritEnvironment === true
   ) {
-    return Object.keys(environment).sort();
+    return listInheritedEnvironmentNames(environment);
   }
   const references = getServerEnvironmentReferences(server);
   return [...references.required, ...references.optional]
@@ -668,7 +671,9 @@ export const projectMcpForProvider = async (
           workspaceRoot,
           machdochCliLaunch,
           options.scope,
-          getProxyEnvironmentKeys(server, environment),
+          provider === "codex-cli"
+            ? await getProxyEnvironmentKeys(server, environment)
+            : [],
           options.appRun,
         ),
         capabilities,
