@@ -4,6 +4,7 @@ import type {
   Message as AnthropicMessage,
   MessageParam as AnthropicMessageParam,
   TextBlockParam as AnthropicTextBlockParam,
+  ThinkingConfigParam,
   Tool as AnthropicTool,
   ToolUseBlock as AnthropicToolUseBlock,
 } from "@anthropic-ai/sdk/resources/messages";
@@ -31,25 +32,61 @@ import {
 } from "./stream-events.ts";
 import { normalizeToolResultContent } from "./tool-result-content.ts";
 import { resolveProviderPromptCacheDirectives } from "../provider-prompt-cache.ts";
+import {
+  getDiscoveredModelCapabilities,
+  getModelCapabilityProfile,
+} from "../model-capabilities.ts";
+import { normalizeModelId } from "../normalize-model-id.ts";
+
+const ADAPTIVE_THINKING_MODEL_PATTERN =
+  /^claude-(?:(?:fable|mythos|opus|sonnet|haiku)-5|5-(?:fable|mythos|opus|sonnet|haiku)|opus-4-[678]|4-[678]-opus|sonnet-4-6|4-6-sonnet|mythos-preview)(?:-|$)/u;
+
+export const supportsAnthropicAdaptiveThinking = (model: string): boolean =>
+  ADAPTIVE_THINKING_MODEL_PATTERN.test(normalizeModelId(model));
 
 export const createAnthropicToolSelection = (
+  model: string,
   tools: readonly AgentModelToolSpec[],
   choice: "auto" | "required" = "required",
 ) =>
   tools.length > 0
     ? {
         tool_choice: {
-          type: choice === "auto" ? ("auto" as const) : ("any" as const),
+          type:
+            choice === "auto" || supportsAnthropicAdaptiveThinking(model)
+              ? ("auto" as const)
+              : ("any" as const),
           disable_parallel_tool_use: true,
         },
       }
     : {};
 
+export const createAnthropicThinkingConfig = (
+  model: string,
+): { thinking?: ThinkingConfigParam } =>
+  supportsAnthropicAdaptiveThinking(model)
+    ? { thinking: { type: "adaptive", display: "summarized" } }
+    : {};
+
 type AnthropicEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
+const ANTHROPIC_STREAMING_MAX_OUTPUT_TOKENS = 64_000;
+const ANTHROPIC_NON_STREAMING_MAX_OUTPUT_TOKENS = 16_000;
+
 export const getAnthropicMaxOutputTokens = (
-  reasoning?: ReasoningMode,
-): number => (reasoning === "xhigh" || reasoning === "max" ? 64_000 : 4_096);
+  provider: ConfiguredModelProvider,
+  model: string,
+  streaming: boolean,
+): number => {
+  const requested = streaming
+    ? ANTHROPIC_STREAMING_MAX_OUTPUT_TOKENS
+    : ANTHROPIC_NON_STREAMING_MAX_OUTPUT_TOKENS;
+  const modelLimit =
+    getDiscoveredModelCapabilities(provider, model)?.maxOutputTokens ??
+    getModelCapabilityProfile(provider, model)?.maxOutputTokens;
+
+  return modelLimit && modelLimit > 0 ? Math.min(requested, modelLimit) : requested;
+};
 
 export const createAnthropicOutputConfig = (
   model: string,
@@ -174,6 +211,50 @@ const createAnthropicToolResultContent = (toolResult: AgentModelToolResult) => {
   return content;
 };
 
+const withAnthropicConversationCacheBreakpoint = (
+  messages: readonly AnthropicMessageParam[],
+): AnthropicMessageParam[] => {
+  const lastMessage = messages.at(-1);
+
+  if (!lastMessage) {
+    return [];
+  }
+
+  const content =
+    typeof lastMessage.content === "string"
+      ? [{ type: "text" as const, text: lastMessage.content }]
+      : lastMessage.content;
+  const lastBlock = content.at(-1);
+
+  if (!lastBlock || lastBlock.type === "thinking" || lastBlock.type === "redacted_thinking") {
+    return [...messages];
+  }
+
+  return [
+    ...messages.slice(0, -1),
+    {
+      ...lastMessage,
+      content: [
+        ...content.slice(0, -1),
+        { ...lastBlock, cache_control: { type: "ephemeral" as const } },
+      ],
+    } as AnthropicMessageParam,
+  ];
+};
+
+export const createAnthropicRefusalError = (
+  message: Pick<AnthropicMessage, "stop_details">,
+): Error => {
+  const details = message.stop_details;
+  const category = details?.category ? ` (${details.category})` : "";
+  const explanation = details?.explanation ? ` ${details.explanation}` : "";
+
+  return new Error(`Claude declined this request${category}.${explanation}`);
+};
+
+const TRUNCATED_TOOL_CALL_ERROR =
+  "The response reached the output token limit before this tool call was complete, so it was not run. Retry with smaller arguments, for example by splitting large file contents across several calls.";
+
 export class AnthropicMessagesAdapter implements AgentModelAdapter {
   private readonly client: Anthropic;
   private readonly tools: AgentModelToolSpec[];
@@ -199,64 +280,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
       content: createAnthropicUserContent(params),
     });
 
-    const message = await withProviderRequest(
-      {
-        provider: this.provider,
-        operation: "startTurn",
-        maxAttempts: params.maxRequestAttempts ?? 3,
-        signal: params.signal,
-        ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
-      },
-      async (requestSignal) => {
-        const request = {
-          model: params.model,
-          max_tokens:
-            params.maxOutputTokens ??
-            getAnthropicMaxOutputTokens(params.reasoning),
-          system: createAnthropicSystemPrompt(
-            this.provider,
-            params.model,
-            params.systemPrompt,
-            params.tools,
-          ),
-          messages: [...this.messages],
-          ...(params.tools.length > 0
-            ? {
-                tools: createAnthropicTools(params.tools),
-                ...createAnthropicToolSelection(
-                  params.tools,
-                  params.toolChoice,
-                ),
-              }
-            : {}),
-          ...createAnthropicOutputConfig(
-            params.model,
-            params.reasoning,
-            this.provider,
-            params.structuredOutput,
-          ),
-        };
-
-        if (params.onStreamEvent) {
-          return await this.createStreamingMessage(
-            request,
-            requestSignal,
-            params.onStreamEvent,
-          );
-        }
-
-        return await this.client.messages.create(request, {
-          ...(requestSignal ? { signal: requestSignal } : {}),
-        });
-      },
-    );
-
-    this.messages.push({
-      role: "assistant",
-      content: message.content as AnthropicMessageParam["content"],
-    });
-
-    return this.normalizeResponse(message);
+    return await this.requestTurn(params, params.tools, "startTurn", params);
   }
 
   async continueTurn(
@@ -268,7 +292,6 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
       );
     }
 
-    const startParams = this.startParams;
     this.messages.push({
       role: "user",
       content: params.toolResults.map((toolResult) => ({
@@ -285,36 +308,70 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
       params.toolResults,
     );
 
+    return await this.requestTurn(
+      this.startParams,
+      this.tools,
+      "continueTurn",
+      params,
+    );
+  }
+
+  private async requestTurn(
+    startParams: AgentModelStartParams,
+    tools: readonly AgentModelToolSpec[],
+    operation: "startTurn" | "continueTurn",
+    callParams: Pick<
+      AgentModelContinueParams,
+      "signal" | "onStreamEvent" | "onRequestAttempt"
+    >,
+  ): Promise<AgentModelTurn> {
+    const { onStreamEvent } = callParams;
+    const cacheDirectives = resolveProviderPromptCacheDirectives(
+      this.provider,
+      startParams.model,
+      startParams.systemPrompt,
+      tools,
+    );
     const message = await withProviderRequest(
       {
         provider: this.provider,
-        operation: "continueTurn",
+        operation,
         maxAttempts: startParams.maxRequestAttempts ?? 3,
-        signal: params.signal,
-        ...(params.onRequestAttempt ? { logger: params.onRequestAttempt } : {}),
+        signal: callParams.signal,
+        ...(callParams.onRequestAttempt
+          ? { logger: callParams.onRequestAttempt }
+          : {}),
       },
       async (requestSignal) => {
         const request = {
           model: startParams.model,
           max_tokens:
             startParams.maxOutputTokens ??
-            getAnthropicMaxOutputTokens(startParams.reasoning),
+            getAnthropicMaxOutputTokens(
+              this.provider,
+              startParams.model,
+              onStreamEvent !== undefined,
+            ),
           system: createAnthropicSystemPrompt(
             this.provider,
             startParams.model,
             startParams.systemPrompt,
-            this.tools,
+            tools,
           ),
-          messages: [...this.messages],
-          ...(this.tools.length > 0
+          messages: cacheDirectives.cacheSystemPrompt
+            ? withAnthropicConversationCacheBreakpoint(this.messages)
+            : [...this.messages],
+          ...(tools.length > 0
             ? {
-                tools: createAnthropicTools(this.tools),
+                tools: createAnthropicTools([...tools]),
                 ...createAnthropicToolSelection(
-                  this.tools,
+                  startParams.model,
+                  tools,
                   startParams.toolChoice,
                 ),
               }
             : {}),
+          ...createAnthropicThinkingConfig(startParams.model),
           ...createAnthropicOutputConfig(
             startParams.model,
             startParams.reasoning,
@@ -323,11 +380,11 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
           ),
         };
 
-        if (params.onStreamEvent) {
+        if (onStreamEvent) {
           return await this.createStreamingMessage(
             request,
             requestSignal,
-            params.onStreamEvent,
+            onStreamEvent,
           );
         }
 
@@ -341,6 +398,10 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
       role: "assistant",
       content: message.content as AnthropicMessageParam["content"],
     });
+
+    if (message.stop_reason === "refusal") {
+      throw createAnthropicRefusalError(message);
+    }
 
     return this.normalizeResponse(message);
   }
@@ -522,6 +583,9 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
         id: contentBlock.id ?? crypto.randomUUID(),
         name: contentBlock.name ?? "unknown_tool",
         ...decodeToolArguments(contentBlock.input),
+        ...(message.stop_reason === "max_tokens"
+          ? { argumentError: TRUNCATED_TOOL_CALL_ERROR }
+          : {}),
       });
     }
 

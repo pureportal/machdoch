@@ -23,7 +23,7 @@ describe("Explicit automatic tool selection", () => {
     });
   });
   it("lets Anthropic finish without another tool call", () => {
-    expect(createAnthropicToolSelection(tools, "auto")).toEqual({
+    expect(createAnthropicToolSelection("claude-sonnet-4-5", tools, "auto")).toEqual({
       tool_choice: { type: "auto", disable_parallel_tool_use: true },
     });
   });

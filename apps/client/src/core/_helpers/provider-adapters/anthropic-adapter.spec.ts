@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AgentModelStartParams, AgentModelStreamEvent, AgentModelToolSpec } from "@machdoch/model-runtime/types";
-import { AnthropicMessagesAdapter, createAnthropicOutputConfig, getAnthropicMaxOutputTokens, createAnthropicToolSelection, createAnthropicUserContent } from "@machdoch/model-runtime/providers/anthropic-adapter";
+import { AnthropicMessagesAdapter, createAnthropicOutputConfig, createAnthropicThinkingConfig, getAnthropicMaxOutputTokens, createAnthropicToolSelection, createAnthropicUserContent } from "@machdoch/model-runtime/providers/anthropic-adapter";
+import { rememberDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 
 const tool: AgentModelToolSpec = {
   name: "inspect_file",
@@ -23,14 +24,36 @@ const startParams: AgentModelStartParams = {
 };
 
 describe("Anthropic Messages conformance", () => {
-  it("requires one tool call per turn", () => {
-    expect(createAnthropicToolSelection([tool])).toEqual({
+  it("forces one tool call per turn on models without adaptive thinking", () => {
+    expect(createAnthropicToolSelection("claude-sonnet-4-5", [tool])).toEqual({
       tool_choice: {
         type: "any",
         disable_parallel_tool_use: true,
       },
     });
-    expect(createAnthropicToolSelection([])).toEqual({});
+    expect(createAnthropicToolSelection("claude-sonnet-4-5", [])).toEqual({});
+  });
+
+  it.each([
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+    "claude-fable-5-2",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-6-default",
+  ])("lets %s think before choosing a tool", (model) => {
+    expect(createAnthropicToolSelection(model, [tool])).toEqual({
+      tool_choice: { type: "auto", disable_parallel_tool_use: true },
+    });
+    expect(createAnthropicThinkingConfig(model)).toEqual({
+      thinking: { type: "adaptive", display: "summarized" },
+    });
+  });
+
+  it("leaves thinking unset on models without adaptive thinking", () => {
+    expect(createAnthropicThinkingConfig("claude-haiku-4-5")).toEqual({});
+    expect(createAnthropicThinkingConfig("claude-sonnet-4-5")).toEqual({});
   });
 
   it("validates effort for the selected Claude model", () => {
@@ -46,6 +69,9 @@ describe("Anthropic Messages conformance", () => {
     expect(() =>
       createAnthropicOutputConfig("claude-haiku-4-5", "high"),
     ).toThrow("Reasoning mode `high` is not supported");
+    expect(createAnthropicOutputConfig("claude-haiku-5-5", "xhigh")).toEqual({
+      output_config: { effort: "xhigh" },
+    });
   });
 
   it("combines effort with native structured output", () => {
@@ -119,10 +145,14 @@ describe("Anthropic Messages conformance", () => {
     expect(calls[0]).not.toHaveProperty("tool_choice");
   });
 
-  it("reserves enough output capacity for xhigh and max effort", () => {
-    expect(getAnthropicMaxOutputTokens("high")).toBe(4_096);
-    expect(getAnthropicMaxOutputTokens("xhigh")).toBe(64_000);
-    expect(getAnthropicMaxOutputTokens("max")).toBe(64_000);
+  it("reserves output capacity for thinking plus large tool calls", () => {
+    expect(getAnthropicMaxOutputTokens("anthropic", "claude-opus-5-5", true)).toBe(64_000);
+    expect(getAnthropicMaxOutputTokens("anthropic", "claude-opus-5-5", false)).toBe(16_000);
+    expect(getAnthropicMaxOutputTokens("anthropic", "claude-haiku-4-5", true)).toBe(64_000);
+    rememberDiscoveredModelCapabilities("anthropic", "claude-small-test", {
+      maxOutputTokens: 8_192,
+    });
+    expect(getAnthropicMaxOutputTokens("anthropic", "claude-small-test", true)).toBe(8_192);
   });
 
   it("places image blocks before text", () => {
@@ -209,7 +239,7 @@ describe("Anthropic Messages conformance", () => {
 
     expect(calls[0]?.body).toMatchObject({
       model: "claude-sonnet-4-5",
-      max_tokens: 4096,
+      max_tokens: 16_000,
       system: [
         {
           type: "text",
@@ -217,7 +247,18 @@ describe("Anthropic Messages conformance", () => {
           cache_control: { type: "ephemeral" },
         },
       ],
-      messages: [{ role: "user", content: "Read README.md" }],
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Read README.md",
+              cache_control: { type: "ephemeral" },
+            },
+          ],
+        },
+      ],
       tool_choice: {
         type: "any",
         disable_parallel_tool_use: true,
@@ -244,11 +285,82 @@ describe("Anthropic Messages conformance", () => {
               type: "tool_result",
               tool_use_id: "toolu_1",
               content: "contents",
+              cache_control: { type: "ephemeral" },
             },
           ],
         },
       ],
     });
+    expect(
+      JSON.stringify((calls[1]?.body as { messages: unknown }).messages).match(
+        /cache_control/gu,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("requests adaptive thinking without forcing tool use on current models", async () => {
+    const calls: unknown[] = [];
+    const client = {
+      messages: {
+        create: async (body: unknown) => {
+          calls.push(body);
+          return { content: [{ type: "text", text: "Done." }], stop_reason: "end_turn" };
+        },
+      },
+    } as unknown as Anthropic;
+    const adapter = new AnthropicMessagesAdapter(client, [tool]);
+
+    await adapter.startTurn({ ...startParams, model: "claude-opus-5-5", toolChoice: "required" });
+
+    expect(calls[0]).toMatchObject({
+      thinking: { type: "adaptive", display: "summarized" },
+      tool_choice: { type: "auto", disable_parallel_tool_use: true },
+    });
+  });
+
+  it("does not run tool calls cut off by the output token limit", async () => {
+    const client = {
+      messages: {
+        create: async () => ({
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_cut",
+              name: "inspect_file",
+              input: { path: "REA" },
+            },
+          ],
+          stop_reason: "max_tokens",
+        }),
+      },
+    } as unknown as Anthropic;
+    const adapter = new AnthropicMessagesAdapter(client, [tool]);
+
+    const turn = await adapter.startTurn(startParams);
+
+    expect(turn.stopReason).toBe("max_tokens");
+    expect(turn.toolCalls[0]?.argumentError).toContain("output token limit");
+  });
+
+  it("reports refusals with their category", async () => {
+    const client = {
+      messages: {
+        create: async () => ({
+          content: [],
+          stop_reason: "refusal",
+          stop_details: {
+            type: "refusal",
+            category: "cyber",
+            explanation: "Declined by policy.",
+          },
+        }),
+      },
+    } as unknown as Anthropic;
+    const adapter = new AnthropicMessagesAdapter(client, [tool]);
+
+    await expect(adapter.startTurn(startParams)).rejects.toThrow(
+      "Claude declined this request (cyber). Declined by policy.",
+    );
   });
 
   it("normalizes streamed Messages events", async () => {
