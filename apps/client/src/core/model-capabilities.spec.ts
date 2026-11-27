@@ -76,8 +76,8 @@ describe("model image input capabilities", () => {
     expect(modelSupportsImageInput("openai", "gpt-5.5")).toBe(true);
     expect(modelSupportsImageInput("openai", "gpt-5.5-pro")).toBe(true);
     expect(modelSupportsImageInput("anthropic", "claude-sonnet-5")).toBe(true);
-    expect(modelSupportsImageInput("google", "gemini-2.5-flash")).toBe(true);
-    expect(modelSupportsImageInput("google", "gemini-3.7-flash")).toBe(true);
+    expect(modelSupportsImageInput("google", "gemini-3.1-flash-lite")).toBe(true);
+    expect(modelSupportsImageInput("google", "gemini-4-hydrogen")).toBe(true);
     expect(modelSupportsImageInput("langdock", "gpt-5.6-terra")).toBe(true);
     expect(modelSupportsImageInput("copilot-cli", "gpt-5.6-terra")).toBe(true);
     expect(modelSupportsImageInput("claude-cli", "opus")).toBe(true);
@@ -121,16 +121,16 @@ describe("model image input capabilities", () => {
   });
 
   it("exposes model capability profiles from the catalog", () => {
-    const profile = getModelCapabilityProfile("google", "gemini-2.5-flash");
+    const profile = getModelCapabilityProfile("google", "gemini-4-hydrogen");
 
     expect(profile).toMatchObject({
       provider: "google",
-      model: "gemini-2.5-flash",
+      model: "gemini-4-hydrogen",
       imageInput: true,
       toolUse: true,
       reasoning: true,
       streaming: true,
-      contextWindowTokens: 1_000_000,
+      contextWindowTokens: 1_048_576,
     });
     expect(profile?.providerModes).toEqual(["google-interactions"]);
     expect(getModelContextWindowTokens("anthropic", "claude-sonnet-5")).toBe(

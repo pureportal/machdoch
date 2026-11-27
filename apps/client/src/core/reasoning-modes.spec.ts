@@ -130,6 +130,59 @@ describe("provider model reasoning modes", () => {
     ).toEqual(["default", "minimal", "low", "medium", "high"]);
   });
 
+  it("covers the current OpenAI, Claude, and Gemini generations", () => {
+    const frontier = ["default", "low", "medium", "high", "xhigh", "max", "ultra"];
+    const efficient = ["default", "none", "low", "medium", "high", "xhigh", "max", "ultra"];
+
+    expect(getReasoningModesForProviderModel("openai", "gpt-6.2-astra")).toEqual(frontier);
+    expect(getReasoningModesForProviderModel("openai", "gpt-6.2-sol")).toEqual(frontier);
+    expect(getReasoningModesForProviderModel("openai", "gpt-6-sol")).toEqual(frontier);
+    expect(getReasoningModesForProviderModel("openai", "gpt-6.1-terra")).toEqual(efficient);
+    expect(getReasoningModesForProviderModel("openai", "gpt-6-luna")).toEqual(efficient);
+    expect(getReasoningModesForProviderModel("anthropic", "claude-haiku-5-5")).toEqual([
+      "default",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(getReasoningModesForProviderModel("google", "gemini-4-neon")).toEqual([
+      "default",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(getReasoningModesForProviderModel("google", "gemini-4-carbon")).toEqual([
+      "default",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(getReasoningModesForProviderModel("google", "gemini-3.8-flash")).toEqual([
+      "default",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(getReasoningModesForProviderModel("google", "gemini-4-argon")).toEqual([
+      "default",
+      "low",
+      "medium",
+      "high",
+    ]);
+    for (const model of ["gemini-3.6-flash", "gemini-3.5-flash-lite"]) {
+      expect(getReasoningModesForProviderModel("google", model)).toEqual([
+        "default",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+      ]);
+    }
+  });
+
   it("matches CLI provider effort switches", () => {
     expect(
       getReasoningModesForProviderModel("codex-cli", "gpt-6-astra"),
@@ -145,6 +198,12 @@ describe("provider model reasoning modes", () => {
     ]);
     expect(
       getReasoningModesForProviderModel("codex-cli", "gpt-5.6-terra"),
+    ).toEqual(["default", "none", "low", "medium", "high", "xhigh", "max", "ultra"]);
+    expect(
+      getReasoningModesForProviderModel("codex-cli", "gpt-6.1-terra"),
+    ).toEqual(["default", "none", "low", "medium", "high", "xhigh", "max", "ultra"]);
+    expect(
+      getReasoningModesForProviderModel("codex-cli", "gpt-6-luna"),
     ).toEqual(["default", "none", "low", "medium", "high", "xhigh", "max"]);
     expect(getReasoningModesForProviderModel("codex-cli", "gpt-5.5")).toEqual([
       "default",

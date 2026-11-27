@@ -15,7 +15,7 @@ export const supportsNativeSubagents = (
         getDiscoveredModelCapabilities(provider, model)?.nativeSubagents ?? true
       );
     case "openai":
-      return /^gpt-(?:5\.6(?:-(?:sol|terra|luna))?|6-(?:astra|sol|luna))(?:-\d{4}-\d{2}-\d{2})?$/iu.test(
+      return /^gpt-(?:5\.6(?:-(?:sol|terra|luna))?|6(?:\.\d+)?-(?:astra|sol|terra|luna))(?:-\d{4}-\d{2}-\d{2})?$/iu.test(
         model,
       );
     default:

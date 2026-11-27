@@ -12,7 +12,7 @@ const OPENAI_PRO_REASONING_EXECUTION_MODES = [
 ] as const satisfies readonly ReasoningExecutionMode[];
 
 const supportsOpenAiProReasoning = (model: string): boolean =>
-  /^(?:gpt-6-astra|gpt-5\.6(?:-(?:sol|terra|luna))?)(?:-\d{4}-\d{2}-\d{2})?$/u.test(
+  /^(?:gpt-6(?:\.\d+)?-(?:astra|sol|terra|luna)|gpt-5\.6(?:-(?:sol|terra|luna))?)(?:-\d{4}-\d{2}-\d{2})?$/u.test(
     model,
   );
 

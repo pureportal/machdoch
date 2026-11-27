@@ -167,7 +167,7 @@ const IMAGE_MEDIA_TYPES = new Set<AgentModelImageMediaType>(
 );
 
 const DOCUMENTED_OPENAI_MODEL_PATTERN =
-  /^gpt-(?:6-(?:astra|sol)|5\.6(?:-(?:sol|terra|luna))?|5\.5(?:-pro)?|5\.4(?:-(?:pro|mini|nano))?|5\.2(?:-pro)?|5\.1|5(?:-(?:pro|mini|nano))?)(?:-\d{4}-\d{2}-\d{2})?$/u;
+  /^gpt-(?:6(?:\.\d+)?-(?:astra|sol|terra|luna)|5\.6(?:-(?:sol|terra|luna))?|5\.5(?:-pro)?|5\.4(?:-(?:pro|mini|nano))?|5\.2(?:-pro)?|5\.1|5(?:-(?:pro|mini|nano))?)(?:-\d{4}-\d{2}-\d{2})?$/u;
 
 const PROVIDER_CAPABILITY_PROFILES: Record<
   ConfiguredModelProvider,
@@ -250,7 +250,7 @@ const getDocumentedOpenAiModelProfile = (
   }
 
   const hasLargeContext =
-    /^gpt-6-(?:astra|sol)(?:-|$)/u.test(model) ||
+    /^gpt-6(?:\.\d+)?-(?:astra|sol|terra|luna)(?:-|$)/u.test(model) ||
     /^gpt-5\.[56](?:-|$)/u.test(model) ||
     /^gpt-5\.4(?:-pro)?(?:-|$)/u.test(model);
   const isOriginalGpt5Pro = /^gpt-5-pro(?:-|$)/u.test(model);
