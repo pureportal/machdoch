@@ -19,6 +19,7 @@ function makeView(): McpAppView {
     },
     arguments: { query: "workspace knowledge" },
     result: { content: [{ type: "text", text: "Found three documents" }] },
+    readOnlyTools: [],
   };
 }
 
@@ -146,6 +147,27 @@ describe("connectMcpApp", () => {
       name: "refresh",
       arguments: {},
       confirmed: true,
+    });
+  });
+  it("runs repeated read-only tool calls without confirmation", async () => {
+    const { host, invoke, confirmTool, view, workspaceRoot } = createHost();
+    view.readOnlyTools = ["viewport_latest"];
+    await initialize(host);
+    for (const id of ["poll-1", "poll-2"])
+      await host.receive({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name: "viewport_latest", arguments: { since: 0 } },
+      });
+    expect(confirmTool).not.toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(invoke).toHaveBeenCalledWith(workspaceRoot, {
+      action: "call-tool",
+      id: view.id,
+      name: "viewport_latest",
+      arguments: { since: 0 },
+      confirmed: false,
     });
   });
   it("requires negotiation and the initialized notification before tools can run", async () => {

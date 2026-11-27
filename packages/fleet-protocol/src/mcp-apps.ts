@@ -43,7 +43,7 @@ export const mcpAppRequestSchema = z.discriminatedUnion("action", [
     id: z.string().uuid(),
     name: z.string().min(1).max(256),
     arguments: z.record(z.string(), z.unknown()),
-    confirmed: z.literal(true),
+    confirmed: z.boolean(),
   }),
 ]);
 export type McpAppRequest = z.infer<typeof mcpAppRequestSchema>;
@@ -54,4 +54,5 @@ export interface McpAppView {
   csp: z.infer<typeof mcpAppCspSchema>;
   arguments: Record<string, unknown>;
   result: Record<string, unknown>;
+  readOnlyTools: string[];
 }

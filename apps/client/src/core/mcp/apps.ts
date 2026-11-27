@@ -12,7 +12,7 @@ import { canonicalDigest } from "../instruction-system/normalization.js";
 import { mcpAppsEnabled, setMcpAppsEnabled } from "./app-settings.js";
 import { mcpClientManager } from "./client.js";
 import { getEnabledMcpServer, loadMcpConfig } from "./config.js";
-import type { McpEffectiveServerConfig } from "./types.js";
+import type { McpDiscoveredTool, McpEffectiveServerConfig } from "./types.js";
 
 const recordSchema = z.strictObject({
   id: z.string().uuid(),
@@ -26,6 +26,22 @@ const recordSchema = z.strictObject({
 });
 const serverIdentity = (server: McpEffectiveServerConfig): string =>
   canonicalDigest({ transport: server.transport, auth: server.auth });
+
+function isAppTool(tool: McpDiscoveredTool): boolean {
+  const ui = mcpAppToolUiSchema.safeParse(tool._meta?.ui);
+  if (tool._meta?.ui !== undefined && !ui.success) return false;
+  return !ui.data?.visibility || ui.data.visibility.includes("app");
+}
+
+function isReadOnlyTool(
+  server: McpEffectiveServerConfig,
+  tool: McpDiscoveredTool,
+): boolean {
+  const effect = server.toolOverrides?.[tool.name]?.effect;
+  return effect
+    ? effect === "external-read"
+    : tool.annotations?.readOnlyHint === true;
+}
 
 async function openAppDatabase(root: string) {
   const database = await openWorkspaceLibrary(root);
@@ -160,22 +176,15 @@ export async function runMcpAppRequest(
     const visibility = mcpAppToolUiSchema.safeParse(tool?._meta?.ui);
     if (tool?._meta?.ui !== undefined && !visibility.success)
       throw new Error("This tool has invalid app metadata.");
-    if (
-      !tool ||
-      (visibility.success &&
-        visibility.data.visibility &&
-        !visibility.data.visibility.includes("app"))
-    )
+    if (!tool || !isAppTool(tool))
       throw new Error("This tool is not available to apps.");
-    const override = server.toolOverrides?.[tool.name];
-    if (override?.enabled === false) throw new Error("This tool is disabled.");
-    if (
-      app.readOnly &&
-      !(override?.effect
-        ? override.effect === "external-read"
-        : tool.annotations?.readOnlyHint === true)
-    )
+    if (server.toolOverrides?.[tool.name]?.enabled === false)
+      throw new Error("This tool is disabled.");
+    const readOnly = isReadOnlyTool(server, tool);
+    if (app.readOnly && !readOnly)
       throw new Error("This conversation only permits read-only app tools.");
+    if (!readOnly && !request.confirmed)
+      throw new Error("This app tool requires confirmation.");
     return mcpClientManager.callTool(
       root,
       app.serverId,
@@ -211,6 +220,14 @@ export async function runMcpAppRequest(
     csp: mcpAppCspSchema.parse(resourceUi?.csp ?? {}),
     arguments: app.arguments,
     result: app.result,
+    readOnlyTools: discovery.tools
+      .filter(
+        (tool) =>
+          isAppTool(tool) &&
+          server.toolOverrides?.[tool.name]?.enabled !== false &&
+          isReadOnlyTool(server, tool),
+      )
+      .map((tool) => tool.name),
   };
   return view;
 }

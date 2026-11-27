@@ -38,6 +38,7 @@ const view: McpAppView = {
   },
   arguments: {},
   result: {},
+  readOnlyTools: [],
 };
 
 it("retries an app that never initializes and clears the startup timer after initialization", async () => {

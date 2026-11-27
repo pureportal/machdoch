@@ -280,6 +280,7 @@ describe("MCP Apps settings and persistence", () => {
         structuredContent: { total: 2 },
         _meta: { source: "research" },
       },
+      readOnlyTools: [],
     });
     expect(client.discoverServer).toHaveBeenCalledWith(
       workspaceRoot,
@@ -457,9 +458,66 @@ describe("MCP App authorization", () => {
     },
   );
 
+  it("runs an advertised read-only tool without confirmation", async () => {
+    const id = await capture();
+    discovery.tools[1]!.annotations = { readOnlyHint: true };
+    await expect(
+      runMcpAppRequest(workspaceRoot, { ...callRequest(id), confirmed: false }),
+    ).resolves.toEqual({ content: [{ type: "text", text: "Updated." }] });
+    expect(client.callTool).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { label: "advertised writes", effect: undefined },
+    { label: "write overrides of read-only tools", effect: "write" as const },
+  ])("rejects unconfirmed $label", async ({ effect }) => {
+    const id = await capture();
+    if (effect) {
+      discovery.tools[1]!.annotations = { readOnlyHint: true };
+      await writeConfig({ toolOverrides: { update_report: { effect } } });
+    }
+    await expect(
+      runMcpAppRequest(workspaceRoot, { ...callRequest(id), confirmed: false }),
+    ).rejects.toThrow("This app tool requires confirmation");
+    expect(client.callTool).not.toHaveBeenCalled();
+  });
+
+  it("lists enabled read-only app tools in the loaded view", async () => {
+    const id = await capture();
+    discovery.tools.push(
+      {
+        name: "read_report",
+        inputSchema: { type: "object" },
+        annotations: { readOnlyHint: true },
+        _meta: { ui: { visibility: ["app"] } },
+      },
+      {
+        name: "model_report",
+        inputSchema: { type: "object" },
+        annotations: { readOnlyHint: true },
+        _meta: { ui: { visibility: ["model"] } },
+      },
+      {
+        name: "disabled_report",
+        inputSchema: { type: "object" },
+        annotations: { readOnlyHint: true },
+      },
+    );
+    await writeConfig({
+      toolOverrides: {
+        update_report: { effect: "external-read" },
+        disabled_report: { enabled: false },
+      },
+    });
+    await expect(
+      runMcpAppRequest(workspaceRoot, { action: "load", id }),
+    ).resolves.toMatchObject({
+      readOnlyTools: ["update_report", "read_report"],
+    });
+  });
+
   it.each([
     { label: "omitted", confirmation: {} },
-    { label: "false", confirmation: { confirmed: false } },
     { label: "a string", confirmation: { confirmed: "true" } },
     { label: "a number", confirmation: { confirmed: 1 } },
     { label: "null", confirmation: { confirmed: null } },

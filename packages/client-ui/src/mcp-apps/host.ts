@@ -156,7 +156,8 @@ export function connectMcpApp({
       pending = true;
       try {
         const args = (params.arguments ?? {}) as Record<string, unknown>;
-        if (!(await confirmTool(params.name, args))) {
+        const confirmed = !view.readOnlyTools.includes(params.name);
+        if (confirmed && !(await confirmTool(params.name, args))) {
           reject("The action was cancelled.");
           return;
         }
@@ -166,7 +167,7 @@ export function connectMcpApp({
           id: view.id,
           name: params.name,
           arguments: args,
-          confirmed: true,
+          confirmed,
         });
         respond(result);
       } catch (error) {
