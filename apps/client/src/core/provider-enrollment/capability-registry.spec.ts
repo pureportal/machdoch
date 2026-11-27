@@ -413,6 +413,38 @@ describe("provider capability registry", () => {
     ]);
   });
 
+  it("detects Copilot SDK server mode from its connect reply while the server keeps running", async () => {
+    probeCommandMock
+      .mockReturnValueOnce({ status: 0, stdout: "copilot 1.0.114", stderr: "" })
+      .mockReturnValueOnce({ status: 0, stdout: "Usage: copilot --no-auto-update", stderr: "" })
+      .mockImplementationOnce(
+        async (
+          _executable: string,
+          _args: string[],
+          options: {
+            input: string;
+            signal: AbortSignal;
+            onOutput: (output: { stream: "stdout" | "stderr"; chunk: string }) => void;
+          },
+        ) => {
+          expect(options.input).toMatch(/^Content-Length: \d+\r\n\r\n\{"jsonrpc":"2\.0","id":1,"method":"connect"/u);
+          const body = JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: 3 } });
+          options.onOutput({ stream: "stdout", chunk: `Content-Length: ${body.length}\r\n\r\n` });
+          expect(options.signal.aborted).toBe(false);
+          options.onOutput({ stream: "stdout", chunk: body });
+          expect(options.signal.aborted).toBe(true);
+          return { status: null, stdout: "", stderr: "", error: new Error("Execution cancelled by user.") };
+        },
+      );
+
+    const result = await probeProviderCli("copilot-cli", "C:\\tools\\copilot-server.exe", {
+      force: true,
+    });
+
+    expect(result.features).toEqual(["--no-auto-update", "--headless"]);
+    expect(probeCommandMock.mock.calls[2]?.[1]).toEqual(["--headless", "--stdio", "--no-auto-update"]);
+  });
+
   it("discovers Codex structured output from exec subcommand help", async () => {
     probeCommandMock
       .mockReturnValueOnce({

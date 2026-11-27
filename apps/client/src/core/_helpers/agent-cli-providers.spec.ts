@@ -176,6 +176,32 @@ describe("resolveAgentCliProviderBinary", () => {
     });
   });
 
+  it("checks the Windows GitHub Copilot CLI install directory", async () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+
+    const homeDirectory = await createTemporaryDirectory("copilot-install");
+    const localAppData = join(homeDirectory, "AppData", "Local");
+    const binaryPath = join(localAppData, "GitHubCopilotCLI", "copilot.exe");
+
+    await createFile(binaryPath);
+
+    const resolution = resolveAgentCliProviderBinary("copilot-cli", {
+      PATH: "",
+      PATHEXT: ".CMD;.EXE",
+      USERPROFILE: homeDirectory,
+      LOCALAPPDATA: localAppData,
+    });
+
+    expect(resolution).toMatchObject({
+      available: true,
+      executable: binaryPath,
+      provider: "copilot-cli",
+      source: "path",
+    });
+  });
+
   it("prefers the versioned Codex app binary over the legacy root binary", async () => {
     if (process.platform !== "win32") {
       return;

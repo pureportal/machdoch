@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { runStreamingCommand } from "../_helpers/streaming-command.js";
+import { encodeContentLengthFrame } from "../_helpers/copilot-server-session.js";
 import type {
   AgentCliProvider,
   ConfiguredModelProvider,
@@ -95,13 +96,20 @@ const shouldUseShell = (executable: string): boolean => {
   );
 };
 
+interface ServerHandshake {
+  input: string;
+  isAnswered: (stdout: string) => boolean;
+}
+
 const captureCommand = async (
   executable: string,
   args: string[],
   timeoutMs = PROVIDER_PROBE_TIMEOUT_MS,
+  handshake?: ServerHandshake,
 ): Promise<{
   output: string;
   exitCode: number | null;
+  answered?: boolean;
   failureReason?: string;
 }> => {
   const shell = shouldUseShell(executable);
@@ -120,6 +128,9 @@ const captureCommand = async (
       resolve();
     } else waitingProbeCommands.push(resolve);
   });
+  const handshakeStop = new AbortController();
+  let handshakeOutput = "";
+  let answered = false;
   try {
     // Probe arguments are fixed flag/subcommand tokens, checked above. Supply
     // a complete command for .cmd/.bat wrappers; Node's shell+args API is deprecated.
@@ -132,13 +143,30 @@ const captureCommand = async (
         shell,
         timeoutMs,
         maxBufferBytes: 128_000,
+        ...(handshake
+          ? {
+              input: handshake.input,
+              signal: handshakeStop.signal,
+              onOutput: ({ stream, chunk }) => {
+                if (stream !== "stdout" || answered) return;
+                handshakeOutput += chunk;
+                if (!handshake.isAnswered(handshakeOutput)) return;
+                answered = true;
+                handshakeStop.abort();
+              },
+            }
+          : {}),
       },
     );
     return {
       output: `${result.stdout}\n${result.stderr}`.trim().slice(-64_000),
       exitCode: result.exitCode,
+      ...(answered ? { answered } : {}),
     };
   } catch (error) {
+    if (answered) {
+      return { output: handshakeOutput.trim().slice(-64_000), exitCode: null, answered };
+    }
     const failure = error as {
       stdout?: string;
       stderr?: string;
@@ -243,18 +271,28 @@ const detectUnlistedClaudeFileFlags = async (
 // whether this build still has them.
 const CODEX_PROBED_FEATURES = ["goals", "multi_agent"] as const;
 
-// Copilot's SDK mode is not listed in `--help`. With stdin closed a
-// supporting build starts and exits cleanly; older builds reject the flag.
+// Copilot's SDK mode is not listed in `--help`. A supporting build answers the
+// JSON-RPC `connect` request and keeps serving; older builds reject the flag.
+const COPILOT_HEADLESS_HANDSHAKE: ServerHandshake = {
+  input: encodeContentLengthFrame({ jsonrpc: "2.0", id: 1, method: "connect", params: {} }),
+  isAnswered: (stdout) => /"id"\s*:\s*1\s*[,}]/u.test(stdout) && /"jsonrpc"\s*:\s*"2\.0"/u.test(stdout),
+};
+
 const detectCopilotHeadlessMode = async (
   executable: string,
   advertised: readonly string[],
 ): Promise<string[]> => {
-  const result = await captureCommand(executable, [
-    "--headless",
-    "--stdio",
-    ...(advertised.includes("--no-auto-update") ? ["--no-auto-update"] : []),
-  ]);
-  return result.exitCode === 0 ? ["--headless"] : [];
+  const result = await captureCommand(
+    executable,
+    [
+      "--headless",
+      "--stdio",
+      ...(advertised.includes("--no-auto-update") ? ["--no-auto-update"] : []),
+    ],
+    PROVIDER_PROBE_TIMEOUT_MS,
+    COPILOT_HEADLESS_HANDSHAKE,
+  );
+  return result.answered || result.exitCode === 0 ? ["--headless"] : [];
 };
 
 const detectCodexFeatures = async (executable: string): Promise<string[]> => {

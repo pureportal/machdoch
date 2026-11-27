@@ -109,6 +109,12 @@ const createDefaultCommandPathCandidates = (
       );
     }
 
+    if (command === "copilot") {
+      candidates.push(
+        join(windowsLocalAppDataDirectory, "GitHubCopilotCLI", "copilot.exe"),
+      );
+    }
+
     if (command === "claude") {
       const claudeDesktopInstallDirectories = listChildDirectories([
         join(windowsLocalAppDataDirectory, "Claude-Data"),
